@@ -425,3 +425,25 @@ set_source_files_properties(
 )
 add_test(NAME test_measure COMMAND test_measure)
 set_tests_properties(test_measure PROPERTIES LABELS "backend")
+
+# ── M4: CLI + mode init helper ────────────────────────────────────────────────
+add_executable(test_init
+    test_init.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/init.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_init PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_init PRIVATE cxx_std_20)
+target_compile_definitions(test_init PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_init COMMAND test_init)
+set_tests_properties(test_init PROPERTIES LABELS "backend")
