@@ -7,6 +7,8 @@
 // The singleton instance() uses kCapacity (compile-time constant).
 
 #include <atomic>
+#include <cstdio>
+#include <cstdlib>
 #include <mutex>
 #include <stdexcept>
 #include <vector>
@@ -21,8 +23,8 @@ public:
     // ── Per-context qubit cap ──────────────────────────────────────────────
     // Set to kCapacity for the global singleton; overridden by the
     // BackendContext-owned pool.
-    // TODO(backend): enforce max_qubits in allocate() when per-context pools
-    //                replace the global singleton (M-future).
+    // Per-context pools use acquire() (M18) which enforces this cap.
+    // The global singleton uses allocate() (legacy path; no hard cap).
     uint32_t max_qubits{static_cast<uint32_t>(kCapacity)};
 
     // ── Singleton access ───────────────────────────────────────────────────
@@ -36,6 +38,35 @@ public:
     // qubit capacity.  Not accessible via instance().
     explicit QubitPool(uint32_t cap)
         : max_qubits(cap) {}
+
+    // ── Stable abort message (M18) ────────────────────────────────────────
+    // Any code that checks the abort message must match this string exactly.
+    static constexpr const char* kCapExceededMsg =
+        "STURM: qubit cap exceeded (max 17)";
+
+    // ── acquire() — cap-enforcing allocation (M18) ────────────────────────
+    // Allocates one qubit index.  Aborts with a stable message if the number
+    // of in-use qubits would exceed max_qubits (hard cap per PRD §6).
+    // Use this instead of allocate() when the 17-qubit hard limit must be
+    // enforced (i.e. from BackendContext-scoped pools).
+    int acquire() {
+        std::lock_guard<std::mutex> lk(mutex_);
+        if (in_use_ >= static_cast<int>(max_qubits)) {
+            std::fprintf(stderr, "%s\n", kCapExceededMsg);
+            std::fflush(stderr);
+            std::abort();
+        }
+        if (!free_.empty()) {
+            int idx = free_.back();
+            free_.pop_back();
+            ++in_use_;
+            return idx;
+        }
+        int hw = high_water_;
+        high_water_ = hw + 1;
+        ++in_use_;
+        return hw;
+    }
 
     // ── Allocate one ancilla index ─────────────────────────────────────────
     // Returns a recycled index from the free-list if available, otherwise

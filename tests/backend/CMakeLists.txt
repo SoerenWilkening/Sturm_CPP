@@ -261,6 +261,20 @@ set_source_files_properties(
 add_test(NAME test_uncompute_run COMMAND test_uncompute_run)
 set_tests_properties(test_uncompute_run PROPERTIES LABELS "backend")
 
+# ── M18: 17-qubit cap enforcement on QubitPool ───────────────────────────────
+add_executable(test_qubit_cap
+    test_qubit_cap.cpp
+)
+target_include_directories(test_qubit_cap PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qubit_cap PRIVATE cxx_std_20)
+target_compile_definitions(test_qubit_cap PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+add_test(NAME test_qubit_cap COMMAND test_qubit_cap)
+set_tests_properties(test_qubit_cap PROPERTIES LABELS "backend")
+
 # ── M21: Wire operator+=(int) to uncompute (pilot) ────────────────────────────
 add_executable(test_uncompute_add_const
     test_uncompute_add_const.cpp
