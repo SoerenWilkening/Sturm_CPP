@@ -34,6 +34,60 @@ inline int64_t classical_pow(int64_t base, int64_t exp) noexcept {
 }
 } // namespace detail
 
+// ── operator+(qint_t, int64_t) — M21 pilot: uncompute-wired constant add ──────
+//
+// Returns a new qint_t<W> representing (a + c).  The result carries
+// uncompute_op = ADD_CONST(c) so that when the result is destroyed its
+// destructor emits the inverse (-= c) via the active BackendContext.
+//
+// Gate emission:
+//   - If a is fully classical (super_mask == 0), returns a classical result
+//     with no gates emitted (fast path).
+//   - Otherwise calls qint_base::add_const(c, ctx) on a view of the result
+//     register to emit the forward gate sequence via the backend context.
+//
+// Bennett discipline: `a` is never modified; the result is a fresh register.
+//
+// Only compiled when STURM_BACKEND_ENABLED is defined (backend builds).
+//
+// TODO(backend): replace add_const stub with a full Draper/ripple-carry
+//                adder circuit when the library-op layer lands (M22+).
+
+#ifdef STURM_BACKEND_ENABLED
+
+template <std::size_t W>
+qint_t<W> operator+(const qint_t<W>& a, int64_t c) {
+    qint_t<W> result;
+    result.value      = a.value + c;
+    result.super_mask = a.super_mask;
+    // Copy qubit indices (result shares the register structure for the stub).
+    // TODO(backend): full Bennett requires allocating a fresh register and
+    //                running the adder circuit into it; for the pilot test the
+    //                stub emits gates on the same qubit set so the gate
+    //                sequence is deterministic and invertible.
+    result.qubits = a.qubits;
+
+    if (a.super_mask != 0) {
+        // Emit add_const gates via the active BackendContext (if any).
+        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+            qint_base view = result.as_qint_base();
+            view.add_const(c, *ctx);
+        }
+    }
+
+    // Stamp the uncompute op: destroying `result` will emit -= c.
+    result.uncompute_ = uncompute_op::make_add_const(c);
+    return result;
+}
+
+// Symmetric: operator+(int64_t, qint_t<W>)
+template <std::size_t W>
+qint_t<W> operator+(int64_t c, const qint_t<W>& a) {
+    return a + c;
+}
+
+#endif  // STURM_BACKEND_ENABLED
+
 // ── operator+ ─────────────────────────────────────────────────────────────────
 
 template <std::size_t W>

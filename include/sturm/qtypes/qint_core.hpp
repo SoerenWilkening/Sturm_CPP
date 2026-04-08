@@ -16,6 +16,17 @@
 #include "sturm/core/counter_sink.hpp"  // current_sink()
 #include "sturm/control/when_fwd.hpp"   // detail::current_control for proxies
 
+// M21: Backend uncompute wiring.
+// These headers pull in execute_gate (via qint_base.hpp/context.hpp), so they
+// are guarded behind STURM_BACKEND_ENABLED.  Backend test targets define this
+// macro; frontend-only test targets omit it and get the stub uncompute_op field
+// replaced by a minimal sentinel below.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/uncompute/uncompute_op.hpp"  // uncompute_op tagged union (M19)
+#  include "sturm/uncompute/qint_base.hpp"     // qint_base + add_const/sub_const
+#  include "sturm/core/context.hpp"            // BackendContext, execute_gate (M3)
+#endif
+
 #include <array>
 #include <cstddef>
 #include <cstdint>
@@ -36,6 +47,16 @@ public:
     int64_t  value      = 0;
     uint64_t super_mask = 0;
     std::array<int, Width> qubits{};
+
+    // ── Uncompute op (M21/Strategy B) ─────────────────────────────────────────
+    // Carries the semantic inverse of the operation that produced this object.
+    // Set by operators that produce an uncomputable result (e.g. operator+(int)).
+    // Cleared (NONE) by default; measurement also clears it.
+    // Only present when the backend uncompute wiring is compiled in
+    // (STURM_BACKEND_ENABLED).  Frontend-only builds omit this field.
+#ifdef STURM_BACKEND_ENABLED
+    uncompute_op uncompute_{};
+#endif
 
     // ── Default constructor ───────────────────────────────────────────────────
     qint_t() noexcept {
@@ -85,13 +106,58 @@ public:
 
     // ── Move constructor ──────────────────────────────────────────────────────
     qint_t(qint_t&& other) noexcept
-        : value(other.value), super_mask(other.super_mask), qubits(other.qubits) {
+        : value(other.value), super_mask(other.super_mask), qubits(other.qubits)
+#ifdef STURM_BACKEND_ENABLED
+          , uncompute_(other.uncompute_)
+#endif
+    {
         other.qubits.fill(-1);
         other.super_mask = 0;
+#ifdef STURM_BACKEND_ENABLED
+        other.uncompute_ = uncompute_op{};  // clear so moved-from won't re-emit
+#endif
     }
 
+    // ── as_qint_base ──────────────────────────────────────────────────────────
+    // Builds a qint_base view of this register's current state.
+    // Used by the destructor to pass to uncompute_op::apply and to
+    // add_const / sub_const backend stubs.
+    // Only available when STURM_BACKEND_ENABLED is set.
+#ifdef STURM_BACKEND_ENABLED
+    [[nodiscard]] qint_base as_qint_base() const noexcept {
+        qint_base b;
+        b.value          = value;
+        b.super_mask     = super_mask;
+        b.promotion_mask = 0u;
+        b.width          = static_cast<uint8_t>(Width < QINT_BASE_MAX_WIDTH
+                                                ? Width : QINT_BASE_MAX_WIDTH);
+        for (uint8_t i = 0; i < b.width; ++i) {
+            b.qubits[i] = (qubits[i] >= 0)
+                          ? static_cast<uint32_t>(qubits[i]) : 0u;
+        }
+        return b;
+    }
+#endif  // STURM_BACKEND_ENABLED
+
     // ── Destructor ────────────────────────────────────────────────────────────
+    // M21: If there is an active BackendContext and the uncompute_op tag is
+    // not NONE, emit the semantic inverse via the context before releasing.
+    // This is the RAII Strategy B spine for qint_t<W>.
+    // When STURM_BACKEND_ENABLED is not set, falls back to the original
+    // qubit-release-only destructor (frontend-only builds).
     ~qint_t() {
+#ifdef STURM_BACKEND_ENABLED
+        // Step 1: emit semantic inverse if an uncompute op is set (Strategy B).
+        if (uncompute_.tag != uncompute_op::kind::NONE) {
+            if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                qint_base view = as_qint_base();
+                uncompute_.apply(*ctx, view);
+            }
+        }
+#endif
+        // Step 2: release qubit indices back to the global pool.
+        // TODO(backend): migrate to per-context pool when the full
+        //                qubit-lifecycle wiring lands (M-future).
         for (int idx : qubits) {
             if (idx >= 0) {
                 QubitPool::instance().release(idx);
@@ -122,8 +188,14 @@ public:
         value      = other.value;
         super_mask = other.super_mask;
         qubits     = other.qubits;
+#ifdef STURM_BACKEND_ENABLED
+        uncompute_ = other.uncompute_;
+#endif
         other.qubits.fill(-1);
         other.super_mask = 0;
+#ifdef STURM_BACKEND_ENABLED
+        other.uncompute_ = uncompute_op{};  // clear so moved-from won't re-emit
+#endif
         return *this;
     }
 

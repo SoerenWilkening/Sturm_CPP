@@ -51,18 +51,11 @@ struct qint_base {
     // quantum bit in the register, carrying c as the param field, so that
     // add_const and sub_const produce distinguishable but deterministic sequences
     // that satisfy the inversion invariant tested by M19.
-    void sub_const(int64_t c, BackendContext& ctx) const noexcept {
-        for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
-            if ((super_mask >> i) & 1u) {
-                // Emit STURM_GATE_X on each quantum bit; param encodes (c, bit index)
-                // so the sequence is distinguishable per register state.
-                // TODO(backend): replace with actual constant subtraction circuit.
-                uint32_t q[1] = {qubits[i]};
-                double param = static_cast<double>(c) + static_cast<double>(i) * 0.0;
-                execute_gate(ctx, STURM_GATE_X, q, 1u, param);
-            }
-        }
-    }
+    //
+    // Declared non-inline so that translation units that include this header
+    // but do not link execute_gate.cpp (frontend tests) do not fail at link
+    // time.  Defined in src/sturm/uncompute/qint_base.cpp.
+    void sub_const(int64_t c, BackendContext& ctx) const noexcept;
 
     // add_const — emit the gate sequence for (self += c).
     //
@@ -70,16 +63,11 @@ struct qint_base {
     // ripple-carry circuit.  Here we emit one STURM_GATE_H per quantum bit so
     // that add_const and sub_const produce different sequences, but apply() of
     // the inverse tag always delegates to the matching method.
-    void add_const(int64_t c, BackendContext& ctx) const noexcept {
-        for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
-            if ((super_mask >> i) & 1u) {
-                // TODO(backend): replace with actual constant addition circuit.
-                uint32_t q[1] = {qubits[i]};
-                double param = static_cast<double>(c) + static_cast<double>(i) * 0.0;
-                execute_gate(ctx, STURM_GATE_H, q, 1u, param);
-            }
-        }
-    }
+    //
+    // Declared non-inline so that translation units that include this header
+    // but do not link execute_gate.cpp (frontend tests) do not fail at link
+    // time.  Defined in src/sturm/uncompute/qint_base.cpp.
+    void add_const(int64_t c, BackendContext& ctx) const noexcept;
 };
 
 } // namespace sturm
