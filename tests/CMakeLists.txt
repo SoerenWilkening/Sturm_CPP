@@ -7,6 +7,8 @@ find_package(Threads REQUIRED)
 set(STURM_TEST_SOURCES
     test_smoke.cpp
     test_qubit_pool.cpp
+    test_sink_counter.cpp
+    test_sink_recording.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
