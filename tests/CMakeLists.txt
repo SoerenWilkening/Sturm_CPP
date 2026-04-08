@@ -18,6 +18,7 @@ set(STURM_TEST_SOURCES
     test_when.cpp
     test_sink_dispatch.cpp
     test_conversions.cpp
+    test_phase_amp.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
