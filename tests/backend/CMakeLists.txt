@@ -613,3 +613,21 @@ set_source_files_properties(
 )
 add_test(NAME test_end_to_end COMMAND test_end_to_end)
 set_tests_properties(test_end_to_end PROPERTIES LABELS "backend")
+
+# ── M27: CI hook extension ────────────────────────────────────────────────────
+# Verifies that `ctest -L backend` lists ≥1 test from each M1–M26 module and
+# that tests/run_all is present and executable.  STURM_BUILD_DIR and
+# STURM_REPO_ROOT are injected so the test can invoke ctest itself.
+add_executable(test_ci_hook
+    test_ci_hook.cpp
+)
+target_include_directories(test_ci_hook PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_ci_hook PRIVATE cxx_std_20)
+target_compile_definitions(test_ci_hook PRIVATE
+    STURM_BUILD_DIR="${CMAKE_BINARY_DIR}"
+    STURM_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME test_ci_hook COMMAND test_ci_hook)
+set_tests_properties(test_ci_hook PROPERTIES LABELS "backend")
