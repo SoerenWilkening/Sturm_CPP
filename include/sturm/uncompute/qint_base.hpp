@@ -68,6 +68,21 @@ struct qint_base {
     // but do not link execute_gate.cpp (frontend tests) do not fail at link
     // time.  Defined in src/sturm/uncompute/qint_base.cpp.
     void add_const(int64_t c, BackendContext& ctx) const noexcept;
+
+    // compare_forward — emit the stub gate sequence for the forward comparison.
+    //
+    // TODO(backend): Replace with a real comparator circuit (ancilla fanout).
+    // Stub: emit STURM_GATE_CX on each superposed bit using cmp_kind as param.
+    // Declared non-inline; defined in src/sturm/uncompute/qint_base.cpp.
+    void compare_forward(uint32_t cmp_kind, BackendContext& ctx) const noexcept;
+
+    // compare_inverse — emit the inverse of the stub comparison circuit.
+    //
+    // TODO(backend): Replace with the actual uncomputation circuit.
+    // Stub: emit STURM_GATE_CX again (CX is self-inverse) with negated param to
+    // distinguish forward from inverse in the IR record stream.
+    // Declared non-inline; defined in src/sturm/uncompute/qint_base.cpp.
+    void compare_inverse(uint32_t cmp_kind, BackendContext& ctx) const noexcept;
 };
 
 } // namespace sturm

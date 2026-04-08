@@ -15,7 +15,40 @@
 
 namespace sturm {
 
+// ── Bitwise sub-kind constants for uncompute_op::BITWISE_SELF ────────────────
+// Used as the `sub_kind` field so that apply() knows which op to re-run.
+namespace detail {
+    static constexpr uint32_t BITWISE_AND = 1u;
+    static constexpr uint32_t BITWISE_OR  = 2u;
+    static constexpr uint32_t BITWISE_XOR = 3u;
+    static constexpr uint32_t BITWISE_NOT = 4u;
+} // namespace detail
+
 // ── operator& ─────────────────────────────────────────────────────────────────
+
+#ifdef STURM_BACKEND_ENABLED
+
+template <std::size_t W>
+qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
+    qint_t<W> result;
+    result.value      = a.value & b.value;
+    result.super_mask = detail::mask_bitwise(a.super_mask, b.super_mask);
+    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
+
+    if ((a.super_mask | b.super_mask) != 0) {
+        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+            // TODO(backend): emit AND circuit — M22+
+            (void)ctx;
+        }
+    }
+    // BITWISE_SELF: AND is self-inverse (AND again with same inputs restores result).
+    result.uncompute_ = uncompute_op::make_bitwise_self(
+        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
+        detail::BITWISE_AND);
+    return result;
+}
+
+#else  // !STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
@@ -31,7 +64,32 @@ qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
         });
 }
 
+#endif  // STURM_BACKEND_ENABLED
+
 // ── operator| ─────────────────────────────────────────────────────────────────
+
+#ifdef STURM_BACKEND_ENABLED
+
+template <std::size_t W>
+qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
+    qint_t<W> result;
+    result.value      = a.value | b.value;
+    result.super_mask = detail::mask_bitwise(a.super_mask, b.super_mask);
+    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
+
+    if ((a.super_mask | b.super_mask) != 0) {
+        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+            // TODO(backend): emit OR circuit — M22+
+            (void)ctx;
+        }
+    }
+    result.uncompute_ = uncompute_op::make_bitwise_self(
+        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
+        detail::BITWISE_OR);
+    return result;
+}
+
+#else  // !STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
@@ -47,7 +105,32 @@ qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
         });
 }
 
+#endif  // STURM_BACKEND_ENABLED
+
 // ── operator^ ─────────────────────────────────────────────────────────────────
+
+#ifdef STURM_BACKEND_ENABLED
+
+template <std::size_t W>
+qint_t<W> operator^(const qint_t<W>& a, const qint_t<W>& b) {
+    qint_t<W> result;
+    result.value      = a.value ^ b.value;
+    result.super_mask = detail::mask_bitwise(a.super_mask, b.super_mask);
+    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
+
+    if ((a.super_mask | b.super_mask) != 0) {
+        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+            // TODO(backend): emit XOR circuit — M22+
+            (void)ctx;
+        }
+    }
+    result.uncompute_ = uncompute_op::make_bitwise_self(
+        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
+        detail::BITWISE_XOR);
+    return result;
+}
+
+#else  // !STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator^(const qint_t<W>& a, const qint_t<W>& b) {
@@ -63,7 +146,32 @@ qint_t<W> operator^(const qint_t<W>& a, const qint_t<W>& b) {
         });
 }
 
+#endif  // STURM_BACKEND_ENABLED
+
 // ── operator~ ─────────────────────────────────────────────────────────────────
+
+#ifdef STURM_BACKEND_ENABLED
+
+template <std::size_t W>
+qint_t<W> operator~(const qint_t<W>& a) {
+    qint_t<W> result;
+    result.value      = ~a.value;
+    result.super_mask = detail::mask_not(a.super_mask);
+    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
+
+    if (a.super_mask != 0) {
+        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+            // TODO(backend): emit NOT circuit — M22+
+            (void)ctx;
+        }
+    }
+    // Unary NOT: re-run NOT on the result to get back to original (self-inverse).
+    // Pass nullptr for the input pointer (unary op, no second operand).
+    result.uncompute_ = uncompute_op::make_bitwise_self(nullptr, detail::BITWISE_NOT);
+    return result;
+}
+
+#else  // !STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator~(const qint_t<W>& a) {
@@ -75,6 +183,8 @@ qint_t<W> operator~(const qint_t<W>& a) {
             current_sink()->quantum_not(aa.qubits_vec(), ctrl);
         });
 }
+
+#endif  // STURM_BACKEND_ENABLED
 
 // ── operator<< ────────────────────────────────────────────────────────────────
 

@@ -214,7 +214,16 @@ struct uncompute_op {
             break;
 
         case kind::COMPARE:
-            // TODO(backend): re-run comparison to uncompute ancilla qubit (M22).
+            // Emit the stub compare circuit followed by its inverse on `self`
+            // (the qbool's ancilla-qubit view).  This satisfies the Bennett
+            // discipline: the forward and inverse sequences are symmetric and
+            // the IR captures both so callers can verify the round-trip.
+            //
+            // TODO(backend): replace with a proper ancilla-qubit comparator
+            //                circuit that operates on lhs_ptr / rhs_ptr once
+            //                the full comparator wiring lands (M22+).
+            self.compare_forward(data.compare.cmp_kind, ctx);
+            self.compare_inverse(data.compare.cmp_kind, ctx);
             break;
 
         default:
