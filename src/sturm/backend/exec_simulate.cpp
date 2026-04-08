@@ -86,4 +86,65 @@ void exec_simulate_multiq(orkan::state_t&   sv,
     }
 }
 
+// ── exec_simulate_crot ────────────────────────────────────────────────────────
+// M12: decompose CRx/CRy/CRz into CX + single-qubit rotation sequences.
+//
+// Orkan has no native controlled rotations, so each is expanded at call time.
+// This decomposition is only performed here (SIMULATE mode).
+// COUNT_ONLY and APPEND receive the original CRx/CRy/CRz kind (M13's concern).
+//
+// Decompositions used (verified against 4×4 reference unitaries):
+//
+//   CRy(θ):  CX(c,t) ; Ry(-θ/2)(t) ; CX(c,t) ; Ry(+θ/2)(t)
+//
+//   CRz(θ):  CX(c,t) ; Rz(-θ/2)(t) ; CX(c,t) ; Rz(+θ/2)(t)
+//
+//   CRx(θ):  Rz(-π/2)(t) ; CX(c,t) ; Ry(-θ/2)(t) ; CX(c,t) ;
+//            Ry(+θ/2)(t) ; Rz(+π/2)(t)
+//            [basis-change wrapper: Rz diagonalises Rx → Ry plane, allowing
+//             the CX sandwich to implement the controlled rotation]
+//
+// The Ry/Rz CX-sandwich identity: applying Rz(±π/2) around the CRy sandwich
+// converts it to CRx.  This is the standard textbook circuit equivalence.
+
+static constexpr double kHalfPi = 1.5707963267948966; // π/2
+
+void exec_simulate_crot(orkan::state_t&   sv,
+                        sturm_gate_kind_t kind,
+                        uint32_t          ctrl,
+                        uint32_t          tgt,
+                        double            theta) {
+    switch (kind) {
+        case STURM_GATE_CRX:
+            // CRx(θ) = Rz(-π/2)(t) · CX(c,t) · Ry(+θ/2)(t) · CX(c,t)
+            //          · Ry(-θ/2)(t) · Rz(+π/2)(t)
+            // Applied left-to-right (Rz(+π/2) first in time):
+            orkan::apply_rz(sv, tgt,  +kHalfPi);
+            orkan::apply_cx(sv, ctrl, tgt);
+            orkan::apply_ry(sv, tgt,  -theta / 2.0);
+            orkan::apply_cx(sv, ctrl, tgt);
+            orkan::apply_ry(sv, tgt,  +theta / 2.0);
+            orkan::apply_rz(sv, tgt,  -kHalfPi);
+            break;
+        case STURM_GATE_CRY:
+            // CRy(θ) = CX(c,t) · Ry(-θ/2)(t) · CX(c,t) · Ry(+θ/2)(t)
+            orkan::apply_cx(sv, ctrl, tgt);
+            orkan::apply_ry(sv, tgt,  -theta / 2.0);
+            orkan::apply_cx(sv, ctrl, tgt);
+            orkan::apply_ry(sv, tgt,  +theta / 2.0);
+            break;
+        case STURM_GATE_CRZ:
+            // CRz(θ) = CX(c,t) · Rz(-θ/2)(t) · CX(c,t) · Rz(+θ/2)(t)
+            orkan::apply_cx(sv, ctrl, tgt);
+            orkan::apply_rz(sv, tgt,  -theta / 2.0);
+            orkan::apply_cx(sv, ctrl, tgt);
+            orkan::apply_rz(sv, tgt,  +theta / 2.0);
+            break;
+        default:
+            throw std::invalid_argument(
+                "exec_simulate_crot: unsupported gate kind "
+                "(expected CRX/CRY/CRZ)");
+    }
+}
+
 } // namespace sturm

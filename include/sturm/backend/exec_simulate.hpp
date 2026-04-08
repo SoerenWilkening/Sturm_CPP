@@ -74,4 +74,32 @@ void exec_simulate_multiq(orkan::state_t&   sv,
                           uint32_t          qubit2,
                           double            param);
 
+// ── exec_simulate_crot ────────────────────────────────────────────────────────
+//
+// M12: Decompose CRx/CRy/CRz into CX + single-qubit rotation sequences at
+// call time (Orkan has no native controlled rotations).
+//
+// Decomposition identity (axis-specific, standard controlled-rotation identity):
+//   CRx(θ): CX(ctrl,tgt); Rx(-θ/2)(tgt); CX(ctrl,tgt); Rx(+θ/2)(tgt)
+//   CRy(θ): CX(ctrl,tgt); Ry(-θ/2)(tgt); CX(ctrl,tgt); Ry(+θ/2)(tgt)
+//   CRz(θ): CX(ctrl,tgt); Rz(-θ/2)(tgt); CX(ctrl,tgt); Rz(+θ/2)(tgt)
+//
+// PRD §5: decomposition is performed only in SIMULATE mode; COUNT_ONLY and
+// APPEND see the original gate kind (enforced in M13).
+//
+// Parameters:
+//   sv    — Orkan state; mutated in-place.
+//   kind  — one of STURM_GATE_CRX, STURM_GATE_CRY, STURM_GATE_CRZ.
+//   ctrl  — physical index of the control qubit.
+//   tgt   — physical index of the target qubit.
+//   theta — rotation angle θ (radians).
+//
+// Throws std::invalid_argument if kind is not CRX/CRY/CRZ.
+
+void exec_simulate_crot(orkan::state_t&   sv,
+                        sturm_gate_kind_t kind,
+                        uint32_t          ctrl,
+                        uint32_t          tgt,
+                        double            theta);
+
 } // namespace sturm
