@@ -64,3 +64,20 @@ set_source_files_properties(
 )
 add_test(NAME test_context COMMAND test_context)
 set_tests_properties(test_context PROPERTIES LABELS "backend")
+
+# ── M9: Orkan vendoring + bridge skeleton ─────────────────────────────────────
+# Include the OrkanFetch module which either fetches Orkan or falls back to the
+# local stub in vendor/orkan/.  The module defines the `orkan_headers` target.
+include(${CMAKE_SOURCE_DIR}/cmake/OrkanFetch.cmake)
+
+add_executable(test_orkan_bridge
+    test_orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_orkan_bridge PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_orkan_bridge PRIVATE cxx_std_20)
+target_link_libraries(test_orkan_bridge PRIVATE orkan_headers)
+add_test(NAME test_orkan_bridge COMMAND test_orkan_bridge)
+set_tests_properties(test_orkan_bridge PROPERTIES LABELS "backend")
