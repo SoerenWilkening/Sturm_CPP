@@ -8,6 +8,12 @@
 // PRD §5, §12: X/Y/Z/H/S/T/P/Rx/Ry/Rz map 1:1 to the corresponding Orkan
 // apply_* functions.  Non-1-qubit gates are NOT handled here; callers must not
 // pass a multi-qubit kind to exec_simulate_1q.
+//
+// M11: exec_simulate_multiq handles CX/CY/CZ/CCX/SWAP.
+//   qubit0 = first qubit (ctrl for 2-qubit gates, ctrl0 for 3-qubit).
+//   qubit1 = second qubit (tgt for 2-qubit gates, ctrl1 for 3-qubit).
+//   qubit2 = third qubit (tgt for 3-qubit gates; unused for 2-qubit, pass 0).
+//   param  = unused for permutation/phase gates.
 
 #pragma once
 
@@ -41,5 +47,31 @@ void exec_simulate_1q(orkan::state_t& sv,
                       sturm_gate_kind_t kind,
                       uint32_t          qubit,
                       double            param);
+
+// ── exec_simulate_multiq ──────────────────────────────────────────────────────
+//
+// Apply a 2- or 3-qubit gate to the statevector `sv`.
+//
+// Parameters:
+//   sv     — Orkan state; mutated in-place.
+//   kind   — one of STURM_GATE_{CX,CY,CZ,CCX,SWAP}.
+//   qubit0 — first qubit operand:
+//              CX/CY/CZ/SWAP: first qubit (ctrl for CX/CY/CZ; q0 for SWAP)
+//              CCX: ctrl0
+//   qubit1 — second qubit operand:
+//              CX/CY/CZ: target qubit
+//              SWAP: second qubit (q1)
+//              CCX: ctrl1
+//   qubit2 — third qubit operand (CCX target); pass 0 for 2-qubit gates.
+//   param  — unused; pass 0.0.
+//
+// Throws std::invalid_argument for unsupported gate kinds.
+
+void exec_simulate_multiq(orkan::state_t&   sv,
+                          sturm_gate_kind_t kind,
+                          uint32_t          qubit0,
+                          uint32_t          qubit1,
+                          uint32_t          qubit2,
+                          double            param);
 
 } // namespace sturm

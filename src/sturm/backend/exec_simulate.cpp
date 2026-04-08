@@ -54,4 +54,36 @@ void exec_simulate_1q(orkan::state_t&   sv,
     }
 }
 
+// ── exec_simulate_multiq ──────────────────────────────────────────────────────
+// M11: dispatch CX/CY/CZ/CCX/SWAP to the corresponding orkan::apply_* fns.
+
+void exec_simulate_multiq(orkan::state_t&   sv,
+                          sturm_gate_kind_t kind,
+                          uint32_t          qubit0,
+                          uint32_t          qubit1,
+                          uint32_t          qubit2,
+                          double            /* param */) {
+    switch (kind) {
+        case STURM_GATE_CX:
+            orkan::apply_cx(sv, qubit0, qubit1);
+            break;
+        case STURM_GATE_CY:
+            orkan::apply_cy(sv, qubit0, qubit1);
+            break;
+        case STURM_GATE_CZ:
+            orkan::apply_cz(sv, qubit0, qubit1);
+            break;
+        case STURM_GATE_CCX:
+            orkan::apply_ccx(sv, qubit0, qubit1, qubit2);
+            break;
+        case STURM_GATE_SWAP:
+            orkan::apply_swap(sv, qubit0, qubit1);
+            break;
+        default:
+            throw std::invalid_argument(
+                "exec_simulate_multiq: unsupported gate kind "
+                "(expected CX/CY/CZ/CCX/SWAP)");
+    }
+}
+
 } // namespace sturm
