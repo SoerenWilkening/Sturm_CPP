@@ -15,6 +15,7 @@
 
 #include "sturm/core/core.h"       // C ABI declarations (opaque handle, enums)
 #include "sturm/core/qubit_pool.hpp"
+#include "sturm/backend/ir.hpp"   // GateIR — used in APPEND mode
 
 #include <cstdint>
 #include <memory>
@@ -37,9 +38,10 @@ struct BackendContext {
     //                frontend qtype constructors accept a context argument (M-future).
     QubitPool     pool;
 
-    // Pointer to the IR buffer (non-null only in APPEND mode, M6).
-    // TODO(backend): replaced with std::unique_ptr<GateIR> when M6 lands.
-    void*         ir_ptr{nullptr};
+    // IR buffer — populated in APPEND mode (M8).
+    // Always present so exec_append can unconditionally push; size()==0
+    // unless mode is STURM_MODE_APPEND.
+    GateIR        ir;
 
     // Pointer to the Orkan statevector (non-null only in SIMULATE mode, M9).
     // TODO(backend): replaced with OrkanBridge* when M9 lands.
