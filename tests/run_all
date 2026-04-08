@@ -1,0 +1,89 @@
+#!/usr/bin/env bash
+# tests/run_all — Aggregate test runner for STURM.
+#
+# Usage: tests/run_all [build_dir]
+#
+# Runs the full ctest suite (all labels) and, separately, the backend label to
+# confirm it is reachable independently.  Both runs must pass for the script to
+# exit 0.
+#
+# Default build_dir: "build" relative to the repo root.
+
+set -euo pipefail
+
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+REPO_ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
+BUILD_DIR="${1:-${REPO_ROOT}/build}"
+
+if [[ ! -d "${BUILD_DIR}" ]]; then
+    echo "ERROR: build directory '${BUILD_DIR}' does not exist." >&2
+    echo "       Run: cmake -B '${BUILD_DIR}' '${REPO_ROOT}' && cmake --build '${BUILD_DIR}'" >&2
+    exit 1
+fi
+
+echo "=== STURM aggregate test runner ==="
+echo "Build dir : ${BUILD_DIR}"
+echo ""
+
+# ── Full suite ────────────────────────────────────────────────────────────────
+echo "--- Running ALL tests ---"
+ctest --test-dir "${BUILD_DIR}" --output-on-failure
+echo ""
+
+# ── Backend label only ────────────────────────────────────────────────────────
+echo "--- Running backend label tests independently ---"
+ctest --test-dir "${BUILD_DIR}" --output-on-failure -L backend
+echo ""
+
+# ── Verify ≥1 test from each M1–M26 module is labelled 'backend' ─────────────
+echo "--- Verifying all M1–M26 modules have ≥1 backend-labelled test ---"
+
+REQUIRED_TESTS=(
+    test_gate_kind              # M1
+    test_core_abi_c             # M2
+    test_context                # M3
+    test_init                   # M4
+    test_measure                # M5
+    test_ir                     # M6
+    test_exec_count             # M7
+    test_exec_append            # M8
+    test_orkan_bridge           # M9
+    test_exec_simulate_1q       # M10
+    test_exec_simulate_multiq   # M11
+    test_exec_simulate_crot     # M12
+    test_execute_gate           # M13
+    test_reduction_table        # M14
+    test_dispatch_all_classical # M15
+    test_dispatch_mixed         # M16
+    test_promotion              # M17
+    test_qubit_cap              # M18
+    test_uncompute_op           # M19
+    test_uncompute_run          # M20
+    test_uncompute_add_const    # M21
+    test_uncompute_each_op      # M22
+    test_controlled_ops         # M23
+    test_when_dispatch          # M24
+    test_instantiations         # M25
+    test_end_to_end             # M26
+)
+
+# Collect the backend-labelled test names (dry-run list)
+BACKEND_LIST=$(ctest --test-dir "${BUILD_DIR}" -L backend -N 2>&1)
+
+MISSING=0
+for t in "${REQUIRED_TESTS[@]}"; do
+    if ! echo "${BACKEND_LIST}" | grep -q "${t}"; then
+        echo "  MISSING: ${t} not found in 'ctest -L backend' output" >&2
+        MISSING=1
+    fi
+done
+
+if [[ "${MISSING}" -ne 0 ]]; then
+    echo "ERROR: One or more required backend tests are missing." >&2
+    exit 1
+fi
+
+BACKEND_COUNT=$(echo "${BACKEND_LIST}" | grep -c "Test #" || true)
+echo "  OK: All M1–M26 module tests present (${BACKEND_COUNT} backend tests total)"
+echo ""
+echo "=== All checks passed ==="
