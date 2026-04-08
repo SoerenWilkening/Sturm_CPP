@@ -1,0 +1,7 @@
+{
+  "database": "dolt",
+  "backend": "dolt",
+  "dolt_mode": "embedded",
+  "dolt_database": "sturm_cpp",
+  "project_id": "8cb24f03-56d2-479c-b7f4-75a268023fa8"
+}
