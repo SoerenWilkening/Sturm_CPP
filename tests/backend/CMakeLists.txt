@@ -527,3 +527,30 @@ set_source_files_properties(
 )
 add_test(NAME test_controlled_ops COMMAND test_controlled_ops)
 set_tests_properties(test_controlled_ops PROPERTIES LABELS "backend")
+
+# ── M24: WHEN entry-point dispatch ────────────────────────────────────────────
+add_executable(test_when_dispatch
+    test_when_dispatch.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_when_dispatch PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_dispatch PRIVATE cxx_std_20)
+target_compile_definitions(test_when_dispatch PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_dispatch PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_when_dispatch COMMAND test_when_dispatch)
+set_tests_properties(test_when_dispatch PROPERTIES LABELS "backend")
