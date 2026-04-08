@@ -59,6 +59,18 @@ struct BackendContext {
 void set_mode(sturm_mode_t mode);
 sturm_mode_t get_current_mode();
 
+// ── execute_gate — C++ Layer B helper (M13) ───────────────────────────────────
+//
+// Increments ctx.gate_count unconditionally, then dispatches to one of the
+// three mode executors (exec_count / exec_append / exec_simulate).
+// Defined in src/sturm/core/execute_gate.cpp.
+
+void execute_gate(BackendContext&   ctx,
+                  sturm_gate_kind_t kind,
+                  const uint32_t*   qubits,
+                  uint8_t           n,
+                  double            param);
+
 } // namespace sturm
 
 // ── C ABI concrete struct alias ───────────────────────────────────────────────

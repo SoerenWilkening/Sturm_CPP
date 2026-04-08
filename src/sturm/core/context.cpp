@@ -73,26 +73,10 @@ uint64_t sturm_gate_count(const sturm_backend_context_t* ctx) {
 }
 
 // ── C ABI: Layer B sink ───────────────────────────────────────────────────────
-
-extern "C"
-void sturm_execute_gate(sturm_gate_kind_t kind,
-                        const uint32_t*   qubits,
-                        uint8_t           n,
-                        double            param) {
-    (void)kind;
-    (void)qubits;
-    (void)n;
-    (void)param;
-
-    sturm_backend_context_t* ctx = sturm_get_thread_context();
-    if (!ctx) return;
-
-    // Unconditional counter increment (PRD §5).
-    ctx->gate_count++;
-
-    // TODO(backend): mode switch to exec_count / exec_append / exec_simulate
-    // is wired up in M13 (execute_gate.cpp).
-}
+//
+// NOTE: sturm_execute_gate is defined in src/sturm/core/execute_gate.cpp (M13).
+// That translation unit owns the full implementation (counter + mode dispatch).
+// This file no longer defines it to avoid duplicate symbol errors.
 
 // ── C ABI: measurement ────────────────────────────────────────────────────────
 
