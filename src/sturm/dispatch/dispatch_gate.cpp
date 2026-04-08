@@ -18,6 +18,7 @@
 // LOC budget: <150 (this file alone).
 
 #include "sturm/dispatch/dispatch_gate.hpp"
+#include "sturm/dispatch/reduction_table.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/gate_kind.h"
@@ -172,8 +173,73 @@ PromotionResult dispatch_gate_branch_classical(sturm_gate_kind_t  kind,
     return result;
 }
 
-// TODO(backend): M16 — mixed and all-quantum dispatch paths (classical-0 control
-//   short-circuit, classical-1 control reduction via reduction_table, classical
-//   target promotion under quantum control, and all-quantum direct Layer B call).
+// ── dispatch_gate_mixed ───────────────────────────────────────────────────────
+//
+// Mixed path: some operands are classical controls, some are quantum.
+// Implements:
+//   - Any classical control with value 0 → immediate return (no Layer B call).
+//   - Classical-1 controls → build pattern mask, look up reduction table,
+//     resolve remaining quantum operand indices, call execute_gate.
+//   - All-quantum (pattern == 0) → forward directly to dispatch_gate_quantum.
+
+void dispatch_gate_mixed(sturm_gate_kind_t kind,
+                         GateOperand*      ops,
+                         uint8_t           n,
+                         double            param) {
+    // Pass 1: if any classical operand is 0 → gate cannot fire; short-circuit.
+    for (uint8_t i = 0; i < n; ++i) {
+        if (ops[i].is_classical() && (ops[i].value & 1) == 0) {
+            return; // no-op
+        }
+    }
+
+    // Build the classical-1 pattern bitmask.
+    uint8_t pattern = 0u;
+    for (uint8_t i = 0; i < n; ++i) {
+        if (ops[i].is_classical()) {
+            pattern |= static_cast<uint8_t>(1u << i);
+        }
+    }
+
+    if (pattern == 0u) {
+        // All operands are quantum: delegate to the all-quantum path.
+        dispatch_gate_quantum(kind, ops, n, param);
+        return;
+    }
+
+    // Look up the reduction table.
+    const sturm::ReductionResult rr = sturm::reduce({kind, pattern});
+
+    // Build the physical qubit index array from the remaining quantum operands.
+    uint32_t qubits[3] = {0u, 0u, 0u};
+    assert(rr.n_remaining <= 3u && "reduction: too many remaining operands");
+    for (uint8_t i = 0; i < rr.n_remaining; ++i) {
+        uint8_t src_idx = rr.remaining_operand_indices[i];
+        assert(src_idx < n && "reduction: operand index out of range");
+        assert(ops[src_idx].is_quantum() && "reduction: remaining operand must be quantum");
+        qubits[i] = ops[src_idx].qubit_idx;
+    }
+
+    // Call Layer B with the reduced gate kind.
+    sturm_execute_gate(rr.reduced_kind, qubits, rr.n_remaining, param);
+}
+
+// ── dispatch_gate_quantum ─────────────────────────────────────────────────────
+//
+// All-quantum path: all operands are quantum; resolve physical qubit indices
+// and call Layer B directly.
+
+void dispatch_gate_quantum(sturm_gate_kind_t  kind,
+                           const GateOperand* ops,
+                           uint8_t            n,
+                           double             param) {
+    uint32_t qubits[3] = {0u, 0u, 0u};
+    assert(n <= 3u && "dispatch_gate_quantum: arity > 3 unsupported");
+    for (uint8_t i = 0; i < n; ++i) {
+        assert(ops[i].is_quantum() && "dispatch_gate_quantum: all operands must be quantum");
+        qubits[i] = ops[i].qubit_idx;
+    }
+    sturm_execute_gate(kind, qubits, n, param);
+}
 
 } // namespace sturm

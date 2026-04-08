@@ -6,26 +6,24 @@
 //   - FLIP  → mutate classical values in-place via permutation helpers.
 //   - BRANCH → promote operand (via M17 promotion), then forward to Layer B.
 //
-// M16 (mixed/all-quantum paths) extends this file; stubs are left with
-// TODO(backend) markers.
+// M16 (mixed/all-quantum paths) extends this file with two new entry points:
+//   dispatch_gate_mixed(kind, ops, n, param)
+//       — Mixed path: some operands are classical controls, some are quantum.
+//         Consults the reduction table; if any classical control is 0, returns
+//         immediately (no-op). Otherwise reduces the gate and calls Layer B
+//         with the quantum operand's physical qubit indices.
+//
+//   dispatch_gate_quantum(kind, ops, n, param)
+//       — All-quantum path: all operands are quantum registers. Resolves
+//         physical qubit indices directly and calls Layer B.
 //
 // Public types:
 //   ClassicalOperand        — carries (int64_t value, uint8_t bit_pos) for one
 //                             operand bit that the caller has confirmed is classical.
 //   PromotionResult         — returned by dispatch_gate_branch_classical(); records
 //                             which bits were promoted (bit mask).
-//
-// Public functions:
-//   dispatch_gate_classical(kind, ops, n, param)
-//       — All-classical FLIP/NONE path.  ops must all have super_mask==0.
-//         Mutates ops[i].value in-place for FLIP gates; is a no-op for NONE.
-//         Returns immediately without calling Layer B for both cases.
-//
-//   dispatch_gate_branch_classical(kind, ops, n, param) → PromotionResult
-//       — All-classical BRANCH path.  Promotes each operand's bit (allocates a
-//         qubit, emits X if classical value was 1), sets promoted_mask, and
-//         forwards the gate to Layer B on the newly-allocated physical qubit.
-//         Returns a PromotionResult describing which bits were promoted.
+//   GateOperand             — tagged union for mixed dispatch; carries either a
+//                             classical value or a quantum physical qubit index.
 //
 // LOC budget: <150 (header + .cpp counted separately).
 
@@ -105,5 +103,75 @@ PromotionResult dispatch_gate_branch_classical(sturm_gate_kind_t  kind,
                                                ClassicalOperand*  ops,
                                                uint8_t            n,
                                                double             param);
+
+// ── GateOperand ───────────────────────────────────────────────────────────────
+//
+// Tagged union representing one gate operand in the mixed/all-quantum paths.
+// Either a classical operand (with an integer value 0 or 1) or a quantum
+// operand (with a physical qubit index already resolved from qint.qubits[i]).
+//
+// Constructors are provided as static factory methods so the tag is always set.
+
+struct GateOperand {
+    enum class Tag : uint8_t { Classical = 0, Quantum = 1 };
+
+    Tag      tag       = Tag::Classical;
+    int64_t  value     = 0;   // Classical: bit value (0 or 1).
+    uint32_t qubit_idx = 0u;  // Quantum: physical qubit index.
+
+    /// Build a classical operand with the given bit value (0 or 1).
+    static GateOperand classical(int64_t val) noexcept {
+        GateOperand o;
+        o.tag   = Tag::Classical;
+        o.value = val & 1;
+        return o;
+    }
+
+    /// Build a quantum operand with the given physical qubit index.
+    static GateOperand quantum(uint32_t qidx) noexcept {
+        GateOperand o;
+        o.tag       = Tag::Quantum;
+        o.qubit_idx = qidx;
+        return o;
+    }
+
+    bool is_classical() const noexcept { return tag == Tag::Classical; }
+    bool is_quantum()   const noexcept { return tag == Tag::Quantum;   }
+};
+
+// ── Mixed dispatch ────────────────────────────────────────────────────────────
+//
+// Handles gates where some operands are classical controls and at least one
+// operand is quantum.  Steps:
+//   1. For each operand, if it is a classical control with value 0, return
+//      immediately (gate cannot fire; no Layer B call).
+//   2. Build a classical_pattern bitmask: bit i = 1 iff ops[i] is classical
+//      AND has value 1.
+//   3. If pattern == 0 (all operands are quantum), fall through to all-quantum
+//      handling (direct Layer B call without table lookup).
+//   4. Look up (kind, pattern) in the reduction table to get the reduced gate
+//      and the subset of operand indices that remain quantum.
+//   5. Resolve physical qubit indices for the remaining operands and call
+//      sturm_execute_gate with the reduced gate kind.
+//
+// Precondition: at least one operand must be quantum (ops[i].is_quantum()).
+
+void dispatch_gate_mixed(sturm_gate_kind_t kind,
+                         GateOperand*      ops,
+                         uint8_t           n,
+                         double            param);
+
+// ── All-quantum dispatch ──────────────────────────────────────────────────────
+//
+// Handles gates where all operands are quantum.  Steps:
+//   1. For each operand, extract the physical qubit index from ops[i].qubit_idx.
+//   2. Call sturm_execute_gate(kind, qubits, n, param) directly.
+//
+// Precondition: all operands must be quantum (ops[i].is_quantum()).
+
+void dispatch_gate_quantum(sturm_gate_kind_t kind,
+                           const GateOperand* ops,
+                           uint8_t            n,
+                           double             param);
 
 } // namespace sturm
