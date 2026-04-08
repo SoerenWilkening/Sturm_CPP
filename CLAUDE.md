@@ -2,6 +2,12 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
+## Required Reading
+
+At the start of every session, read:
+- `docs/07_prd_backend.md` — backend PRD (design lock)
+- `docs/08_implementation_plan_backend.md` — modular, test-driven backend implementation plan
+
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 

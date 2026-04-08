@@ -346,4 +346,4 @@ endforeach()
 - Ancilla cursor passed into ops.
 - Adjoint registry.
 - Real measurement.
-- Kernel dispatch on virtual indices 0/1–64/65–128/ancilla per backend rules 1–7. The current sink methods take physical qubit indices directly; the virtual-index kernel layer is added when the backend lands.
+- Physical gate dispatch via `execute_gate`. Library ops iterate over `qint.qubits[i]` by relative bit position; all physical indices flow through `execute_gate`. There is no global virtual-index encoding. The full dispatch layer (`dispatch_gate` / `execute_gate`) is added when the backend lands (see `docs/07_prd_backend.md` §3–§4).

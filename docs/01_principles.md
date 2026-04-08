@@ -55,13 +55,7 @@ No entanglement graphs, no global state analysis, no per-call caching.
 
 **B3. Dispatch-time specialization.** Each overloaded operator branches on its operands' classicality masks and emits the minimum necessary primitives. Fully classical operands produce zero quantum emissions and are handled as ordinary C++ arithmetic on the underlying `int64_t`/`bool`. The optimization happens where the mask information is live — at dispatch — not in a later pass.
 
-**B4. Four primitives.** The sink interface accepts:
-1. `prepare(q, p)`
-2. `theta_add(q, d)`
-3. `phi_add(q, d)`
-4. `xor_assign(target, control)` (control may be empty)
-
-Higher-level operations (`qadd`, `qand`, `qnot`, `qmul`, …) are library functions implemented in terms of these. The circuit backend, when present, is responsible for lowering primitives to physical gates.
+**B4. Eighteen-gate execute_gate interface.** The backend sink accepts a fixed set of 18 primitive gates dispatched through a single `execute_gate(gate_kind, physical_indices, n, param)` C-ABI function. The gate set is: X, Y, Z, H, S, T, P(θ), Rx(θ), Ry(θ), Rz(θ), CX, CY, CZ, CRx(θ), CRy(θ), CRz(θ), CCX, SWAP. Gates are classified by `classical_effect` (NONE, FLIP, BRANCH) and a `permutation` flag. Higher-level operations (`qadd`, `qand`, `qnot`, `qmul`, …) are library functions that decompose into this gate set at source-code write time. No runtime decomposition or gate-synthesis pass exists.
 
 **B5. Primitives have uncontrolled and singly-controlled forms only.** No multi-controlled variants exist in the primitive set. Nested `WHEN` scopes collapse their control chain into a single ancilla via AND at scope entry, so the innermost control is always one bit.
 

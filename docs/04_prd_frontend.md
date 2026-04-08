@@ -20,7 +20,6 @@ Deliver the user-facing C++ quantum DSL surface (`qint`, `qbool`, operator overl
 - No real quantum backend, simulator, or circuit storage.
 - No physical-qubit lowering, no gate decomposition.
 - No adjoint registration / `invert(foo)` machinery.
-- No uncomputation, no AND-fold of nested controls, no ancilla cursor threading through ops.
 - No measurement channel — measurement casts return the stored classical value as a stub.
 - No optimization passes, no constant folding across operations.
 - No qutrit / anyonic libraries.
@@ -108,7 +107,7 @@ Mask never narrows. Superposition is monotone (P8).
   - Classical false → `should_run() == false`, body skipped.
   - Classical true → `should_run() == true`, control chain unchanged.
   - Superposed → `should_run() == true`, sets `current_control` to the expression's `qbool` for the scope, restores prior on destruction.
-- No AND-fold across nested `WHEN`s, no ancilla, no uncomputation. Documented as a stub.
+- Full AND-fold of nested `WHEN`s and ancilla allocation are deferred to the backend stage (see `docs/07_prd_backend.md` §9–§10).
 - `WHEN` accepts `qbool` only; passing `bool` or `int` is a compile error via concept / `static_assert`.
 
 ## 12. Width Parameterization
