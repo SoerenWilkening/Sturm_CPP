@@ -65,6 +65,27 @@ set_source_files_properties(
 add_test(NAME test_context COMMAND test_context)
 set_tests_properties(test_context PROPERTIES LABELS "backend")
 
+# ── M7: COUNT_ONLY executor ───────────────────────────────────────────────────
+add_executable(test_exec_count
+    test_exec_count.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_exec_count PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_exec_count PRIVATE cxx_std_20)
+target_compile_definitions(test_exec_count PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_exec_count COMMAND test_exec_count)
+set_tests_properties(test_exec_count PROPERTIES LABELS "backend")
+
 # ── M9: Orkan vendoring + bridge skeleton ─────────────────────────────────────
 # Include the OrkanFetch module which either fetches Orkan or falls back to the
 # local stub in vendor/orkan/.  The module defines the `orkan_headers` target.
