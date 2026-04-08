@@ -109,3 +109,17 @@ target_compile_features(test_exec_simulate_multiq PRIVATE cxx_std_20)
 target_link_libraries(test_exec_simulate_multiq PRIVATE orkan_headers)
 add_test(NAME test_exec_simulate_multiq COMMAND test_exec_simulate_multiq)
 set_tests_properties(test_exec_simulate_multiq PROPERTIES LABELS "backend")
+
+# ── M12: SIMULATE executor — CRx/CRy/CRz decomposition ───────────────────────
+add_executable(test_exec_simulate_crot
+    test_exec_simulate_crot.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_exec_simulate_crot PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_exec_simulate_crot PRIVATE cxx_std_20)
+target_link_libraries(test_exec_simulate_crot PRIVATE orkan_headers)
+add_test(NAME test_exec_simulate_crot COMMAND test_exec_simulate_crot)
+set_tests_properties(test_exec_simulate_crot PROPERTIES LABELS "backend")
