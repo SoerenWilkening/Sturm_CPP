@@ -14,6 +14,7 @@ set(STURM_TEST_SOURCES
     test_dispatch.cpp
     test_qint_classical.cpp
     test_qint_superposed.cpp
+    test_resource_lifecycle.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
