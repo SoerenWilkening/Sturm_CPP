@@ -232,3 +232,29 @@ set_source_files_properties(
 )
 add_test(NAME test_uncompute_op COMMAND test_uncompute_op)
 set_tests_properties(test_uncompute_op PROPERTIES LABELS "backend")
+
+# ── M20: RAII uncompute runner ────────────────────────────────────────────────
+add_executable(test_uncompute_run
+    test_uncompute_run.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_run.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_uncompute_run PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_uncompute_run PRIVATE cxx_std_20)
+target_compile_definitions(test_uncompute_run PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_uncompute_run PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_uncompute_run COMMAND test_uncompute_run)
+set_tests_properties(test_uncompute_run PROPERTIES LABELS "backend")

@@ -33,10 +33,12 @@ static constexpr uint8_t QINT_BASE_MAX_WIDTH = 17u;
 // width of the concrete qint_t<W>.
 
 struct qint_base {
-    int64_t  value      = 0;       ///< Current classical value (best estimate)
-    uint64_t super_mask = 0;       ///< Bitmask: bit i set ⇒ qubit i is in superposition
+    int64_t  value          = 0;   ///< Current classical value (best estimate)
+    uint64_t super_mask     = 0;   ///< Bitmask: bit i set ⇒ qubit i is in superposition
+    uint64_t promotion_mask = 0;   ///< Bitmask: bit i set ⇒ qubit i was |1⟩ at promotion time;
+                                   ///< runner emits X on each set bit before releasing to the pool.
     uint32_t qubits[QINT_BASE_MAX_WIDTH]{};  ///< Physical qubit indices (valid iff super_mask bit set)
-    uint8_t  width      = 0;       ///< Number of bits in the register
+    uint8_t  width          = 0;   ///< Number of bits in the register
 
     qint_base() noexcept {
         std::memset(qubits, 0, sizeof(qubits));
