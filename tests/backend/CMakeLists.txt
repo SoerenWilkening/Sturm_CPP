@@ -81,3 +81,17 @@ target_compile_features(test_orkan_bridge PRIVATE cxx_std_20)
 target_link_libraries(test_orkan_bridge PRIVATE orkan_headers)
 add_test(NAME test_orkan_bridge COMMAND test_orkan_bridge)
 set_tests_properties(test_orkan_bridge PROPERTIES LABELS "backend")
+
+# ── M10: SIMULATE executor — 1-qubit gates ────────────────────────────────────
+add_executable(test_exec_simulate_1q
+    test_exec_simulate_1q.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_exec_simulate_1q PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_exec_simulate_1q PRIVATE cxx_std_20)
+target_link_libraries(test_exec_simulate_1q PRIVATE orkan_headers)
+add_test(NAME test_exec_simulate_1q COMMAND test_exec_simulate_1q)
+set_tests_properties(test_exec_simulate_1q PROPERTIES LABELS "backend")
