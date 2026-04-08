@@ -17,6 +17,7 @@ set(STURM_TEST_SOURCES
     test_resource_lifecycle.cpp
     test_when.cpp
     test_sink_dispatch.cpp
+    test_conversions.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
