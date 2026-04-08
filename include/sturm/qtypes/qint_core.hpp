@@ -73,8 +73,15 @@ public:
     explicit operator int64_t() const noexcept { return value; }
 
     // ── Copy constructor ──────────────────────────────────────────────────────
+    // Copies value and super_mask but does NOT share qubit indices — the copy
+    // starts with all qubits == -1.  Callers that need qubits on the copy must
+    // invoke ensure_bit_qubit() or otherwise allocate lazily.  This mirrors the
+    // qbool copy-constructor semantics and prevents double-release when
+    // dispatch helpers take mutable value-copies of operands.
     qint_t(const qint_t& other) noexcept
-        : value(other.value), super_mask(other.super_mask), qubits(other.qubits) {}
+        : value(other.value), super_mask(other.super_mask) {
+        qubits.fill(-1);
+    }
 
     // ── Move constructor ──────────────────────────────────────────────────────
     qint_t(qint_t&& other) noexcept
@@ -93,6 +100,8 @@ public:
     }
 
     // ── Copy assignment ───────────────────────────────────────────────────────
+    // Releases current qubits, then copies value/super_mask only.
+    // Qubit indices are reset to -1 (no shared ownership; prevents double-release).
     qint_t& operator=(const qint_t& other) {
         if (this == &other) return *this;
         for (int idx : qubits) {
@@ -100,7 +109,7 @@ public:
         }
         value      = other.value;
         super_mask = other.super_mask;
-        qubits     = other.qubits;
+        qubits.fill(-1);
         return *this;
     }
 
