@@ -33,3 +33,6 @@ foreach(src ${STURM_TEST_SOURCES})
     target_link_libraries(${test_name} PRIVATE Threads::Threads)
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+# ── Backend test subdirectory (M1 and later) ──────────────────────────────────
+add_subdirectory(backend)
