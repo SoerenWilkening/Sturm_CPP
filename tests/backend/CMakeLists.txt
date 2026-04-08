@@ -502,3 +502,28 @@ set_source_files_properties(
 )
 add_test(NAME test_promotion COMMAND test_promotion)
 set_tests_properties(test_promotion PROPERTIES LABELS "backend")
+
+# ── M23: Hand-written controlled op variants (c_*) ────────────────────────────
+add_executable(test_controlled_ops
+    test_controlled_ops.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_controlled_ops PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_controlled_ops PRIVATE cxx_std_20)
+target_compile_definitions(test_controlled_ops PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_controlled_ops PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_controlled_ops COMMAND test_controlled_ops)
+set_tests_properties(test_controlled_ops PROPERTIES LABELS "backend")
