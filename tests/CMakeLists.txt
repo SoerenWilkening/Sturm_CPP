@@ -1,9 +1,12 @@
 cmake_minimum_required(VERSION 3.16)
 
+find_package(Threads REQUIRED)
+
 # Register each test executable in the tests/ directory.
 # Add new test source files to this list as steps are implemented.
 set(STURM_TEST_SOURCES
     test_smoke.cpp
+    test_qubit_pool.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
@@ -13,5 +16,6 @@ foreach(src ${STURM_TEST_SOURCES})
         ${CMAKE_SOURCE_DIR}/include
     )
     target_compile_features(${test_name} PRIVATE cxx_std_20)
+    target_link_libraries(${test_name} PRIVATE Threads::Threads)
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
