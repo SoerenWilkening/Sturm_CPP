@@ -586,3 +586,30 @@ set_source_files_properties(
 )
 add_test(NAME test_instantiations COMMAND test_instantiations)
 set_tests_properties(test_instantiations PROPERTIES LABELS "backend")
+
+# ── M26: End-to-end acceptance — c = (a + 5) >= 0 ────────────────────────────
+add_executable(test_end_to_end
+    test_end_to_end.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_end_to_end PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_end_to_end PRIVATE cxx_std_20)
+target_compile_definitions(test_end_to_end PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_end_to_end PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_end_to_end COMMAND test_end_to_end)
+set_tests_properties(test_end_to_end PROPERTIES LABELS "backend")
