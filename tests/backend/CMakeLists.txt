@@ -378,6 +378,7 @@ set_tests_properties(test_reduction_table PROPERTIES LABELS "backend")
 add_executable(test_dispatch_all_classical
     test_dispatch_all_classical.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -399,6 +400,33 @@ set_source_files_properties(
 )
 add_test(NAME test_dispatch_all_classical COMMAND test_dispatch_all_classical)
 set_tests_properties(test_dispatch_all_classical PROPERTIES LABELS "backend")
+
+# ── M16: Layer A entry — mixed and all-quantum paths ─────────────────────────
+add_executable(test_dispatch_mixed
+    test_dispatch_mixed.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_dispatch_mixed PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_dispatch_mixed PRIVATE cxx_std_20)
+target_compile_definitions(test_dispatch_mixed PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_dispatch_mixed PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_dispatch_mixed COMMAND test_dispatch_mixed)
+set_tests_properties(test_dispatch_mixed PROPERTIES LABELS "backend")
 
 # ── M5: Measurement op per mode ──────────────────────────────────────────────
 add_executable(test_measure
