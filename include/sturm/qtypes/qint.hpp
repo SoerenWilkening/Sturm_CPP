@@ -22,3 +22,20 @@
 // qint alias is already defined in qint_fwd.hpp via:
 //   using qint = qint_t<64>;
 // pow overloads are defined in qint_arith.hpp.
+
+// ── M25: Explicit template instantiation — extern declarations ────────────────
+// instantiations.cpp provides explicit definition-strength instantiations of
+// qint_t<4/8/16/32> for the backend build profile.  Any translation unit that
+// is linked against that object can suppress its local copy by defining
+// STURM_USE_EXPLICIT_INSTANTIATIONS before including this header (or via a
+// target compile definition).
+//
+// Note: this suppression is opt-in so that existing backend test targets that
+// do NOT link instantiations.cpp continue to instantiate the templates locally
+// (the overhead is acceptable for test binaries).
+#if defined(STURM_BACKEND_ENABLED) && defined(STURM_USE_EXPLICIT_INSTANTIATIONS)
+extern template class sturm::qint_t<4>;
+extern template class sturm::qint_t<8>;
+extern template class sturm::qint_t<16>;
+extern template class sturm::qint_t<32>;
+#endif  // STURM_BACKEND_ENABLED && STURM_USE_EXPLICIT_INSTANTIATIONS
