@@ -17,3 +17,6 @@ CMakeFiles/
 .dolt/
 *.db
 .beads-credential-key
+
+.claude/agents/
+.claude/skills/
