@@ -22,12 +22,58 @@ namespace detail {
 inline uint64_t mask_compare(uint64_t ma, uint64_t mb) noexcept {
     return ma | mb;  // non-zero means superposed
 }
+
+// Compare sub-kind constants for uncompute_op::COMPARE.
+static constexpr uint32_t CMP_EQ  = 1u;
+static constexpr uint32_t CMP_NEQ = 2u;
+static constexpr uint32_t CMP_LT  = 3u;
+static constexpr uint32_t CMP_LE  = 4u;
+static constexpr uint32_t CMP_GT  = 5u;
+static constexpr uint32_t CMP_GE  = 6u;
 } // namespace detail
+
+// ── Helper: stamp COMPARE tag onto a qbool result ────────────────────────────
+// Only compiled when STURM_BACKEND_ENABLED is set.
+
+#ifdef STURM_BACKEND_ENABLED
+namespace detail {
+template <std::size_t W>
+inline qbool make_compare_result(
+        const qint_t<W>& a, const qint_t<W>& b,
+        bool classical_val, uint32_t cmp_sub_kind) {
+    qbool out;
+    out.value    = classical_val;
+    out.is_super = (detail::mask_compare(a.super_mask, b.super_mask) != 0);
+
+    // Build a qint_base view of 'a' for forward gate emission and for the
+    // COMPARE uncompute record.  The view pointer stored in uncompute_ is
+    // intentionally to the local snapshot — it must not be dereferenced after
+    // the enclosing scope; for the stub this is fine because apply() is called
+    // from the qbool destructor while the outer qints are still alive (Bennett).
+    // TODO(backend): allocate a proper ancilla qubit and wire the full comparator
+    //                circuit (ancilla fanout) — M22+.
+    // Stamp the COMPARE uncompute op so the qbool destructor can emit the
+    // compare circuit and its inverse (Bennett uncomputation).
+    // The apply(COMPARE) case emits both forward and inverse in sequence so
+    // that the full compare-then-uncompute circuit is recorded in the IR.
+    // TODO(backend): store typed lhs/rhs pointers to enable full comparator
+    //                circuit uncomputation when ancilla wiring lands (M22+).
+    out.uncompute_ = uncompute_op::make_compare(
+        reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
+        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
+        cmp_sub_kind);
+    return out;
+}
+} // namespace detail
+#endif  // STURM_BACKEND_ENABLED
 
 // ── operator== ────────────────────────────────────────────────────────────────
 
 template <std::size_t W>
 qbool qint_t<W>::operator==(const qint_t<W>& b) const {
+#ifdef STURM_BACKEND_ENABLED
+    return detail::make_compare_result<W>(*this, b, value == b.value, detail::CMP_EQ);
+#else
     return detail::dispatch_compare<qint_t<W>>(
         *this, b,
         [](int64_t x, int64_t y) noexcept { return x == y; },
@@ -36,12 +82,16 @@ qbool qint_t<W>::operator==(const qint_t<W>& b) const {
             current_sink()->quantum_eq(aa.qubits_vec(), bb.qubits_vec(),
                                        out.qubits[0], ctrl);
         });
+#endif
 }
 
 // ── operator!= ────────────────────────────────────────────────────────────────
 
 template <std::size_t W>
 qbool qint_t<W>::operator!=(const qint_t<W>& b) const {
+#ifdef STURM_BACKEND_ENABLED
+    return detail::make_compare_result<W>(*this, b, value != b.value, detail::CMP_NEQ);
+#else
     return detail::dispatch_compare<qint_t<W>>(
         *this, b,
         [](int64_t x, int64_t y) noexcept { return x != y; },
@@ -50,12 +100,16 @@ qbool qint_t<W>::operator!=(const qint_t<W>& b) const {
             current_sink()->quantum_neq(aa.qubits_vec(), bb.qubits_vec(),
                                         out.qubits[0], ctrl);
         });
+#endif
 }
 
 // ── operator< ─────────────────────────────────────────────────────────────────
 
 template <std::size_t W>
 qbool qint_t<W>::operator<(const qint_t<W>& b) const {
+#ifdef STURM_BACKEND_ENABLED
+    return detail::make_compare_result<W>(*this, b, value < b.value, detail::CMP_LT);
+#else
     return detail::dispatch_compare<qint_t<W>>(
         *this, b,
         [](int64_t x, int64_t y) noexcept { return x < y; },
@@ -64,12 +118,16 @@ qbool qint_t<W>::operator<(const qint_t<W>& b) const {
             current_sink()->quantum_lt(aa.qubits_vec(), bb.qubits_vec(),
                                        out.qubits[0], ctrl);
         });
+#endif
 }
 
 // ── operator<= ────────────────────────────────────────────────────────────────
 
 template <std::size_t W>
 qbool qint_t<W>::operator<=(const qint_t<W>& b) const {
+#ifdef STURM_BACKEND_ENABLED
+    return detail::make_compare_result<W>(*this, b, value <= b.value, detail::CMP_LE);
+#else
     return detail::dispatch_compare<qint_t<W>>(
         *this, b,
         [](int64_t x, int64_t y) noexcept { return x <= y; },
@@ -78,12 +136,16 @@ qbool qint_t<W>::operator<=(const qint_t<W>& b) const {
             current_sink()->quantum_le(aa.qubits_vec(), bb.qubits_vec(),
                                        out.qubits[0], ctrl);
         });
+#endif
 }
 
 // ── operator> ─────────────────────────────────────────────────────────────────
 
 template <std::size_t W>
 qbool qint_t<W>::operator>(const qint_t<W>& b) const {
+#ifdef STURM_BACKEND_ENABLED
+    return detail::make_compare_result<W>(*this, b, value > b.value, detail::CMP_GT);
+#else
     return detail::dispatch_compare<qint_t<W>>(
         *this, b,
         [](int64_t x, int64_t y) noexcept { return x > y; },
@@ -92,12 +154,16 @@ qbool qint_t<W>::operator>(const qint_t<W>& b) const {
             current_sink()->quantum_gt(aa.qubits_vec(), bb.qubits_vec(),
                                        out.qubits[0], ctrl);
         });
+#endif
 }
 
 // ── operator>= ────────────────────────────────────────────────────────────────
 
 template <std::size_t W>
 qbool qint_t<W>::operator>=(const qint_t<W>& b) const {
+#ifdef STURM_BACKEND_ENABLED
+    return detail::make_compare_result<W>(*this, b, value >= b.value, detail::CMP_GE);
+#else
     return detail::dispatch_compare<qint_t<W>>(
         *this, b,
         [](int64_t x, int64_t y) noexcept { return x >= y; },
@@ -106,6 +172,7 @@ qbool qint_t<W>::operator>=(const qint_t<W>& b) const {
             current_sink()->quantum_ge(aa.qubits_vec(), bb.qubits_vec(),
                                        out.qubits[0], ctrl);
         });
+#endif
 }
 
 // ── operator[] — bit subscript ────────────────────────────────────────────────

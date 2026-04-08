@@ -302,6 +302,60 @@ set_source_files_properties(
 add_test(NAME test_uncompute_add_const COMMAND test_uncompute_add_const)
 set_tests_properties(test_uncompute_add_const PROPERTIES LABELS "backend")
 
+# ── M22: Wire remaining operators to uncompute ───────────────────────────────
+add_executable(test_uncompute_each_op
+    test_uncompute_each_op.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_uncompute_each_op PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_uncompute_each_op PRIVATE cxx_std_20)
+target_compile_definitions(test_uncompute_each_op PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_uncompute_each_op PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_uncompute_each_op COMMAND test_uncompute_each_op)
+set_tests_properties(test_uncompute_each_op PROPERTIES LABELS "backend")
+
+# ── M22: qbool destructor emits comparison inverse (Bennett test) ─────────────
+add_executable(test_qbool_uncompute
+    test_qbool_uncompute.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_qbool_uncompute PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qbool_uncompute PRIVATE cxx_std_20)
+target_compile_definitions(test_qbool_uncompute PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qbool_uncompute PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qbool_uncompute COMMAND test_qbool_uncompute)
+set_tests_properties(test_qbool_uncompute PROPERTIES LABELS "backend")
+
 # ── M14: Classical-control reduction table ────────────────────────────────────
 add_executable(test_reduction_table
     test_reduction_table.cpp

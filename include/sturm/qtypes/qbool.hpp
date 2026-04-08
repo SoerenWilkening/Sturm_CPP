@@ -7,6 +7,14 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/counter_sink.hpp"  // brings in current_sink()
 
+// M22: uncompute_op for comparison results stored in qbool.
+// Only compiled when STURM_BACKEND_ENABLED is defined (backend builds).
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/uncompute/uncompute_op.hpp"
+#  include "sturm/uncompute/qint_base.hpp"
+#  include "sturm/core/context.hpp"
+#endif
+
 #include <array>
 
 namespace sturm {
@@ -23,6 +31,14 @@ public:
     bool           value    = false;
     bool           is_super = false;
     std::array<int,1> qubits{-1};
+
+    // ── Uncompute op (M22/Strategy B) ─────────────────────────────────────
+    // Carries the semantic inverse of the comparison that produced this qbool
+    // (e.g. COMPARE tag from operator==, operator<, etc.).
+    // Only present when STURM_BACKEND_ENABLED is compiled in.
+#ifdef STURM_BACKEND_ENABLED
+    uncompute_op uncompute_{};
+#endif
 
     // ── Default constructor ───────────────────────────────────────────────
     // Produces a classical false with no qubit allocated.
@@ -43,9 +59,43 @@ public:
         current_sink()->prepare(qubits[0], p);
     }
 
+    // ── as_qint_base (M22) ────────────────────────────────────────────────
+    // Builds a width-1 qint_base view of this qbool's qubit register.
+    // Used by the destructor to pass to uncompute_op::apply so the COMPARE
+    // case can emit the inverse circuit through execute_gate.
+    // Only available when STURM_BACKEND_ENABLED is set.
+#ifdef STURM_BACKEND_ENABLED
+    [[nodiscard]] qint_base as_qint_base() const noexcept {
+        qint_base b;
+        b.value          = value ? 1 : 0;
+        b.super_mask     = is_super ? 1u : 0u;
+        b.promotion_mask = 0u;
+        b.width          = 1u;
+        b.qubits[0]      = (qubits[0] >= 0)
+                           ? static_cast<uint32_t>(qubits[0]) : 0u;
+        return b;
+    }
+#endif
+
     // ── Destructor ────────────────────────────────────────────────────────
-    // Returns the owned qubit (if any) back to the pool.
+    // M22: If there is an active BackendContext and the uncompute_op tag is
+    // not NONE, emit the semantic inverse (e.g. re-run comparison to uncompute
+    // the ancilla qubit) before releasing.
+    //
+    // For the COMPARE tag the uncompute_op::apply COMPARE case calls
+    // lhs_ptr->compare_inverse() which emits the stub gate sequence.
+    // The lhs_ptr points to the original qint_t<W> whose lifetime spans
+    // the enclosing scope (Bennett discipline).
     ~qbool() {
+#ifdef STURM_BACKEND_ENABLED
+        if (uncompute_.tag != uncompute_op::kind::NONE) {
+            if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                // Build a width-1 qint_base view and run the inverse.
+                qint_base view = as_qint_base();
+                uncompute_.apply(*ctx, view);
+            }
+        }
+#endif
         if (qubits[0] >= 0) {
             QubitPool::instance().release(qubits[0]);
             qubits[0] = -1;
@@ -74,8 +124,15 @@ public:
 
     // ── Move constructor & assignment ─────────────────────────────────────
     qbool(qbool&& other) noexcept
-        : value(other.value), is_super(other.is_super), qubits{other.qubits[0]} {
+        : value(other.value), is_super(other.is_super), qubits{other.qubits[0]}
+#ifdef STURM_BACKEND_ENABLED
+          , uncompute_(other.uncompute_)
+#endif
+    {
         other.qubits[0] = -1;  // prevent double-release
+#ifdef STURM_BACKEND_ENABLED
+        other.uncompute_ = uncompute_op{};  // clear so moved-from won't re-emit
+#endif
     }
 
     qbool& operator=(qbool&& other) noexcept {
@@ -87,6 +144,10 @@ public:
         is_super        = other.is_super;
         qubits[0]       = other.qubits[0];
         other.qubits[0] = -1;
+#ifdef STURM_BACKEND_ENABLED
+        uncompute_       = other.uncompute_;
+        other.uncompute_ = uncompute_op{};
+#endif
         return *this;
     }
 
