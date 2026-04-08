@@ -95,3 +95,17 @@ target_compile_features(test_exec_simulate_1q PRIVATE cxx_std_20)
 target_link_libraries(test_exec_simulate_1q PRIVATE orkan_headers)
 add_test(NAME test_exec_simulate_1q COMMAND test_exec_simulate_1q)
 set_tests_properties(test_exec_simulate_1q PROPERTIES LABELS "backend")
+
+# ── M11: SIMULATE executor — 2/3-qubit permutation & phase gates ──────────────
+add_executable(test_exec_simulate_multiq
+    test_exec_simulate_multiq.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_exec_simulate_multiq PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_exec_simulate_multiq PRIVATE cxx_std_20)
+target_link_libraries(test_exec_simulate_multiq PRIVATE orkan_headers)
+add_test(NAME test_exec_simulate_multiq COMMAND test_exec_simulate_multiq)
+set_tests_properties(test_exec_simulate_multiq PROPERTIES LABELS "backend")

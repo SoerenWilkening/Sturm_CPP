@@ -190,4 +190,106 @@ inline void apply_rz(state_t& s, uint32_t qubit, double theta) {
               {0.0, 0.0}, p1);
 }
 
+// ── CX (Controlled-X / CNOT) ─────────────────────────────────────────────────
+// If ctrl qubit is |1>, flip tgt qubit.
+
+inline void apply_cx(state_t& s, uint32_t ctrl, uint32_t tgt) {
+    if (ctrl >= s.n_qubits || tgt >= s.n_qubits) {
+        throw std::out_of_range("orkan::apply_cx: qubit index out of range");
+    }
+    uint64_t ctrl_mask = uint64_t{1} << ctrl;
+    uint64_t tgt_mask  = uint64_t{1} << tgt;
+    uint64_t dim       = uint64_t{1} << s.n_qubits;
+    for (uint64_t i = 0; i < dim; ++i) {
+        // Only swap pairs where ctrl=1 and tgt=0
+        if ((i & ctrl_mask) != 0u && (i & tgt_mask) == 0u) {
+            std::swap(s.amplitudes[i], s.amplitudes[i | tgt_mask]);
+        }
+    }
+}
+
+// ── CY (Controlled-Y) ─────────────────────────────────────────────────────────
+// If ctrl qubit is |1>, apply Y to tgt qubit.
+// Y = [[0,-i],[i,0]]
+
+inline void apply_cy(state_t& s, uint32_t ctrl, uint32_t tgt) {
+    if (ctrl >= s.n_qubits || tgt >= s.n_qubits) {
+        throw std::out_of_range("orkan::apply_cy: qubit index out of range");
+    }
+    uint64_t ctrl_mask = uint64_t{1} << ctrl;
+    uint64_t tgt_mask  = uint64_t{1} << tgt;
+    uint64_t dim       = uint64_t{1} << s.n_qubits;
+    for (uint64_t i = 0; i < dim; ++i) {
+        // Only act on pairs where ctrl=1 and tgt=0
+        if ((i & ctrl_mask) != 0u && (i & tgt_mask) == 0u) {
+            uint64_t j = i | tgt_mask;
+            std::complex<double> a0 = s.amplitudes[i];  // ctrl=1, tgt=0
+            std::complex<double> a1 = s.amplitudes[j];  // ctrl=1, tgt=1
+            // Y: |0> -> i|1>, |1> -> -i|0>
+            s.amplitudes[i] = std::complex<double>{0.0, -1.0} * a1;  // -i * a1
+            s.amplitudes[j] = std::complex<double>{0.0,  1.0} * a0;  //  i * a0
+        }
+    }
+}
+
+// ── CZ (Controlled-Z) ─────────────────────────────────────────────────────────
+// If ctrl qubit is |1>, apply Z-phase to tgt qubit.
+// Z: amplitude where tgt=1 gets multiplied by -1.
+
+inline void apply_cz(state_t& s, uint32_t ctrl, uint32_t tgt) {
+    if (ctrl >= s.n_qubits || tgt >= s.n_qubits) {
+        throw std::out_of_range("orkan::apply_cz: qubit index out of range");
+    }
+    uint64_t ctrl_mask = uint64_t{1} << ctrl;
+    uint64_t tgt_mask  = uint64_t{1} << tgt;
+    uint64_t dim       = uint64_t{1} << s.n_qubits;
+    for (uint64_t i = 0; i < dim; ++i) {
+        // Phase flip where both ctrl=1 and tgt=1
+        if ((i & ctrl_mask) != 0u && (i & tgt_mask) != 0u) {
+            s.amplitudes[i] = -s.amplitudes[i];
+        }
+    }
+}
+
+// ── CCX (Toffoli / Controlled-Controlled-X) ───────────────────────────────────
+// If both ctrl0 and ctrl1 qubits are |1>, flip tgt qubit.
+
+inline void apply_ccx(state_t& s, uint32_t ctrl0, uint32_t ctrl1, uint32_t tgt) {
+    if (ctrl0 >= s.n_qubits || ctrl1 >= s.n_qubits || tgt >= s.n_qubits) {
+        throw std::out_of_range("orkan::apply_ccx: qubit index out of range");
+    }
+    uint64_t c0_mask  = uint64_t{1} << ctrl0;
+    uint64_t c1_mask  = uint64_t{1} << ctrl1;
+    uint64_t tgt_mask = uint64_t{1} << tgt;
+    uint64_t dim      = uint64_t{1} << s.n_qubits;
+    for (uint64_t i = 0; i < dim; ++i) {
+        // Only swap pairs where ctrl0=1, ctrl1=1, and tgt=0
+        if ((i & c0_mask) != 0u && (i & c1_mask) != 0u && (i & tgt_mask) == 0u) {
+            std::swap(s.amplitudes[i], s.amplitudes[i | tgt_mask]);
+        }
+    }
+}
+
+// ── SWAP ─────────────────────────────────────────────────────────────────────
+// Swaps the amplitudes of two qubits.
+
+inline void apply_swap(state_t& s, uint32_t q0, uint32_t q1) {
+    if (q0 >= s.n_qubits || q1 >= s.n_qubits) {
+        throw std::out_of_range("orkan::apply_swap: qubit index out of range");
+    }
+    if (q0 == q1) return;  // trivial case
+    uint64_t mask0 = uint64_t{1} << q0;
+    uint64_t mask1 = uint64_t{1} << q1;
+    uint64_t dim   = uint64_t{1} << s.n_qubits;
+    for (uint64_t i = 0; i < dim; ++i) {
+        // Swap amplitudes between states where only the two target bits differ:
+        // i has q0=0, q1=1 (or q0=1, q1=0) — only process one direction.
+        if ((i & mask0) == 0u && (i & mask1) != 0u) {
+            // i has q0=0, q1=1; partner has q0=1, q1=0
+            uint64_t j = (i | mask0) & ~mask1;
+            std::swap(s.amplitudes[i], s.amplitudes[j]);
+        }
+    }
+}
+
 } // namespace orkan
