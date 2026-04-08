@@ -47,6 +47,28 @@ struct BackendContext {
     // TODO(backend): replaced with OrkanBridge* when M9 lands.
     void*         orkan_state_ptr{nullptr};
 
+    // Per-qubit classical values (one entry per physical qubit index, up to 17).
+    // Used by COUNT_ONLY and APPEND measurement paths to return the stored value
+    // without sampling the statevector.  Set to 0 at construction; updated by
+    // the SIMULATE measurement path after each sample so the classical value
+    // tracks the post-measurement computational basis state.
+    static constexpr uint32_t kMaxClassicalQubits = 17u;
+    int           classical_values[kMaxClassicalQubits]{};
+
+    // Per-qubit superposition-tracking bitmask (bit i = qubit i).
+    // Set by the frontend when a qubit enters superposition (e.g. after H).
+    // Cleared by measure_qubit in SIMULATE mode after sampling + collapse.
+    // TODO(backend): frontend qtypes will set bits here when M-future wires
+    //                qubit state tracking through the context.
+    uint32_t      super_mask{0};
+
+    // Per-qubit promotion bitmask (bit i = qubit i).
+    // Set by the frontend when a qubit is promoted to a quantum type.
+    // Cleared by measure_qubit in SIMULATE mode after sampling + collapse.
+    // TODO(backend): frontend qtypes will set bits here when M-future wires
+    //                qubit promotion tracking through the context.
+    uint32_t      promotion_mask{0};
+
     explicit BackendContext(sturm_mode_t m, uint32_t max_q)
         : mode(m), pool(max_q) {}
 };

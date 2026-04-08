@@ -399,3 +399,29 @@ set_source_files_properties(
 )
 add_test(NAME test_dispatch_all_classical COMMAND test_dispatch_all_classical)
 set_tests_properties(test_dispatch_all_classical PROPERTIES LABELS "backend")
+
+# ── M5: Measurement op per mode ──────────────────────────────────────────────
+add_executable(test_measure
+    test_measure.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/measure.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_measure PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_measure PRIVATE cxx_std_20)
+target_compile_definitions(test_measure PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_measure PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_measure COMMAND test_measure)
+set_tests_properties(test_measure PROPERTIES LABELS "backend")
