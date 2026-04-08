@@ -12,6 +12,8 @@ set(STURM_TEST_SOURCES
     test_qbool.cpp
     test_mask_ops.cpp
     test_dispatch.cpp
+    test_qint_classical.cpp
+    test_qint_superposed.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
