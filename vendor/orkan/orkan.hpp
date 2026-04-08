@@ -77,4 +77,117 @@ inline void apply_x(state_t& s, uint32_t qubit) {
     }
 }
 
+// ── Generic 2x2 single-qubit gate ────────────────────────────────────────────
+// Applies the 2x2 unitary [[u00, u01],[u10, u11]] to the given qubit.
+// All 1-qubit gates delegate to this function.
+
+inline void apply_2x2(state_t& s, uint32_t qubit,
+                      std::complex<double> u00, std::complex<double> u01,
+                      std::complex<double> u10, std::complex<double> u11) {
+    if (qubit >= s.n_qubits) {
+        throw std::out_of_range("orkan::apply_2x2: qubit index out of range");
+    }
+    uint64_t mask = uint64_t{1} << qubit;
+    uint64_t dim  = uint64_t{1} << s.n_qubits;
+    for (uint64_t i = 0; i < dim; ++i) {
+        if ((i & mask) == 0u) {
+            uint64_t j = i | mask;  // partner basis state (bit=1)
+            std::complex<double> a0 = s.amplitudes[i];
+            std::complex<double> a1 = s.amplitudes[j];
+            s.amplitudes[i] = u00 * a0 + u01 * a1;
+            s.amplitudes[j] = u10 * a0 + u11 * a1;
+        }
+    }
+}
+
+// ── Pauli-Y ───────────────────────────────────────────────────────────────────
+// Y = [[0, -i],[i, 0]]
+
+inline void apply_y(state_t& s, uint32_t qubit) {
+    apply_2x2(s, qubit,
+              {0.0, 0.0}, {0.0, -1.0},
+              {0.0, 1.0}, {0.0,  0.0});
+}
+
+// ── Pauli-Z ───────────────────────────────────────────────────────────────────
+// Z = diag(1, -1)
+
+inline void apply_z(state_t& s, uint32_t qubit) {
+    apply_2x2(s, qubit,
+              {1.0, 0.0}, {0.0,  0.0},
+              {0.0, 0.0}, {-1.0, 0.0});
+}
+
+// ── Hadamard ──────────────────────────────────────────────────────────────────
+// H = 1/sqrt(2) * [[1,1],[1,-1]]
+
+inline void apply_h(state_t& s, uint32_t qubit) {
+    static const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
+    apply_2x2(s, qubit,
+              {inv_sqrt2, 0.0}, { inv_sqrt2, 0.0},
+              {inv_sqrt2, 0.0}, {-inv_sqrt2, 0.0});
+}
+
+// ── S gate ────────────────────────────────────────────────────────────────────
+// S = diag(1, i)
+
+inline void apply_s(state_t& s, uint32_t qubit) {
+    apply_2x2(s, qubit,
+              {1.0, 0.0}, {0.0, 0.0},
+              {0.0, 0.0}, {0.0, 1.0});
+}
+
+// ── T gate ────────────────────────────────────────────────────────────────────
+// T = diag(1, e^{i*pi/4})
+
+inline void apply_t(state_t& s, uint32_t qubit) {
+    static const double inv_sqrt2 = 1.0 / std::sqrt(2.0);
+    apply_2x2(s, qubit,
+              {1.0,       0.0},       {0.0, 0.0},
+              {0.0,       0.0},       {inv_sqrt2, inv_sqrt2});
+}
+
+// ── Phase gate P(theta) ───────────────────────────────────────────────────────
+// P(theta) = diag(1, e^{i*theta})
+
+inline void apply_p(state_t& s, uint32_t qubit, double theta) {
+    std::complex<double> phase = {std::cos(theta), std::sin(theta)};
+    apply_2x2(s, qubit,
+              {1.0, 0.0}, {0.0, 0.0},
+              {0.0, 0.0}, phase);
+}
+
+// ── Rx(theta) ─────────────────────────────────────────────────────────────────
+// Rx(theta) = [[cos(t/2), -i*sin(t/2)],[-i*sin(t/2), cos(t/2)]]
+
+inline void apply_rx(state_t& s, uint32_t qubit, double theta) {
+    double c = std::cos(theta / 2.0);
+    double sv = std::sin(theta / 2.0);
+    apply_2x2(s, qubit,
+              {c, 0.0},  {0.0, -sv},
+              {0.0, -sv}, {c, 0.0});
+}
+
+// ── Ry(theta) ─────────────────────────────────────────────────────────────────
+// Ry(theta) = [[cos(t/2), -sin(t/2)],[sin(t/2), cos(t/2)]]
+
+inline void apply_ry(state_t& s, uint32_t qubit, double theta) {
+    double c  = std::cos(theta / 2.0);
+    double sv = std::sin(theta / 2.0);
+    apply_2x2(s, qubit,
+              {c, 0.0}, {-sv, 0.0},
+              {sv, 0.0}, {c,  0.0});
+}
+
+// ── Rz(theta) ─────────────────────────────────────────────────────────────────
+// Rz(theta) = diag(e^{-i*t/2}, e^{i*t/2})
+
+inline void apply_rz(state_t& s, uint32_t qubit, double theta) {
+    std::complex<double> p0 = {std::cos(theta / 2.0), -std::sin(theta / 2.0)};
+    std::complex<double> p1 = {std::cos(theta / 2.0),  std::sin(theta / 2.0)};
+    apply_2x2(s, qubit,
+              p0, {0.0, 0.0},
+              {0.0, 0.0}, p1);
+}
+
 } // namespace orkan
