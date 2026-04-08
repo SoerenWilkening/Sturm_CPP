@@ -65,6 +65,23 @@ set_source_files_properties(
 add_test(NAME test_context COMMAND test_context)
 set_tests_properties(test_context PROPERTIES LABELS "backend")
 
+# ── M6: IR buffer + GateRecord ───────────────────────────────────────────────
+add_executable(test_ir
+    test_ir.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_ir PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_ir PRIVATE cxx_std_20)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_ir COMMAND test_ir)
+set_tests_properties(test_ir PROPERTIES LABELS "backend")
+
 # ── M7: COUNT_ONLY executor ───────────────────────────────────────────────────
 add_executable(test_exec_count
     test_exec_count.cpp
