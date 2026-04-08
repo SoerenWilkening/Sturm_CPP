@@ -301,3 +301,21 @@ set_source_files_properties(
 )
 add_test(NAME test_uncompute_add_const COMMAND test_uncompute_add_const)
 set_tests_properties(test_uncompute_add_const PROPERTIES LABELS "backend")
+
+# ── M14: Classical-control reduction table ────────────────────────────────────
+add_executable(test_reduction_table
+    test_reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_reduction_table PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_reduction_table PRIVATE cxx_std_20)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_reduction_table COMMAND test_reduction_table)
+set_tests_properties(test_reduction_table PROPERTIES LABELS "backend")
