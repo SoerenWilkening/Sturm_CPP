@@ -182,3 +182,28 @@ target_compile_features(test_exec_simulate_crot PRIVATE cxx_std_20)
 target_link_libraries(test_exec_simulate_crot PRIVATE orkan_headers)
 add_test(NAME test_exec_simulate_crot COMMAND test_exec_simulate_crot)
 set_tests_properties(test_exec_simulate_crot PROPERTIES LABELS "backend")
+
+# ── M13: Layer B — execute_gate join point ────────────────────────────────────
+add_executable(test_execute_gate
+    test_execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_execute_gate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_execute_gate PRIVATE cxx_std_20)
+target_compile_definitions(test_execute_gate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_execute_gate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_execute_gate COMMAND test_execute_gate)
+set_tests_properties(test_execute_gate PROPERTIES LABELS "backend")
