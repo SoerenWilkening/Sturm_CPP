@@ -62,11 +62,6 @@ _Add your build and test commands here_
 
 ## Project Context
 
-At the start of every session, scan the following documents to ground yourself in the project:
-
-- `docs/04_prd_frontend.md` — product requirements
-- `docs/06_implementation_plan.md` — implementation plan
-
 Track all work using **beads (`bd`)** — see the Beads Issue Tracker section above. Do not use ad-hoc TODO lists.
 
 ## Architecture Overview
