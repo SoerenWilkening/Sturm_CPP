@@ -43,3 +43,24 @@ set_source_files_properties(
 )
 add_test(NAME test_core_abi_c COMMAND test_core_abi_c)
 set_tests_properties(test_core_abi_c PROPERTIES LABELS "backend")
+
+# M3: BackendContext + thread-local mode storage
+add_executable(test_context
+    test_context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_context PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_context PRIVATE cxx_std_20)
+target_compile_definitions(test_context PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_context COMMAND test_context)
+set_tests_properties(test_context PROPERTIES LABELS "backend")

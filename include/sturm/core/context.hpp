@@ -1,0 +1,73 @@
+// context.hpp — M3: C++ inline helpers over core.h (BackendContext + thread-local).
+//
+// Provides:
+//   - sturm::BackendContext  (concrete C++ struct backing the opaque C handle)
+//   - sturm::set_mode()      convenience wrapper
+//   - sturm::get_current_mode()
+//
+// The C ABI functions declared in core.h (sturm_get_thread_context,
+// sturm_set_thread_context, sturm_backend_create, etc.) are implemented in
+// context.cpp and forward to/from the C++ internals here.
+//
+// NOTE: This header is included from C++ only.  The C ABI boundary is core.h.
+
+#pragma once
+
+#include "sturm/core/core.h"       // C ABI declarations (opaque handle, enums)
+#include "sturm/core/qubit_pool.hpp"
+
+#include <cstdint>
+#include <memory>
+
+namespace sturm {
+
+// ── BackendContext ────────────────────────────────────────────────────────────
+//
+// Concrete definition of the opaque C type sturm_backend_context_t.
+// Lives in the C++ world; C callers only ever hold a pointer.
+
+struct BackendContext {
+    sturm_mode_t  mode;
+    uint64_t      gate_count{0};
+
+    // Per-context qubit pool.  Capacity is set at construction time via
+    // max_qubits; the global singleton (QubitPool::instance()) is a separate
+    // object used by the frontend qtypes.
+    // TODO(backend): wire allocate()/release() through this pool when the
+    //                frontend qtype constructors accept a context argument (M-future).
+    QubitPool     pool;
+
+    // Pointer to the IR buffer (non-null only in APPEND mode, M6).
+    // TODO(backend): replaced with std::unique_ptr<GateIR> when M6 lands.
+    void*         ir_ptr{nullptr};
+
+    // Pointer to the Orkan statevector (non-null only in SIMULATE mode, M9).
+    // TODO(backend): replaced with OrkanBridge* when M9 lands.
+    void*         orkan_state_ptr{nullptr};
+
+    explicit BackendContext(sturm_mode_t m, uint32_t max_q)
+        : mode(m), pool(max_q) {}
+};
+
+// ── set_mode / get_current_mode ───────────────────────────────────────────────
+//
+// Convenience wrappers that operate on the calling thread's active context.
+// Panics (via assert) if no context is installed.
+
+void set_mode(sturm_mode_t mode);
+sturm_mode_t get_current_mode();
+
+} // namespace sturm
+
+// ── C ABI concrete struct alias ───────────────────────────────────────────────
+//
+// Make the opaque C handle resolve to the C++ struct so that C and C++ code
+// share one allocation.  The C header forward-declares:
+//
+//   typedef struct sturm_backend_context sturm_backend_context_t;
+//
+// We define the struct tag here:
+
+struct sturm_backend_context : sturm::BackendContext {
+    using sturm::BackendContext::BackendContext;
+};

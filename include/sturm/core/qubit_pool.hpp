@@ -2,6 +2,9 @@
 // qubit_pool.hpp — Bounded ancilla pool (Step 1, spec §1.1)
 // Header-only singleton. Capacity = STURM_ANCILLA_CAPACITY (default 256).
 // Thread-safe via a single std::mutex.
+//
+// Per-context use: construct with an explicit max_qubits capacity.
+// The singleton instance() uses kCapacity (compile-time constant).
 
 #include <atomic>
 #include <mutex>
@@ -15,11 +18,24 @@ public:
     // ── Compile-time capacity ──────────────────────────────────────────────
     static constexpr int kCapacity = STURM_ANCILLA_CAPACITY;
 
+    // ── Per-context qubit cap ──────────────────────────────────────────────
+    // Set to kCapacity for the global singleton; overridden by the
+    // BackendContext-owned pool.
+    // TODO(backend): enforce max_qubits in allocate() when per-context pools
+    //                replace the global singleton (M-future).
+    uint32_t max_qubits{static_cast<uint32_t>(kCapacity)};
+
     // ── Singleton access ───────────────────────────────────────────────────
     static QubitPool& instance() {
         static QubitPool inst;
         return inst;
     }
+
+    // ── Per-context constructor ────────────────────────────────────────────
+    // Creates a QubitPool scoped to a specific BackendContext with the given
+    // qubit capacity.  Not accessible via instance().
+    explicit QubitPool(uint32_t cap)
+        : max_qubits(cap) {}
 
     // ── Allocate one ancilla index ─────────────────────────────────────────
     // Returns a recycled index from the free-list if available, otherwise
