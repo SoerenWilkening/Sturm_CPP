@@ -11,6 +11,7 @@ set(STURM_TEST_SOURCES
     test_sink_recording.cpp
     test_qbool.cpp
     test_mask_ops.cpp
+    test_dispatch.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
