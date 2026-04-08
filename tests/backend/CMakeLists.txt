@@ -554,3 +554,35 @@ set_source_files_properties(
 )
 add_test(NAME test_when_dispatch COMMAND test_when_dispatch)
 set_tests_properties(test_when_dispatch PROPERTIES LABELS "backend")
+
+# ── M25: Explicit template instantiation (link-time fixture) ─────────────────
+# This target links instantiations.cpp (the explicit instantiation TU) with
+# the test fixture TU.  The fixture declares only extern template and calls
+# each method; unresolved symbols reveal a broken instantiation contract.
+add_executable(test_instantiations
+    test_instantiations.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qtypes/instantiations.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_instantiations PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_instantiations PRIVATE cxx_std_20)
+target_compile_definitions(test_instantiations PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_USE_EXPLICIT_INSTANTIATIONS=1
+)
+target_link_libraries(test_instantiations PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_instantiations COMMAND test_instantiations)
+set_tests_properties(test_instantiations PROPERTIES LABELS "backend")
