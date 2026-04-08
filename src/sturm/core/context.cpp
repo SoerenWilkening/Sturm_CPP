@@ -79,14 +79,11 @@ uint64_t sturm_gate_count(const sturm_backend_context_t* ctx) {
 // This file no longer defines it to avoid duplicate symbol errors.
 
 // ── C ABI: measurement ────────────────────────────────────────────────────────
-
-extern "C"
-int sturm_measure(uint32_t qubit) {
-    (void)qubit;
-    // TODO(backend): COUNT_ONLY/APPEND return stored classical value;
-    // SIMULATE samples from Orkan.  Implemented in M5.
-    return 0;
-}
+//
+// NOTE: sturm_measure is defined in src/sturm/core/measure.cpp (M5).
+// That translation unit owns the full implementation (per-mode sampling +
+// classical fallback).  This file no longer defines it to avoid duplicate
+// symbol errors.
 
 // ── C++ helpers ───────────────────────────────────────────────────────────────
 
