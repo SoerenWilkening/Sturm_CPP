@@ -687,3 +687,53 @@ target_compile_features(test_ancilla_lifecycle PRIVATE cxx_std_20)
 target_link_libraries(test_ancilla_lifecycle PRIVATE orkan_headers)
 add_test(NAME test_ancilla_lifecycle COMMAND test_ancilla_lifecycle)
 set_tests_properties(test_ancilla_lifecycle PROPERTIES LABELS "backend")
+
+# ── PRD v2 M2: WHEN lift machinery ───────────────────────────────────────────
+
+# test_when_single — WHEN a: X(b) ≡ CNOT; WHEN a: XOR(b,c) ≡ Toffoli
+add_executable(test_when_single
+    test_when_single.cpp
+)
+target_include_directories(test_when_single PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_single PRIVATE cxx_std_20)
+target_link_libraries(test_when_single PRIVATE orkan_headers)
+add_test(NAME test_when_single COMMAND test_when_single)
+set_tests_properties(test_when_single PROPERTIES LABELS "backend")
+
+# test_when_double — WHEN a: WHEN b: X(c) ≡ CCX
+add_executable(test_when_double
+    test_when_double.cpp
+)
+target_include_directories(test_when_double PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_double PRIVATE cxx_std_20)
+target_link_libraries(test_when_double PRIVATE orkan_headers)
+add_test(NAME test_when_double COMMAND test_when_double)
+set_tests_properties(test_when_double PROPERTIES LABELS "backend")
+
+# test_when_triple — WHEN a,b,c: X(d) uses c_AND path (3+ controls)
+add_executable(test_when_triple
+    test_when_triple.cpp
+)
+target_include_directories(test_when_triple PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_triple PRIVATE cxx_std_20)
+target_link_libraries(test_when_triple PRIVATE orkan_headers)
+add_test(NAME test_when_triple COMMAND test_when_triple)
+set_tests_properties(test_when_triple PROPERTIES LABELS "backend")
+
+# test_when_phase — controlled phase rotations (CRy / CRz)
+add_executable(test_when_phase
+    test_when_phase.cpp
+)
+target_include_directories(test_when_phase PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_phase PRIVATE cxx_std_20)
+target_link_libraries(test_when_phase PRIVATE orkan_headers)
+add_test(NAME test_when_phase COMMAND test_when_phase)
+set_tests_properties(test_when_phase PROPERTIES LABELS "backend")
