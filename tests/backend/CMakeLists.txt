@@ -849,3 +849,27 @@ target_compile_features(test_garbage_uncompute PRIVATE cxx_std_20)
 target_link_libraries(test_garbage_uncompute PRIVATE orkan_headers)
 add_test(NAME test_garbage_uncompute COMMAND test_garbage_uncompute)
 set_tests_properties(test_garbage_uncompute PROPERTIES LABELS "backend")
+
+# ── M6: Cuccaro in-place ADD ──────────────────────────────────────────────────
+add_executable(test_add_cuccaro
+    test_add_cuccaro.cpp
+)
+target_include_directories(test_add_cuccaro PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_add_cuccaro PRIVATE cxx_std_20)
+target_link_libraries(test_add_cuccaro PRIVATE orkan_headers)
+add_test(NAME test_add_cuccaro COMMAND test_add_cuccaro)
+set_tests_properties(test_add_cuccaro PROPERTIES LABELS "backend")
+
+# ── M6: two's-complement SUB ──────────────────────────────────────────────────
+add_executable(test_sub
+    test_sub.cpp
+)
+target_include_directories(test_sub PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_sub PRIVATE cxx_std_20)
+target_link_libraries(test_sub PRIVATE orkan_headers)
+add_test(NAME test_sub COMMAND test_sub)
+set_tests_properties(test_sub PROPERTIES LABELS "backend")
