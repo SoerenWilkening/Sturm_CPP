@@ -897,3 +897,27 @@ target_compile_features(test_div_mod PRIVATE cxx_std_20)
 target_link_libraries(test_div_mod PRIVATE orkan_headers)
 add_test(NAME test_div_mod COMMAND test_div_mod)
 set_tests_properties(test_div_mod PROPERTIES LABELS "backend")
+
+# ── M8: EQ / LT / LE / GT / GE comparisons ───────────────────────────────────
+add_executable(test_compare
+    test_compare.cpp
+)
+target_include_directories(test_compare PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_compare PRIVATE cxx_std_20)
+target_link_libraries(test_compare PRIVATE orkan_headers)
+add_test(NAME test_compare COMMAND test_compare)
+set_tests_properties(test_compare PROPERTIES LABELS "backend")
+
+# ── M8: POW (repeated squaring via MUL) ──────────────────────────────────────
+add_executable(test_pow
+    test_pow.cpp
+)
+target_include_directories(test_pow PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow PRIVATE cxx_std_20)
+target_link_libraries(test_pow PRIVATE orkan_headers)
+add_test(NAME test_pow COMMAND test_pow)
+set_tests_properties(test_pow PROPERTIES LABELS "backend")
