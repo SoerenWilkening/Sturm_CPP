@@ -775,3 +775,41 @@ target_compile_features(test_c_n_and PRIVATE cxx_std_20)
 target_link_libraries(test_c_n_and PRIVATE orkan_headers)
 add_test(NAME test_c_n_and COMMAND test_c_n_and)
 set_tests_properties(test_c_n_and PROPERTIES LABELS "backend")
+
+# ── PRD v2 M4: SWAP / Fredkin context-aware dispatch ─────────────────────────
+
+# test_swap_uncontrolled_zero_gates — zero gates for uncontrolled SWAP
+add_executable(test_swap_uncontrolled_zero_gates
+    test_swap_uncontrolled_zero_gates.cpp
+)
+target_include_directories(test_swap_uncontrolled_zero_gates PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_swap_uncontrolled_zero_gates PRIVATE cxx_std_20)
+target_link_libraries(test_swap_uncontrolled_zero_gates PRIVATE orkan_headers)
+add_test(NAME test_swap_uncontrolled_zero_gates COMMAND test_swap_uncontrolled_zero_gates)
+set_tests_properties(test_swap_uncontrolled_zero_gates PROPERTIES LABELS "backend")
+
+# test_c_swap_fredkin — Fredkin truth table on all 8 inputs
+add_executable(test_c_swap_fredkin
+    test_c_swap_fredkin.cpp
+)
+target_include_directories(test_c_swap_fredkin PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_c_swap_fredkin PRIVATE cxx_std_20)
+target_link_libraries(test_c_swap_fredkin PRIVATE orkan_headers)
+add_test(NAME test_c_swap_fredkin COMMAND test_c_swap_fredkin)
+set_tests_properties(test_c_swap_fredkin PROPERTIES LABELS "backend")
+
+# test_swap_under_when — WHEN a: SWAP(b,c) → Fredkin, not 3 CCNOTs
+add_executable(test_swap_under_when
+    test_swap_under_when.cpp
+)
+target_include_directories(test_swap_under_when PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_swap_under_when PRIVATE cxx_std_20)
+target_link_libraries(test_swap_under_when PRIVATE orkan_headers)
+add_test(NAME test_swap_under_when COMMAND test_swap_under_when)
+set_tests_properties(test_swap_under_when PROPERTIES LABELS "backend")
