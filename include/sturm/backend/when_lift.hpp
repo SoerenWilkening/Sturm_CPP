@@ -72,6 +72,15 @@ public:
 
     uint32_t control_depth() const { return static_cast<uint32_t>(controls_.size()); }
 
+    // Return the most-recently-pushed (outermost) control qubit.
+    // Precondition: control_depth() > 0.
+    uint32_t top_control() const {
+        if (controls_.empty()) {
+            throw std::runtime_error("WhenLift::top_control: control stack is empty");
+        }
+        return controls_.back();
+    }
+
     // ── Lifted primitives ─────────────────────────────────────────────────────
 
     // lift_X: 0→X, 1→CX, 2→CCX, 3+→AND-fold+recurse
