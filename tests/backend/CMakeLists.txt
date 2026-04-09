@@ -933,3 +933,41 @@ target_compile_features(test_lower_assign PRIVATE cxx_std_20)
 target_link_libraries(test_lower_assign PRIVATE orkan_headers)
 add_test(NAME test_lower_assign COMMAND test_lower_assign)
 set_tests_properties(test_lower_assign PROPERTIES LABELS "backend")
+
+# ── M10: Integration & acceptance ────────────────────────────────────────────
+
+# test_integration_arithmetic — c = (a+5)*b  (ADD + MUL + move)
+add_executable(test_integration_arithmetic
+    test_integration_arithmetic.cpp
+)
+target_include_directories(test_integration_arithmetic PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_integration_arithmetic PRIVATE cxx_std_20)
+target_link_libraries(test_integration_arithmetic PRIVATE orkan_headers)
+add_test(NAME test_integration_arithmetic COMMAND test_integration_arithmetic)
+set_tests_properties(test_integration_arithmetic PROPERTIES LABELS "backend")
+
+# test_integration_pow_mod — pow(a,e) mod m  (POW + MOD pipeline)
+add_executable(test_integration_pow_mod
+    test_integration_pow_mod.cpp
+)
+target_include_directories(test_integration_pow_mod PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_integration_pow_mod PRIVATE cxx_std_20)
+target_link_libraries(test_integration_pow_mod PRIVATE orkan_headers)
+add_test(NAME test_integration_pow_mod COMMAND test_integration_pow_mod)
+set_tests_properties(test_integration_pow_mod PROPERTIES LABELS "backend")
+
+# test_integration_when_nested — deep WHEN nesting drives c_n_AND + clean pool
+add_executable(test_integration_when_nested
+    test_integration_when_nested.cpp
+)
+target_include_directories(test_integration_when_nested PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_integration_when_nested PRIVATE cxx_std_20)
+target_link_libraries(test_integration_when_nested PRIVATE orkan_headers)
+add_test(NAME test_integration_when_nested COMMAND test_integration_when_nested)
+set_tests_properties(test_integration_when_nested PROPERTIES LABELS "backend")
