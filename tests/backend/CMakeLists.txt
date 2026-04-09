@@ -921,3 +921,15 @@ target_compile_features(test_pow PRIVATE cxx_std_20)
 target_link_libraries(test_pow PRIVATE orkan_headers)
 add_test(NAME test_pow COMMAND test_pow)
 set_tests_properties(test_pow PROPERTIES LABELS "backend")
+
+# ── M9: Frontend lowering hooks — lower_assign / lower_expr ──────────────────
+add_executable(test_lower_assign
+    test_lower_assign.cpp
+)
+target_include_directories(test_lower_assign PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_lower_assign PRIVATE cxx_std_20)
+target_link_libraries(test_lower_assign PRIVATE orkan_headers)
+add_test(NAME test_lower_assign COMMAND test_lower_assign)
+set_tests_properties(test_lower_assign PROPERTIES LABELS "backend")
