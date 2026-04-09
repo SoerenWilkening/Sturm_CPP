@@ -41,7 +41,12 @@ public:
     // Construct with a reference to the SimState that holds the physical
     // qubits.  The SimState must already have been allocate()'d and must
     // outlive this manager.
-    explicit AncillaManager(SimState& sim) : sim_(sim) {}
+    //
+    // first_ancilla_idx: the first qubit index the manager is allowed to issue.
+    // Use this to skip over qubits already assigned to user registers.
+    // Default is 0 (manager starts from the beginning of the qubit pool).
+    explicit AncillaManager(SimState& sim, uint32_t first_ancilla_idx = 0u)
+        : sim_(sim), next_idx_(first_ancilla_idx) {}
 
     // Non-copyable, non-movable (holds a reference).
     AncillaManager(const AncillaManager&)            = delete;
@@ -121,7 +126,7 @@ private:
     }
 
     SimState&             sim_;
-    uint32_t              next_idx_{0};   // next never-issued qubit index
+    uint32_t              next_idx_;      // next never-issued qubit index
     std::vector<uint32_t> in_use_;        // currently allocated qubits
     std::vector<uint32_t> free_list_;     // returned qubits available for reuse
 };
