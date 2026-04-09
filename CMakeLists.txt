@@ -21,6 +21,9 @@ target_compile_features(sturm INTERFACE cxx_std_20)
 enable_testing()
 add_subdirectory(tests)
 
+# ── Examples ──────────────────────────────────────────────────────────────────
+add_subdirectory(examples)
+
 # ── Convenience target: `make check` runs ctest with verbose failure output ───
 add_custom_target(check
     COMMAND ${CMAKE_CTEST_COMMAND} --output-on-failure
