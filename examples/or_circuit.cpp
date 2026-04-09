@@ -79,9 +79,7 @@ int main() {
     
     // ── 3. The high-level call: a |= b ─────────────────────────────────────
     // (operator| backend path is currently a stub — see file header note.)
-    WHEN (c){
-        a |= b;
-    }
+    a & b;
 //    a |= b;
 
     // ── 4. Manually emit the OR decomposition into the IR ─────────────────────

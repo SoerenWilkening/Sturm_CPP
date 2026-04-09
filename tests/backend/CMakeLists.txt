@@ -643,3 +643,47 @@ target_compile_definitions(test_ci_hook PRIVATE
 )
 add_test(NAME test_ci_hook COMMAND test_ci_hook)
 set_tests_properties(test_ci_hook PROPERTIES LABELS "backend")
+
+# ── PRD v2 M1: backend primitive core ────────────────────────────────────────
+
+# Include the OrkanFetch module so the orkan_headers target is available.
+# (Already included above for test_orkan_bridge; guard against double-include.)
+if(NOT TARGET orkan_headers)
+    include(${CMAKE_SOURCE_DIR}/cmake/OrkanFetch.cmake)
+endif()
+
+# test_primitives_classical — truth tables for X, XOR, AND
+add_executable(test_primitives_classical
+    test_primitives_classical.cpp
+)
+target_include_directories(test_primitives_classical PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_primitives_classical PRIVATE cxx_std_20)
+target_link_libraries(test_primitives_classical PRIVATE orkan_headers)
+add_test(NAME test_primitives_classical COMMAND test_primitives_classical)
+set_tests_properties(test_primitives_classical PROPERTIES LABELS "backend")
+
+# test_primitives_phase — R_y / R_z rotation amplitudes
+add_executable(test_primitives_phase
+    test_primitives_phase.cpp
+)
+target_include_directories(test_primitives_phase PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_primitives_phase PRIVATE cxx_std_20)
+target_link_libraries(test_primitives_phase PRIVATE orkan_headers)
+add_test(NAME test_primitives_phase COMMAND test_primitives_phase)
+set_tests_properties(test_primitives_phase PROPERTIES LABELS "backend")
+
+# test_ancilla_lifecycle — borrow/return, double-free, dirty-free
+add_executable(test_ancilla_lifecycle
+    test_ancilla_lifecycle.cpp
+)
+target_include_directories(test_ancilla_lifecycle PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_ancilla_lifecycle PRIVATE cxx_std_20)
+target_link_libraries(test_ancilla_lifecycle PRIVATE orkan_headers)
+add_test(NAME test_ancilla_lifecycle COMMAND test_ancilla_lifecycle)
+set_tests_properties(test_ancilla_lifecycle PROPERTIES LABELS "backend")
