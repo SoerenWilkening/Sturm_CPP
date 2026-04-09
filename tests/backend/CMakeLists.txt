@@ -737,3 +737,41 @@ target_compile_features(test_when_phase PRIVATE cxx_std_20)
 target_link_libraries(test_when_phase PRIVATE orkan_headers)
 add_test(NAME test_when_phase COMMAND test_when_phase)
 set_tests_properties(test_when_phase PROPERTIES LABELS "backend")
+
+# ── PRD v2 M3: Logic library ──────────────────────────────────────────────────
+
+# test_logic_basic — truth tables for NOT_reg, OR, NAND, NOR, XNOR
+add_executable(test_logic_basic
+    test_logic_basic.cpp
+)
+target_include_directories(test_logic_basic PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_logic_basic PRIVATE cxx_std_20)
+target_link_libraries(test_logic_basic PRIVATE orkan_headers)
+add_test(NAME test_logic_basic COMMAND test_logic_basic)
+set_tests_properties(test_logic_basic PROPERTIES LABELS "backend")
+
+# test_c_and — truth table + ancilla_clean for lib_c_AND
+add_executable(test_c_and
+    test_c_and.cpp
+)
+target_include_directories(test_c_and PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_c_and PRIVATE cxx_std_20)
+target_link_libraries(test_c_and PRIVATE orkan_headers)
+add_test(NAME test_c_and COMMAND test_c_and)
+set_tests_properties(test_c_and PROPERTIES LABELS "backend")
+
+# test_c_n_and — scaling correctness for n=3..6 controls
+add_executable(test_c_n_and
+    test_c_n_and.cpp
+)
+target_include_directories(test_c_n_and PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_c_n_and PRIVATE cxx_std_20)
+target_link_libraries(test_c_n_and PRIVATE orkan_headers)
+add_test(NAME test_c_n_and COMMAND test_c_n_and)
+set_tests_properties(test_c_n_and PROPERTIES LABELS "backend")
