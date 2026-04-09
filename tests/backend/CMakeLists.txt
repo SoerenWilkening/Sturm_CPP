@@ -813,3 +813,39 @@ target_compile_features(test_swap_under_when PRIVATE cxx_std_20)
 target_link_libraries(test_swap_under_when PRIVATE orkan_headers)
 add_test(NAME test_swap_under_when COMMAND test_swap_under_when)
 set_tests_properties(test_swap_under_when PROPERTIES LABELS "backend")
+
+# ── M5: move_result uncontrolled relabel — zero gates, index swapped ──────────
+add_executable(test_move_uncontrolled_relabel
+    test_move_uncontrolled_relabel.cpp
+)
+target_include_directories(test_move_uncontrolled_relabel PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_move_uncontrolled_relabel PRIVATE cxx_std_20)
+target_link_libraries(test_move_uncontrolled_relabel PRIVATE orkan_headers)
+add_test(NAME test_move_uncontrolled_relabel COMMAND test_move_uncontrolled_relabel)
+set_tests_properties(test_move_uncontrolled_relabel PROPERTIES LABELS "backend")
+
+# ── M5: move_result controlled Fredkin cascade ────────────────────────────────
+add_executable(test_move_controlled_fredkin
+    test_move_controlled_fredkin.cpp
+)
+target_include_directories(test_move_controlled_fredkin PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_move_controlled_fredkin PRIVATE cxx_std_20)
+target_link_libraries(test_move_controlled_fredkin PRIVATE orkan_headers)
+add_test(NAME test_move_controlled_fredkin COMMAND test_move_controlled_fredkin)
+set_tests_properties(test_move_controlled_fredkin PROPERTIES LABELS "backend")
+
+# ── M5: GarbageManager full uncompute round-trip ──────────────────────────────
+add_executable(test_garbage_uncompute
+    test_garbage_uncompute.cpp
+)
+target_include_directories(test_garbage_uncompute PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_garbage_uncompute PRIVATE cxx_std_20)
+target_link_libraries(test_garbage_uncompute PRIVATE orkan_headers)
+add_test(NAME test_garbage_uncompute COMMAND test_garbage_uncompute)
+set_tests_properties(test_garbage_uncompute PROPERTIES LABELS "backend")
