@@ -873,3 +873,27 @@ target_compile_features(test_sub PRIVATE cxx_std_20)
 target_link_libraries(test_sub PRIVATE orkan_headers)
 add_test(NAME test_sub COMMAND test_sub)
 set_tests_properties(test_sub PROPERTIES LABELS "backend")
+
+# ── M7: MUL (shift-and-add via controlled ADD) ───────────────────────────────
+add_executable(test_mul
+    test_mul.cpp
+)
+target_include_directories(test_mul PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul PRIVATE cxx_std_20)
+target_link_libraries(test_mul PRIVATE orkan_headers)
+add_test(NAME test_mul COMMAND test_mul)
+set_tests_properties(test_mul PROPERTIES LABELS "backend")
+
+# ── M7: DIV / MOD (restoring division + remainder wrapper) ───────────────────
+add_executable(test_div_mod
+    test_div_mod.cpp
+)
+target_include_directories(test_div_mod PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_div_mod PRIVATE cxx_std_20)
+target_link_libraries(test_div_mod PRIVATE orkan_headers)
+add_test(NAME test_div_mod COMMAND test_div_mod)
+set_tests_properties(test_div_mod PROPERTIES LABELS "backend")
