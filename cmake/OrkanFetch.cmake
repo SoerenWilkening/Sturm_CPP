@@ -50,11 +50,7 @@ if(NOT ORKAN_USE_STUB)
     FetchContent_GetProperties(orkan)
     if(NOT orkan_POPULATED)
         # Best-effort fetch: if it fails, we catch via the stub fallback below.
-        FetchContent_Populate(orkan
-            SOURCE_DIR   ${CMAKE_BINARY_DIR}/_deps/orkan-src
-            BINARY_DIR   ${CMAKE_BINARY_DIR}/_deps/orkan-build
-            SUBBUILD_DIR ${CMAKE_BINARY_DIR}/_deps/orkan-subbuild
-        )
+        FetchContent_Populate(orkan)
     endif()
 
     if(orkan_POPULATED AND EXISTS "${orkan_SOURCE_DIR}/include/orkan/orkan.hpp")
