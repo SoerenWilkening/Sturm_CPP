@@ -23,8 +23,7 @@
 //   BITWISE_SELF → TODO(backend): re-run self-inverse bitwise op (M22)
 //   COMPARE      → TODO(backend): re-run comparison to clear ancilla (M22)
 //
-// LOC budget: < 200 (this file).
-
+// LOC budget: ≤ 300 (this file).
 #pragma once
 
 #include "sturm/uncompute/qint_base.hpp"
@@ -70,10 +69,18 @@ struct uncompute_op {
         // TODO(backend): typed once the concrete qint is wired (M21/M22).
         const qint_base* qint_ptr;
 
-        // BITWISE_SELF: pointer to input and sub-kind tag (packed into two fields)
+        // BITWISE_SELF: pointer to input and sub-kind tag (packed into two fields).
+        // For qbool AND/OR uncompute, input_ptr is null and a_qubit / b_qubit
+        // store the two source qubit indices directly (no pointer indirection needed
+        // for 1-bit operands).  sub_kind selects the operation:
+        //   0 = AND (CCX)
+        //   1 = OR  (CX + CX + CCX)
+        //   2 = XOR (CX)
         struct {
             const qint_base* input_ptr;
-            uint32_t         sub_kind;   ///< Which bitwise op (future enum)
+            uint32_t         sub_kind;   ///< Which bitwise op (0=AND,1=OR,2=XOR)
+            uint32_t         a_qubit;    ///< First  source qubit (qbool AND/OR path)
+            uint32_t         b_qubit;    ///< Second source qubit (qbool AND/OR path)
         } bitwise;
 
         // COMPARE: pointers to lhs/rhs and comparison op code
@@ -153,6 +160,23 @@ struct uncompute_op {
         op.tag                    = kind::BITWISE_SELF;
         op.data.bitwise.input_ptr = input;
         op.data.bitwise.sub_kind  = sub_kind;
+        op.data.bitwise.a_qubit   = 0u;
+        op.data.bitwise.b_qubit   = 0u;
+        return op;
+    }
+
+    // make_bitwise_qbool — factory for qbool AND/OR uncompute.
+    // Stores the two source qubit indices directly (no pointer indirection).
+    // sub_kind: 0=AND, 1=OR, 2=XOR.
+    [[nodiscard]] static uncompute_op make_bitwise_qbool(uint32_t a_qubit,
+                                                          uint32_t b_qubit,
+                                                          uint32_t sub_kind) noexcept {
+        uncompute_op op;
+        op.tag                    = kind::BITWISE_SELF;
+        op.data.bitwise.input_ptr = nullptr;
+        op.data.bitwise.sub_kind  = sub_kind;
+        op.data.bitwise.a_qubit   = a_qubit;
+        op.data.bitwise.b_qubit   = b_qubit;
         return op;
     }
 
@@ -210,7 +234,42 @@ struct uncompute_op {
             break;
 
         case kind::BITWISE_SELF:
-            // TODO(backend): re-run self-inverse bitwise op (M22).
+            // qbool path: input_ptr == nullptr means qubit indices are stored
+            // directly in bitwise.a_qubit / bitwise.b_qubit.
+            // sub_kind 0 = AND  → CCX(a, b, self)  [self-inverse]
+            // sub_kind 1 = OR   → CX(a,self) + CX(b,self) + CCX(a,b,self)  [self-inverse]
+            // sub_kind 2 = XOR  → CX(a, self)  [self-inverse]
+            // General qint_base path (input_ptr != nullptr):
+            // TODO(backend): re-run self-inverse bitwise op on multi-bit register (M9).
+            if (data.bitwise.input_ptr == nullptr && self.width >= 1u) {
+                const uint32_t tgt = self.qubits[0];
+                const uint32_t qa  = data.bitwise.a_qubit;
+                const uint32_t qb  = data.bitwise.b_qubit;
+                switch (data.bitwise.sub_kind) {
+                case 0u: { // AND — inverse is CCX
+                    uint32_t qs[3] = {qa, qb, tgt};
+                    execute_gate(ctx, STURM_GATE_CCX, qs, 3u, 0.0);
+                    break;
+                }
+                case 1u: { // OR — inverse is CX(a,t) + CX(b,t) + CCX(a,b,t)
+                    uint32_t cx_a[2] = {qa, tgt};
+                    execute_gate(ctx, STURM_GATE_CX, cx_a, 2u, 0.0);
+                    uint32_t cx_b[2] = {qb, tgt};
+                    execute_gate(ctx, STURM_GATE_CX, cx_b, 2u, 0.0);
+                    uint32_t ccx[3] = {qa, qb, tgt};
+                    execute_gate(ctx, STURM_GATE_CCX, ccx, 3u, 0.0);
+                    break;
+                }
+                case 2u: { // XOR — inverse is CX(a, t)
+                    uint32_t qs[2] = {qa, tgt};
+                    execute_gate(ctx, STURM_GATE_CX, qs, 2u, 0.0);
+                    break;
+                }
+                default:
+                    break;
+                }
+            }
+            // TODO(backend): implement general qint_base path for M9.
             break;
 
         case kind::COMPARE:
