@@ -1,15 +1,11 @@
 // qbool_ops.hpp — M13: qbool operator bodies + lazy expression materialization.
-// WHEN lifting: 0 controls→direct, 1→lift×1, 2+→c_AND fold.
-// Target: <200 LoC.
-
+// WHEN lifting: 0 controls→direct, 1→lift×1, 2+→c_AND fold. Target: <200 LoC.
 #pragma once
-
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/backend/primitives.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
-
 #include <cassert>
 #include <cstdint>
 
@@ -64,7 +60,6 @@ inline void emit_CX_lifted(BackendContext& ctx, uint32_t ctrl, uint32_t target) 
     } else if (depth == 1u) {
         primitive_AND(ctx, ctrls[0], ctrl, target);
     } else {
-        // Fold ctrls[0] & ctrl into ancilla, then chain remaining controls.
         int anc_idx = QubitPool::instance().allocate();
         const auto anc = static_cast<uint32_t>(anc_idx);
         primitive_AND(ctx, ctrls[0], ctrl, anc);        // compute
@@ -142,20 +137,23 @@ inline qbool& qbool::flip() {
 }
 
 // ── qbool::operator~() ───────────────────────────────────────────────────────
-// Allocates ancilla, emits X, returns owning qbool that re-emits X on destruct.
+// Allocates ancilla, emits X. Uncompute: ADD_CONST(1) → sub_const(1) → X.
 inline qbool qbool::operator~() const {
     assert(qubits[0] >= 0);
     int anc_idx = QubitPool::instance().allocate();
     emit_X_lifted(get_ctx(), static_cast<uint32_t>(anc_idx));
     qbool result;
-    result.qubits[0]        = anc_idx;
-    result.owning_          = true;
-    result.qbool_uncompute_ = QboolUncompute::X;
+    result.qubits[0]  = anc_idx;
+    result.owning_    = true;
+    result.super_mask = 1ULL;
+#ifdef STURM_BACKEND_ENABLED
+    result.uncompute_ = uncompute_op::make_add_const(1);
+#endif
     return result;
 }
 
 // ── AndExpr<qbool>::operator qbool() ─────────────────────────────────────────
-// Allocate ancilla, CCX(a,b,anc). Destructor re-emits CCX (uncompute).
+// Allocate ancilla, CCX(a,b,anc). Uncompute: BITWISE_SELF(AND, qa, qb).
 template<>
 inline AndExpr<qbool>::operator qbool() const {
     assert(a.qubits[0] >= 0 && b.qubits[0] >= 0);
@@ -166,16 +164,17 @@ inline AndExpr<qbool>::operator qbool() const {
     const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
     primitive_AND(ctx, qa, qb, anc);
     qbool result;
-    result.qubits[0]          = anc_idx;
-    result.owning_            = true;
-    result.qbool_uncompute_   = qbool::QboolUncompute::AND;
-    result.uncompute_a_qubit_ = qa;
-    result.uncompute_b_qubit_ = qb;
+    result.qubits[0]  = anc_idx;
+    result.owning_    = true;
+    result.super_mask = 1ULL;
+#ifdef STURM_BACKEND_ENABLED
+    result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 0u); // 0=AND
+#endif
     return result;
 }
 
 // ── OrExpr<qbool>::operator qbool() ──────────────────────────────────────────
-// Allocate ancilla, CX(a,anc)+CX(b,anc)+CCX(a,b,anc). Destructor uncomputes.
+// Allocate ancilla, CX+CX+CCX. Uncompute: BITWISE_SELF(OR, qa, qb).
 template<>
 inline OrExpr<qbool>::operator qbool() const {
     assert(a.qubits[0] >= 0 && b.qubits[0] >= 0);
@@ -188,11 +187,12 @@ inline OrExpr<qbool>::operator qbool() const {
     primitive_XOR(ctx, qb, anc);
     primitive_AND(ctx, qa, qb, anc);
     qbool result;
-    result.qubits[0]          = anc_idx;
-    result.owning_            = true;
-    result.qbool_uncompute_   = qbool::QboolUncompute::OR;
-    result.uncompute_a_qubit_ = qa;
-    result.uncompute_b_qubit_ = qb;
+    result.qubits[0]  = anc_idx;
+    result.owning_    = true;
+    result.super_mask = 1ULL;
+#ifdef STURM_BACKEND_ENABLED
+    result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 1u); // 1=OR
+#endif
     return result;
 }
 
