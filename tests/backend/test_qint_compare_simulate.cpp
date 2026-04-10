@@ -212,7 +212,7 @@ static void run_one_cmp_test(const char* op_name,
         // emission (they guard on super_mask bits). The qubit is still
         // released to the pool correctly (owning_ remains true, qubits[0]
         // is valid). Statevector has already been read above.
-        result.is_super = false;
+        result.super_mask = 0;
     } // result qbool destructs here (compare uncompute skipped; pool release runs)
 
     // Release the pre-reserved register qubits.

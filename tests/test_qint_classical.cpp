@@ -345,8 +345,8 @@ static void test_eq_classical() {
     ScopedSink scope(&rs);
     qint a(5), b(5);
     sturm::qbool r = (a == b);
-    assert(r.value == true);
-    assert(r.is_super == false);
+    assert(r.value == 1);
+    assert(!(r.super_mask & 1));
     assert(r.qubits[0] == -1);
     assert(rs.records().empty());
 }
@@ -356,8 +356,8 @@ static void test_neq_classical() {
     ScopedSink scope(&rs);
     qint a(5), b(6);
     sturm::qbool r = (a != b);
-    assert(r.value == true);
-    assert(r.is_super == false);
+    assert(r.value == 1);
+    assert(!(r.super_mask & 1));
     assert(rs.records().empty());
 }
 
@@ -366,8 +366,8 @@ static void test_lt_classical() {
     ScopedSink scope(&rs);
     qint a(3), b(5);
     sturm::qbool r = (a < b);
-    assert(r.value == true);
-    assert(r.is_super == false);
+    assert(r.value == 1);
+    assert(!(r.super_mask & 1));
     assert(rs.records().empty());
 }
 
@@ -376,8 +376,8 @@ static void test_le_classical() {
     ScopedSink scope(&rs);
     qint a(5), b(5);
     sturm::qbool r = (a <= b);
-    assert(r.value == true);
-    assert(r.is_super == false);
+    assert(r.value == 1);
+    assert(!(r.super_mask & 1));
     assert(rs.records().empty());
 }
 
@@ -386,8 +386,8 @@ static void test_gt_classical() {
     ScopedSink scope(&rs);
     qint a(7), b(5);
     sturm::qbool r = (a > b);
-    assert(r.value == true);
-    assert(r.is_super == false);
+    assert(r.value == 1);
+    assert(!(r.super_mask & 1));
     assert(rs.records().empty());
 }
 
@@ -396,8 +396,8 @@ static void test_ge_classical() {
     ScopedSink scope(&rs);
     qint a(5), b(5);
     sturm::qbool r = (a >= b);
-    assert(r.value == true);
-    assert(r.is_super == false);
+    assert(r.value == 1);
+    assert(!(r.super_mask & 1));
     assert(rs.records().empty());
 }
 
@@ -408,10 +408,10 @@ static void test_subscript_classical() {
     sturm::qbool b0 = a[0];
     sturm::qbool b1 = a[1];
     sturm::qbool b2 = a[2];
-    assert(b0.value == true);
-    assert(b1.value == false);
-    assert(b2.value == true);
-    assert(b0.is_super == false);
+    assert(b0.value == 1);
+    assert(b1.value == 0);
+    assert(b2.value == 1);
+    assert(!(b0.super_mask & 1));
 }
 
 // ── qbool conversion ──────────────────────────────────────────────────────────
@@ -426,8 +426,8 @@ static void test_from_qbool_classical() {
 static void test_to_qbool_classical() {
     qint a(0xFF);
     sturm::qbool b = static_cast<sturm::qbool>(a);
-    assert(b.value == true);
-    assert(b.is_super == false);
+    assert(b.value == 1);
+    assert(!(b.super_mask & 1));
 }
 
 // ── assignment ────────────────────────────────────────────────────────────────

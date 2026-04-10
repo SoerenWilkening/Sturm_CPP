@@ -107,8 +107,8 @@ static void clear_qubits(sturm::qint_t<W>& q) {
 
 // ── Comparison: build a quantum qbool with a deterministic qubit index ─────────
 static void clear_qbool_qubits(sturm::qbool& b) {
-    b.qubits[0] = -1;
-    b.is_super   = false;
+    b.qubits[0]  = -1;
+    b.super_mask = 0;
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════

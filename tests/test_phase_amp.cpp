@@ -147,7 +147,7 @@ static void test_phi_add_with_control() {
     ScopedSink scope(&rs);
 
     qbool flag(0.5);   // superposed; qubit allocated; prepare() emitted
-    assert(flag.is_super == true);
+    assert(flag.super_mask & 1);
     const int flag_qubit = flag.qubits[0];
     assert(flag_qubit >= 0);
 
@@ -180,7 +180,7 @@ static void test_theta_add_with_control() {
     ScopedSink scope(&rs);
 
     qbool flag(0.5);
-    assert(flag.is_super == true);
+    assert(flag.super_mask & 1);
     const int flag_qubit = flag.qubits[0];
     rs.clear();
 

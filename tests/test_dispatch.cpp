@@ -218,7 +218,7 @@ static void test_compare() {
         a, b, classical_fn, mask_fn, sink_fn);
 
     assert(sink_called);
-    assert(result.is_super);
+    assert(result.super_mask & 1);
     assert(result.qubits[0] >= 0);
 }
 
@@ -241,8 +241,8 @@ static void test_compare_fast_path() {
     sturm::qbool result = sturm::detail::dispatch_compare<FakeQint>(
         a, b, classical_fn, mask_fn, sink_fn);
 
-    assert(!result.is_super);
-    assert(result.value == true);
+    assert(!(result.super_mask & 1));
+    assert(result.value == 1);
     assert(rs.records().empty());
 }
 
