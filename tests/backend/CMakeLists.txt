@@ -882,6 +882,34 @@ set_source_files_properties(
 add_test(NAME test_subscript COMMAND test_subscript)
 set_tests_properties(test_subscript PROPERTIES LABELS "backend")
 
+# ── sturm-qwt: qint operator[] COUNT_ONLY and SIMULATE tests ─────────────────
+add_executable(test_subscript_count_simulate
+    test_subscript_count_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_subscript_count_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_subscript_count_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_subscript_count_simulate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_subscript_count_simulate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_subscript_count_simulate COMMAND test_subscript_count_simulate)
+set_tests_properties(test_subscript_count_simulate PROPERTIES LABELS "backend")
+
 # ── M16: DSL-style SWAP / Fredkin ─────────────────────────────────────────────
 add_executable(test_swap_dsl
     test_swap_dsl.cpp
