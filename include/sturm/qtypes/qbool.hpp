@@ -13,11 +13,18 @@
 #  include "sturm/uncompute/uncompute_op.hpp"
 #  include "sturm/uncompute/qint_base.hpp"
 #  include "sturm/core/context.hpp"
+// M13: gate emission helpers for qbool uncompute (AND / OR / X).
+#  include "sturm/backend/primitives_v3.hpp"
 #endif
 
 #include <array>
+#include <cstdint>
 
 namespace sturm {
+
+// Forward declarations for lazy expression types (defined in lazy_expr.hpp).
+template<typename T> struct AndExpr;
+template<typename T> struct OrExpr;
 
 // ── qbool ─────────────────────────────────────────────────────────────────────
 // Represents a boolean that may be in a quantum superposition.
@@ -28,9 +35,34 @@ namespace sturm {
 //   qubits     — single-element array; qubits[0] == -1 means no qubit yet.
 class qbool {
 public:
-    bool           value    = false;
-    bool           is_super = false;
+    bool              value    = false;
+    bool              is_super = false;
     std::array<int,1> qubits{-1};
+
+    // ── Ownership flag (M13) ──────────────────────────────────────────────
+    // true  (default): destructor releases the qubit to QubitPool.
+    // false           : destructor does NOT release — this qbool is an alias
+    //                   for a qubit owned elsewhere (e.g. a[i] bit slice).
+    bool owning_ = true;
+
+    // ── M13 qbool uncompute tag ────────────────────────────────────────────
+    // Tracks which uncompute action the destructor should perform for qbools
+    // produced by operator~, AndExpr::operator qbool(), or OrExpr::operator qbool().
+    // Defined always (not guarded) so that qbool objects work without STURM_BACKEND_ENABLED
+    // (the destructor simply skips emission when the tag is NONE, which it always is
+    // without STURM_BACKEND_ENABLED since no operators set a non-NONE tag).
+    enum class QboolUncompute : uint8_t {
+        NONE,        ///< No uncompute (default)
+        X,           ///< Re-emit X(qubits[0]) to uncompute operator~
+        AND,         ///< Re-emit CCX(a, b, qubits[0]) to uncompute AND materialization
+        OR,          ///< Re-emit 2 CX + CCX to uncompute OR materialization
+    };
+
+    QboolUncompute qbool_uncompute_  = QboolUncompute::NONE;
+
+    // Qubit indices needed for AND / OR uncomputation (stored as uint32_t).
+    uint32_t uncompute_a_qubit_ = 0u;
+    uint32_t uncompute_b_qubit_ = 0u;
 
     // ── Uncompute op (M22/Strategy B) ─────────────────────────────────────
     // Carries the semantic inverse of the comparison that produced this qbool
@@ -59,11 +91,18 @@ public:
         current_sink()->prepare(qubits[0], p);
     }
 
+    // ── Non-owning factory (M13) ──────────────────────────────────────────
+    // Creates a qbool that references qubit `idx` but does NOT own it.
+    // The qubit must outlive this qbool.
+    static qbool make_non_owning(int idx) noexcept {
+        qbool q;
+        q.qubits[0] = idx;
+        q.owning_   = false;
+        return q;
+    }
+
     // ── as_qint_base (M22) ────────────────────────────────────────────────
     // Builds a width-1 qint_base view of this qbool's qubit register.
-    // Used by the destructor to pass to uncompute_op::apply so the COMPARE
-    // case can emit the inverse circuit through execute_gate.
-    // Only available when STURM_BACKEND_ENABLED is set.
 #ifdef STURM_BACKEND_ENABLED
     [[nodiscard]] qint_base as_qint_base() const noexcept {
         qint_base b;
@@ -78,72 +117,99 @@ public:
 #endif
 
     // ── Destructor ────────────────────────────────────────────────────────
-    // M22: If there is an active BackendContext and the uncompute_op tag is
-    // not NONE, emit the semantic inverse (e.g. re-run comparison to uncompute
-    // the ancilla qubit) before releasing.
-    //
-    // For the COMPARE tag the uncompute_op::apply COMPARE case calls
-    // lhs_ptr->compare_inverse() which emits the stub gate sequence.
-    // The lhs_ptr points to the original qint_t<W> whose lifetime spans
-    // the enclosing scope (Bennett discipline).
     ~qbool() {
 #ifdef STURM_BACKEND_ENABLED
+        // M22: comparison uncompute.
         if (uncompute_.tag != uncompute_op::kind::NONE) {
-            if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
-                // Build a width-1 qint_base view and run the inverse.
+            if (sturm_backend_context_t* ctx_raw = sturm_get_thread_context()) {
                 qint_base view = as_qint_base();
-                uncompute_.apply(*ctx, view);
+                uncompute_.apply(*ctx_raw, view);
+            }
+        }
+
+        // M13: X / AND / OR uncompute.
+        if (qbool_uncompute_ != QboolUncompute::NONE && qubits[0] >= 0) {
+            if (sturm_backend_context_t* ctx_raw = sturm_get_thread_context()) {
+                BackendContext& ctx = *ctx_raw;
+                const uint32_t tgt  = static_cast<uint32_t>(qubits[0]);
+                switch (qbool_uncompute_) {
+                case QboolUncompute::X:
+                    primitive_X(ctx, tgt);
+                    break;
+                case QboolUncompute::AND:
+                    primitive_AND(ctx, uncompute_a_qubit_, uncompute_b_qubit_, tgt);
+                    break;
+                case QboolUncompute::OR:
+                    primitive_XOR(ctx, uncompute_a_qubit_, tgt);
+                    primitive_XOR(ctx, uncompute_b_qubit_, tgt);
+                    primitive_AND(ctx, uncompute_a_qubit_, uncompute_b_qubit_, tgt);
+                    break;
+                default:
+                    break;
+                }
             }
         }
 #endif
-        if (qubits[0] >= 0) {
+        // Qubit release (always guarded by owning_ flag).
+        if (owning_ && qubits[0] >= 0) {
             QubitPool::instance().release(qubits[0]);
             qubits[0] = -1;
         }
     }
 
     // ── Copy constructor & assignment ─────────────────────────────────────
-    // Copies value and is_super but does NOT share the qubit — the copy gets
-    // its own allocation when/if it is needed.  For now the qubit is simply
-    // reset to -1 on the copy (lazy allocation on first use via ensure_qubit).
     qbool(const qbool& other)
         : value(other.value), is_super(other.is_super), qubits{-1} {}
 
     qbool& operator=(const qbool& other) {
         if (this == &other) return *this;
-        // Release current qubit before overwriting.
-        if (qubits[0] >= 0) {
+        if (owning_ && qubits[0] >= 0) {
             QubitPool::instance().release(qubits[0]);
             qubits[0] = -1;
         }
-        value    = other.value;
-        is_super = other.is_super;
-        // Do not copy the qubit index — caller must call ensure_qubit() if needed.
+        value            = other.value;
+        is_super         = other.is_super;
+        owning_          = true;
+        qbool_uncompute_ = QboolUncompute::NONE;
         return *this;
     }
 
     // ── Move constructor & assignment ─────────────────────────────────────
     qbool(qbool&& other) noexcept
-        : value(other.value), is_super(other.is_super), qubits{other.qubits[0]}
+        : value(other.value)
+        , is_super(other.is_super)
+        , qubits{other.qubits[0]}
+        , owning_(other.owning_)
+        , qbool_uncompute_(other.qbool_uncompute_)
+        , uncompute_a_qubit_(other.uncompute_a_qubit_)
+        , uncompute_b_qubit_(other.uncompute_b_qubit_)
 #ifdef STURM_BACKEND_ENABLED
-          , uncompute_(other.uncompute_)
+        , uncompute_(other.uncompute_)
 #endif
     {
-        other.qubits[0] = -1;  // prevent double-release
+        other.qubits[0]        = -1;
+        other.owning_          = false;
+        other.qbool_uncompute_ = QboolUncompute::NONE;
 #ifdef STURM_BACKEND_ENABLED
-        other.uncompute_ = uncompute_op{};  // clear so moved-from won't re-emit
+        other.uncompute_ = uncompute_op{};
 #endif
     }
 
     qbool& operator=(qbool&& other) noexcept {
         if (this == &other) return *this;
-        if (qubits[0] >= 0) {
+        if (owning_ && qubits[0] >= 0) {
             QubitPool::instance().release(qubits[0]);
         }
-        value           = other.value;
-        is_super        = other.is_super;
-        qubits[0]       = other.qubits[0];
-        other.qubits[0] = -1;
+        value                = other.value;
+        is_super             = other.is_super;
+        qubits[0]            = other.qubits[0];
+        owning_              = other.owning_;
+        qbool_uncompute_     = other.qbool_uncompute_;
+        uncompute_a_qubit_   = other.uncompute_a_qubit_;
+        uncompute_b_qubit_   = other.uncompute_b_qubit_;
+        other.qubits[0]      = -1;
+        other.owning_        = false;
+        other.qbool_uncompute_ = QboolUncompute::NONE;
 #ifdef STURM_BACKEND_ENABLED
         uncompute_       = other.uncompute_;
         other.uncompute_ = uncompute_op{};
@@ -152,19 +218,23 @@ public:
     }
 
     // ── Explicit bool conversion ──────────────────────────────────────────
-    // Returns the classical value.
-    // TODO(backend): perform a real quantum measurement and collapse the state.
     explicit operator bool() const noexcept { return value; }
 
     // ── ensure_qubit ──────────────────────────────────────────────────────
-    // Lazily allocates a qubit if none is assigned yet.
-    // Used by the WHEN guard and comparison operators to materialise a qubit
-    // for a classically-known qbool before passing it to the control path.
     void ensure_qubit() {
         if (qubits[0] < 0) {
             qubits[0] = QubitPool::instance().allocate();
         }
     }
+
+    // ── M13 qbool operator declarations ───────────────────────────────────
+    // Bodies are provided in qbool_ops.hpp.  Only declared here.
+
+    qbool& operator^=(const qbool& other);
+    qbool& operator^=(const AndExpr<qbool>& expr);
+    qbool& operator^=(const OrExpr<qbool>& expr);
+    qbool& flip();
+    qbool  operator~() const;
 };
 
 } // namespace sturm

@@ -1,0 +1,328 @@
+// test_qbool_ops.cpp — M13: qbool operators + lazy expressions tests.
+//
+// Tests:
+//   test_qbool_xor_assign      — c ^= a emits 1 CX
+//   test_qbool_and_expr_xor    — c ^= (a & b) emits 1 CCX
+//   test_qbool_or_expr_xor     — c ^= (a | b) emits 2 CX + 1 CCX (3 gates)
+//   test_qbool_and_materialize — qbool r = (a & b) allocates ancilla; destruction uncomputes/frees
+//   test_qbool_flip            — a.flip() emits 1 X
+//   test_qbool_not             — ~a emits 1 X, returns new qbool
+//   test_qbool_under_when      — c ^= a under 1 control emits 1 CCX (lifted CX)
+//   test_qbool_non_owning      — non-owning qbool destruction does NOT release the qubit
+//
+// Harness: plain assert + main (no gtest).
+
+#include "sturm/core/context.hpp"
+#include "sturm/core/core.h"
+#include "sturm/qtypes/qbool.hpp"
+#include "sturm/qtypes/lazy_expr.hpp"
+#include "sturm/qtypes/qbool_ops.hpp"
+
+#include <cassert>
+#include <cstdio>
+#include <cstdint>
+
+// ── Scoped context helper ─────────────────────────────────────────────────────
+
+struct ScopedCtx {
+    sturm_backend_context_t* ctx;
+    sturm_backend_context_t* prev;
+
+    explicit ScopedCtx(sturm_mode_t mode, uint32_t max_q = 32u) {
+        ctx  = sturm_backend_create(mode, max_q);
+        assert(ctx);
+        prev = sturm_get_thread_context();
+        sturm_set_thread_context(ctx);
+    }
+    ~ScopedCtx() {
+        sturm_set_thread_context(prev);
+        sturm_backend_destroy(ctx);
+    }
+
+    sturm::BackendContext& bc() { return *ctx; }
+};
+
+// ── Helper: make a non-owning qbool with a specific qubit index ───────────────
+//
+// Uses qbool::make_non_owning() factory defined in qbool_ops.hpp / qbool.hpp.
+
+static sturm::qbool make_qubit(int idx) {
+    return sturm::qbool::make_non_owning(idx);
+}
+
+// ── test_qbool_xor_assign: c ^= a emits 1 CX ─────────────────────────────────
+
+static void test_qbool_xor_assign() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool c = make_qubit(1);
+
+    c ^= a;
+
+    assert(sc.ctx->gate_count == 1u);
+    std::printf("  test_qbool_xor_assign: PASS\n");
+}
+
+// ── test_qbool_xor_assign_ir: c ^= a in APPEND mode emits CX record ──────────
+
+static void test_qbool_xor_assign_ir() {
+    ScopedCtx sc{STURM_MODE_APPEND};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool c = make_qubit(1);
+
+    c ^= a;
+
+    assert(sc.ctx->ir.size() == 1u);
+    const auto& rec = sc.ctx->ir.at(0);
+    assert(rec.kind == STURM_GATE_CX);
+    assert(rec.qubits[0] == 0u);
+    assert(rec.qubits[1] == 1u);
+    std::printf("  test_qbool_xor_assign_ir: PASS\n");
+}
+
+// ── test_qbool_and_expr_xor: c ^= (a & b) emits 1 CCX ────────────────────────
+
+static void test_qbool_and_expr_xor() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool b = make_qubit(1);
+    sturm::qbool c = make_qubit(2);
+
+    c ^= (a & b);
+
+    assert(sc.ctx->gate_count == 1u);
+    std::printf("  test_qbool_and_expr_xor: PASS\n");
+}
+
+// ── test_qbool_and_expr_xor_ir: CCX record in APPEND mode ────────────────────
+
+static void test_qbool_and_expr_xor_ir() {
+    ScopedCtx sc{STURM_MODE_APPEND};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool b = make_qubit(1);
+    sturm::qbool c = make_qubit(2);
+
+    c ^= (a & b);
+
+    assert(sc.ctx->ir.size() == 1u);
+    const auto& rec = sc.ctx->ir.at(0);
+    assert(rec.kind == STURM_GATE_CCX);
+    assert(rec.qubits[0] == 0u);
+    assert(rec.qubits[1] == 1u);
+    assert(rec.qubits[2] == 2u);
+    std::printf("  test_qbool_and_expr_xor_ir: PASS\n");
+}
+
+// ── test_qbool_or_expr_xor: c ^= (a | b) emits 2 CX + 1 CCX (3 gates) ───────
+
+static void test_qbool_or_expr_xor() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool b = make_qubit(1);
+    sturm::qbool c = make_qubit(2);
+
+    c ^= (a | b);
+
+    assert(sc.ctx->gate_count == 3u);
+    std::printf("  test_qbool_or_expr_xor: PASS\n");
+}
+
+// ── test_qbool_or_expr_xor_ir: 2 CX + 1 CCX records in APPEND mode ──────────
+
+static void test_qbool_or_expr_xor_ir() {
+    ScopedCtx sc{STURM_MODE_APPEND};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool b = make_qubit(1);
+    sturm::qbool c = make_qubit(2);
+
+    c ^= (a | b);
+
+    assert(sc.ctx->ir.size() == 3u);
+    assert(sc.ctx->ir.at(0).kind == STURM_GATE_CX);
+    assert(sc.ctx->ir.at(1).kind == STURM_GATE_CX);
+    assert(sc.ctx->ir.at(2).kind == STURM_GATE_CCX);
+    std::printf("  test_qbool_or_expr_xor_ir: PASS\n");
+}
+
+// ── test_qbool_and_materialize: qbool r = (a & b) allocates ancilla ──────────
+// Materialization emits 1 CCX; destruction emits 1 CCX (uncompute). Total: 2.
+
+static void test_qbool_and_materialize() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_qubit(0);
+    sturm::qbool b = make_qubit(1);
+
+    {
+        // r = (a & b) materializes: acquires ancilla, emits CCX
+        sturm::qbool r = (a & b);
+        assert(sc.ctx->gate_count == 1u);
+        assert(r.qubits[0] >= 0);
+
+        // After scope, destructor runs uncompute CCX and releases ancilla.
+    }
+    // After r is destroyed, ancilla should be freed.
+    assert(sc.ctx->gate_count == 2u);
+
+    std::printf("  test_qbool_and_materialize: PASS\n");
+}
+
+// ── test_qbool_flip: a.flip() emits 1 X ──────────────────────────────────────
+
+static void test_qbool_flip() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_qubit(0);
+
+    a.flip();
+
+    assert(sc.ctx->gate_count == 1u);
+    std::printf("  test_qbool_flip: PASS\n");
+}
+
+// ── test_qbool_flip_ir: X record in APPEND mode ───────────────────────────────
+
+static void test_qbool_flip_ir() {
+    ScopedCtx sc{STURM_MODE_APPEND};
+    sturm::qbool a = make_qubit(0);
+
+    a.flip();
+
+    assert(sc.ctx->ir.size() == 1u);
+    assert(sc.ctx->ir.at(0).kind == STURM_GATE_X);
+    assert(sc.ctx->ir.at(0).qubits[0] == 0u);
+    std::printf("  test_qbool_flip_ir: PASS\n");
+}
+
+// ── test_qbool_not: ~a emits 1 X, returns new qbool ──────────────────────────
+// The result qbool is owning (allocates ancilla) and materializes with X.
+// On destruction, it uncomputes with another X. Total: 2 gates.
+
+static void test_qbool_not() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_qubit(0);
+
+    {
+        sturm::qbool r = ~a;
+        // r has an ancilla qubit set and has 1 X gate emitted
+        assert(sc.ctx->gate_count == 1u);
+        assert(r.qubits[0] >= 0);
+    }
+    // r destructs: emits uncompute X = 2 gates total
+    assert(sc.ctx->gate_count == 2u);
+
+    std::printf("  test_qbool_not: PASS\n");
+}
+
+// ── test_qbool_under_when: c ^= a under 1 control emits 1 CCX ────────────────
+
+static void test_qbool_under_when() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+
+    // qubit 0 = ctrl, qubit 1 = a, qubit 2 = c
+    sturm::qbool ctrl = make_qubit(0);
+    sturm::qbool a    = make_qubit(1);
+    sturm::qbool c    = make_qubit(2);
+
+    // Push a control qubit onto the control stack to simulate WHEN(ctrl)
+    sc.bc().control_stack.push_control(0u);
+
+    c ^= a;  // under 1 control: CX is lifted to CCX
+
+    sc.bc().control_stack.pop_control();
+
+    assert(sc.ctx->gate_count == 1u);
+
+    // Check in APPEND mode that CCX was emitted
+    std::printf("  test_qbool_under_when (count): PASS\n");
+}
+
+// ── test_qbool_under_when_ir: verify CCX emitted in APPEND mode ──────────────
+
+static void test_qbool_under_when_ir() {
+    ScopedCtx sc{STURM_MODE_APPEND};
+
+    sturm::qbool a = make_qubit(1);
+    sturm::qbool c = make_qubit(2);
+
+    sc.bc().control_stack.push_control(0u);
+    c ^= a;
+    sc.bc().control_stack.pop_control();
+
+    assert(sc.ctx->ir.size() == 1u);
+    assert(sc.ctx->ir.at(0).kind == STURM_GATE_CCX);
+    // Control is [0], a is [1], c is [2]
+    assert(sc.ctx->ir.at(0).qubits[0] == 0u);
+    assert(sc.ctx->ir.at(0).qubits[1] == 1u);
+    assert(sc.ctx->ir.at(0).qubits[2] == 2u);
+
+    std::printf("  test_qbool_under_when_ir: PASS\n");
+}
+
+// ── test_qbool_under_when_and: c ^= (a & b) under 1 control uses c_AND fold ──
+// Under 1 control: AND(c0, c1, target) becomes a 4-qubit operation.
+// c_AND fold: borrow ancilla, CCX(ctrl, c0, anc), CCX(ctrl, c1, anc) — actually
+// the simplest safe approach: CCX(ctrl,a,anc) + CCX(anc,b,c) + CCX(ctrl,a,anc)
+// But per spec, with 1 control for an AND: emits more than 1 gate.
+// We just verify gate_count > 1.
+
+static void test_qbool_under_when_and() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+
+    sturm::qbool a = make_qubit(1);
+    sturm::qbool b = make_qubit(2);
+    sturm::qbool c = make_qubit(3);
+
+    sc.bc().control_stack.push_control(0u);
+    c ^= (a & b);
+    sc.bc().control_stack.pop_control();
+
+    // Under 1 control, AND(a, b, c) requires c_AND decomposition (>1 gate)
+    assert(sc.ctx->gate_count > 1u);
+
+    std::printf("  test_qbool_under_when_and: PASS\n");
+}
+
+// ── test_qbool_non_owning: non-owning qbool does NOT release qubit ────────────
+
+static void test_qbool_non_owning() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+
+    // Allocate a qubit from the global pool
+    int idx = sturm::QubitPool::instance().allocate();
+    int initial_in_use = sturm::QubitPool::instance().in_use();
+
+    {
+        // Create a non-owning qbool — destructor must NOT call release()
+        sturm::qbool q = sturm::qbool::make_non_owning(idx);
+        assert(q.qubits[0] == idx);
+        assert(!q.owning_);
+    }
+    // After q is destroyed, the qubit should still be "in use"
+    assert(sturm::QubitPool::instance().in_use() == initial_in_use);
+
+    // Cleanup
+    sturm::QubitPool::instance().release(idx);
+
+    std::printf("  test_qbool_non_owning: PASS\n");
+}
+
+// ── Runner ────────────────────────────────────────────────────────────────────
+
+int main() {
+    std::printf("M13 qbool operators + lazy expressions tests:\n");
+    test_qbool_xor_assign();
+    test_qbool_xor_assign_ir();
+    test_qbool_and_expr_xor();
+    test_qbool_and_expr_xor_ir();
+    test_qbool_or_expr_xor();
+    test_qbool_or_expr_xor_ir();
+    test_qbool_and_materialize();
+    test_qbool_flip();
+    test_qbool_flip_ir();
+    test_qbool_not();
+    test_qbool_under_when();
+    test_qbool_under_when_ir();
+    test_qbool_under_when_and();
+    test_qbool_non_owning();
+    std::printf("All M13 qbool_ops tests passed.\n");
+    return 0;
+}
