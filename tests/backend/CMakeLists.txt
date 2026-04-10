@@ -1353,3 +1353,28 @@ set_source_files_properties(
 )
 add_test(NAME test_compound_assign_simulate COMMAND test_compound_assign_simulate)
 set_tests_properties(test_compound_assign_simulate PROPERTIES LABELS "backend")
+
+# ── sturm-hvb: COUNT_ONLY gate emission baseline for compound-assign ops ──────
+# Verifies that +=, -=, *=, /=, %= each emit at least one gate in COUNT_ONLY
+# mode.  EXPECTED TO PASS on current code: compound-assigns are wired to the
+# DSL library, which routes through execute_gate.
+add_executable(test_compound_assign_gate_emission
+    test_compound_assign_gate_emission.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_compound_assign_gate_emission PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_compound_assign_gate_emission PRIVATE cxx_std_20)
+target_compile_definitions(test_compound_assign_gate_emission PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_compound_assign_gate_emission PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_compound_assign_gate_emission COMMAND test_compound_assign_gate_emission)
+set_tests_properties(test_compound_assign_gate_emission PROPERTIES LABELS "backend")
