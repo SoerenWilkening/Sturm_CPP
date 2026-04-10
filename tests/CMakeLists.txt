@@ -21,6 +21,7 @@ set(STURM_TEST_SOURCES
     test_phase_amp.cpp
     test_width.cpp
     test_doc_sync.cpp
+    test_qint_owning.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
