@@ -192,6 +192,10 @@ qint_t<W> pow(const qint_t<W>& base, int64_t exp) {
 
 // ── compound assign definitions ───────────────────────────────────────────────
 // Defined here after the free binary operators are visible.
+// When STURM_BACKEND_ENABLED is set, compound assigns are defined in
+// qint_arith_v3.hpp (DSL library functions). Otherwise use free operator path.
+
+#ifndef STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator+=(const qint_t<W>& b) {
@@ -218,4 +222,13 @@ qint_t<W>& qint_t<W>::operator%=(const qint_t<W>& b) {
     *this = *this % b; return *this;
 }
 
+#endif  // !STURM_BACKEND_ENABLED
+
 } // namespace sturm
+
+// ── Backend-enabled compound assign bodies (DSL library) ─────────────────────
+// When STURM_BACKEND_ENABLED is set, provide compound-assign bodies that call
+// the DSL library functions (lib_add_dsl, lib_mul_dsl, etc.) directly.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/qint_arith_v3.hpp"
+#endif
