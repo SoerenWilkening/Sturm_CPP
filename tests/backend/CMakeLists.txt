@@ -1124,3 +1124,59 @@ set_source_files_properties(
 )
 add_test(NAME test_qbool_ops COMMAND test_qbool_ops)
 set_tests_properties(test_qbool_ops PROPERTIES LABELS "backend")
+
+# ── M14: DSL-style Cuccaro adder/subtractor ──────────────────────────────────
+add_executable(test_adder_dsl
+    test_adder_dsl.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_adder_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_adder_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_adder_dsl PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_adder_dsl PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_adder_dsl COMMAND test_adder_dsl)
+set_tests_properties(test_adder_dsl PROPERTIES LABELS "backend")
+
+# ── M18: qint_t operator[](i) returns non-owning qbool ───────────────────────
+add_executable(test_subscript
+    test_subscript.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_subscript PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_subscript PRIVATE cxx_std_20)
+target_compile_definitions(test_subscript PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_subscript PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_subscript COMMAND test_subscript)
+set_tests_properties(test_subscript PROPERTIES LABELS "backend")

@@ -176,19 +176,18 @@ qbool qint_t<W>::operator>=(const qint_t<W>& b) const {
 }
 
 // ── operator[] — bit subscript ────────────────────────────────────────────────
-// Returns a qbool that shares qubits[i].
-// If bit i is superposed (super_mask has bit i set), the result is superposed
-// and the qubit index is shared (not a copy).
-// The value is the classical bit value at position i.
+// Returns a non-owning qbool that aliases qubits[i].
+// The returned qbool has owning_ = false so its destructor will NOT release
+// the qubit back to the pool — the qint_t<W> retains full ownership.
+// The value and is_super fields reflect the classical state of bit i.
+// The caller must not destroy the source qint while using this qbool.
 
 template <std::size_t W>
 qbool qint_t<W>::operator[](std::size_t i) const {
-    qbool out;
+    const int idx = (i < W) ? qubits[i] : -1;
+    qbool out = qbool::make_non_owning(idx);
     out.value    = ((value >> static_cast<int>(i)) & 1) != 0;
     out.is_super = (super_mask & (1ULL << i)) != 0;
-    // Share the qubit index (not owned by this qbool — the qint still owns it).
-    // The caller must not destroy the source qint while using this qbool.
-    out.qubits[0] = (i < W) ? qubits[i] : -1;
     return out;
 }
 
