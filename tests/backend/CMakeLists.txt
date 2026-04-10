@@ -1292,3 +1292,87 @@ set_source_files_properties(
 )
 add_test(NAME test_div_dsl COMMAND test_div_dsl)
 set_tests_properties(test_div_dsl PROPERTIES LABELS "backend")
+
+# ── M17: DSL-style COMPARE (EQ, LT, LE, GT, GE, NE) ─────────────────────────
+add_executable(test_compare_dsl_truth_tables
+    test_compare_dsl_truth_tables.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_compare_dsl_truth_tables PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_compare_dsl_truth_tables PRIVATE cxx_std_20)
+target_compile_definitions(test_compare_dsl_truth_tables PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_compare_dsl_truth_tables PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_compare_dsl_truth_tables COMMAND test_compare_dsl_truth_tables)
+set_tests_properties(test_compare_dsl_truth_tables PROPERTIES LABELS "backend")
+
+# ── M17: DSL-style MOD (remainder only) ──────────────────────────────────────
+add_executable(test_mod_dsl_truth_table
+    test_mod_dsl_truth_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_mod_dsl_truth_table PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mod_dsl_truth_table PRIVATE cxx_std_20)
+target_compile_definitions(test_mod_dsl_truth_table PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mod_dsl_truth_table PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_mod_dsl_truth_table COMMAND test_mod_dsl_truth_table)
+set_tests_properties(test_mod_dsl_truth_table PROPERTIES LABELS "backend")
+
+# ── M17: DSL-style POW (repeated squaring) ───────────────────────────────────
+add_executable(test_pow_dsl_small
+    test_pow_dsl_small.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_pow_dsl_small PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow_dsl_small PRIVATE cxx_std_20)
+target_compile_definitions(test_pow_dsl_small PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_pow_dsl_small PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_pow_dsl_small COMMAND test_pow_dsl_small)
+set_tests_properties(test_pow_dsl_small PROPERTIES LABELS "backend")
