@@ -8,6 +8,8 @@
 //
 // Must be included after qint_core.hpp (via qint.hpp umbrella).
 //
+// Backend AND/OR operator bodies are in qint_bitwise_backend.hpp, included below
+// when STURM_BACKEND_ENABLED is set.
 // Backend shift operator bodies (<< >> <<= >>=) are in qint_shift_backend.hpp,
 // included below when STURM_BACKEND_ENABLED is set.
 
@@ -18,6 +20,8 @@
 #ifdef STURM_BACKEND_ENABLED
 #  include "sturm/backend/primitives.hpp"
 #  include "sturm/core/qubit_pool.hpp"
+#  include "sturm/qtypes/qbool_ops.hpp"
+#  include "sturm/qtypes/lazy_expr.hpp"
 #endif
 
 namespace sturm {
@@ -32,30 +36,10 @@ namespace detail {
 } // namespace detail
 
 // ── operator& ─────────────────────────────────────────────────────────────────
+// Backend-enabled body is in qint_bitwise_backend.hpp (included below).
+// Non-backend body uses dispatch_binary.
 
-#ifdef STURM_BACKEND_ENABLED
-
-template <std::size_t W>
-qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
-    qint_t<W> result;
-    result.value      = a.value & b.value;
-    result.super_mask = detail::mask_bitwise(a.super_mask, b.super_mask);
-    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
-
-    if ((a.super_mask | b.super_mask) != 0) {
-        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
-            // TODO(backend): emit AND circuit — M22+
-            (void)ctx;
-        }
-    }
-    // BITWISE_SELF: AND is self-inverse (AND again with same inputs restores result).
-    result.uncompute_ = uncompute_op::make_bitwise_self(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        detail::BITWISE_AND);
-    return result;
-}
-
-#else  // !STURM_BACKEND_ENABLED
+#ifndef STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
@@ -71,32 +55,13 @@ qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
         });
 }
 
-#endif  // STURM_BACKEND_ENABLED
+#endif  // !STURM_BACKEND_ENABLED
 
 // ── operator| ─────────────────────────────────────────────────────────────────
+// Backend-enabled body is in qint_bitwise_backend.hpp (included below).
+// Non-backend body uses dispatch_binary.
 
-#ifdef STURM_BACKEND_ENABLED
-
-template <std::size_t W>
-qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
-    qint_t<W> result;
-    result.value      = a.value | b.value;
-    result.super_mask = detail::mask_bitwise(a.super_mask, b.super_mask);
-    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
-
-    if ((a.super_mask | b.super_mask) != 0) {
-        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
-            // TODO(backend): emit OR circuit — M22+
-            (void)ctx;
-        }
-    }
-    result.uncompute_ = uncompute_op::make_bitwise_self(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        detail::BITWISE_OR);
-    return result;
-}
-
-#else  // !STURM_BACKEND_ENABLED
+#ifndef STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
@@ -112,7 +77,7 @@ qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
         });
 }
 
-#endif  // STURM_BACKEND_ENABLED
+#endif  // !STURM_BACKEND_ENABLED
 
 // ── operator^ ─────────────────────────────────────────────────────────────────
 
@@ -272,6 +237,12 @@ qint_t<W>& qint_t<W>::operator>>=(int n) {
 #endif  // !STURM_BACKEND_ENABLED
 
 } // namespace sturm
+
+// ── Backend-enabled AND/OR operator bodies ────────────────────────────────────
+// operator& and operator| (Toffoli / OR-DSL circuits) are defined here when backend.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/qint_bitwise_backend.hpp"
+#endif
 
 // ── Backend-enabled shift operator bodies ────────────────────────────────────
 // operator<< operator>> operator<<= operator>>= are defined here when backend.

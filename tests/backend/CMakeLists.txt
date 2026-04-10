@@ -1452,3 +1452,26 @@ set_source_files_properties(
 )
 add_test(NAME test_bitwise_not_operator COMMAND test_bitwise_not_operator)
 set_tests_properties(test_bitwise_not_operator PROPERTIES LABELS "backend")
+
+# ── sturm-9wz: SIMULATE mode tests for bitwise AND/OR (&=, |=, &, |) ─────────
+# Verifies statevector correctness for all 4 forms: &=, |=, & (free), | (free).
+add_executable(test_bitwise_and_or_simulate
+    test_bitwise_and_or_simulate.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_bitwise_and_or_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_bitwise_and_or_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_bitwise_and_or_simulate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_bitwise_and_or_simulate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_bitwise_and_or_simulate COMMAND test_bitwise_and_or_simulate)
+set_tests_properties(test_bitwise_and_or_simulate PROPERTIES LABELS "backend")
