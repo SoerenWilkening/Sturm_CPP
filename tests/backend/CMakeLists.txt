@@ -1305,3 +1305,27 @@ set_source_files_properties(
 )
 add_test(NAME test_free_op_simulate COMMAND test_free_op_simulate)
 set_tests_properties(test_free_op_simulate PROPERTIES LABELS "backend")
+
+# ── sturm-dxr: Simulation correctness for compound-assign operators ───────────
+# Tests SIMULATE mode for +=, -=, *=, /=, %= with concrete values.
+# EXPECTED TO PASS on current code (compound-assigns are wired to DSL library).
+add_executable(test_compound_assign_simulate
+    test_compound_assign_simulate.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_compound_assign_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_compound_assign_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_compound_assign_simulate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_compound_assign_simulate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_compound_assign_simulate COMMAND test_compound_assign_simulate)
+set_tests_properties(test_compound_assign_simulate PROPERTIES LABELS "backend")
