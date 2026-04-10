@@ -3,7 +3,7 @@
 // Rewrites OR, NAND, NOR, XNOR using qbool operators (^=, &, |, flip()) instead
 // of direct primitive calls.
 //
-// Functions in sturm:: namespace (NOT sturm::v2::):
+// Functions in sturm:: namespace:
 //
 //   lib_or_dsl(a, b, c)   — OR:  c ^= (a | b)
 //                            Uses OrExpr consumed by operator^= (2 CX + 1 CCX).

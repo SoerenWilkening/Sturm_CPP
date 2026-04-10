@@ -15,7 +15,7 @@
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/gate_kind.h"
-#include "sturm/backend/primitives_v3.hpp"
+#include "sturm/backend/primitives.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
 #include "sturm/backend/exec_simulate.hpp"
 

@@ -14,7 +14,7 @@
 #  include "sturm/uncompute/qint_base.hpp"
 #  include "sturm/core/context.hpp"
 // M13: gate emission helpers for qbool uncompute (AND / OR / X).
-#  include "sturm/backend/primitives_v3.hpp"
+#  include "sturm/backend/primitives.hpp"
 #endif
 
 #include <array>
