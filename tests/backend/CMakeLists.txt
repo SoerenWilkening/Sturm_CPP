@@ -1208,3 +1208,87 @@ set_source_files_properties(
 )
 add_test(NAME test_subscript COMMAND test_subscript)
 set_tests_properties(test_subscript PROPERTIES LABELS "backend")
+
+# ── M16: DSL-style SWAP / Fredkin ─────────────────────────────────────────────
+add_executable(test_swap_dsl
+    test_swap_dsl.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_swap_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_swap_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_swap_dsl PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_swap_dsl PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_swap_dsl COMMAND test_swap_dsl)
+set_tests_properties(test_swap_dsl PROPERTIES LABELS "backend")
+
+# ── M16: DSL-style MUL (shift-and-add) ───────────────────────────────────────
+add_executable(test_mul_dsl
+    test_mul_dsl.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_mul_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_dsl PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_dsl PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_mul_dsl COMMAND test_mul_dsl)
+set_tests_properties(test_mul_dsl PROPERTIES LABELS "backend")
+
+# ── M16: DSL-style DIV (non-restoring) ───────────────────────────────────────
+add_executable(test_div_dsl
+    test_div_dsl.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_div_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_div_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_div_dsl PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_div_dsl PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_div_dsl COMMAND test_div_dsl)
+set_tests_properties(test_div_dsl PROPERTIES LABELS "backend")
