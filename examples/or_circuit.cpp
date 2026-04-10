@@ -79,17 +79,8 @@ int main() {
     
     // ── 3. The high-level call: a |= b ─────────────────────────────────────
     // (operator| backend path is currently a stub — see file header note.)
-    a & b;
-//    a |= b;
-
-    // ── 4. Manually emit the OR decomposition into the IR ─────────────────────
-    // out register occupies qubits 2W..3W-1 (already allocated via kNumQubits).
-    for (uint32_t i = 0; i < (uint32_t)W; ++i) {
-        const uint32_t a_q   = (uint32_t)i;
-        const uint32_t b_q   = (uint32_t)(W + i);
-        const uint32_t out_q = (uint32_t)(2 * W + i);
-        emit_or_bit(*ctx, a_q, b_q, out_q);
-    }
+//    a & b;
+    a += b;
 
     // ── 5. Print the recorded circuit ─────────────────────────────────────────
     std::printf("Recorded %zu gates for a |= b (W=%zu)\n\n",
