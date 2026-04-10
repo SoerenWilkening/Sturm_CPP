@@ -1177,4 +1177,108 @@ target_compile_definitions(test_no_v2_namespace PRIVATE
     STURM_REPO_ROOT="${CMAKE_SOURCE_DIR}"
 )
 add_test(NAME test_no_v2_namespace COMMAND test_no_v2_namespace)
+
+# ── M21: Integration & acceptance ────────────────────────────────────────────
+
+# test_e2e_arithmetic — (a+5)*b exercises ADD + MUL + gate count
+add_executable(test_e2e_arithmetic
+    test_e2e_arithmetic.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_e2e_arithmetic PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_e2e_arithmetic PRIVATE cxx_std_20)
+target_compile_definitions(test_e2e_arithmetic PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_e2e_arithmetic PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_e2e_arithmetic COMMAND test_e2e_arithmetic)
+set_tests_properties(test_e2e_arithmetic PROPERTIES LABELS "backend")
+
+# test_e2e_pow_mod — pow(a,e) % m exercises POW + MOD
+add_executable(test_e2e_pow_mod
+    test_e2e_pow_mod.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_e2e_pow_mod PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_e2e_pow_mod PRIVATE cxx_std_20)
+target_compile_definitions(test_e2e_pow_mod PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_e2e_pow_mod PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_e2e_pow_mod COMMAND test_e2e_pow_mod)
+set_tests_properties(test_e2e_pow_mod PROPERTIES LABELS "backend")
+
+# test_e2e_when_nested — 3+ level WHEN nesting drives c_n_AND + ancilla clean
+add_executable(test_e2e_when_nested
+    test_e2e_when_nested.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_e2e_when_nested PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_e2e_when_nested PRIVATE cxx_std_20)
+target_compile_definitions(test_e2e_when_nested PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_e2e_when_nested PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_e2e_when_nested COMMAND test_e2e_when_nested)
+set_tests_properties(test_e2e_when_nested PROPERTIES LABELS "backend")
+
+# test_e2e_all_modes — same program in COUNT_ONLY, APPEND, SIMULATE
+add_executable(test_e2e_all_modes
+    test_e2e_all_modes.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_e2e_all_modes PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_e2e_all_modes PRIVATE cxx_std_20)
+target_compile_definitions(test_e2e_all_modes PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_e2e_all_modes PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_e2e_all_modes COMMAND test_e2e_all_modes)
+set_tests_properties(test_e2e_all_modes PROPERTIES LABELS "backend")
+
+# test_e2e_loc_budget — module LoC budget verification (grep/wc-based)
+add_executable(test_e2e_loc_budget
+    test_e2e_loc_budget.cpp
+)
+target_include_directories(test_e2e_loc_budget PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_e2e_loc_budget PRIVATE cxx_std_20)
+target_compile_definitions(test_e2e_loc_budget PRIVATE
+    STURM_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME test_e2e_loc_budget COMMAND test_e2e_loc_budget)
+set_tests_properties(test_e2e_loc_budget PROPERTIES LABELS "backend")
 set_tests_properties(test_no_v2_namespace PROPERTIES LABELS "backend")
