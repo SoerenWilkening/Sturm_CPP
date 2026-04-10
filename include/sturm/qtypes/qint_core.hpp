@@ -11,7 +11,6 @@
 // in qint_arith.hpp after the free operator+ etc. are visible.
 
 #include "sturm/qtypes/qint_fwd.hpp"
-#include "sturm/qtypes/qbool.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/counter_sink.hpp"  // current_sink()
 #include "sturm/control/when_fwd.hpp"   // detail::current_control for proxies
@@ -33,6 +32,13 @@
 #include <vector>
 
 namespace sturm {
+
+// Forward declaration — full definition is in qbool.hpp.
+// qint_core.hpp may not include qbool.hpp directly: once M5 lands, qbool.hpp
+// will include qint_core.hpp (for inheritance), which would create a cycle.
+// Conversion bodies live in qint_qbool_conv.hpp (included by qint.hpp after
+// both headers are available).
+class qbool;
 
 template <std::size_t Width>
 class qint_t {
@@ -78,22 +84,13 @@ public:
     // ── Construct from qbool (zero-extend bit 0) ──────────────────────────────
     // spec §7: value = b.value ? 1 : 0; mask = b.is_super ? 1 : 0;
     // qubits[0] shares the qbool's qubit index.
+    // Body is in qint_qbool_conv.hpp (needs full qbool definition).
     // NOLINTNEXTLINE(google-explicit-constructor)
-    qint_t(const qbool& b) noexcept
-        : value(b.value ? 1 : 0),
-          super_mask(b.is_super ? 1ULL : 0ULL) {
-        qubits.fill(-1);
-        qubits[0] = b.qubits[0];
-    }
+    qint_t(const qbool& b) noexcept;
 
     // ── Explicit conversion to qbool (keep bit 0 only) ────────────────────────
-    explicit operator qbool() const noexcept {
-        qbool out;
-        out.value     = (value & 1) != 0;
-        out.is_super  = (super_mask & 1) != 0;
-        out.qubits[0] = qubits[0];
-        return out;
-    }
+    // Body is in qint_qbool_conv.hpp (needs full qbool definition).
+    explicit operator qbool() const noexcept;
 
     // ── Explicit int64_t conversion ───────────────────────────────────────────
     // TODO(backend): perform real quantum measurement and collapse state.
