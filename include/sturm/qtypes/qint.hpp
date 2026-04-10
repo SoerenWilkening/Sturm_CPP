@@ -14,7 +14,9 @@
 // and the free functions pow(qint, qint) and pow(qint, int64_t) are declared.
 
 #include "sturm/qtypes/qint_fwd.hpp"
-#include "sturm/qtypes/qint_core.hpp"
+#include "sturm/qtypes/qint_core.hpp"      // qint_t<W> (forward-declares qbool)
+#include "sturm/qtypes/qbool.hpp"           // qbool full definition
+#include "sturm/qtypes/qint_qbool_conv.hpp" // qint_t<W>(const qbool&) and operator qbool()
 #include "sturm/qtypes/qint_arith.hpp"
 #include "sturm/qtypes/qint_bitwise.hpp"
 #include "sturm/qtypes/qint_compare.hpp"

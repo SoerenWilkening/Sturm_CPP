@@ -1,0 +1,45 @@
+#pragma once
+// qint_qbool_conv.hpp — Out-of-class bodies for qint_t<W> ↔ qbool conversions.
+//
+// These definitions need both qint_core.hpp (class template) and qbool.hpp
+// (full qbool definition).  They live here — rather than in qint_core.hpp —
+// to break the include cycle that would arise once qbool.hpp includes
+// qint_core.hpp for inheritance (M5).
+//
+// Include order enforced by qint.hpp:
+//   qint_core.hpp          (qint_t<W> class, forward-declares qbool)
+//   qbool.hpp              (qbool full definition)
+//   qint_qbool_conv.hpp    ← this file (sees both)
+
+#include "sturm/qtypes/qint_core.hpp"
+#include "sturm/qtypes/qbool.hpp"
+
+namespace sturm {
+
+// ── qint_t<W>(const qbool&) ───────────────────────────────────────────────────
+// Implicit zero-extension of bit 0: value and super_mask set from the qbool's
+// boolean fields; the qbool's qubit index is shared in slot 0.
+// All other qubit slots stay at -1 (unallocated / classical 0).
+template <std::size_t W>
+qint_t<W>::qint_t(const qbool& b) noexcept
+    : value(b.value ? 1 : 0),
+      super_mask(b.is_super ? 1ULL : 0ULL) {
+    qubits.fill(-1);
+    qubits[0] = b.qubits[0];
+}
+
+// ── qint_t<W>::operator qbool() ───────────────────────────────────────────────
+// Explicit narrowing to bit 0: extracts the lsb of value and super_mask.
+// The returned qbool is a non-owning view (owning_ = false) so it does not
+// release the qubit index on destruction.
+template <std::size_t W>
+qint_t<W>::operator qbool() const noexcept {
+    qbool out;
+    out.value     = (value & 1) != 0;
+    out.is_super  = (super_mask & 1) != 0;
+    out.qubits[0] = qubits[0];
+    out.owning_   = false;  // view only — qubit is owned by the source qint_t
+    return out;
+}
+
+} // namespace sturm
