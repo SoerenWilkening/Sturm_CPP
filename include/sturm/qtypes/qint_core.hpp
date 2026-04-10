@@ -58,6 +58,12 @@ public:
     uncompute_op uncompute_{};
 #endif
 
+    // ── Ownership flag (M1: owning_ on qint_t) ────────────────────────────────
+    // When true (default), the destructor releases qubit indices back to the pool.
+    // When false, this object is a non-owning view — qubits are managed elsewhere.
+    // Transferred by move; copies always start with owning_ = true and no qubits.
+    bool owning_ = true;
+
     // ── Default constructor ───────────────────────────────────────────────────
     qint_t() noexcept {
         qubits.fill(-1);
@@ -99,18 +105,22 @@ public:
     // invoke ensure_bit_qubit() or otherwise allocate lazily.  This mirrors the
     // qbool copy-constructor semantics and prevents double-release when
     // dispatch helpers take mutable value-copies of operands.
+    // owning_ = true: the copy owns its own fresh (unallocated) qubits.
     qint_t(const qint_t& other) noexcept
-        : value(other.value), super_mask(other.super_mask) {
+        : value(other.value), super_mask(other.super_mask), owning_(true) {
         qubits.fill(-1);
     }
 
     // ── Move constructor ──────────────────────────────────────────────────────
+    // Transfers ownership: destination becomes owning, source becomes non-owning.
     qint_t(qint_t&& other) noexcept
-        : value(other.value), super_mask(other.super_mask), qubits(other.qubits)
+        : value(other.value), super_mask(other.super_mask), qubits(other.qubits),
+          owning_(other.owning_)
 #ifdef STURM_BACKEND_ENABLED
           , uncompute_(other.uncompute_)
 #endif
     {
+        other.owning_ = false;   // source no longer owns the qubits
         other.qubits.fill(-1);
         other.super_mask = 0;
 #ifdef STURM_BACKEND_ENABLED
@@ -156,41 +166,53 @@ public:
         }
 #endif
         // Step 2: release qubit indices back to the global pool.
+        // Guard with owning_ so non-owning views don't double-release.
         // TODO(backend): migrate to per-context pool when the full
         //                qubit-lifecycle wiring lands (M-future).
-        for (int idx : qubits) {
-            if (idx >= 0) {
-                QubitPool::instance().release(idx);
+        if (owning_) {
+            for (int idx : qubits) {
+                if (idx >= 0) {
+                    QubitPool::instance().release(idx);
+                }
             }
         }
     }
 
     // ── Copy assignment ───────────────────────────────────────────────────────
-    // Releases current qubits, then copies value/super_mask only.
+    // Releases current qubits (if owning), then copies value/super_mask only.
     // Qubit indices are reset to -1 (no shared ownership; prevents double-release).
+    // owning_ = true: the copy owns its own fresh (unallocated) qubits.
     qint_t& operator=(const qint_t& other) {
         if (this == &other) return *this;
-        for (int idx : qubits) {
-            if (idx >= 0) QubitPool::instance().release(idx);
+        if (owning_) {
+            for (int idx : qubits) {
+                if (idx >= 0) QubitPool::instance().release(idx);
+            }
         }
         value      = other.value;
         super_mask = other.super_mask;
         qubits.fill(-1);
+        owning_    = true;  // copy owns its own fresh qubits
         return *this;
     }
 
     // ── Move assignment ───────────────────────────────────────────────────────
+    // Transfers ownership: destination becomes owning, source becomes non-owning.
     qint_t& operator=(qint_t&& other) noexcept {
         if (this == &other) return *this;
-        for (int idx : qubits) {
-            if (idx >= 0) QubitPool::instance().release(idx);
+        if (owning_) {
+            for (int idx : qubits) {
+                if (idx >= 0) QubitPool::instance().release(idx);
+            }
         }
         value      = other.value;
         super_mask = other.super_mask;
         qubits     = other.qubits;
+        owning_    = other.owning_;  // transfer ownership
 #ifdef STURM_BACKEND_ENABLED
         uncompute_ = other.uncompute_;
 #endif
+        other.owning_ = false;       // source no longer owns the qubits
         other.qubits.fill(-1);
         other.super_mask = 0;
 #ifdef STURM_BACKEND_ENABLED
@@ -201,12 +223,15 @@ public:
 
     // ── int64_t assignment ────────────────────────────────────────────────────
     qint_t& operator=(int64_t v) {
-        for (int idx : qubits) {
-            if (idx >= 0) QubitPool::instance().release(idx);
+        if (owning_) {
+            for (int idx : qubits) {
+                if (idx >= 0) QubitPool::instance().release(idx);
+            }
         }
         value      = v;
         super_mask = 0;
         qubits.fill(-1);
+        owning_    = true;
         return *this;
     }
 
@@ -281,6 +306,20 @@ public:
 
     PhiProxy   phi()   { return PhiProxy{*this}; }
     ThetaProxy theta() { return ThetaProxy{*this}; }
+
+    // ── make_non_owning ───────────────────────────────────────────────────────
+    // Creates a non-owning view of externally managed qubits.
+    // The returned object's destructor will NOT release the qubit indices.
+    // Used by dispatch helpers and qbool's make_non_owning to avoid double-release.
+    static qint_t make_non_owning(std::array<int, Width> q, int64_t val,
+                                  uint64_t mask) {
+        qint_t result;
+        result.qubits     = q;
+        result.value      = val;
+        result.super_mask = mask;
+        result.owning_    = false;
+        return result;
+    }
 };
 
 } // namespace sturm
