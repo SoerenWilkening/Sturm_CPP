@@ -24,7 +24,9 @@
 //   qbool.hpp     — included transitively through when_fwd.hpp
 
 #include "sturm/control/when_fwd.hpp"   // current_control TLS
-// qbool.hpp is transitively included via when_fwd.hpp
+// M5: when_fwd.hpp no longer includes qbool.hpp (only forward-declares qbool).
+// when.hpp uses qbool members directly, so we include the full definition here.
+#include "sturm/qtypes/qbool.hpp"
 
 #include <type_traits>
 
@@ -74,7 +76,7 @@ struct WhenGuard {
     explicit WhenGuard(qbool& expr) noexcept
         : run_(false), modified_tls_(false), and_folded_(false), prev_control_(nullptr)
     {
-        if (expr.is_super) {
+        if (expr.super_mask & 1) {
             // Superposed branch: materialise qubit, set TLS control pointer.
             run_ = true;
             expr.ensure_qubit();
@@ -85,9 +87,9 @@ struct WhenGuard {
             if (prev_control_ != nullptr && prev_control_->qubits[0] >= 0) {
                 // Allocate ancilla qubit (initialised to |0⟩ by convention).
                 int anc_idx = QubitPool::instance().allocate();
-                // Set up ancilla_ struct (is_super=true, qubit allocated, value=false).
-                ancilla_.is_super  = true;
-                ancilla_.value     = false;
+                // Set up ancilla_ struct (super_mask=1, qubit allocated, value=0).
+                ancilla_.super_mask = 1ULL;
+                ancilla_.value      = 0;
                 ancilla_.qubits[0] = anc_idx;
 
                 // Save inner expr qubit index for uncompute in destructor.
@@ -112,7 +114,7 @@ struct WhenGuard {
             detail::current_control = &expr;
 #endif
             modified_tls_  = true;
-        } else if (expr.value) {
+        } else if (expr.value & 1) {
             // Classical true branch: body runs, control chain unmodified.
             run_ = true;
         }

@@ -75,7 +75,7 @@ static void test_superposed() {
     int qubit_inside = -2;
 
     qbool flag(0.5);  // superposed, qubit allocated, prepare() emitted
-    assert(flag.is_super == true);
+    assert(flag.super_mask & 1);
     assert(flag.qubits[0] >= 0 && "qubit must be allocated after superposed ctor");
 
     WHEN(flag) {

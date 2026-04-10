@@ -73,7 +73,7 @@ static void test_add_with_control() {
     ScopedSink scope(&rs);
 
     qbool flag(0.5);   // superposed; qubit allocated; prepare() emitted
-    assert(flag.is_super == true);
+    assert(flag.super_mask & 1);
     int flag_qubit = flag.qubits[0];
     assert(flag_qubit >= 0);
 
@@ -167,7 +167,7 @@ static void test_eq_super_result() {
     assert(rs.records()[0].control == -1);
 
     // Result qbool carries superposition from the inputs
-    assert(r.is_super == true);
+    assert(r.super_mask & 1);
 
     // A result qubit was allocated
     assert(r.qubits[0] >= 0);
@@ -184,7 +184,7 @@ static void test_xor_with_control() {
     ScopedSink scope(&rs);
 
     qbool flag(0.5);
-    assert(flag.is_super == true);
+    assert(flag.super_mask & 1);
     int flag_qubit = flag.qubits[0];
     rs.clear();   // discard prepare() record
 

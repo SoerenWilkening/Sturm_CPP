@@ -103,13 +103,13 @@ static void test_bool_to_qbool_implicit() {
     ScopedSink scope(&rs);
 
     qbool t = true;
-    assert(t.value    == true);
-    assert(t.is_super == false);
+    assert(t.value    == 1);
+    assert(!(t.super_mask & 1));
     assert(t.qubits[0] == -1);
 
     qbool f = false;
-    assert(f.value    == false);
-    assert(f.is_super == false);
+    assert(f.value    == 0);
+    assert(!(f.super_mask & 1));
     assert(f.qubits[0] == -1);
 
     // No sink calls
@@ -193,8 +193,8 @@ static void test_qint_to_qbool_explicit() {
     {
         qint q(static_cast<int64_t>(7));   // 0b111, bit 0 is 1
         qbool b = static_cast<qbool>(q);
-        assert(b.value    == true);
-        assert(b.is_super == false);       // q.super_mask == 0
+        assert(b.value    == 1);
+        assert(!(b.super_mask & 1));       // q.super_mask == 0
         assert(b.qubits[0] == -1);         // q.qubits[0] == -1
     }
 
@@ -202,16 +202,16 @@ static void test_qint_to_qbool_explicit() {
     {
         qint q(static_cast<int64_t>(8));   // 0b1000, bit 0 is 0
         qbool b = static_cast<qbool>(q);
-        assert(b.value    == false);
-        assert(b.is_super == false);
+        assert(b.value    == 0);
+        assert(!(b.super_mask & 1));
     }
 
     // Zero value → false
     {
         qint q(static_cast<int64_t>(0));
         qbool b = static_cast<qbool>(q);
-        assert(b.value    == false);
-        assert(b.is_super == false);
+        assert(b.value    == 0);
+        assert(!(b.super_mask & 1));
     }
 
     assert(rs.records().empty());
@@ -231,7 +231,7 @@ static void test_qint_from_super_qbool() {
 
     // qbool(0.5) allocates a qubit and emits prepare()
     qbool b(0.5);
-    assert(b.is_super  == true);
+    assert(b.super_mask & 1);
     assert(b.qubits[0] >= 0);
     int b_qubit = b.qubits[0];
 
@@ -272,8 +272,8 @@ static void test_qbool_from_classical_qint() {
     qint q(static_cast<int64_t>(0xFF));
     qbool b = static_cast<qbool>(q);
 
-    assert(b.value    == true);    // bit 0 of 0xFF is 1
-    assert(b.is_super == false);   // q.super_mask == 0
+    assert(b.value    == 1);       // bit 0 of 0xFF is 1
+    assert(!(b.super_mask & 1));   // q.super_mask == 0
     // qubits[0] shares q.qubits[0]; both are -1 for classical
     assert(b.qubits[0] == q.qubits[0]);
 
@@ -300,8 +300,8 @@ static void test_qbool_from_super_qint_bit0() {
 
     qbool b = static_cast<qbool>(q);
 
-    assert(b.value    == true);   // (1 & 1) != 0
-    assert(b.is_super == true);   // super_mask & 1 == 1
+    assert(b.value    == 1);      // (1 & 1) != 0
+    assert(b.super_mask & 1);     // super_mask & 1 == 1
     assert(b.qubits[0] == q_qubit);
 
     // No unexpected sink calls

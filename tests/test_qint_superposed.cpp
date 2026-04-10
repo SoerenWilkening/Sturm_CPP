@@ -236,7 +236,7 @@ static void test_eq_super() {
     qint b(5);
 
     sturm::qbool r = (a == b);
-    assert(r.is_super == true);
+    assert((r.super_mask & 1) == 1);
     assert(r.qubits[0] >= 0);
     assert(rs.records().size() == 1);
     assert(rs.records()[0].op == "quantum_eq");
@@ -252,7 +252,7 @@ static void test_lt_super() {
     qint b(5);
 
     sturm::qbool r = (a < b);
-    assert(r.is_super == true);
+    assert((r.super_mask & 1) == 1);
     assert(r.qubits[0] >= 0);
     assert(rs.records().size() == 1);
     assert(rs.records()[0].op == "quantum_lt");
@@ -265,7 +265,7 @@ static void test_subscript_super() {
 
     qint a = make_super(0b101, 0x4, 2);
     sturm::qbool b = a[2];
-    assert(b.is_super == true);
+    assert((b.super_mask & 1) == 1);
     assert(b.qubits[0] == a.qubits[2]);  // shared qubit
 }
 

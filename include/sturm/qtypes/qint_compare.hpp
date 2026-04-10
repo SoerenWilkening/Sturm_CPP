@@ -49,8 +49,8 @@ inline qbool make_compare_result(
         const qint_t<W>& a, const qint_t<W>& b,
         bool classical_val, uint32_t cmp_sub_kind) {
     qbool out;
-    out.value    = classical_val;
-    out.is_super = (detail::mask_compare(a.super_mask, b.super_mask) != 0);
+    out.value      = classical_val ? 1 : 0;
+    out.super_mask = (detail::mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
 
     // Stamp the COMPARE uncompute op so the qbool destructor can emit the
     // compare circuit and its inverse (Bennett uncomputation).
@@ -168,8 +168,8 @@ template <std::size_t W>
 qbool qint_t<W>::operator[](std::size_t i) const {
     const int idx = (i < W) ? qubits[i] : -1;
     qbool out = qbool::make_non_owning(idx);
-    out.value    = ((value >> static_cast<int>(i)) & 1) != 0;
-    out.is_super = (super_mask & (1ULL << i)) != 0;
+    out.value      = ((value >> static_cast<int>(i)) & 1);
+    out.super_mask = (super_mask >> i) & 1ULL;
     return out;
 }
 

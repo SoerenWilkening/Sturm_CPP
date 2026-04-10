@@ -41,8 +41,8 @@ inline qbool make_dsl_compare_result(
     // Classical / unallocated-qubit path: no DSL emission.
     if (!is_quantum) {
         qbool result;
-        result.value    = classical_val;
-        result.is_super = (detail::mask_compare(a.super_mask, b.super_mask) != 0);
+        result.value      = classical_val ? 1 : 0;
+        result.super_mask = (detail::mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
         result.uncompute_ = uncompute_op::make_compare(
             reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
             reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
@@ -53,10 +53,10 @@ inline qbool make_dsl_compare_result(
     // Quantum path: allocate result qubit, call DSL, stamp tag.
     int result_idx = QubitPool::instance().allocate();
     qbool result;
-    result.qubits[0] = result_idx;
-    result.owning_   = true;
-    result.value     = classical_val;
-    result.is_super  = true;
+    result.qubits[0]  = result_idx;
+    result.owning_    = true;
+    result.value      = classical_val ? 1 : 0;
+    result.super_mask = 1ULL;
 
     // Build non-owning qbool bit-views for both operands.
     std::array<qbool, W> a_bits;

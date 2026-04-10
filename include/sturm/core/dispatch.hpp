@@ -191,8 +191,8 @@ qbool dispatch_compare(const QintLike& a, const QintLike& b,
     // Step 3: fast path.
     if (combined == 0) {
         qbool result;
-        result.value    = classical_val;
-        result.is_super = false;
+        result.value      = classical_val ? 1 : 0;
+        result.super_mask = 0;
         // qubits[0] stays -1
         return result;
     }
@@ -211,8 +211,8 @@ qbool dispatch_compare(const QintLike& a, const QintLike& b,
     }
 
     qbool out;
-    out.is_super = true;
-    out.value    = classical_val;
+    out.super_mask = 1ULL;
+    out.value      = classical_val ? 1 : 0;
     out.ensure_qubit();  // allocate result qubit
 
     // Step 5: current_control.

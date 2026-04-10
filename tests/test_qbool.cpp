@@ -33,8 +33,8 @@ static int tests_pass = 0;
 static void test_default_ctor() {
     QubitPool::instance().reset_for_testing();
     qbool q;
-    CHECK(q.value     == false);
-    CHECK(q.is_super  == false);
+    CHECK(q.value          == 0);
+    CHECK((q.super_mask & 1) == 0);
     CHECK(q.qubits[0] == -1);
     CHECK(QubitPool::instance().in_use() == 0);
 }
@@ -42,25 +42,25 @@ static void test_default_ctor() {
 static void test_bool_ctor_true() {
     QubitPool::instance().reset_for_testing();
     qbool q(true);
-    CHECK(q.value     == true);
-    CHECK(q.is_super  == false);
+    CHECK(q.value          == 1);
+    CHECK((q.super_mask & 1) == 0);
     CHECK(q.qubits[0] == -1);
 }
 
 static void test_bool_ctor_false() {
     QubitPool::instance().reset_for_testing();
     qbool q(false);
-    CHECK(q.value     == false);
-    CHECK(q.is_super  == false);
+    CHECK(q.value          == 0);
+    CHECK((q.super_mask & 1) == 0);
     CHECK(q.qubits[0] == -1);
 }
 
 static void test_implicit_bool_conversion() {
     // qbool(bool) must be an implicit conversion (not explicit)
     qbool q = true;   // implicit construction
-    CHECK(q.value == true);
+    CHECK(q.value == 1);
     qbool q2 = false;
-    CHECK(q2.value == false);
+    CHECK(q2.value == 0);
 }
 
 static void test_prob_ctor_allocates_qubit() {
@@ -69,7 +69,7 @@ static void test_prob_ctor_allocates_qubit() {
     ScopedSink scope(&rs);
 
     qbool q(0.5);
-    CHECK(q.is_super  == true);
+    CHECK((q.super_mask & 1) == 1);
     CHECK(q.qubits[0] >= 0);
     CHECK(QubitPool::instance().in_use() == 1);
 }
@@ -107,8 +107,8 @@ static void test_prob_ctor_different_probs() {
     qbool q1(0.25);
     qbool q2(0.75);
 
-    CHECK(q1.is_super == true);
-    CHECK(q2.is_super == true);
+    CHECK((q1.super_mask & 1) == 1);
+    CHECK((q2.super_mask & 1) == 1);
     CHECK(q1.qubits[0] >= 0);
     CHECK(q2.qubits[0] >= 0);
     CHECK(q1.qubits[0] != q2.qubits[0]);

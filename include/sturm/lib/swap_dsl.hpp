@@ -71,8 +71,8 @@ inline void lib_swap_dsl(qbool& a, qbool& b) {
         // Swap qubits[0] so each qbool now references the other's physical qubit.
         std::swap(a.qubits[0], b.qubits[0]);
         // Also swap classical metadata so the logical association is consistent.
-        std::swap(a.value,    b.value);
-        std::swap(a.is_super, b.is_super);
+        std::swap(a.value,      b.value);
+        std::swap(a.super_mask, b.super_mask);
         // Note: ownership flags are NOT swapped — each qbool retains its
         // own ownership semantics for the qubit it now references.
     } else {

@@ -5,9 +5,16 @@
 // Included by dispatch.hpp (Step 5) and when.hpp (Step 7) to avoid cycles.
 // when.hpp provides WhenGuard and the WHEN macro; this file provides only the
 // TLS variable so dispatch.hpp can read it without including when.hpp.
+//
+// M5: qbool now inherits qint_t<1>, so qbool.hpp includes qint_core.hpp, which
+// includes when_fwd.hpp. To break the cycle, we use a forward declaration of
+// qbool here instead of including qbool.hpp — a pointer-to-qbool only needs the
+// forward declaration.
 
-// qbool must be fully defined before we can declare a pointer to it.
-#include "sturm/qtypes/qbool.hpp"
+namespace sturm {
+// Forward declaration — full definition in qbool.hpp.
+class qbool;
+} // namespace sturm
 
 namespace sturm::detail {
 
