@@ -1306,6 +1306,30 @@ set_source_files_properties(
 add_test(NAME test_free_op_simulate COMMAND test_free_op_simulate)
 set_tests_properties(test_free_op_simulate PROPERTIES LABELS "backend")
 
+# ── sturm-n7w: COUNT_ONLY gate emission for free operators (+, -, *, /, %) ────
+# EXPECTED TO FAIL until sturm-6qo wires free operators through compound assigns.
+# Each operator has its own test function for individual failure visibility.
+add_executable(test_free_op_gate_emission
+    test_free_op_gate_emission.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_free_op_gate_emission PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_free_op_gate_emission PRIVATE cxx_std_20)
+target_compile_definitions(test_free_op_gate_emission PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_free_op_gate_emission PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_free_op_gate_emission COMMAND test_free_op_gate_emission)
+set_tests_properties(test_free_op_gate_emission PROPERTIES LABELS "backend")
+
 # ── sturm-dxr: Simulation correctness for compound-assign operators ───────────
 # Tests SIMULATE mode for +=, -=, *=, /=, %= with concrete values.
 # EXPECTED TO PASS on current code (compound-assigns are wired to DSL library).
