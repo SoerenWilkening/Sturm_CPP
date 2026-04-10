@@ -157,16 +157,22 @@ qint_t<W> operator~(const qint_t<W>& a) {
     qint_t<W> result;
     result.value      = ~a.value;
     result.super_mask = detail::mask_not(a.super_mask);
-    result.qubits     = a.qubits;   // stub; TODO(backend): fresh register
 
-    if (a.super_mask != 0) {
-        if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
-            // TODO(backend): emit NOT circuit — M22+
-            (void)ctx;
+    // Allocate a fresh result register (W qubits, all |0>).
+    for (std::size_t i = 0; i < W; ++i) {
+        result.qubits[i] = QubitPool::instance().allocate();
+    }
+
+    // Flip each bit in the result register (X gate per qubit) when a context
+    // is installed (quantum execution context present).
+    if (sturm_get_thread_context()) {
+        for (std::size_t i = 0; i < W; ++i) {
+            qbool bit = result[i];
+            bit.flip();
         }
     }
+
     // Unary NOT: re-run NOT on the result to get back to original (self-inverse).
-    // Pass nullptr for the input pointer (unary op, no second operand).
     result.uncompute_ = uncompute_op::make_bitwise_self(nullptr, detail::BITWISE_NOT);
     return result;
 }
@@ -221,6 +227,10 @@ qint_t<W> operator>>(const qint_t<W>& a, int n) {
 }
 
 // ── compound assign definitions ───────────────────────────────────────────────
+// When STURM_BACKEND_ENABLED is set, &=, |=, ^= are defined in
+// qint_bitwise_v3.hpp (DSL per-bit operators). <<= and >>= are always classical.
+
+#ifndef STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator&=(const qint_t<W>& b) {
@@ -237,6 +247,8 @@ qint_t<W>& qint_t<W>::operator^=(const qint_t<W>& b) {
     *this = *this ^ b; return *this;
 }
 
+#endif  // !STURM_BACKEND_ENABLED
+
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator<<=(int n) {
     *this = *this << n; return *this;
@@ -248,3 +260,9 @@ qint_t<W>& qint_t<W>::operator>>=(int n) {
 }
 
 } // namespace sturm
+
+// ── Backend-enabled bitwise compound assign bodies (DSL logic) ────────────────
+// When STURM_BACKEND_ENABLED is set, &=, |=, ^= call DSL logic per bit.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/qint_bitwise_v3.hpp"
+#endif

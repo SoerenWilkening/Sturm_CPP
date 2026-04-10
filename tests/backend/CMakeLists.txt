@@ -1376,3 +1376,104 @@ set_source_files_properties(
 )
 add_test(NAME test_pow_dsl_small COMMAND test_pow_dsl_small)
 set_tests_properties(test_pow_dsl_small PROPERTIES LABELS "backend")
+
+# ── M19: Frontend wiring — qint_t compound-assign to DSL library ──────────────
+
+# Shared source list for M19 tests (all need backend + control stack + DSL).
+set(M19_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+
+# test_qint_add_e2e — operator+= and operator-= emit gates + correct arithmetic
+add_executable(test_qint_add_e2e
+    test_qint_add_e2e.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_qint_add_e2e PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_add_e2e PRIVATE cxx_std_20)
+target_compile_definitions(test_qint_add_e2e PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qint_add_e2e PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qint_add_e2e COMMAND test_qint_add_e2e)
+set_tests_properties(test_qint_add_e2e PROPERTIES LABELS "backend")
+
+# test_qint_mul_e2e — operator*= emits gates + 2-bit multiply correctness
+add_executable(test_qint_mul_e2e
+    test_qint_mul_e2e.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_qint_mul_e2e PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_mul_e2e PRIVATE cxx_std_20)
+target_compile_definitions(test_qint_mul_e2e PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qint_mul_e2e PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qint_mul_e2e COMMAND test_qint_mul_e2e)
+set_tests_properties(test_qint_mul_e2e PROPERTIES LABELS "backend")
+
+# test_qint_compare_e2e — comparison operators return correct qbool + emit gates
+add_executable(test_qint_compare_e2e
+    test_qint_compare_e2e.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_qint_compare_e2e PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_compare_e2e PRIVATE cxx_std_20)
+target_compile_definitions(test_qint_compare_e2e PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qint_compare_e2e PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qint_compare_e2e COMMAND test_qint_compare_e2e)
+set_tests_properties(test_qint_compare_e2e PROPERTIES LABELS "backend")
+
+# test_qint_bitwise_e2e — bitwise operators (&=, |=, ^=) emit correct gate counts
+add_executable(test_qint_bitwise_e2e
+    test_qint_bitwise_e2e.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_qint_bitwise_e2e PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_bitwise_e2e PRIVATE cxx_std_20)
+target_compile_definitions(test_qint_bitwise_e2e PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qint_bitwise_e2e PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qint_bitwise_e2e COMMAND test_qint_bitwise_e2e)
+set_tests_properties(test_qint_bitwise_e2e PROPERTIES LABELS "backend")
