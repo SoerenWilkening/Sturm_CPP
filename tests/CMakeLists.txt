@@ -22,6 +22,7 @@ set(STURM_TEST_SOURCES
     test_width.cpp
     test_doc_sync.cpp
     test_qint_owning.cpp
+    test_qbool_unified.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
