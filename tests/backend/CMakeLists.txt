@@ -1406,3 +1406,27 @@ set_source_files_properties(
 )
 add_test(NAME test_compound_assign_gate_emission COMMAND test_compound_assign_gate_emission)
 set_tests_properties(test_compound_assign_gate_emission PROPERTIES LABELS "backend")
+
+# ── sturm-ta7: SIMULATE mode tests for shift operators (<<, >>, <<=, >>=) ─────
+# Tests that statevector is correctly updated for all 4 shift operators.
+# Shifts are implemented as qubit relabeling (zero gates).
+add_executable(test_shift_simulate
+    test_shift_simulate.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_shift_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_shift_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_shift_simulate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_shift_simulate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_shift_simulate COMMAND test_shift_simulate)
+set_tests_properties(test_shift_simulate PROPERTIES LABELS "backend")

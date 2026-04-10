@@ -7,11 +7,18 @@
 //          operator<< operator>> compound <<=  >>=
 //
 // Must be included after qint_core.hpp (via qint.hpp umbrella).
+//
+// Backend shift operator bodies (<< >> <<= >>=) are in qint_shift_backend.hpp,
+// included below when STURM_BACKEND_ENABLED is set.
 
 #include "sturm/qtypes/qint_core.hpp"
 #include "sturm/core/dispatch.hpp"
 #include "sturm/core/mask_ops.hpp"
 #include "sturm/core/counter_sink.hpp"
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/backend/primitives.hpp"
+#  include "sturm/core/qubit_pool.hpp"
+#endif
 
 namespace sturm {
 
@@ -192,7 +199,11 @@ qint_t<W> operator~(const qint_t<W>& a) {
 
 #endif  // STURM_BACKEND_ENABLED
 
-// ── operator<< ────────────────────────────────────────────────────────────────
+// ── operator<< / operator>> ───────────────────────────────────────────────────
+// Backend-enabled bodies are in qint_shift_backend.hpp (included below).
+// Non-backend (dispatch_shift) bodies are defined here.
+
+#ifndef STURM_BACKEND_ENABLED
 
 template <std::size_t W>
 qint_t<W> operator<<(const qint_t<W>& a, int n) {
@@ -209,8 +220,6 @@ qint_t<W> operator<<(const qint_t<W>& a, int n) {
         });
 }
 
-// ── operator>> ────────────────────────────────────────────────────────────────
-
 template <std::size_t W>
 qint_t<W> operator>>(const qint_t<W>& a, int n) {
     return detail::dispatch_shift<qint_t<W>, qint_t<W>>(
@@ -226,9 +235,12 @@ qint_t<W> operator>>(const qint_t<W>& a, int n) {
         });
 }
 
+#endif  // !STURM_BACKEND_ENABLED
+
 // ── compound assign definitions ───────────────────────────────────────────────
 // When STURM_BACKEND_ENABLED is set, &=, |=, ^= are defined in
-// qint_bitwise_v3.hpp (DSL per-bit operators). <<= and >>= are always classical.
+// qint_bitwise_v3.hpp (DSL per-bit operators). <<= and >>= are defined in
+// qint_shift_backend.hpp. Otherwise use free operator path below.
 
 #ifndef STURM_BACKEND_ENABLED
 
@@ -247,8 +259,6 @@ qint_t<W>& qint_t<W>::operator^=(const qint_t<W>& b) {
     *this = *this ^ b; return *this;
 }
 
-#endif  // !STURM_BACKEND_ENABLED
-
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator<<=(int n) {
     *this = *this << n; return *this;
@@ -259,7 +269,15 @@ qint_t<W>& qint_t<W>::operator>>=(int n) {
     *this = *this >> n; return *this;
 }
 
+#endif  // !STURM_BACKEND_ENABLED
+
 } // namespace sturm
+
+// ── Backend-enabled shift operator bodies ────────────────────────────────────
+// operator<< operator>> operator<<= operator>>= are defined here when backend.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/qint_shift_backend.hpp"
+#endif
 
 // ── Backend-enabled bitwise compound assign bodies (DSL logic) ────────────────
 // When STURM_BACKEND_ENABLED is set, &=, |=, ^= call DSL logic per bit.
