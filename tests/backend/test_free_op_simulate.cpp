@@ -720,153 +720,178 @@ static void test_free_mul_simulate() {
 // =============================================================================
 // test_free_div_simulate
 // Full statevector test: c = a / b.
-//   a = 6 (110), b = 2 (010) → c must hold 3 (011).
-// W=3.
+//   a = 3 (11), b = 2 (10) → c must hold 1 (01).
+// W=2 (required: W=3 peaks at 22 qubits, exceeding kMaxQubits=17).
+//
+// Qubit budget (W=2, pre-reserved a+b=4 qubits):
+//   Register (a+b):     2*W=4  (indices 0..3)
+//   copy_register:      W=2    (indices 4..5)
+//   /= allocs quot+rem: 2*W=4  (indices 6..9)
+//   lib_div_dsl (n=2):  scratch(2)+sgn(1)+overflow(1)+carry_anc(1)=5 (10..14)
+//   Peak: 15 qubits — within kMaxQubits (17).
 //
 // EXPECTED TO FAIL: stub shares a's qubits with c, no division circuit.
 // =============================================================================
 
 static void test_free_div_simulate() {
-    static constexpr std::size_t W3 = 3u;
-    static constexpr uint32_t a3_base = 0u;
-    static constexpr uint32_t b3_base = W3;
+    static constexpr std::size_t W2 = 2u;
+    static constexpr uint32_t a2_base = 0u;
+    static constexpr uint32_t b2_base = W2;
 
     sturm::QubitPool::instance().reset_for_testing();
 
-    int reserved3[2u * W3];
-    for (uint32_t i = 0; i < 2u * W3; ++i) {
-        reserved3[i] = sturm::QubitPool::instance().allocate();
+    int reserved2[2u * W2];
+    for (uint32_t i = 0; i < 2u * W2; ++i) {
+        reserved2[i] = sturm::QubitPool::instance().allocate();
     }
 
     SimCtx sc{n_orkan, 128u};
 
-    // Initialize: a=6 (110), b=2 (010).
-    for (uint32_t i = 0; i < W3; ++i) {
-        if ((6u >> i) & 1u) orkan::apply_x(sc.sv(), a3_base + i);
-        if ((2u >> i) & 1u) orkan::apply_x(sc.sv(), b3_base + i);
+    // Initialize: a=3 (11), b=2 (10).
+    for (uint32_t i = 0; i < W2; ++i) {
+        if ((3u >> i) & 1u) orkan::apply_x(sc.sv(), a2_base + i);
+        if ((2u >> i) & 1u) orkan::apply_x(sc.sv(), b2_base + i);
     }
 
     uint64_t gates_before = sc.ctx->gate_count;
 
     {
-        sturm::qint_t<W3> a, b;
-        for (uint32_t i = 0; i < W3; ++i) {
-            a.qubits[i] = static_cast<int>(a3_base + i);
-            b.qubits[i] = static_cast<int>(b3_base + i);
+        sturm::qint_t<W2> a, b;
+        for (uint32_t i = 0; i < W2; ++i) {
+            a.qubits[i] = static_cast<int>(a2_base + i);
+            b.qubits[i] = static_cast<int>(b2_base + i);
         }
-        a.value      = 6;
-        a.super_mask = (1u << W3) - 1u;
+        a.value      = 3;
+        a.super_mask = (1u << W2) - 1u;
         b.value      = 2;
-        b.super_mask = (1u << W3) - 1u;
+        b.super_mask = (1u << W2) - 1u;
 
-        sturm::qint_t<W3> c = a / b;
+        sturm::qint_t<W2> c = a / b;
 
         // 1. Classical result check.
-        assert(c.value == 3LL &&
-               "c = a / b: classical value must be 6/2=3");
+        assert(c.value == 1LL &&
+               "c = a / b: classical value must be 3/2=1");
 
         // 2. Gate count check (EXPECTED TO FAIL with stub).
         assert(sc.ctx->gate_count > gates_before &&
                "c = a / b must emit gates in SIMULATE mode");
 
         // 3. 'a' unchanged.
-        uint32_t a_val_sv = read_reg(sc.sv(), a3_base, W3, n_orkan);
-        assert(a_val_sv == 6u &&
+        uint32_t a_val_sv = read_reg(sc.sv(), a2_base, W2, n_orkan);
+        assert(a_val_sv == 3u &&
                "a must be unchanged after c = a / b");
 
         // 4. Statevector correctness (EXPECTED TO FAIL with stub).
-        int c_qidx[W3];
-        for (uint32_t i = 0; i < W3; ++i) c_qidx[i] = c.qubits[i];
-        uint32_t c_val_sv = read_reg_idxs(sc.sv(), c_qidx, W3, n_orkan);
-        assert(c_val_sv == 3u &&
-               "c = a / b: statevector must show c holds 6/2=3");
+        int c_qidx[W2];
+        for (uint32_t i = 0; i < W2; ++i) c_qidx[i] = c.qubits[i];
+        uint32_t c_val_sv = read_reg_idxs(sc.sv(), c_qidx, W2, n_orkan);
+        assert(c_val_sv == 1u &&
+               "c = a / b: statevector must show c holds 3/2=1");
 
         clear_q(a);
         clear_q(b);
         clear_q(c);
     }
 
-    for (uint32_t i = 0; i < 2u * W3; ++i) {
-        sturm::QubitPool::instance().release(reserved3[i]);
+    for (uint32_t i = 0; i < 2u * W2; ++i) {
+        sturm::QubitPool::instance().release(reserved2[i]);
     }
 
-    std::printf("  PASS: test_free_div_simulate (6/2=3 in statevector)\n");
+    std::printf("  PASS: test_free_div_simulate (3/2=1 in statevector)\n");
 }
 
 // =============================================================================
 // test_free_mod_simulate
 // Full statevector test: c = a % b.
-//   a = 7 (111), b = 3 (011) → c must hold 1 (001).
-// W=3.
+//   a = 1 (1-bit), b = 1 (1-bit) → c must hold 0 (1%1=0).
+// W=1 (required: W=2 with copy+compound-assign peaks at 18 qubits, exceeding
+//      kMaxQubits=17 via OrkanBridge::allocate limit).
+//
+// Qubit budget (W=1, pre-reserved a+b=2 qubits):
+//   Register (a+b):                    2*W=2  (indices 0..1)
+//   copy_register:                     W=1    (index 2)  + CNOT(0,2)
+//   %= allocs rem:                     W=1    (index 3)
+//   lib_mod_dsl quot:                  W=1    (index 4)
+//   lib_div_dsl1 scratch+ov+carry:     3 ancilla (5..7)
+//   lib_div_dsl1 emit_CCX_lifted anc:  index 8 → peak = 9 → released
+//   lib_div_dsl1 final lib_add_dsl:    carry_anc=8, CCX anc=9 → peak = 10 → released
+//   lib_mod temp_rem:                  index 5 (recycled)
+//   lib_div_dsl2 scratch+ov+carry:     3 ancilla (6..8)
+//   lib_div_dsl2 emit_CCX_lifted anc:  index 9 → peak = 10
+//   lib_div_dsl2 final lib_add_dsl:    carry_anc=9, CCX anc=10 → peak = 11
+//
+// Orkan state needs at least 11 qubits.
+//
+// 'a' register qubit (0) holds |1> (a=1). After c = a % b:
+//   - a's qubit (0) is unchanged: still |1>
+//   - b's qubit (1) is unchanged: |1>  (b=1)
+//   - c's qubit is the remainder register: 1%1=0, so |0>
 //
 // EXPECTED TO FAIL: stub shares a's qubits with c, no modulo circuit.
 // =============================================================================
 
 static void test_free_mod_simulate() {
-    static constexpr std::size_t W3 = 3u;
-    static constexpr uint32_t a3_base = 0u;
-    static constexpr uint32_t b3_base = W3;
+    static constexpr std::size_t W1 = 1u;
+    static constexpr uint32_t a1_base = 0u;
+    static constexpr uint32_t b1_base = W1;   // 1
+    static constexpr uint32_t n_orkan1 = 12u; // peak budget = 11 qubits, use 12
 
     sturm::QubitPool::instance().reset_for_testing();
 
-    int reserved3[2u * W3];
-    for (uint32_t i = 0; i < 2u * W3; ++i) {
-        reserved3[i] = sturm::QubitPool::instance().allocate();
+    int reserved1[2u * W1];
+    for (uint32_t i = 0; i < 2u * W1; ++i) {
+        reserved1[i] = sturm::QubitPool::instance().allocate();
     }
 
-    SimCtx sc{n_orkan, 128u};
+    SimCtx sc{n_orkan1, 128u};
 
-    // Initialize: a=7 (111), b=3 (011).
-    for (uint32_t i = 0; i < W3; ++i) {
-        if ((7u >> i) & 1u) orkan::apply_x(sc.sv(), a3_base + i);
-        if ((3u >> i) & 1u) orkan::apply_x(sc.sv(), b3_base + i);
-    }
+    // Initialize: a=1 (|1>), b=1 (|1>).
+    orkan::apply_x(sc.sv(), a1_base);  // a qubit = |1>
+    orkan::apply_x(sc.sv(), b1_base);  // b qubit = |1>
 
     uint64_t gates_before = sc.ctx->gate_count;
 
     {
-        sturm::qint_t<W3> a, b;
-        for (uint32_t i = 0; i < W3; ++i) {
-            a.qubits[i] = static_cast<int>(a3_base + i);
-            b.qubits[i] = static_cast<int>(b3_base + i);
-        }
-        a.value      = 7;
-        a.super_mask = (1u << W3) - 1u;
-        b.value      = 3;
-        b.super_mask = (1u << W3) - 1u;
+        sturm::qint_t<W1> a, b;
+        a.qubits[0] = static_cast<int>(a1_base);
+        b.qubits[0] = static_cast<int>(b1_base);
+        a.value      = 1;
+        a.super_mask = 1u;
+        b.value      = 1;
+        b.super_mask = 1u;
 
-        sturm::qint_t<W3> c = a % b;
+        sturm::qint_t<W1> c = a % b;
 
-        // 1. Classical result check.
-        assert(c.value == 1LL &&
-               "c = a % b: classical value must be 7%3=1");
+        // 1. Classical result check: 1 % 1 = 0.
+        assert(c.value == 0LL &&
+               "c = a % b: classical value must be 1%1=0");
 
         // 2. Gate count check (EXPECTED TO FAIL with stub).
         assert(sc.ctx->gate_count > gates_before &&
                "c = a % b must emit gates in SIMULATE mode");
 
-        // 3. 'a' unchanged.
-        uint32_t a_val_sv = read_reg(sc.sv(), a3_base, W3, n_orkan);
-        assert(a_val_sv == 7u &&
+        // 3. 'a' unchanged: qubit 0 must still be |1> (value 1).
+        uint32_t a_val_sv = read_reg(sc.sv(), a1_base, W1, n_orkan1);
+        assert(a_val_sv == 1u &&
                "a must be unchanged after c = a % b");
 
-        // 4. Statevector correctness (EXPECTED TO FAIL with stub).
-        int c_qidx[W3];
-        for (uint32_t i = 0; i < W3; ++i) c_qidx[i] = c.qubits[i];
-        uint32_t c_val_sv = read_reg_idxs(sc.sv(), c_qidx, W3, n_orkan);
-        assert(c_val_sv == 1u &&
-               "c = a % b: statevector must show c holds 7%3=1");
+        // 4. Statevector correctness: c must hold 0 (1%1=0 → all |0> bits).
+        int c_qidx[W1];
+        c_qidx[0] = c.qubits[0];
+        uint32_t c_val_sv = read_reg_idxs(sc.sv(), c_qidx, W1, n_orkan1);
+        assert(c_val_sv == 0u &&
+               "c = a % b: statevector must show c holds 1%1=0");
 
         clear_q(a);
         clear_q(b);
         clear_q(c);
     }
 
-    for (uint32_t i = 0; i < 2u * W3; ++i) {
-        sturm::QubitPool::instance().release(reserved3[i]);
+    for (uint32_t i = 0; i < 2u * W1; ++i) {
+        sturm::QubitPool::instance().release(reserved1[i]);
     }
 
-    std::printf("  PASS: test_free_mod_simulate (7%%3=1 in statevector)\n");
+    std::printf("  PASS: test_free_mod_simulate (1%%1=0 in statevector)\n");
 }
 
 // =============================================================================
