@@ -9,7 +9,7 @@
 #include "sturm/core/core.h"
 #include "sturm/core/gate_kind.h"
 #include "sturm/backend/ir.hpp"
-#include "sturm/backend/primitives_v3.hpp"
+#include "sturm/backend/primitives.hpp"
 
 #include <cassert>
 #include <cstdio>

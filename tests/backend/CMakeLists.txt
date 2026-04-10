@@ -644,333 +644,6 @@ target_compile_definitions(test_ci_hook PRIVATE
 add_test(NAME test_ci_hook COMMAND test_ci_hook)
 set_tests_properties(test_ci_hook PROPERTIES LABELS "backend")
 
-# ── PRD v2 M1: backend primitive core ────────────────────────────────────────
-
-# Include the OrkanFetch module so the orkan_headers target is available.
-# (Already included above for test_orkan_bridge; guard against double-include.)
-if(NOT TARGET orkan_headers)
-    include(${CMAKE_SOURCE_DIR}/cmake/OrkanFetch.cmake)
-endif()
-
-# test_primitives_classical — truth tables for X, XOR, AND
-add_executable(test_primitives_classical
-    test_primitives_classical.cpp
-)
-target_include_directories(test_primitives_classical PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_primitives_classical PRIVATE cxx_std_20)
-target_link_libraries(test_primitives_classical PRIVATE orkan_headers)
-add_test(NAME test_primitives_classical COMMAND test_primitives_classical)
-set_tests_properties(test_primitives_classical PROPERTIES LABELS "backend")
-
-# test_primitives_phase — R_y / R_z rotation amplitudes
-add_executable(test_primitives_phase
-    test_primitives_phase.cpp
-)
-target_include_directories(test_primitives_phase PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_primitives_phase PRIVATE cxx_std_20)
-target_link_libraries(test_primitives_phase PRIVATE orkan_headers)
-add_test(NAME test_primitives_phase COMMAND test_primitives_phase)
-set_tests_properties(test_primitives_phase PROPERTIES LABELS "backend")
-
-# test_ancilla_lifecycle — borrow/return, double-free, dirty-free
-add_executable(test_ancilla_lifecycle
-    test_ancilla_lifecycle.cpp
-)
-target_include_directories(test_ancilla_lifecycle PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_ancilla_lifecycle PRIVATE cxx_std_20)
-target_link_libraries(test_ancilla_lifecycle PRIVATE orkan_headers)
-add_test(NAME test_ancilla_lifecycle COMMAND test_ancilla_lifecycle)
-set_tests_properties(test_ancilla_lifecycle PROPERTIES LABELS "backend")
-
-# ── PRD v2 M2: WHEN lift machinery ───────────────────────────────────────────
-
-# test_when_single — WHEN a: X(b) ≡ CNOT; WHEN a: XOR(b,c) ≡ Toffoli
-add_executable(test_when_single
-    test_when_single.cpp
-)
-target_include_directories(test_when_single PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_single PRIVATE cxx_std_20)
-target_link_libraries(test_when_single PRIVATE orkan_headers)
-add_test(NAME test_when_single COMMAND test_when_single)
-set_tests_properties(test_when_single PROPERTIES LABELS "backend")
-
-# test_when_double — WHEN a: WHEN b: X(c) ≡ CCX
-add_executable(test_when_double
-    test_when_double.cpp
-)
-target_include_directories(test_when_double PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_double PRIVATE cxx_std_20)
-target_link_libraries(test_when_double PRIVATE orkan_headers)
-add_test(NAME test_when_double COMMAND test_when_double)
-set_tests_properties(test_when_double PROPERTIES LABELS "backend")
-
-# test_when_triple — WHEN a,b,c: X(d) uses c_AND path (3+ controls)
-add_executable(test_when_triple
-    test_when_triple.cpp
-)
-target_include_directories(test_when_triple PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_triple PRIVATE cxx_std_20)
-target_link_libraries(test_when_triple PRIVATE orkan_headers)
-add_test(NAME test_when_triple COMMAND test_when_triple)
-set_tests_properties(test_when_triple PROPERTIES LABELS "backend")
-
-# test_when_phase — controlled phase rotations (CRy / CRz)
-add_executable(test_when_phase
-    test_when_phase.cpp
-)
-target_include_directories(test_when_phase PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_phase PRIVATE cxx_std_20)
-target_link_libraries(test_when_phase PRIVATE orkan_headers)
-add_test(NAME test_when_phase COMMAND test_when_phase)
-set_tests_properties(test_when_phase PROPERTIES LABELS "backend")
-
-# ── PRD v2 M3: Logic library ──────────────────────────────────────────────────
-
-# test_logic_basic — truth tables for NOT_reg, OR, NAND, NOR, XNOR
-add_executable(test_logic_basic
-    test_logic_basic.cpp
-)
-target_include_directories(test_logic_basic PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_logic_basic PRIVATE cxx_std_20)
-target_link_libraries(test_logic_basic PRIVATE orkan_headers)
-add_test(NAME test_logic_basic COMMAND test_logic_basic)
-set_tests_properties(test_logic_basic PROPERTIES LABELS "backend")
-
-# test_c_and — truth table + ancilla_clean for lib_c_AND
-add_executable(test_c_and
-    test_c_and.cpp
-)
-target_include_directories(test_c_and PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_c_and PRIVATE cxx_std_20)
-target_link_libraries(test_c_and PRIVATE orkan_headers)
-add_test(NAME test_c_and COMMAND test_c_and)
-set_tests_properties(test_c_and PROPERTIES LABELS "backend")
-
-# test_c_n_and — scaling correctness for n=3..6 controls
-add_executable(test_c_n_and
-    test_c_n_and.cpp
-)
-target_include_directories(test_c_n_and PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_c_n_and PRIVATE cxx_std_20)
-target_link_libraries(test_c_n_and PRIVATE orkan_headers)
-add_test(NAME test_c_n_and COMMAND test_c_n_and)
-set_tests_properties(test_c_n_and PROPERTIES LABELS "backend")
-
-# ── PRD v2 M4: SWAP / Fredkin context-aware dispatch ─────────────────────────
-
-# test_swap_uncontrolled_zero_gates — zero gates for uncontrolled SWAP
-add_executable(test_swap_uncontrolled_zero_gates
-    test_swap_uncontrolled_zero_gates.cpp
-)
-target_include_directories(test_swap_uncontrolled_zero_gates PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_swap_uncontrolled_zero_gates PRIVATE cxx_std_20)
-target_link_libraries(test_swap_uncontrolled_zero_gates PRIVATE orkan_headers)
-add_test(NAME test_swap_uncontrolled_zero_gates COMMAND test_swap_uncontrolled_zero_gates)
-set_tests_properties(test_swap_uncontrolled_zero_gates PROPERTIES LABELS "backend")
-
-# test_c_swap_fredkin — Fredkin truth table on all 8 inputs
-add_executable(test_c_swap_fredkin
-    test_c_swap_fredkin.cpp
-)
-target_include_directories(test_c_swap_fredkin PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_c_swap_fredkin PRIVATE cxx_std_20)
-target_link_libraries(test_c_swap_fredkin PRIVATE orkan_headers)
-add_test(NAME test_c_swap_fredkin COMMAND test_c_swap_fredkin)
-set_tests_properties(test_c_swap_fredkin PROPERTIES LABELS "backend")
-
-# test_swap_under_when — WHEN a: SWAP(b,c) → Fredkin, not 3 CCNOTs
-add_executable(test_swap_under_when
-    test_swap_under_when.cpp
-)
-target_include_directories(test_swap_under_when PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_swap_under_when PRIVATE cxx_std_20)
-target_link_libraries(test_swap_under_when PRIVATE orkan_headers)
-add_test(NAME test_swap_under_when COMMAND test_swap_under_when)
-set_tests_properties(test_swap_under_when PROPERTIES LABELS "backend")
-
-# ── M5: move_result uncontrolled relabel — zero gates, index swapped ──────────
-add_executable(test_move_uncontrolled_relabel
-    test_move_uncontrolled_relabel.cpp
-)
-target_include_directories(test_move_uncontrolled_relabel PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_move_uncontrolled_relabel PRIVATE cxx_std_20)
-target_link_libraries(test_move_uncontrolled_relabel PRIVATE orkan_headers)
-add_test(NAME test_move_uncontrolled_relabel COMMAND test_move_uncontrolled_relabel)
-set_tests_properties(test_move_uncontrolled_relabel PROPERTIES LABELS "backend")
-
-# ── M5: move_result controlled Fredkin cascade ────────────────────────────────
-add_executable(test_move_controlled_fredkin
-    test_move_controlled_fredkin.cpp
-)
-target_include_directories(test_move_controlled_fredkin PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_move_controlled_fredkin PRIVATE cxx_std_20)
-target_link_libraries(test_move_controlled_fredkin PRIVATE orkan_headers)
-add_test(NAME test_move_controlled_fredkin COMMAND test_move_controlled_fredkin)
-set_tests_properties(test_move_controlled_fredkin PROPERTIES LABELS "backend")
-
-# ── M5: GarbageManager full uncompute round-trip ──────────────────────────────
-add_executable(test_garbage_uncompute
-    test_garbage_uncompute.cpp
-)
-target_include_directories(test_garbage_uncompute PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_garbage_uncompute PRIVATE cxx_std_20)
-target_link_libraries(test_garbage_uncompute PRIVATE orkan_headers)
-add_test(NAME test_garbage_uncompute COMMAND test_garbage_uncompute)
-set_tests_properties(test_garbage_uncompute PROPERTIES LABELS "backend")
-
-# ── M6: Cuccaro in-place ADD ──────────────────────────────────────────────────
-add_executable(test_add_cuccaro
-    test_add_cuccaro.cpp
-)
-target_include_directories(test_add_cuccaro PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_add_cuccaro PRIVATE cxx_std_20)
-target_link_libraries(test_add_cuccaro PRIVATE orkan_headers)
-add_test(NAME test_add_cuccaro COMMAND test_add_cuccaro)
-set_tests_properties(test_add_cuccaro PROPERTIES LABELS "backend")
-
-# ── M6: two's-complement SUB ──────────────────────────────────────────────────
-add_executable(test_sub
-    test_sub.cpp
-)
-target_include_directories(test_sub PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_sub PRIVATE cxx_std_20)
-target_link_libraries(test_sub PRIVATE orkan_headers)
-add_test(NAME test_sub COMMAND test_sub)
-set_tests_properties(test_sub PROPERTIES LABELS "backend")
-
-# ── M7: MUL (shift-and-add via controlled ADD) ───────────────────────────────
-add_executable(test_mul
-    test_mul.cpp
-)
-target_include_directories(test_mul PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_mul PRIVATE cxx_std_20)
-target_link_libraries(test_mul PRIVATE orkan_headers)
-add_test(NAME test_mul COMMAND test_mul)
-set_tests_properties(test_mul PROPERTIES LABELS "backend")
-
-# ── M7: DIV / MOD (restoring division + remainder wrapper) ───────────────────
-add_executable(test_div_mod
-    test_div_mod.cpp
-)
-target_include_directories(test_div_mod PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_div_mod PRIVATE cxx_std_20)
-target_link_libraries(test_div_mod PRIVATE orkan_headers)
-add_test(NAME test_div_mod COMMAND test_div_mod)
-set_tests_properties(test_div_mod PROPERTIES LABELS "backend")
-
-# ── M8: EQ / LT / LE / GT / GE comparisons ───────────────────────────────────
-add_executable(test_compare
-    test_compare.cpp
-)
-target_include_directories(test_compare PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_compare PRIVATE cxx_std_20)
-target_link_libraries(test_compare PRIVATE orkan_headers)
-add_test(NAME test_compare COMMAND test_compare)
-set_tests_properties(test_compare PROPERTIES LABELS "backend")
-
-# ── M8: POW (repeated squaring via MUL) ──────────────────────────────────────
-add_executable(test_pow
-    test_pow.cpp
-)
-target_include_directories(test_pow PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_pow PRIVATE cxx_std_20)
-target_link_libraries(test_pow PRIVATE orkan_headers)
-add_test(NAME test_pow COMMAND test_pow)
-set_tests_properties(test_pow PROPERTIES LABELS "backend")
-
-# ── M9: Frontend lowering hooks — lower_assign / lower_expr ──────────────────
-add_executable(test_lower_assign
-    test_lower_assign.cpp
-)
-target_include_directories(test_lower_assign PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_lower_assign PRIVATE cxx_std_20)
-target_link_libraries(test_lower_assign PRIVATE orkan_headers)
-add_test(NAME test_lower_assign COMMAND test_lower_assign)
-set_tests_properties(test_lower_assign PROPERTIES LABELS "backend")
-
-# ── M10: Integration & acceptance ────────────────────────────────────────────
-
-# test_integration_arithmetic — c = (a+5)*b  (ADD + MUL + move)
-add_executable(test_integration_arithmetic
-    test_integration_arithmetic.cpp
-)
-target_include_directories(test_integration_arithmetic PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_integration_arithmetic PRIVATE cxx_std_20)
-target_link_libraries(test_integration_arithmetic PRIVATE orkan_headers)
-add_test(NAME test_integration_arithmetic COMMAND test_integration_arithmetic)
-set_tests_properties(test_integration_arithmetic PROPERTIES LABELS "backend")
-
-# test_integration_pow_mod — pow(a,e) mod m  (POW + MOD pipeline)
-add_executable(test_integration_pow_mod
-    test_integration_pow_mod.cpp
-)
-target_include_directories(test_integration_pow_mod PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_integration_pow_mod PRIVATE cxx_std_20)
-target_link_libraries(test_integration_pow_mod PRIVATE orkan_headers)
-add_test(NAME test_integration_pow_mod COMMAND test_integration_pow_mod)
-set_tests_properties(test_integration_pow_mod PROPERTIES LABELS "backend")
-
-# test_integration_when_nested — deep WHEN nesting drives c_n_AND + clean pool
-add_executable(test_integration_when_nested
-    test_integration_when_nested.cpp
-)
-target_include_directories(test_integration_when_nested PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_integration_when_nested PRIVATE cxx_std_20)
-target_link_libraries(test_integration_when_nested PRIVATE orkan_headers)
-add_test(NAME test_integration_when_nested COMMAND test_integration_when_nested)
-set_tests_properties(test_integration_when_nested PROPERTIES LABELS "backend")
 
 # ── M12: Control stack in BackendContext ─────────────────────────────────────
 
@@ -1477,3 +1150,31 @@ set_source_files_properties(
 )
 add_test(NAME test_qint_bitwise_e2e COMMAND test_qint_bitwise_e2e)
 set_tests_properties(test_qint_bitwise_e2e PROPERTIES LABELS "backend")
+
+# ── M20: Cleanup guard — no SimState refs outside tests/ ─────────────────────
+add_executable(test_no_simstate_refs
+    test_no_simstate_refs.cpp
+)
+target_include_directories(test_no_simstate_refs PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_no_simstate_refs PRIVATE cxx_std_20)
+target_compile_definitions(test_no_simstate_refs PRIVATE
+    STURM_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME test_no_simstate_refs COMMAND test_no_simstate_refs)
+set_tests_properties(test_no_simstate_refs PROPERTIES LABELS "backend")
+
+# ── M20: Cleanup guard — no sturm::v2:: namespace outside tests/ ─────────────
+add_executable(test_no_v2_namespace
+    test_no_v2_namespace.cpp
+)
+target_include_directories(test_no_v2_namespace PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_no_v2_namespace PRIVATE cxx_std_20)
+target_compile_definitions(test_no_v2_namespace PRIVATE
+    STURM_REPO_ROOT="${CMAKE_SOURCE_DIR}"
+)
+add_test(NAME test_no_v2_namespace COMMAND test_no_v2_namespace)
+set_tests_properties(test_no_v2_namespace PROPERTIES LABELS "backend")

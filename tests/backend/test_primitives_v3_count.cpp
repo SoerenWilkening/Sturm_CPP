@@ -7,7 +7,7 @@
 
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
-#include "sturm/backend/primitives_v3.hpp"
+#include "sturm/backend/primitives.hpp"
 
 #include <cassert>
 #include <cstdio>

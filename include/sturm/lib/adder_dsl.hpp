@@ -3,7 +3,7 @@
 // Rewrites the classic Cuccaro MAJ/UMA and in-place adder/subtractor using
 // qbool operators (^=, &) instead of direct primitive calls.
 //
-// Functions in sturm:: namespace (NOT sturm::v2::):
+// Functions in sturm:: namespace:
 //
 //   maj_dsl(a, b, c)            — MAJ gate via qbool operators.
 //   uma_dsl(a, b, c)            — UMA gate (inverse of MAJ) via qbool operators.
