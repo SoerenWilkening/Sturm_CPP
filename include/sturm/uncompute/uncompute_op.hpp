@@ -251,13 +251,13 @@ struct uncompute_op {
                     execute_gate(ctx, STURM_GATE_CCX, qs, 3u, 0.0);
                     break;
                 }
-                case 1u: { // OR — inverse is CX(a,t) + CX(b,t) + CCX(a,b,t)
-                    uint32_t cx_a[2] = {qa, tgt};
-                    execute_gate(ctx, STURM_GATE_CX, cx_a, 2u, 0.0);
-                    uint32_t cx_b[2] = {qb, tgt};
-                    execute_gate(ctx, STURM_GATE_CX, cx_b, 2u, 0.0);
+                case 1u: { // OR — reverse of CX+CX+CCX is CCX+CX+CX
                     uint32_t ccx[3] = {qa, qb, tgt};
                     execute_gate(ctx, STURM_GATE_CCX, ccx, 3u, 0.0);
+                    uint32_t cx_b[2] = {qb, tgt};
+                    execute_gate(ctx, STURM_GATE_CX, cx_b, 2u, 0.0);
+                    uint32_t cx_a[2] = {qa, tgt};
+                    execute_gate(ctx, STURM_GATE_CX, cx_a, 2u, 0.0);
                     break;
                 }
                 case 2u: { // XOR — inverse is CX(a, t)
