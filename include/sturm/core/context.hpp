@@ -13,9 +13,10 @@
 
 #pragma once
 
-#include "sturm/core/core.h"       // C ABI declarations (opaque handle, enums)
+#include "sturm/core/core.h"          // C ABI declarations (opaque handle, enums)
 #include "sturm/core/qubit_pool.hpp"
-#include "sturm/backend/ir.hpp"   // GateIR — used in APPEND mode
+#include "sturm/core/control_stack.hpp" // M12: per-context control stack
+#include "sturm/backend/ir.hpp"       // GateIR — used in APPEND mode
 
 #include <cstdint>
 #include <memory>
@@ -68,6 +69,10 @@ struct BackendContext {
     // TODO(backend): frontend qtypes will set bits here when M-future wires
     //                qubit promotion tracking through the context.
     uint32_t      promotion_mask{0};
+
+    // M12: WHEN control stack — pushed by WHEN entry, popped on exit.
+    // Readable by qbool operators without depending on WhenLift.
+    ControlStack  control_stack;
 
     explicit BackendContext(sturm_mode_t m, uint32_t max_q)
         : mode(m), pool(max_q) {}

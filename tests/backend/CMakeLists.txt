@@ -971,3 +971,128 @@ target_compile_features(test_integration_when_nested PRIVATE cxx_std_20)
 target_link_libraries(test_integration_when_nested PRIVATE orkan_headers)
 add_test(NAME test_integration_when_nested COMMAND test_integration_when_nested)
 set_tests_properties(test_integration_when_nested PROPERTIES LABELS "backend")
+
+# ── M12: Control stack in BackendContext ─────────────────────────────────────
+
+# test_control_stack_push_pop — push/pop/depth/top/controls() correctness
+add_executable(test_control_stack_push_pop
+    test_control_stack_push_pop.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_control_stack_push_pop PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_control_stack_push_pop PRIVATE cxx_std_20)
+target_compile_definitions(test_control_stack_push_pop PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_control_stack_push_pop COMMAND test_control_stack_push_pop)
+set_tests_properties(test_control_stack_push_pop PROPERTIES LABELS "backend")
+
+# test_control_stack_thread_local — two contexts on different threads are independent
+find_package(Threads REQUIRED)
+add_executable(test_control_stack_thread_local
+    test_control_stack_thread_local.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_control_stack_thread_local PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_control_stack_thread_local PRIVATE cxx_std_20)
+target_compile_definitions(test_control_stack_thread_local PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_control_stack_thread_local PRIVATE Threads::Threads)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_control_stack_thread_local COMMAND test_control_stack_thread_local)
+set_tests_properties(test_control_stack_thread_local PROPERTIES LABELS "backend")
+
+# ── M11 (v3): Primitives through execute_gate ────────────────────────────────
+
+# test_primitives_v3_count — gate_count increments for each primitive (COUNT_ONLY)
+add_executable(test_primitives_v3_count
+    test_primitives_v3_count.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_primitives_v3_count PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_primitives_v3_count PRIVATE cxx_std_20)
+target_compile_definitions(test_primitives_v3_count PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_primitives_v3_count PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_primitives_v3_count COMMAND test_primitives_v3_count)
+set_tests_properties(test_primitives_v3_count PROPERTIES LABELS "backend")
+
+# test_primitives_v3_append — correct GateRecord pushed for each primitive (APPEND)
+add_executable(test_primitives_v3_append
+    test_primitives_v3_append.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_primitives_v3_append PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_primitives_v3_append PRIVATE cxx_std_20)
+target_compile_definitions(test_primitives_v3_append PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_primitives_v3_append PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_primitives_v3_append COMMAND test_primitives_v3_append)
+set_tests_properties(test_primitives_v3_append PROPERTIES LABELS "backend")
+
+# test_primitives_v3_simulate — statevector matches expected amplitudes (SIMULATE)
+add_executable(test_primitives_v3_simulate
+    test_primitives_v3_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_primitives_v3_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_primitives_v3_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_primitives_v3_simulate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_primitives_v3_simulate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_primitives_v3_simulate COMMAND test_primitives_v3_simulate)
+set_tests_properties(test_primitives_v3_simulate PROPERTIES LABELS "backend")
