@@ -1157,6 +1157,28 @@ set_source_files_properties(
 add_test(NAME test_qint_compare_e2e COMMAND test_qint_compare_e2e)
 set_tests_properties(test_qint_compare_e2e PROPERTIES LABELS "backend")
 
+# sturm-e7f: SIMULATE mode statevector verification for all 6 comparison operators
+add_executable(test_qint_compare_simulate
+    test_qint_compare_simulate.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_qint_compare_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_compare_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_qint_compare_simulate PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qint_compare_simulate PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qint_compare_simulate COMMAND test_qint_compare_simulate)
+set_tests_properties(test_qint_compare_simulate PROPERTIES LABELS "backend")
+
 # test_qint_bitwise_e2e — bitwise operators (&=, |=, ^=) emit correct gate counts
 add_executable(test_qint_bitwise_e2e
     test_qint_bitwise_e2e.cpp
