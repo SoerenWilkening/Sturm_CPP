@@ -201,7 +201,11 @@ static void test_theta_add_with_control() {
     std::puts("PASS: test_theta_add_with_control");
 }
 
-// ── Test 7: rotation on qint with no allocated qubits emits nothing ───────────
+// ── Test 7: rotation on qint with no allocated qubits auto-promotes ───────────
+// M15: PhiProxy/ThetaProxy auto-promote classical bits before emitting gates.
+// A fully classical qint(42) should have its bits allocated on phi() +=,
+// with X gates emitted for bits that are 1 in the classical value, and then
+// rotation records for all 64 bits.
 
 static void test_rotation_no_qubits_no_emission() {
     QubitPool::instance().reset_for_testing();
@@ -209,19 +213,63 @@ static void test_rotation_no_qubits_no_emission() {
     ScopedSink scope(&rs);
 
     // Fully classical qint — no qubits allocated (all == -1)
-    qint q(42);
+    qint q(0);   // value=0: no bits set, so no X gates, just rotation gates
     assert(q.super_mask == 0);
 
-    q.phi()   += 0.1;
-    q.theta() += 0.2;
+    q.phi() += 0.1;
 
-    // No records emitted (no allocated qubits to rotate)
-    assert(rs.records().empty());
+    // After auto-promotion: super_mask has all 64 bits set, records are non-empty
+    assert(q.super_mask != 0 && "auto-promotion must set super_mask");
+
+    // 64 phi_add records (one per bit in qint_t<64>)
+    // No X gates because value == 0 (no classical-1 bits to initialize)
+    assert(!rs.records().empty() && "phi() += on classical qint must emit records after auto-promotion");
+    for (const auto& r : rs.records()) {
+        assert(r.op == "phi_add" && "all records should be phi_add (value==0, no X gates)");
+    }
+    assert(rs.records().size() == 64 && "one phi_add per bit position");
+
+    rs.clear();
+
+    // theta() += on already-promoted qint emits 64 theta_add records (all qubits allocated)
+    q.theta() += 0.2;
+    assert(rs.records().size() == 64 && "one theta_add per bit position");
 
     std::puts("PASS: test_rotation_no_qubits_no_emission");
 }
 
-// ── Test 8: multiple allocated qubits → one record per qubit ─────────────────
+// ── Test 8: theta() += on fresh classical qint auto-promotes (sink path) ──────
+// M16: ThetaProxy::operator+= must allocate qubits and set super_mask for
+// unallocated (classical) bits before emitting theta_add records (sink path).
+// Start from a *fresh* classical qint (phi never called), call theta() +=,
+// and verify super_mask is set and theta_add records are emitted.
+
+static void test_theta_rotation_fresh_classical_qint() {
+    QubitPool::instance().reset_for_testing();
+    RecordingSink rs;
+    ScopedSink scope(&rs);
+
+    // Fully classical qint — no qubits allocated (all == -1), phi never called
+    qint q(0);
+    assert(q.super_mask == 0 && "pre-condition: fresh classical qint has super_mask==0");
+
+    q.theta() += 0.3;
+
+    // After auto-promotion: super_mask is non-zero
+    assert(q.super_mask != 0 && "theta() += on fresh classical qint must set super_mask");
+
+    // 64 theta_add records (one per bit in qint_t<64>)
+    // value==0 → no prepare() calls, only theta_add records
+    assert(!rs.records().empty() && "theta() += on fresh classical qint must emit records");
+    for (const auto& r : rs.records()) {
+        assert(r.op == "theta_add" && "all records must be theta_add (value==0, no prepare calls)");
+    }
+    assert(rs.records().size() == 64 && "one theta_add per bit position in qint_t<64>");
+
+    std::puts("PASS: test_theta_rotation_fresh_classical_qint");
+}
+
+// ── Test 9 (old 8): multiple allocated qubits → one record per qubit ─────────
 // qint with two super bits → phi() += delta emits two phi_add records,
 // one per allocated qubit, both with control == -1.
 
@@ -271,6 +319,7 @@ int main() {
     test_phi_add_with_control();
     test_theta_add_with_control();
     test_rotation_no_qubits_no_emission();
+    test_theta_rotation_fresh_classical_qint();
     test_phi_add_multi_qubits();
     std::puts("All test_phase_amp tests passed.");
     return 0;
