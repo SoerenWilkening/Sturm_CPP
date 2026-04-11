@@ -17,6 +17,7 @@
 #include "sturm/control/when.hpp"
 
 #include <cassert>
+#include <cmath>
 #include <cstdio>
 #include <cstdint>
 
@@ -54,83 +55,61 @@ struct ScopedAppendCtx {
     GateIR& ir() { return ctx->ir; }
 };
 
-// ── AC1: phi() on qbool emits phi_add (RZ gate) via the sink ─────────────────
+// ── AC1: phi() on qbool emits RZ gate (via backend IR) ────────────────────��──
 //
 // qbool(0.5) allocates a qubit and enters superposition.
-// q.phi() += 1.0 must call current_sink()->phi_add(qubit, 1.0, ctrl).
-// This maps to an RZ gate in the backend IR.
-// We verify via RecordingSink that phi_add was recorded.
+// q.phi() += 1.0 must emit an RZ gate via emit_RZ_lifted (backend path).
+// With a backend context active (STURM_BACKEND_ENABLED), the proxy routes to
+// the backend IR rather than to the frontend sink.
 static void test_ac1_phi_on_qbool_emits_rz() {
     QubitPool::instance().reset_for_testing();
     ScopedAppendCtx sc;
 
-    RecordingSink rs;
-    ScopedSink ss(&rs);
-
-    // qbool(0.5): allocate qubit, prepare() called on sink.
+    // qbool(0.5): allocate qubit, prepare() called (emitted to IR, not sink).
     qbool q(0.5);
     CHECK((q.super_mask & 1) == 1u);
     CHECK(q.qubits[0] >= 0);
 
-    // Clear the prepare() record — we only care about the phi_add below.
-    rs.clear();
-
-    // phi() += 1.0 must call current_sink()->phi_add(qubit, 1.0, -1).
+    // phi() += 1.0 must emit one RZ gate to the backend IR.
+    size_t before = sc.ir().size();
     q.phi() += 1.0;
+    size_t after = sc.ir().size();
 
-    CHECK(rs.records().size() == 1u);
-    if (rs.records().size() >= 1u) {
-        const auto& r = rs.records()[0];
-        // "phi_add" corresponds to RZ in the backend gate taxonomy.
-        CHECK(r.op == "phi_add");
-        CHECK(!r.qubit_groups.empty() && !r.qubit_groups[0].empty());
-        if (!r.qubit_groups.empty() && !r.qubit_groups[0].empty()) {
-            CHECK(r.qubit_groups[0][0] == q.qubits[0]);
-        }
-        CHECK(!r.scalars.empty());
-        if (!r.scalars.empty()) {
-            CHECK(r.scalars[0] == 1.0);
-        }
-        // No quantum control (not inside a WHEN).
-        CHECK(r.control == -1);
+    CHECK(after - before == 1u);
+    if (after > before) {
+        const auto& rec = sc.ir().at(before);
+        CHECK(rec.kind == STURM_GATE_RZ);
+        CHECK(rec.n == 1u);
+        CHECK(rec.qubits[0] == static_cast<uint32_t>(q.qubits[0]));
+        CHECK(std::abs(rec.param - 1.0) < 1e-12);
     }
 
     std::printf("PASS: AC1 phi() on qbool emits phi_add (RZ)\n");
 }
 
-// ── AC2: theta() on qbool emits theta_add (RY gate) via the sink ──────────────
+// ── AC2: theta() on qbool emits RY gate (via backend IR) ─────────────────────
 //
 // Same pattern as AC1 but for theta (maps to RY in the backend).
 static void test_ac2_theta_on_qbool_emits_ry() {
     QubitPool::instance().reset_for_testing();
     ScopedAppendCtx sc;
 
-    RecordingSink rs;
-    ScopedSink ss(&rs);
-
     qbool q(0.5);
     CHECK((q.super_mask & 1) == 1u);
     CHECK(q.qubits[0] >= 0);
 
-    rs.clear();  // discard prepare() record
-
-    // theta() += 1.0 must call current_sink()->theta_add(qubit, 1.0, -1).
+    // theta() += 1.0 must emit one RY gate to the backend IR.
+    size_t before = sc.ir().size();
     q.theta() += 1.0;
+    size_t after = sc.ir().size();
 
-    CHECK(rs.records().size() == 1u);
-    if (rs.records().size() >= 1u) {
-        const auto& r = rs.records()[0];
-        // "theta_add" corresponds to RY in the backend gate taxonomy.
-        CHECK(r.op == "theta_add");
-        CHECK(!r.qubit_groups.empty() && !r.qubit_groups[0].empty());
-        if (!r.qubit_groups.empty() && !r.qubit_groups[0].empty()) {
-            CHECK(r.qubit_groups[0][0] == q.qubits[0]);
-        }
-        CHECK(!r.scalars.empty());
-        if (!r.scalars.empty()) {
-            CHECK(r.scalars[0] == 1.0);
-        }
-        CHECK(r.control == -1);
+    CHECK(after - before == 1u);
+    if (after > before) {
+        const auto& rec = sc.ir().at(before);
+        CHECK(rec.kind == STURM_GATE_RY);
+        CHECK(rec.n == 1u);
+        CHECK(rec.qubits[0] == static_cast<uint32_t>(q.qubits[0]));
+        CHECK(std::abs(rec.param - 1.0) < 1e-12);
     }
 
     std::printf("PASS: AC2 theta() on qbool emits theta_add (RY)\n");

@@ -24,6 +24,7 @@
 #  include "sturm/uncompute/uncompute_op.hpp"  // uncompute_op tagged union (M19)
 #  include "sturm/uncompute/qint_base.hpp"     // qint_base + add_const/sub_const
 #  include "sturm/core/context.hpp"            // BackendContext, execute_gate (M3)
+#  include "sturm/ops/lifted_primitives.hpp"   // emit_RZ_lifted / emit_RY_lifted (sturm-b1g)
 #endif
 
 #include <array>
@@ -275,6 +276,19 @@ public:
     struct PhiProxy {
         qint_t& parent;
         void operator+=(double delta) {
+#ifdef STURM_BACKEND_ENABLED
+            if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                for (std::size_t i = 0; i < Width; ++i) {
+                    if (parent.qubits[i] >= 0) {
+                        emit_RZ_lifted(*ctx,
+                                       static_cast<uint32_t>(parent.qubits[i]),
+                                       delta);
+                    }
+                }
+                return;
+            }
+#endif
+            // Fallback: existing sink path.
             const int ctrl = detail::current_control
                              ? detail::current_control_qubit : -1;
             for (std::size_t i = 0; i < Width; ++i) {
@@ -290,6 +304,19 @@ public:
     struct ThetaProxy {
         qint_t& parent;
         void operator+=(double delta) {
+#ifdef STURM_BACKEND_ENABLED
+            if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                for (std::size_t i = 0; i < Width; ++i) {
+                    if (parent.qubits[i] >= 0) {
+                        emit_RY_lifted(*ctx,
+                                       static_cast<uint32_t>(parent.qubits[i]),
+                                       delta);
+                    }
+                }
+                return;
+            }
+#endif
+            // Fallback: existing sink path.
             const int ctrl = detail::current_control
                              ? detail::current_control_qubit : -1;
             for (std::size_t i = 0; i < Width; ++i) {
