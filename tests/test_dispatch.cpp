@@ -125,7 +125,8 @@ static void test_binary_control_routing() {
 
     // Manually install a qbool as current_control.
     sturm::qbool flag(0.5);  // allocates qubit, sets is_super=true
-    sturm::detail::current_control = &flag;
+    sturm::detail::current_control       = &flag;
+    sturm::detail::current_control_qubit = flag.qubits[0];
 
     int seen_ctrl = -999;
     auto classical_fn = [](int64_t x, int64_t y) { return x + y; };
@@ -139,7 +140,8 @@ static void test_binary_control_routing() {
         a, b, classical_fn, mask_fn, sink_fn);
 
     // Restore TLS.
-    sturm::detail::current_control = nullptr;
+    sturm::detail::current_control       = nullptr;
+    sturm::detail::current_control_qubit = -1;
 
     assert(seen_ctrl == flag.qubits[0]);
     assert(seen_ctrl >= 0);

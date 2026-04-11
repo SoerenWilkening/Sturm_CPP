@@ -276,7 +276,7 @@ public:
         qint_t& parent;
         void operator+=(double delta) {
             const int ctrl = detail::current_control
-                             ? detail::current_control->qubits[0] : -1;
+                             ? detail::current_control_qubit : -1;
             for (std::size_t i = 0; i < Width; ++i) {
                 if (parent.qubits[i] >= 0) {
                     current_sink()->phi_add(parent.qubits[i], delta, ctrl);
@@ -291,7 +291,7 @@ public:
         qint_t& parent;
         void operator+=(double delta) {
             const int ctrl = detail::current_control
-                             ? detail::current_control->qubits[0] : -1;
+                             ? detail::current_control_qubit : -1;
             for (std::size_t i = 0; i < Width; ++i) {
                 if (parent.qubits[i] >= 0) {
                     current_sink()->theta_add(parent.qubits[i], delta, ctrl);
