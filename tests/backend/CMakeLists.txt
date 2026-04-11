@@ -1497,3 +1497,33 @@ set_source_files_properties(
 )
 add_test(NAME test_bitwise_and_or_simulate COMMAND test_bitwise_and_or_simulate)
 set_tests_properties(test_bitwise_and_or_simulate PROPERTIES LABELS "backend")
+
+# ── M14 (qbool unification): Final acceptance tests — backend ─────────────────
+# Covers AC1 (phi/RZ), AC2 (theta/RY), AC6 (WHEN classical+superposed),
+# AC8 (operator~ uncomputes — X gate on destruction).
+add_executable(test_qbool_acceptance_backend
+    test_qbool_acceptance_backend.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_qbool_acceptance_backend PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qbool_acceptance_backend PRIVATE cxx_std_20)
+target_compile_definitions(test_qbool_acceptance_backend PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qbool_acceptance_backend PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_qbool_acceptance_backend COMMAND test_qbool_acceptance_backend)
+set_tests_properties(test_qbool_acceptance_backend PROPERTIES LABELS "backend")
