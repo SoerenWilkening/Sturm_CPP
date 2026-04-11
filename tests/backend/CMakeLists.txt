@@ -1582,3 +1582,28 @@ set_source_files_properties(
 )
 add_test(NAME test_lifted_primitives COMMAND test_lifted_primitives)
 set_tests_properties(test_lifted_primitives PROPERTIES LABELS "backend")
+
+# ── sturm-b1g: PhiProxy/ThetaProxy emit gates via backend ────────────────────
+# Verifies that phi += / theta += route through emit_RZ_lifted / emit_RY_lifted
+# when STURM_BACKEND_ENABLED and a backend context is present, and fall back to
+# the sink path otherwise.
+add_executable(test_phi_theta_backend
+    test_phi_theta_backend.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_phi_theta_backend PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_phi_theta_backend PRIVATE cxx_std_20)
+target_compile_definitions(test_phi_theta_backend PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_phi_theta_backend PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_phi_theta_backend COMMAND test_phi_theta_backend)
+set_tests_properties(test_phi_theta_backend PROPERTIES LABELS "backend")
