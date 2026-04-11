@@ -201,39 +201,45 @@ static void test_theta_add_with_control() {
     std::puts("PASS: test_theta_add_with_control");
 }
 
-// ── Test 7: rotation on qint with no allocated qubits auto-promotes ───────────
-// M15: PhiProxy/ThetaProxy auto-promote classical bits before emitting gates.
-// A fully classical qint(42) should have its bits allocated on phi() +=,
-// with X gates emitted for bits that are 1 in the classical value, and then
-// rotation records for all 64 bits.
+// ── Test 7: rotation on qbool with no allocated qubit auto-promotes ──────────
+// M17: Use qbool (qint_t<1> subclass) to verify auto-promotion + sink records.
+// A classical qbool(true) has value=1, super_mask=0, qubits[0]==-1.
+// phi() += should allocate a qubit, set super_mask, emit prepare() (because
+// value bit 0 is 1), and then emit phi_add.  theta() += on the same already-
+// promoted qbool must emit exactly 1 theta_add record (no re-promotion).
 
 static void test_rotation_no_qubits_no_emission() {
     QubitPool::instance().reset_for_testing();
     RecordingSink rs;
     ScopedSink scope(&rs);
 
-    // Fully classical qint — no qubits allocated (all == -1)
-    qint q(0);   // value=0: no bits set, so no X gates, just rotation gates
-    assert(q.super_mask == 0);
+    // Classical qbool(true): value=1, super_mask=0, qubits[0]==-1.
+    qbool c(true);
+    assert(c.super_mask == 0 && "pre-condition: classical qbool has super_mask==0");
+    assert(c.qubits[0] < 0    && "pre-condition: classical qbool has no qubit");
 
-    q.phi() += 0.1;
+    c.phi() += 0.1;
 
-    // After auto-promotion: super_mask has all 64 bits set, records are non-empty
-    assert(q.super_mask != 0 && "auto-promotion must set super_mask");
+    // After auto-promotion: super_mask must be 1 (bit 0 promoted).
+    assert((c.super_mask & 1) != 0 && "auto-promotion must set super_mask bit 0");
+    assert(c.qubits[0] >= 0         && "auto-promotion must allocate qubit");
 
-    // 64 phi_add records (one per bit in qint_t<64>)
-    // No X gates because value == 0 (no classical-1 bits to initialize)
-    assert(!rs.records().empty() && "phi() += on classical qint must emit records after auto-promotion");
-    for (const auto& r : rs.records()) {
-        assert(r.op == "phi_add" && "all records should be phi_add (value==0, no X gates)");
-    }
-    assert(rs.records().size() == 64 && "one phi_add per bit position");
+    // Records: prepare(qubit, 1.0) because value bit 0 == 1,
+    //          then phi_add(qubit, 0.1, -1).
+    assert(rs.records().size() == 2 && "phi() += on qbool(true) must emit prepare + phi_add");
+    assert(rs.records()[0].op == "prepare" && "first record must be prepare");
+    assert(rs.records()[0].scalars[0] == 1.0 && "prepare probability must be 1.0");
+    assert(rs.records()[1].op == "phi_add"   && "second record must be phi_add");
+    assert(rs.records()[1].scalars[0] == 0.1 && "phi_add delta must equal 0.1");
 
     rs.clear();
 
-    // theta() += on already-promoted qint emits 64 theta_add records (all qubits allocated)
-    q.theta() += 0.2;
-    assert(rs.records().size() == 64 && "one theta_add per bit position");
+    // theta() += on already-promoted qbool: qubit already allocated,
+    // no re-promotion → exactly 1 theta_add record.
+    c.theta() += 0.2;
+    assert(rs.records().size() == 1 && "theta() += on promoted qbool must emit 1 theta_add");
+    assert(rs.records()[0].op == "theta_add" && "record must be theta_add");
+    assert(rs.records()[0].scalars[0] == 0.2 && "theta_add delta must equal 0.2");
 
     std::puts("PASS: test_rotation_no_qubits_no_emission");
 }

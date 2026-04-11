@@ -12,7 +12,7 @@
 //   6. theta += delta with APPEND context, depth=1 → CRY gate emitted in IR.
 //   7. phi -= delta emits a gate (negated delta still routes via backend).
 //   8. theta -= delta emits a gate (negated delta still routes via backend).
-//   9. qint with no allocated qubits (all == -1): phi += delta emits nothing.
+//   9. qbool(true) with no allocated qubit: phi += auto-promotes, emits X + RZ (2 gates).
 //  10. qint with multiple allocated qubits: phi += delta emits one RZ per qubit.
 //  11. RZ gate param equals the delta passed to phi += (round-trip check).
 //  12. RY gate param equals the delta passed to theta += (round-trip check).
@@ -248,26 +248,30 @@ static void test_theta_sub_backend_emits_gate() {
     std::printf("PASS test_theta_sub_backend_emits_gate\n");
 }
 
-// ── Test 9: classical qint auto-promotes on phi += ───────────────────────────
-// M15: PhiProxy::operator+= must allocate qubits and set super_mask for
-// unallocated (classical) bits before emitting rotation gates.
-// A classical qint(0) with no qubits allocated should auto-promote all 64 bits
-// and emit 64 RZ gates (one per bit).
+// ── Test 9: classical qbool auto-promotes on phi += (backend path) ───────────
+// M17: Use qbool (qint_t<1> subclass) to verify auto-promotion + gate emission
+// on the backend path.  A classical qbool(true) has value=1, super_mask=0,
+// qubits[0]==-1.  phi() += must allocate the qubit, set super_mask, emit 1 X
+// gate (because bit 0 is 1), and emit 1 RZ gate — total 2 gates.
 
 static void test_phi_add_no_qubits_no_emission() {
     ScopedCountCtx sc;
     QubitPool::instance().reset_for_testing();
-    // Classical qint with value=0 — all qubits == -1, no bits set → no X gates
-    qint q(0);
-    assert(q.super_mask == 0 && "pre-condition: classical qint has super_mask==0");
+
+    // Classical qbool(true): value=1, super_mask=0, qubits[0]==-1.
+    sturm::qbool c(true);
+    assert(c.super_mask == 0 && "pre-condition: classical qbool has super_mask==0");
+    assert(c.qubits[0] < 0   && "pre-condition: classical qbool has no qubit");
+
     uint64_t before = sc.gate_count();
-    q.phi() += kDelta;
+    c.phi() += kDelta;
     uint64_t after = sc.gate_count();
 
-    // After auto-promotion: 64 bits promoted → 64 RZ gates emitted
-    assert(after > before && "phi += backend, classical qint: must auto-promote and emit gates");
-    assert(q.super_mask != 0 && "phi += must set super_mask after auto-promotion");
-    assert(after - before == 64u && "phi += promotes all 64 bits of qint_t<64>, emits 64 RZ gates");
+    // After auto-promotion: 1 X gate (for classical-1 bit) + 1 RZ gate = 2 gates.
+    assert(after > before && "phi += backend, classical qbool: must auto-promote and emit gates");
+    assert((c.super_mask & 1) != 0 && "phi += must set super_mask bit 0 after auto-promotion");
+    assert(c.qubits[0] >= 0        && "phi += must allocate qubit after auto-promotion");
+    assert(after - before == 2u && "phi += on qbool(true): 1 X gate + 1 RZ gate = 2 gates");
     std::printf("PASS test_phi_add_no_qubits_no_emission\n");
 }
 
