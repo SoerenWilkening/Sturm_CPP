@@ -248,21 +248,53 @@ static void test_theta_sub_backend_emits_gate() {
     std::printf("PASS test_theta_sub_backend_emits_gate\n");
 }
 
-// ── Test 9: no allocated qubits → no gate emission ───────────────────────────
+// ── Test 9: classical qint auto-promotes on phi += ───────────────────────────
+// M15: PhiProxy::operator+= must allocate qubits and set super_mask for
+// unallocated (classical) bits before emitting rotation gates.
+// A classical qint(0) with no qubits allocated should auto-promote all 64 bits
+// and emit 64 RZ gates (one per bit).
 
 static void test_phi_add_no_qubits_no_emission() {
     ScopedCountCtx sc;
-    // Classical qint (all qubits == -1)
-    qint q(42);
+    QubitPool::instance().reset_for_testing();
+    // Classical qint with value=0 — all qubits == -1, no bits set → no X gates
+    qint q(0);
+    assert(q.super_mask == 0 && "pre-condition: classical qint has super_mask==0");
     uint64_t before = sc.gate_count();
     q.phi() += kDelta;
     uint64_t after = sc.gate_count();
 
-    assert(after == before && "phi += backend, no qubits: must emit no gates");
+    // After auto-promotion: 64 bits promoted → 64 RZ gates emitted
+    assert(after > before && "phi += backend, classical qint: must auto-promote and emit gates");
+    assert(q.super_mask != 0 && "phi += must set super_mask after auto-promotion");
+    assert(after - before == 64u && "phi += promotes all 64 bits of qint_t<64>, emits 64 RZ gates");
     std::printf("PASS test_phi_add_no_qubits_no_emission\n");
 }
 
-// ── Test 10: multiple allocated qubits → one RZ per qubit ────────────────────
+// ── Test 10: classical qint auto-promotes on theta += (backend path) ─────────
+// M16: ThetaProxy::operator+= must allocate qubits and set super_mask for
+// unallocated (classical) bits before emitting rotation gates.
+// A classical qint(0) with no qubits allocated should auto-promote all 64 bits
+// and emit 64 RY gates (one per bit).
+
+static void test_theta_add_no_qubits_no_emission() {
+    ScopedCountCtx sc;
+    QubitPool::instance().reset_for_testing();
+    // Classical qint with value=0 — all qubits == -1, no bits set → no X gates
+    qint q(0);
+    assert(q.super_mask == 0 && "pre-condition: classical qint has super_mask==0");
+    uint64_t before = sc.gate_count();
+    q.theta() += kDelta;
+    uint64_t after = sc.gate_count();
+
+    // After auto-promotion: 64 bits promoted → 64 RY gates emitted
+    assert(after > before && "theta += backend, classical qint: must auto-promote and emit gates");
+    assert(q.super_mask != 0 && "theta += must set super_mask after auto-promotion");
+    assert(after - before == 64u && "theta += promotes all 64 bits of qint_t<64>, emits 64 RY gates");
+    std::printf("PASS test_theta_add_no_qubits_no_emission\n");
+}
+
+// ── Test 11 (old 10): multiple allocated qubits → one RZ per qubit ───────────
 
 static void test_phi_add_multi_qubits_backend() {
     ScopedCountCtx sc;
@@ -284,7 +316,7 @@ static void test_phi_add_multi_qubits_backend() {
     std::printf("PASS test_phi_add_multi_qubits_backend\n");
 }
 
-// ── Test 11: RZ gate param equals delta (round-trip check) ────────────────────
+// ── Test 12 (old 11): RZ gate param equals delta (round-trip check) ──────────
 
 static void test_phi_add_backend_param_correct() {
     ScopedAppendCtx sc;
@@ -301,7 +333,7 @@ static void test_phi_add_backend_param_correct() {
     std::printf("PASS test_phi_add_backend_param_correct\n");
 }
 
-// ── Test 12: RY gate param equals delta (round-trip check) ────────────────────
+// ── Test 13 (old 12): RY gate param equals delta (round-trip check) ──────────
 
 static void test_theta_add_backend_param_correct() {
     ScopedAppendCtx sc;
@@ -332,6 +364,7 @@ int main() {
     test_phi_sub_backend_emits_gate();
     test_theta_sub_backend_emits_gate();
     test_phi_add_no_qubits_no_emission();
+    test_theta_add_no_qubits_no_emission();
     test_phi_add_multi_qubits_backend();
     test_phi_add_backend_param_correct();
     test_theta_add_backend_param_correct();

@@ -278,6 +278,26 @@ public:
         void operator+=(double delta) {
 #ifdef STURM_BACKEND_ENABLED
             if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                // M15: Auto-promote fully-classical registers.
+                // If ALL bits are unallocated (fully classical register), allocate
+                // qubits, set super_mask, and emit X gate for bits with value 1
+                // before emitting the rotation gates.
+                {
+                    bool all_unallocated = true;
+                    for (std::size_t i = 0; i < Width; ++i) {
+                        if (parent.qubits[i] >= 0) { all_unallocated = false; break; }
+                    }
+                    if (all_unallocated) {
+                        for (std::size_t i = 0; i < Width; ++i) {
+                            parent.qubits[i] = QubitPool::instance().allocate();
+                            parent.super_mask |= (1ULL << i);
+                            if ((parent.value >> static_cast<int>(i)) & 1) {
+                                const auto q = static_cast<uint32_t>(parent.qubits[i]);
+                                execute_gate(*ctx, STURM_GATE_X, &q, 1u, 0.0);
+                            }
+                        }
+                    }
+                }
                 for (std::size_t i = 0; i < Width; ++i) {
                     if (parent.qubits[i] >= 0) {
                         emit_RZ_lifted(*ctx,
@@ -288,7 +308,26 @@ public:
                 return;
             }
 #endif
-            // Fallback: existing sink path.
+            // Fallback: sink path.
+            // M15: Auto-promote fully-classical registers.
+            // If ALL bits are unallocated (fully classical register), allocate
+            // qubits, set super_mask, and call prepare(qubit, 1.0) for bits with
+            // classical value 1 before emitting the rotation records.
+            {
+                bool all_unallocated = true;
+                for (std::size_t i = 0; i < Width; ++i) {
+                    if (parent.qubits[i] >= 0) { all_unallocated = false; break; }
+                }
+                if (all_unallocated) {
+                    for (std::size_t i = 0; i < Width; ++i) {
+                        parent.qubits[i] = QubitPool::instance().allocate();
+                        parent.super_mask |= (1ULL << i);
+                        if ((parent.value >> static_cast<int>(i)) & 1) {
+                            current_sink()->prepare(parent.qubits[i], 1.0);
+                        }
+                    }
+                }
+            }
             const int ctrl = detail::current_control
                              ? detail::current_control_qubit : -1;
             for (std::size_t i = 0; i < Width; ++i) {
@@ -306,6 +345,26 @@ public:
         void operator+=(double delta) {
 #ifdef STURM_BACKEND_ENABLED
             if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                // M16: Auto-promote fully-classical registers.
+                // If ALL bits are unallocated (fully classical register), allocate
+                // qubits, set super_mask, and emit X gate for bits with value 1
+                // before emitting the rotation gates.
+                {
+                    bool all_unallocated = true;
+                    for (std::size_t i = 0; i < Width; ++i) {
+                        if (parent.qubits[i] >= 0) { all_unallocated = false; break; }
+                    }
+                    if (all_unallocated) {
+                        for (std::size_t i = 0; i < Width; ++i) {
+                            parent.qubits[i] = QubitPool::instance().allocate();
+                            parent.super_mask |= (1ULL << i);
+                            if ((parent.value >> static_cast<int>(i)) & 1) {
+                                const auto q = static_cast<uint32_t>(parent.qubits[i]);
+                                execute_gate(*ctx, STURM_GATE_X, &q, 1u, 0.0);
+                            }
+                        }
+                    }
+                }
                 for (std::size_t i = 0; i < Width; ++i) {
                     if (parent.qubits[i] >= 0) {
                         emit_RY_lifted(*ctx,
@@ -316,7 +375,26 @@ public:
                 return;
             }
 #endif
-            // Fallback: existing sink path.
+            // Fallback: sink path.
+            // M16: Auto-promote fully-classical registers.
+            // If ALL bits are unallocated (fully classical register), allocate
+            // qubits, set super_mask, and call prepare(qubit, 1.0) for bits with
+            // classical value 1 before emitting the rotation records.
+            {
+                bool all_unallocated = true;
+                for (std::size_t i = 0; i < Width; ++i) {
+                    if (parent.qubits[i] >= 0) { all_unallocated = false; break; }
+                }
+                if (all_unallocated) {
+                    for (std::size_t i = 0; i < Width; ++i) {
+                        parent.qubits[i] = QubitPool::instance().allocate();
+                        parent.super_mask |= (1ULL << i);
+                        if ((parent.value >> static_cast<int>(i)) & 1) {
+                            current_sink()->prepare(parent.qubits[i], 1.0);
+                        }
+                    }
+                }
+            }
             const int ctrl = detail::current_control
                              ? detail::current_control_qubit : -1;
             for (std::size_t i = 0; i < Width; ++i) {
