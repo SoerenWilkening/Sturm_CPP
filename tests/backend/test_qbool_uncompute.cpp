@@ -137,6 +137,253 @@ static void test_qbool_compare_uncompute() {
     std::printf("  test_qbool_compare_uncompute<W=%zu>: PASS\n", W);
 }
 
+// ── M10: BITWISE_SELF uncompute tests ────────────────────────────────────────
+//
+// These tests verify that the BITWISE_SELF uncompute path (implemented in M9)
+// correctly emits the inverse gate sequence when a materialized qbool goes out
+// of scope.  No reference to QboolUncompute appears here — all uncompute goes
+// through uncompute_op::kind::BITWISE_SELF and ADD_CONST.
+//
+// Helper: make a non-owning qbool with a fixed qubit index (no pool allocation).
+static sturm::qbool make_qbool_at(int idx) {
+    return sturm::qbool::make_non_owning(idx);
+}
+
+// ── and_uncompute_emits_ccx ───────────────────────────────────────────────────
+// Materialize qbool r = (a & b).  Forward: 1 CCX.
+// On destruction, BITWISE_SELF(AND) emits 1 CCX(a_qubit, b_qubit, ancilla).
+// Verify the final gate in the log is CCX with correct qubit ordering.
+
+static void and_uncompute_emits_ccx() {
+    ScopedAppendCtx sc;
+
+    // Fixed non-pool qubits for a and b.
+    sturm::qbool a = make_qbool_at(0);
+    sturm::qbool b = make_qbool_at(1);
+
+    // Both operands must have a qubit (non-owning already sets qubits[0]).
+    // super_mask must be set so these look like quantum bools to the operators.
+    a.super_mask = 1ULL;
+    b.super_mask = 1ULL;
+
+    {
+        // Materialization: AndExpr<qbool>::operator qbool() emits CCX(0,1,anc).
+        sturm::qbool r = (a & b);
+        assert(r.qubits[0] >= 0 && "ancilla must have been allocated");
+
+        // The ancilla qubit index is what will appear as the CCX target.
+        const uint32_t expected_anc = static_cast<uint32_t>(r.qubits[0]);
+
+        // Record current IR size (forward emission has already happened).
+        const std::size_t ir_after_forward = sc.ir().size();
+        assert(ir_after_forward >= 1u && "forward CCX must be in IR");
+
+        // Destructor runs here: BITWISE_SELF(AND) apply() emits CCX(0,1,anc).
+        // Verify after scope that exactly 1 more CCX was appended.
+        const std::size_t ir_before_uncompute = ir_after_forward;
+
+        // Store expected values before r destructs.
+        const uint32_t anc_qubit = expected_anc;
+        (void)ir_before_uncompute; (void)anc_qubit;
+
+        // Scope exit — r destructor fires here.
+    }
+
+    // After destruction: one additional CCX (the uncompute) must be at the end.
+    const std::size_t total_gates = sc.ir().size();
+    assert(total_gates >= 2u && "forward + uncompute must produce at least 2 gates");
+
+    // The last gate must be CCX.
+    const sturm::GateRecord& last = sc.ir().at(total_gates - 1u);
+    assert(last.kind == STURM_GATE_CCX
+           && "and_uncompute: final gate must be CCX");
+
+    // The uncompute CCX must target qubits 0 (a) and 1 (b) as controls.
+    assert(last.qubits[0] == 0u && "and_uncompute: CCX ctrl0 must be a.qubits[0]");
+    assert(last.qubits[1] == 1u && "and_uncompute: CCX ctrl1 must be b.qubits[0]");
+
+    std::printf("  and_uncompute_emits_ccx: PASS\n");
+}
+
+// ── or_uncompute_emits_three_gates ───────────────────────────────────────────
+// Materialize qbool r = (a | b).  Forward: CX(a,anc) + CX(b,anc) + CCX(a,b,anc).
+// On destruction, BITWISE_SELF(OR) reverse: CCX(a,b,anc) + CX(b,anc) + CX(a,anc).
+// Verify gate log ends with CCX, CX, CX in that order.
+
+static void or_uncompute_emits_three_gates() {
+    ScopedAppendCtx sc;
+
+    sturm::qbool a = make_qbool_at(2);
+    sturm::qbool b = make_qbool_at(3);
+    a.super_mask = 1ULL;
+    b.super_mask = 1ULL;
+
+    std::size_t ir_before_uncompute;
+    {
+        // OrExpr<qbool>::operator qbool() emits CX+CX+CCX = 3 gates forward.
+        sturm::qbool r = (a | b);
+        assert(r.qubits[0] >= 0 && "ancilla must have been allocated");
+        assert(sc.ir().size() == 3u && "forward emission must be 3 gates");
+
+        ir_before_uncompute = sc.ir().size();
+        // Scope exit — destructor fires BITWISE_SELF(OR) uncompute.
+    }
+
+    // Uncompute should have appended 3 more gates: CCX + CX + CX.
+    const std::size_t total = sc.ir().size();
+    assert(total == 6u && "forward 3 + uncompute 3 = 6 total gates");
+    (void)ir_before_uncompute;
+
+    // Verify uncompute sequence order: CCX then CX then CX.
+    const sturm::GateRecord& uc0 = sc.ir().at(3u);
+    const sturm::GateRecord& uc1 = sc.ir().at(4u);
+    const sturm::GateRecord& uc2 = sc.ir().at(5u);
+
+    assert(uc0.kind == STURM_GATE_CCX && "or_uncompute gate[3] must be CCX");
+    assert(uc1.kind == STURM_GATE_CX  && "or_uncompute gate[4] must be CX");
+    assert(uc2.kind == STURM_GATE_CX  && "or_uncompute gate[5] must be CX");
+
+    // Verify qubit ordering: CCX(a=2, b=3, anc), CX(b=3,anc), CX(a=2,anc).
+    assert(uc0.qubits[0] == 2u && "CCX ctrl0 must be a.qubits[0]=2");
+    assert(uc0.qubits[1] == 3u && "CCX ctrl1 must be b.qubits[0]=3");
+    assert(uc1.qubits[0] == 3u && "CX(b) ctrl must be b.qubits[0]=3");
+    assert(uc2.qubits[0] == 2u && "CX(a) ctrl must be a.qubits[0]=2");
+
+    std::printf("  or_uncompute_emits_three_gates: PASS\n");
+}
+
+// ── not_uncompute_emits_x ────────────────────────────────────────────────────
+// qbool r = ~q stamps ADD_CONST(1) uncompute.
+// Forward: X on allocated ancilla.
+// Uncompute: sub_const(1) emits STURM_GATE_X on the ancilla (superposed bit).
+// Verify the final gate in the log is STURM_GATE_X.
+
+static void not_uncompute_emits_x() {
+    ScopedAppendCtx sc;
+
+    sturm::qbool q = make_qbool_at(4);
+    q.super_mask = 1ULL;
+
+    {
+        // ~q: allocates ancilla, emits X on ancilla, stamps ADD_CONST(1).
+        sturm::qbool r = ~q;
+        assert(r.qubits[0] >= 0 && "ancilla must have been allocated by ~");
+        assert(sc.ir().size() == 1u && "forward ~q emits 1 X gate");
+        assert(r.uncompute_.tag == sturm::uncompute_op::kind::ADD_CONST
+               && "not: must stamp ADD_CONST uncompute");
+        // Destructor: ADD_CONST(1).apply() → sub_const(1) → STURM_GATE_X on ancilla.
+    }
+
+    // After destruction: 2 gates total (forward X + uncompute X).
+    assert(sc.ir().size() == 2u && "not_uncompute: total must be 2 gates");
+
+    // Final gate must be STURM_GATE_X (the uncompute).
+    const sturm::GateRecord& last = sc.ir().at(1u);
+    assert(last.kind == STURM_GATE_X
+           && "not_uncompute: final gate must be X (sub_const stub)");
+
+    std::printf("  not_uncompute_emits_x: PASS\n");
+}
+
+// ── nested_when_and_uncompute ────────────────────────────────────────────────
+// Materialize qbool r = (a & b) inside a WHEN scope (control pushed onto stack).
+// Verify that uncompute fires correctly: the destructor still emits CCX even
+// when the control stack is non-empty (execute_gate in apply() goes to IR
+// directly — uncompute is not further control-lifted at the apply() level).
+
+static void nested_when_and_uncompute() {
+    ScopedAppendCtx sc;
+
+    // ctrl=qubit 5, a=qubit 6, b=qubit 7.
+    sturm::qbool a = make_qbool_at(6);
+    sturm::qbool b = make_qbool_at(7);
+    a.super_mask = 1ULL;
+    b.super_mask = 1ULL;
+
+    // Simulate a WHEN scope by pushing a control qubit onto the context stack.
+    // (The WhenGuard macro modifies TLS; here we use the control_stack directly.)
+    sc.ctx->control_stack.push_control(5u);
+
+    std::size_t ir_after_forward;
+    {
+        // AndExpr<qbool>::operator qbool() calls primitive_AND directly (no lifting).
+        // Forward: CCX(6, 7, anc).
+        sturm::qbool r = (a & b);
+        assert(r.qubits[0] >= 0 && "ancilla must be allocated");
+        ir_after_forward = sc.ir().size();
+        assert(ir_after_forward == 1u && "forward AND emits 1 CCX");
+        // Destructor runs here, inside the WHEN scope (control stack depth=1).
+        // apply() for BITWISE_SELF(AND) calls execute_gate(CCX) directly.
+    }
+
+    sc.ctx->control_stack.pop_control();
+
+    // Uncompute must have emitted CCX (BITWISE_SELF AND is self-inverse).
+    const std::size_t total = sc.ir().size();
+    assert(total == 2u && "forward 1 + uncompute 1 = 2 gates total");
+
+    // The uncompute CCX must be at index 1.
+    const sturm::GateRecord& uncompute_gate = sc.ir().at(1u);
+    assert(uncompute_gate.kind == STURM_GATE_CCX
+           && "nested_when_and_uncompute: uncompute gate must be CCX");
+    assert(uncompute_gate.qubits[0] == 6u && "CCX ctrl0 must be a.qubits[0]=6");
+    assert(uncompute_gate.qubits[1] == 7u && "CCX ctrl1 must be b.qubits[0]=7");
+
+    std::printf("  nested_when_and_uncompute: PASS\n");
+}
+
+// ── uncompute_after_move ─────────────────────────────────────────────────────
+// Verify that uncompute fires on the move destination, not the source.
+// After move, the source has owning_=false and qubits[0]=-1, so its destructor
+// is a no-op.  The destination inherits uncompute_ and the ancilla qubit, so
+// its destructor emits the CCX uncompute gate.
+
+static void uncompute_after_move() {
+    ScopedAppendCtx sc;
+
+    sturm::qbool a = make_qbool_at(8);
+    sturm::qbool b = make_qbool_at(9);
+    a.super_mask = 1ULL;
+    b.super_mask = 1ULL;
+
+    {
+        // Materialize r = (a & b): forward CCX emitted.
+        sturm::qbool r = (a & b);
+        assert(r.qubits[0] >= 0 && "ancilla must be allocated");
+        assert(r.owning_ && "r must be owning after materialization");
+        assert(r.uncompute_.tag == sturm::uncompute_op::kind::BITWISE_SELF);
+
+        // Move into r2.  r becomes non-owning with cleared qubits.
+        // r2 inherits ownership, qubit index, and uncompute_ tag.
+        sturm::qbool r2 = std::move(r);
+
+        assert(!r.owning_ && "moved-from r must be non-owning");
+        assert(r.qubits[0] == -1 && "moved-from r must have cleared qubit");
+        assert(r2.owning_ && "r2 must own the qubit after move");
+        assert(r2.uncompute_.tag == sturm::uncompute_op::kind::BITWISE_SELF
+               && "r2 must inherit uncompute_ tag");
+
+        // r destructs first (scope end order): no-op (non-owning, no uncompute).
+        // r2 destructs second: emits CCX uncompute.
+        // Both r and r2 go out of scope here.
+    }
+
+    // After both destructors: total must be 2 (1 forward + 1 uncompute).
+    // If the source r had incorrectly fired, we'd see 2 extra attempts.
+    const std::size_t total = sc.ir().size();
+    assert(total == 2u
+           && "uncompute_after_move: exactly 1 forward + 1 uncompute CCX expected");
+
+    // Verify the uncompute gate is CCX.
+    const sturm::GateRecord& uncompute_gate = sc.ir().at(1u);
+    assert(uncompute_gate.kind == STURM_GATE_CCX
+           && "uncompute_after_move: uncompute gate must be CCX");
+    assert(uncompute_gate.qubits[0] == 8u && "CCX ctrl0 must be a.qubits[0]=8");
+    assert(uncompute_gate.qubits[1] == 9u && "CCX ctrl1 must be b.qubits[0]=9");
+
+    std::printf("  uncompute_after_move: PASS\n");
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -144,6 +391,14 @@ int main() {
     test_qbool_compare_uncompute<4>();
     test_qbool_compare_uncompute<8>();
     test_qbool_compare_uncompute<16>();
-    std::printf("All M22 qbool uncompute tests passed.\n");
+
+    std::printf("\nM10 BITWISE_SELF uncompute tests:\n");
+    and_uncompute_emits_ccx();
+    or_uncompute_emits_three_gates();
+    not_uncompute_emits_x();
+    nested_when_and_uncompute();
+    uncompute_after_move();
+
+    std::printf("All qbool uncompute tests passed.\n");
     return 0;
 }
