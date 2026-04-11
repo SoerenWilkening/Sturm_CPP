@@ -62,12 +62,13 @@ namespace sturm {
 // true on construction).
 struct WhenGuard {
     bool  run_;
-    bool  modified_tls_;   // true only when we touched current_control
-    bool  and_folded_;     // true if an ancilla was computed (M24 nested AND-fold)
+    bool  modified_tls_;         // true only when we touched current_control
+    bool  and_folded_;           // true if an ancilla was computed (M24 nested AND-fold)
     qbool* prev_control_;
     int    prev_control_qubit_;
 
 #ifdef STURM_BACKEND_ENABLED
+    bool  pushed_to_ctx_stack_;  // true if we pushed to ctx->control_stack (sturm-d9n)
     // Ancilla qbool used for the AND-folded nested control (M24).
     // Constructed inline; qubit is allocated manually to avoid the prepare() call
     // that the probabilistic qbool(double) constructor would emit.
@@ -75,7 +76,11 @@ struct WhenGuard {
 #endif
 
     explicit WhenGuard(qbool& expr) noexcept
-        : run_(false), modified_tls_(false), and_folded_(false), prev_control_(nullptr), prev_control_qubit_(-1)
+        : run_(false), modified_tls_(false), and_folded_(false),
+#ifdef STURM_BACKEND_ENABLED
+          pushed_to_ctx_stack_(false),
+#endif
+          prev_control_(nullptr), prev_control_qubit_(-1)
     {
         if (expr.super_mask & 1) {
             // Superposed branch: materialise qubit, set TLS control pointer.
@@ -105,12 +110,26 @@ struct WhenGuard {
                         static_cast<uint32_t>(anc_idx)
                     };
                     execute_gate(*ctx, STURM_GATE_CCX, qs, 3u, 0.0);
+
+                    // AND-fold: pop the outer control from the stack and push
+                    // the ancilla so the stack always reflects exactly one active
+                    // control qubit (depth invariant: stays at 1).  sturm-d9n.
+                    ctx->control_stack.pop_control();
+                    ctx->control_stack.push_control(static_cast<uint32_t>(anc_idx));
+                    pushed_to_ctx_stack_ = true;
                 }
 
                 detail::current_control       = &ancilla_;
                 detail::current_control_qubit = ancilla_.qubits[0];
                 and_folded_  = true;
             } else {
+                // Non-fold case: push the expr qubit onto the context control
+                // stack so downstream ops can see the active control.  sturm-d9n.
+                if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                    ctx->control_stack.push_control(
+                        static_cast<uint32_t>(expr.qubits[0]));
+                    pushed_to_ctx_stack_ = true;
+                }
                 detail::current_control       = &expr;
                 detail::current_control_qubit = expr.qubits[0];
             }
@@ -150,11 +169,27 @@ struct WhenGuard {
                         static_cast<uint32_t>(ancilla_.qubits[0])
                     };
                     execute_gate(*ctx, STURM_GATE_CCX, qs, 3u, 0.0);
+
+                    // sturm-d9n: Reverse AND-fold control_stack swap.
+                    // Pop the ancilla qubit that was pushed during AND-fold,
+                    // then push back the outer control to restore the outer WHEN's
+                    // stack state (depth stays at 1 throughout).
+                    if (pushed_to_ctx_stack_) {
+                        ctx->control_stack.pop_control();
+                        ctx->control_stack.push_control(
+                            static_cast<uint32_t>(prev_control_->qubits[0]));
+                    }
                 }
                 // Release ancilla qubit back to pool.
                 if (ancilla_.qubits[0] >= 0) {
                     QubitPool::instance().release(ancilla_.qubits[0]);
                     ancilla_.qubits[0] = -1;
+                }
+            } else if (pushed_to_ctx_stack_) {
+                // Non-fold case: pop the expr qubit we pushed on entry.
+                // sturm-d9n.
+                if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
+                    ctx->control_stack.pop_control();
                 }
             }
 #endif

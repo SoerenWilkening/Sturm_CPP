@@ -1527,3 +1527,34 @@ set_source_files_properties(
 )
 add_test(NAME test_qbool_acceptance_backend COMMAND test_qbool_acceptance_backend)
 set_tests_properties(test_qbool_acceptance_backend PROPERTIES LABELS "backend")
+
+# ── sturm-d9n: WhenGuard bridges to control_stack ────────────────────────────
+# Verifies that WhenGuard pushes/pops ctx->control_stack alongside TLS.
+# Non-fold: push expr qubit. AND-fold: pop outer, push ancilla.
+# Invariant: depth in {0,1} at all times.
+add_executable(test_when_control_stack_bridge
+    test_when_control_stack_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_when_control_stack_bridge PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_control_stack_bridge PRIVATE cxx_std_20)
+target_compile_definitions(test_when_control_stack_bridge PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_control_stack_bridge PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_when_control_stack_bridge COMMAND test_when_control_stack_bridge)
+set_tests_properties(test_when_control_stack_bridge PROPERTIES LABELS "backend")
