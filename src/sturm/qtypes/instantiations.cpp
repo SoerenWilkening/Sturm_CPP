@@ -29,6 +29,7 @@
 //
 // The four widths below match PRD §13 and the issue description.
 
+template class sturm::qint_t<1>;
 template class sturm::qint_t<4>;
 template class sturm::qint_t<8>;
 template class sturm::qint_t<16>;
