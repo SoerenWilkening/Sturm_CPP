@@ -48,7 +48,7 @@ Named gates (H, CNOT, Toffoli, X, Y, Z) do not exist in user code. If a DSL prog
 
 **B2. Minimal state.**
 - Per `qint`: an `int64_t` value and a `uint64_t` classicality mask (1 = bit is in superposition).
-- Per `qbool`: a `bool` value and a `bool` classicality flag.
+- Per `qbool`: inherits `qint_t<1>` — an `int64_t` value and a `uint64_t` classicality mask (bit 0 only).
 - Per thread: the active sink and the current control chain (collapsed to a single bit).
 
 No entanglement graphs, no global state analysis, no per-call caching.

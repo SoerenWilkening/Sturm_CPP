@@ -77,21 +77,6 @@ public:
         return q;
     }
 
-    // ── as_qint_base (M22) ────────────────────────────────────────────────
-    // Builds a width-1 qint_base view of this qbool's qubit register.
-#ifdef STURM_BACKEND_ENABLED
-    [[nodiscard]] qint_base as_qint_base() const noexcept {
-        qint_base b;
-        b.value          = value;
-        b.super_mask     = super_mask;
-        b.promotion_mask = 0u;
-        b.width          = 1u;
-        b.qubits[0]      = (qubits[0] >= 0)
-                           ? static_cast<uint32_t>(qubits[0]) : 0u;
-        return b;
-    }
-#endif
-
     // ── Destructor ────────────────────────────────────────────────────────
     // M7: trivial destructor — base class qint_t<1> handles uncompute_op::apply()
     // and qubit release via its own destructor (RAII Strategy B).

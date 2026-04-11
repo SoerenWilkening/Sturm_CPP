@@ -36,6 +36,7 @@
 // do NOT link instantiations.cpp continue to instantiate the templates locally
 // (the overhead is acceptable for test binaries).
 #if defined(STURM_BACKEND_ENABLED) && defined(STURM_USE_EXPLICIT_INSTANTIATIONS)
+extern template class sturm::qint_t<1>;
 extern template class sturm::qint_t<4>;
 extern template class sturm::qint_t<8>;
 extern template class sturm::qint_t<16>;
