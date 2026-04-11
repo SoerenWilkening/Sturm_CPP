@@ -96,7 +96,7 @@ Out dispatch_binary(const A& a, const B& b,
     }
 
     // Step 5: read current_control.
-    const int ctrl = current_control ? current_control->qubits[0] : -1;
+    const int ctrl = current_control ? current_control_qubit : -1;
 
     // Step 6: invoke sink callback.
     sink_fn(a_mut, b_mut, out, ctrl);
@@ -154,7 +154,7 @@ Out dispatch_unary(const A& a,
     }
 
     // Step 5: current_control.
-    const int ctrl = current_control ? current_control->qubits[0] : -1;
+    const int ctrl = current_control ? current_control_qubit : -1;
 
     // Step 6: sink callback.
     sink_fn(a_mut, out, ctrl);
@@ -216,7 +216,7 @@ qbool dispatch_compare(const QintLike& a, const QintLike& b,
     out.ensure_qubit();  // allocate result qubit
 
     // Step 5: current_control.
-    const int ctrl = current_control ? current_control->qubits[0] : -1;
+    const int ctrl = current_control ? current_control_qubit : -1;
 
     // Step 6: sink callback.
     sink_fn(a_mut, b_mut, out, ctrl);
@@ -268,7 +268,7 @@ Out dispatch_shift(const A& a, int n,
     }
 
     // Step 5: current_control.
-    const int ctrl = current_control ? current_control->qubits[0] : -1;
+    const int ctrl = current_control ? current_control_qubit : -1;
 
     // Step 6: sink callback.
     sink_fn(a_mut, out, n, ctrl);

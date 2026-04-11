@@ -65,6 +65,7 @@ struct WhenGuard {
     bool  modified_tls_;   // true only when we touched current_control
     bool  and_folded_;     // true if an ancilla was computed (M24 nested AND-fold)
     qbool* prev_control_;
+    int    prev_control_qubit_;
 
 #ifdef STURM_BACKEND_ENABLED
     // Ancilla qbool used for the AND-folded nested control (M24).
@@ -74,13 +75,14 @@ struct WhenGuard {
 #endif
 
     explicit WhenGuard(qbool& expr) noexcept
-        : run_(false), modified_tls_(false), and_folded_(false), prev_control_(nullptr)
+        : run_(false), modified_tls_(false), and_folded_(false), prev_control_(nullptr), prev_control_qubit_(-1)
     {
         if (expr.super_mask & 1) {
             // Superposed branch: materialise qubit, set TLS control pointer.
             run_ = true;
             expr.ensure_qubit();
-            prev_control_  = detail::current_control;
+            prev_control_       = detail::current_control;
+            prev_control_qubit_ = detail::current_control_qubit;
 
 #ifdef STURM_BACKEND_ENABLED
             // M24 — AND-fold: if an outer control already exists, compute ancilla.
@@ -105,13 +107,16 @@ struct WhenGuard {
                     execute_gate(*ctx, STURM_GATE_CCX, qs, 3u, 0.0);
                 }
 
-                detail::current_control = &ancilla_;
+                detail::current_control       = &ancilla_;
+                detail::current_control_qubit = ancilla_.qubits[0];
                 and_folded_  = true;
             } else {
-                detail::current_control = &expr;
+                detail::current_control       = &expr;
+                detail::current_control_qubit = expr.qubits[0];
             }
 #else
-            detail::current_control = &expr;
+            detail::current_control       = &expr;
+            detail::current_control_qubit = expr.qubits[0];
 #endif
             modified_tls_  = true;
         } else if (expr.value & 1) {
@@ -153,7 +158,8 @@ struct WhenGuard {
                 }
             }
 #endif
-            detail::current_control = prev_control_;
+            detail::current_control       = prev_control_;
+            detail::current_control_qubit = prev_control_qubit_;
         }
     }
 

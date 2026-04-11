@@ -23,4 +23,8 @@ namespace sturm::detail {
 // Set/restored exclusively by WhenGuard (when.hpp).
 inline thread_local qbool* current_control = nullptr;
 
+// Cached qubit index of current_control, kept in sync by WhenGuard.
+// Avoids dereferencing the qbool* in headers where qbool is incomplete.
+inline thread_local int current_control_qubit = -1;
+
 } // namespace sturm::detail
