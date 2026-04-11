@@ -1558,3 +1558,27 @@ set_source_files_properties(
 )
 add_test(NAME test_when_control_stack_bridge COMMAND test_when_control_stack_bridge)
 set_tests_properties(test_when_control_stack_bridge PROPERTIES LABELS "backend")
+
+# ── sturm-8x3: emit_RY_lifted / emit_RZ_lifted ───────────────────────────────
+# Verifies that depth=0 emits RY/RZ and depth=1 emits CRY/CRZ via execute_gate.
+# Includes both COUNT_ONLY (gate_count checks) and SIMULATE (statevector) tests.
+add_executable(test_lifted_primitives
+    test_lifted_primitives.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_lifted_primitives PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_lifted_primitives PRIVATE cxx_std_20)
+target_compile_definitions(test_lifted_primitives PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_lifted_primitives PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_lifted_primitives COMMAND test_lifted_primitives)
+set_tests_properties(test_lifted_primitives PROPERTIES LABELS "backend")
