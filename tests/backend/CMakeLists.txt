@@ -1839,3 +1839,23 @@ target_compile_definitions(test_mixed_quantum_classical PRIVATE
 target_link_libraries(test_mixed_quantum_classical PRIVATE orkan_headers)
 add_test(NAME test_mixed_quantum_classical COMMAND test_mixed_quantum_classical)
 set_tests_properties(test_mixed_quantum_classical PROPERTIES LABELS "backend")
+
+# ── WHEN boolean expressions: WHEN(c | d), WHEN(c & d), WHEN(~c) ────────────
+# Verifies that the WHEN macro accepts rvalue boolean expressions (temporaries),
+# with classical truth-table tests, superposed control tests, nesting, and
+# lvalue regression.
+add_executable(test_when_bool_expr
+    test_when_bool_expr.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_when_bool_expr PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_bool_expr PRIVATE cxx_std_20)
+target_compile_definitions(test_when_bool_expr PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_bool_expr PRIVATE orkan_headers)
+add_test(NAME test_when_bool_expr COMMAND test_when_bool_expr)
+set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")

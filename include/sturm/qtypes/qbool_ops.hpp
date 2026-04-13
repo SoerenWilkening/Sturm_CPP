@@ -154,46 +154,90 @@ inline qbool qbool::operator~() const {
 
 // ── AndExpr<qbool>::operator qbool() ─────────────────────────────────────────
 // Allocate ancilla, CCX(a,b,anc). Uncompute: BITWISE_SELF(AND, qa, qb).
+// Handles classical operands (no qubit allocated): classical short-circuit
+// avoids gate emission.  Both-quantum path is the original full circuit.
 template<>
 inline AndExpr<qbool>::operator qbool() const {
-    assert(a.qubits[0] >= 0 && b.qubits[0] >= 0);
-    BackendContext& ctx = get_ctx();
-    int anc_idx = QubitPool::instance().allocate();
-    const uint32_t anc = static_cast<uint32_t>(anc_idx);
-    const uint32_t qa  = static_cast<uint32_t>(a.qubits[0]);
-    const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
-    primitive_AND(ctx, qa, qb, anc);
-    qbool result;
-    result.qubits[0]  = anc_idx;
-    result.owning_    = true;
-    result.super_mask = 1ULL;
+    const bool a_q = (a.qubits[0] >= 0);
+    const bool b_q = (b.qubits[0] >= 0);
+
+    // Both purely classical (no qubits): compute eagerly.
+    if (!a_q && !b_q)
+        return qbool(static_cast<bool>((a.value & b.value) & 1));
+
+    // Both have qubits: allocate ancilla and emit AND circuit.
+    if (a_q && b_q) {
+        BackendContext& ctx = get_ctx();
+        int anc_idx = QubitPool::instance().allocate();
+        const uint32_t anc = static_cast<uint32_t>(anc_idx);
+        const uint32_t qa  = static_cast<uint32_t>(a.qubits[0]);
+        const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
+        primitive_AND(ctx, qa, qb, anc);
+        qbool result;
+        result.qubits[0]  = anc_idx;
+        result.owning_    = true;
+        result.super_mask = 1ULL;
 #ifdef STURM_BACKEND_ENABLED
-    result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 0u); // 0=AND
+        result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 0u); // 0=AND
 #endif
-    return result;
+        return result;
+    }
+
+    // Mixed: one classical (no qubit), one quantum.
+    // false & x = false; true & x = x.
+    if (!a_q)
+        return (a.value & 1)
+            ? qbool::make_non_owning(b.qubits[0])
+            : qbool(false);
+    // !b_q
+    return (b.value & 1)
+        ? qbool::make_non_owning(a.qubits[0])
+        : qbool(false);
 }
 
 // ── OrExpr<qbool>::operator qbool() ──────────────────────────────────────────
 // Allocate ancilla, CX+CX+CCX. Uncompute: BITWISE_SELF(OR, qa, qb).
+// Handles classical operands (no qubit allocated): classical short-circuit
+// avoids gate emission.  Both-quantum path is the original full circuit.
 template<>
 inline OrExpr<qbool>::operator qbool() const {
-    assert(a.qubits[0] >= 0 && b.qubits[0] >= 0);
-    BackendContext& ctx = get_ctx();
-    int anc_idx = QubitPool::instance().allocate();
-    const uint32_t anc = static_cast<uint32_t>(anc_idx);
-    const uint32_t qa  = static_cast<uint32_t>(a.qubits[0]);
-    const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
-    primitive_XOR(ctx, qa, anc);
-    primitive_XOR(ctx, qb, anc);
-    primitive_AND(ctx, qa, qb, anc);
-    qbool result;
-    result.qubits[0]  = anc_idx;
-    result.owning_    = true;
-    result.super_mask = 1ULL;
+    const bool a_q = (a.qubits[0] >= 0);
+    const bool b_q = (b.qubits[0] >= 0);
+
+    // Both purely classical (no qubits): compute eagerly.
+    if (!a_q && !b_q)
+        return qbool(static_cast<bool>((a.value | b.value) & 1));
+
+    // Both have qubits: allocate ancilla and emit OR circuit.
+    if (a_q && b_q) {
+        BackendContext& ctx = get_ctx();
+        int anc_idx = QubitPool::instance().allocate();
+        const uint32_t anc = static_cast<uint32_t>(anc_idx);
+        const uint32_t qa  = static_cast<uint32_t>(a.qubits[0]);
+        const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
+        primitive_XOR(ctx, qa, anc);
+        primitive_XOR(ctx, qb, anc);
+        primitive_AND(ctx, qa, qb, anc);
+        qbool result;
+        result.qubits[0]  = anc_idx;
+        result.owning_    = true;
+        result.super_mask = 1ULL;
 #ifdef STURM_BACKEND_ENABLED
-    result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 1u); // 1=OR
+        result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 1u); // 1=OR
 #endif
-    return result;
+        return result;
+    }
+
+    // Mixed: one classical (no qubit), one quantum.
+    // true | x = true; false | x = x.
+    if (!a_q)
+        return (a.value & 1)
+            ? qbool(true)
+            : qbool::make_non_owning(b.qubits[0]);
+    // !b_q
+    return (b.value & 1)
+        ? qbool(true)
+        : qbool::make_non_owning(a.qubits[0]);
 }
 
 } // namespace sturm

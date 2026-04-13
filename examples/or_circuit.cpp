@@ -43,14 +43,14 @@
 namespace {
 
 // Emit a 3-gate OR decomposition for one bit position.
-void emit_or_bit(sturm::BackendContext& ctx,
+void emit_or_bit(sturm::BackendContext &ctx,
                  uint32_t a_q, uint32_t b_q, uint32_t out_q) {
-    uint32_t cx_a[2]  = {a_q,  out_q};
-    uint32_t cx_b[2]  = {b_q,  out_q};
-    uint32_t ccx[3]   = {a_q,  b_q, out_q};
-    sturm::exec_append(ctx, STURM_GATE_CX,  cx_a, 2, 0.0);
-    sturm::exec_append(ctx, STURM_GATE_CX,  cx_b, 2, 0.0);
-    sturm::exec_append(ctx, STURM_GATE_CCX, ccx,  3, 0.0);
+    uint32_t cx_a[2] = {a_q, out_q};
+    uint32_t cx_b[2] = {b_q, out_q};
+    uint32_t ccx[3] = {a_q, b_q, out_q};
+    sturm::exec_append(ctx, STURM_GATE_CX, cx_a, 2, 0.0);
+    sturm::exec_append(ctx, STURM_GATE_CX, cx_b, 2, 0.0);
+    sturm::exec_append(ctx, STURM_GATE_CCX, ccx, 3, 0.0);
 }
 
 } // namespace
@@ -59,42 +59,44 @@ int main() {
     // ── 1. Create an APPEND-mode backend context ──────────────────────────────
     constexpr std::size_t W = 3;                   // 3-bit qints, keeps diagram small
     constexpr uint32_t kNumQubits = 3 * W;         // a(0..2), b(3..5), a'(6..8)
-
-    sturm_backend_context_t* ctx =
+    
+    sturm_backend_context_t *ctx =
         sturm_backend_create(STURM_MODE_APPEND, kNumQubits);
     sturm_set_thread_context(ctx);
-
+    
     // ── 2. Build two superposed qints that share no qubits ────────────────────
     using Q = sturm::qint_t<W>;
     Q a, b;
-    a.value = 0; b.value = 0;
-    a.super_mask = (1u << W) - 1u;
-    b.super_mask = (1u << W) - 1u;
-    for (int i = 0; i < (int)W; ++i) {
-        a.qubits[i] = i;              // qubits 0..W-1
-        b.qubits[i] = (int)W + i;     // qubits W..2W-1
+    a.value = 1;
+    b.value = 1;
+    
+    sturm::qbool c(true);
+    sturm::qbool d(false);
+    c.theta() += 2;
+//    d.theta() += 2;
+//    b.theta() += 2;
+    WHEN(c | d) {
+        a.theta() += 2;
     }
+//
+//    a |= b;
     
-    sturm::qbool c(false);
     
-    // ── 3. The high-level call: a |= b ─────────────────────────────────────
-    // (operator| backend path is currently a stub — see file header note.)
-//    a & b;
-    a += b;
-
     // ── 5. Print the recorded circuit ─────────────────────────────────────────
     std::printf("Recorded %zu gates for a |= b (W=%zu)\n\n",
                 ctx->ir.size(), W);
     std::printf("Qubit layout: q0..q%zu = a, q%zu..q%zu = b, q%zu..q%zu = a' (new a)\n\n",
                 W - 1, W, 2 * W - 1, 2 * W, 3 * W - 1);
-
+    
     std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
     std::fputs(diagram.c_str(), stdout);
-
+    
     // ── 6. Cleanup — prevent qint destructors from touching the pool ──────────
-    a.qubits.fill(-1); a.super_mask = 0;
-    b.qubits.fill(-1); b.super_mask = 0;
-
+    a.qubits.fill(-1);
+    a.super_mask = 0;
+    b.qubits.fill(-1);
+    b.super_mask = 0;
+    
     sturm_set_thread_context(nullptr);
     sturm_backend_destroy(ctx);
     return 0;
