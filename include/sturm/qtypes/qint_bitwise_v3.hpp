@@ -69,24 +69,29 @@ qint_t<W>& qint_t<W>::operator&=(const qint_t<W>& b) {
         value &= b.value;
         return *this;
     }
+    const uint64_t orig_super = super_mask;  // save before BitProxy loop
+    const int64_t  orig_value = value;
     auto b_mut = detail_bw::make_b_mut(b);
-    int res_idx[W];
-    qbool res_qbools[W];
-    BitProxy res_bits[W];
+    int res_idx[W]; qbool res_qbools[W]; BitProxy res_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
         res_idx[i]    = QubitPool::instance().allocate();
         res_qbools[i] = qbool::make_non_owning(res_idx[i]);
         res_bits[i]   = BitProxy(res_qbools[i]);
     }
     for (std::size_t i = 0; i < W; ++i) {
-        BitProxy a_bit(*this, i);
-        BitProxy b_bit(b_mut, i);
+        BitProxy a_bit(*this, i); BitProxy b_bit(b_mut, i);
         res_bits[i] ^= (a_bit & b_bit);
     }
     detail_bw::release_temp_qubits(b_mut, b);
+    // Remap result qubits and rebuild super_mask (per-bit lazy promotion).
+    super_mask = 0;
     for (std::size_t i = 0; i < W; ++i) {
         if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
         qubits[i] = res_idx[i];
+        bool a_q = (orig_super >> i) & 1, b_q = (b.super_mask >> i) & 1;
+        bool cl = ((orig_value >> i) & 1) && ((b.value >> i) & 1);
+        if (a_q || b_q || (detail::current_control != nullptr && cl))
+            super_mask |= (1ULL << i);
     }
     value &= b.value;
     return *this;
@@ -99,24 +104,29 @@ qint_t<W>& qint_t<W>::operator|=(const qint_t<W>& b) {
         value |= b.value;
         return *this;
     }
+    const uint64_t orig_super = super_mask;  // save before BitProxy loop
+    const int64_t  orig_value = value;
     auto b_mut = detail_bw::make_b_mut(b);
-    int res_idx[W];
-    qbool res_qbools[W];
-    BitProxy res_bits[W];
+    int res_idx[W]; qbool res_qbools[W]; BitProxy res_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
         res_idx[i]    = QubitPool::instance().allocate();
         res_qbools[i] = qbool::make_non_owning(res_idx[i]);
         res_bits[i]   = BitProxy(res_qbools[i]);
     }
     for (std::size_t i = 0; i < W; ++i) {
-        BitProxy a_bit(*this, i);
-        BitProxy b_bit(b_mut, i);
+        BitProxy a_bit(*this, i); BitProxy b_bit(b_mut, i);
         res_bits[i] ^= (a_bit | b_bit);
     }
     detail_bw::release_temp_qubits(b_mut, b);
+    // Remap result qubits and rebuild super_mask (per-bit lazy promotion).
+    super_mask = 0;
     for (std::size_t i = 0; i < W; ++i) {
         if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
         qubits[i] = res_idx[i];
+        bool a_q = (orig_super >> i) & 1, b_q = (b.super_mask >> i) & 1;
+        bool cl = ((orig_value >> i) & 1) || ((b.value >> i) & 1);
+        if (a_q || b_q || (detail::current_control != nullptr && cl))
+            super_mask |= (1ULL << i);
     }
     value |= b.value;
     return *this;

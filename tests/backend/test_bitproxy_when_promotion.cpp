@@ -1,4 +1,4 @@
-// test_bitproxy_when_promotion.cpp -- M1/M3: BitProxy struct tests.
+// test_bitproxy_when_promotion.cpp -- M1/M3/M5: BitProxy struct tests.
 //
 // Tests:
 //   1. BitProxy construction from qint and qbool -- verify accessor values.
@@ -9,6 +9,10 @@
 //   6. BitProxy AND-XOR: classical 0 folds to skip (no gate).
 //   7. ensure_quantum: initializes with X for value=1.
 //   8. sizeof(BitProxy) <= 40 bytes.
+//   9. Non-const operator[] returns BitProxy (M2).
+//  10. WHEN + classical qint XOR with per-bit promotion (M5).
+//  11. WHEN + classical qint AND (M5).
+//  12. No WHEN: classical fast-path preserved (M5).
 //
 // Harness: APPEND mode BackendContext + GateIR inspection.
 
@@ -374,6 +378,132 @@ static void test_nonconst_operator_subscript_returns_bitproxy() {
     std::puts("PASS: test_nonconst_operator_subscript_returns_bitproxy");
 }
 
+// ── Test 10: WHEN + classical qint XOR with per-bit promotion ───────────────
+// M5: Only the bits where b has a 1 should be promoted to quantum.
+// a=3 (0b0011), b=4 (0b0100).  Inside WHEN(flag), a ^= b should promote
+// only bit 2 of a (b's only set bit).  Bits 0,1,3 stay classical.
+
+static void test_when_qint_xor_per_bit_promotion() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);   // 0b0011
+    sturm::qint_t<4> b(4);   // 0b0100
+
+    // Both fully classical before WHEN.
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+    for (int i = 0; i < 4; ++i) {
+        assert(a.qubits[i] == -1);
+        assert(b.qubits[i] == -1);
+    }
+
+    // Create a superposed qbool flag.
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    WHEN(flag) {
+        a ^= b;
+    }
+    size_t after = sc.ir().size();
+
+    // Gates must have been emitted (at least the X for ensure_quantum init).
+    assert(after > before && "WHEN + XOR must emit gates");
+
+    // Only bit 2 of a should be promoted (has qubit), because b's only set
+    // bit is bit 2.  Bits 0, 1, 3 of b are 0 -> XOR with 0 is identity,
+    // no promotion.
+    assert(a.qubits[2] >= 0 && "bit 2 must be promoted (b bit 2 == 1)");
+    assert(a.qubits[0] == -1 && "bit 0 must stay classical (b bit 0 == 0)");
+    assert(a.qubits[1] == -1 && "bit 1 must stay classical (b bit 1 == 0)");
+    assert(a.qubits[3] == -1 && "bit 3 must stay classical (b bit 3 == 0)");
+
+    // super_mask should reflect that only bit 2 is quantum.
+    assert((a.super_mask & (1u << 2)) != 0 && "super_mask bit 2 must be set");
+    assert((a.super_mask & (1u << 0)) == 0 && "super_mask bit 0 must be clear");
+    assert((a.super_mask & (1u << 1)) == 0 && "super_mask bit 1 must be clear");
+    assert((a.super_mask & (1u << 3)) == 0 && "super_mask bit 3 must be clear");
+
+    // Classical value: 3 ^ 4 = 7 (0b0111).
+    assert(a.value == 7 && "classical value must be 3 ^ 4 = 7");
+
+    std::puts("PASS: test_when_qint_xor_per_bit_promotion");
+}
+
+// ── Test 11: WHEN + classical qint AND ──────────────────────────────────────
+// M5: Inside WHEN(flag), a &= b with classical operands should produce
+// quantum result bits where the AND of the classical bit values is 1.
+// a=7 (0b0111), b=5 (0b0101).  AND result: 0b0101 (bits 0,2 are 1).
+// Those result bits should be quantum (super_mask != 0).
+
+static void test_when_qint_and_promotion() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(7);   // 0b0111
+    sturm::qint_t<4> b(5);   // 0b0101
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    WHEN(flag) {
+        a &= b;
+    }
+    size_t after = sc.ir().size();
+
+    // Gates must have been emitted.
+    assert(after > before && "WHEN + AND must emit gates");
+
+    // Result super_mask must be nonzero: bits where (a_i AND b_i) == 1
+    // get promoted because they're inside a WHEN with classical-1 AND result.
+    // a=0b0111, b=0b0101 -> AND = 0b0101.  Bits 0 and 2 have AND result 1,
+    // so those result bits should be quantum.
+    assert(a.super_mask != 0 && "AND result must have quantum bits inside WHEN");
+
+    // Classical value: 7 & 5 = 5.
+    assert(a.value == 5 && "classical value must be 7 & 5 = 5");
+
+    std::puts("PASS: test_when_qint_and_promotion");
+}
+
+// ── Test 12: No WHEN: classical fast-path preserved ─────────────────────────
+// M5: Outside WHEN, a ^= b on fully classical qint_t must stay classical:
+// no qubits allocated, super_mask == 0, correct classical value.
+
+static void test_no_when_classical_xor_fast_path() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);   // 0b0011
+    sturm::qint_t<4> b(4);   // 0b0100
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    size_t before = sc.ir().size();
+    a ^= b;
+    size_t after = sc.ir().size();
+
+    // No gates: pure classical arithmetic.
+    assert(after == before && "classical XOR outside WHEN must emit no gates");
+
+    // super_mask stays 0: no bits promoted.
+    assert(a.super_mask == 0 && "super_mask must be 0 outside WHEN");
+
+    // No qubits allocated.
+    for (int i = 0; i < 4; ++i) {
+        assert(a.qubits[i] == -1 && "no qubits must be allocated outside WHEN");
+    }
+
+    // Correct classical value: 3 ^ 4 = 7.
+    assert(a.value == 7 && "classical value must be 3 ^ 4 = 7");
+
+    std::puts("PASS: test_no_when_classical_xor_fast_path");
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -386,7 +516,10 @@ int main() {
     test_ensure_quantum_x_for_value_1();
     test_sizeof_bitproxy();
     test_nonconst_operator_subscript_returns_bitproxy();
+    test_when_qint_xor_per_bit_promotion();
+    test_when_qint_and_promotion();
+    test_no_when_classical_xor_fast_path();
 
-    std::puts("\nAll M1/M2 BitProxy tests passed.");
+    std::puts("\nAll M1/M2/M5 BitProxy tests passed.");
     return 0;
 }
