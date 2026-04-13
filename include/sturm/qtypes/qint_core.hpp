@@ -14,6 +14,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/counter_sink.hpp"  // current_sink()
 #include "sturm/control/when_fwd.hpp"   // detail::current_control for proxies
+#include "sturm/control/when_capture_fwd.hpp"  // detail::active_when_capture for WHEN capture
 
 // M21: Backend uncompute wiring.
 // These headers pull in execute_gate (via qint_base.hpp/context.hpp), so they
@@ -162,6 +163,35 @@ public:
     // qubit-release-only destructor (frontend-only builds).
     ~qint_t() {
 #ifdef STURM_BACKEND_ENABLED
+        // If a WhenCapture is active and capturing, defer this temporary's
+        // uncompute + release so intermediates in compound WHEN expressions
+        // (e.g. WHEN((c | d) & e)) survive until after the WHEN body.
+        // Captures ALL qubits so multi-bit intermediates (e.g. a + b in
+        // WHEN(((a + b) == 0) & c)) are fully preserved.
+        if (detail::when_capture_defer_fn && owning_) {
+            // Check if this temporary has any allocated qubits worth deferring.
+            bool has_qubits = false;
+            for (std::size_t i = 0; i < Width; ++i) {
+                if (qubits[i] >= 0) { has_qubits = true; break; }
+            }
+            if (has_qubits) {
+                detail::CapturedRegister reg;
+                reg.width      = static_cast<uint8_t>(Width);
+                reg.value      = value;
+                reg.super_mask = super_mask;
+                reg.qubits.fill(-1);
+                for (std::size_t i = 0; i < Width; ++i) {
+                    reg.qubits[i] = qubits[i];
+                }
+                detail::when_capture_defer_fn(uncompute_, reg);
+                // Prevent double-uncompute and double-release.
+                uncompute_ = uncompute_op{};
+                qubits.fill(-1);
+                owning_ = false;
+                return;
+            }
+        }
+
         // Step 1: emit semantic inverse if an uncompute op is set (Strategy B).
         if (uncompute_.tag != uncompute_op::kind::NONE) {
             if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
