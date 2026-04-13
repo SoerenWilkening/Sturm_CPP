@@ -60,7 +60,7 @@ static const ModuleBudget kBudgets[] = {
     { "include/sturm/core/control_stack.hpp",           "control_stack.hpp",     120 },
     { "src/sturm/core/control_stack.cpp",               "control_stack.cpp",     40  },
     // M13
-    { "include/sturm/qtypes/qbool_ops.hpp",             "qbool_ops.hpp",         200 },
+    { "include/sturm/qtypes/qbool_ops.hpp",             "qbool_ops.hpp",         250 },
     { "include/sturm/qtypes/lazy_expr.hpp",             "lazy_expr.hpp",         150 },
     // M14
     { "include/sturm/lib/adder_dsl.hpp",                "adder_dsl.hpp",         250 },

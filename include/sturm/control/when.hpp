@@ -27,6 +27,10 @@
 // M5: when_fwd.hpp no longer includes qbool.hpp (only forward-declares qbool).
 // when.hpp uses qbool members directly, so we include the full definition here.
 #include "sturm/qtypes/qbool.hpp"
+// Non-backend operator|, operator&, operator~ for qbool (eager, returns qbool).
+// Ensures WHEN(c | d) compiles in frontend builds without extra includes.
+// (Backend builds get lazy-expr versions from lazy_expr.hpp via qint.hpp.)
+#include "sturm/qtypes/qbool_logic.hpp"
 
 #include <type_traits>
 
@@ -224,6 +228,21 @@ private:
 
 namespace detail {
 
+// ── materialize_when ─────────────────────────────────────────────────────────
+// Overload set that lets the WHEN macro accept both lvalue qbool (by reference,
+// zero cost) and rvalue qbool / implicitly-convertible temporaries (by value).
+//
+// In non-backend builds, c | d returns qbool directly (qbool_logic.hpp).
+// In backend builds, c | d returns OrExpr<qbool> which has operator qbool();
+// the implicit conversion fires before the qbool&& overload is selected.
+
+inline qbool& materialize_when(qbool& q) noexcept { return q; }
+inline qbool  materialize_when(qbool&& q) noexcept { return std::move(q); }
+
+// In backend builds, c | d returns OrExpr<qbool> and c & d returns AndExpr<qbool>.
+// Their operator qbool() (in qbool_ops.hpp) handles classical/mixed/superposed
+// cases, producing a qbool rvalue that matches materialize_when(qbool&&) above.
+
 // make_when_guard — factory that enforces qbool-only usage at compile time.
 // Passing a non-qbool triggers the static_assert; compile-time rejection.
 // (PRD §11: "WHEN accepts qbool only; passing bool or int is a compile error")
@@ -238,20 +257,27 @@ WhenGuard make_when_guard(T& expr) {
 } // namespace sturm
 
 // ── WHEN macro ────────────────────────────────────────────────────────────────
-// Expands to an `if` statement whose body executes iff the guard's
-// should_run() returns true.  The guard's lifetime is the duration of the
-// `if` scope (C++ init-statement in if).
+// Expands to a nested pair of `if` statements:
+//   1. Outer if: materializes expr into _when_val_ via materialize_when().
+//      - lvalue qbool → reference (zero cost, no copy)
+//      - rvalue qbool (e.g. c | d, ~c) → owned local via move
+//      - OrExpr/AndExpr (backend) → implicit conversion to qbool, then move
+//   2. Inner if: creates WhenGuard from the (now lvalue) _when_val_.
+//
+// Destruction order: inner guard destroyed first (restores TLS), then outer
+// _when_val_ destroyed (releases ancilla qubit if materialized).
 //
 // Usage:
 //   qbool flag(0.5);
-//   WHEN(flag) {
-//       // body — runs when flag is classically true or superposed
-//   }
+//   WHEN(flag) { ... }           // lvalue — no copy
+//   WHEN(c | d) { ... }          // rvalue — materialized, then guarded
+//   WHEN(~c) { ... }             // rvalue — same
 //
 // NOTE: Nested WHEN scopes: when STURM_BACKEND_ENABLED is active and a
 // BackendContext is installed, nested WHEN AND-folds the two controls into a
 // single ancilla qubit (principle B5).  Without a context, TLS is saved and
 // restored as before.
 #define WHEN(expr) \
-    if (auto _when_guard_ = ::sturm::detail::make_when_guard(expr); \
+    if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
+    if (auto _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
         _when_guard_.should_run())

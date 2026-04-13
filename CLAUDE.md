@@ -5,8 +5,9 @@ This file provides instructions and context for AI coding agents working on this
 ## Required Reading
 
 At the start of every session, read:
-- `docs/11_prd_backend_v3.md` — backend PRD v3 (design lock, supersedes 09)
-- `docs/12_implementation_plan_backend_v3.md` — implementation plan v3 (supersedes 10)
+- `docs/01_principles.md` — core design principles
+- `docs/prd_mixed_quantum_classical_fastpath.md` — PRD for mixed quantum/classical fast-path bypass (active work)
+- `docs/implementation_plan_mixed_quantum_classical_fastpath.md` — detailed implementation plan (5 modules, TDD)
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
