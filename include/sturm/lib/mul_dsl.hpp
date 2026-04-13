@@ -36,6 +36,7 @@
 
 #include <cstddef>
 #include <cassert>
+#include <type_traits>
 
 namespace sturm {
 
@@ -53,9 +54,10 @@ namespace sturm {
 //   result_width — must equal (a_width + b_width); checked by assert.
 //
 // n == 0 (either width zero): no-op.
-inline void lib_mul_dsl(qbool* a_bits, size_t a_width,
-                        qbool* b_bits, size_t b_width,
-                        qbool* result_bits, size_t result_width) {
+template <typename Bit>
+inline void lib_mul_dsl(Bit* a_bits, size_t a_width,
+                        Bit* b_bits, size_t b_width,
+                        Bit* result_bits, size_t result_width) {
     if (a_width == 0u || b_width == 0u) return;
     assert(result_width == a_width + b_width
            && "lib_mul_dsl: result_width must equal a_width + b_width");
@@ -83,12 +85,18 @@ inline void lib_mul_dsl(qbool* a_bits, size_t a_width,
 
     for (size_t i = 0; i < b_width; ++i) {
         // Window of the result register where (a << i) will be added.
-        qbool* window = result_bits + i;           // a_width qubits [i..i+a_width-1]
-        qbool& carry  = result_bits[i + a_width];  // carry output slot
+        Bit* window = result_bits + i;           // a_width qubits [i..i+a_width-1]
+        Bit& carry  = result_bits[i + a_width];  // carry output slot
 
-        // Push b[i] as control.
-        uint32_t b_qubit = static_cast<uint32_t>(b_bits[i].qubits[0]);
-        ctx.control_stack.push_control(b_qubit);
+        // Push b[i] as control — requires a qubit index.
+        if constexpr (std::is_same_v<Bit, qbool>) {
+            uint32_t b_qubit = static_cast<uint32_t>(b_bits[i].qubits[0]);
+            ctx.control_stack.push_control(b_qubit);
+        } else {
+            b_bits[i].ensure_quantum();
+            uint32_t b_qubit = static_cast<uint32_t>(b_bits[i].qubit_index());
+            ctx.control_stack.push_control(b_qubit);
+        }
 
         // WHEN b[i]: result[i..i+a_width-1] += a (adds a into the shifted window).
         lib_add_dsl(a_bits, window, carry, a_width);
