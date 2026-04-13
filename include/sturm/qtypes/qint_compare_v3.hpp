@@ -38,8 +38,8 @@ inline qbool make_dsl_compare_result(
     const bool is_quantum = (detail::mask_compare(a.super_mask, b.super_mask) != 0)
                              && (a.qubits[0] >= 0) && (b.qubits[0] >= 0);
 
-    // Classical / unallocated-qubit path: no DSL emission.
-    if (!is_quantum) {
+    // Classical fast-path: no DSL emission. M14: bypass when inside WHEN block.
+    if (!is_quantum && detail::current_control == nullptr) {
         qbool result;
         result.value      = classical_val ? 1 : 0;
         result.super_mask = (detail::mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
