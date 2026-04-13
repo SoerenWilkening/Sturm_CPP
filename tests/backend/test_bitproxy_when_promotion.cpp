@@ -504,6 +504,231 @@ static void test_no_when_classical_xor_fast_path() {
     std::puts("PASS: test_no_when_classical_xor_fast_path");
 }
 
+// ── Test 13: WHEN + classical += ────────────────────────────────────────────
+// M10: Classical a(3) += b(2) inside WHEN(flag) must produce super_mask != 0
+// and correct classical value 5.
+
+static void test_when_classical_add_assign() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);
+    sturm::qint_t<4> b(2);
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    WHEN(flag) {
+        a += b;
+    }
+    size_t after = sc.ir().size();
+
+    assert(after > before && "WHEN + += must emit gates");
+    assert(a.super_mask != 0 && "a must be promoted to quantum inside WHEN");
+    assert(a.value == 5 && "classical value must be 3 + 2 = 5");
+
+    std::puts("PASS: test_when_classical_add_assign");
+}
+
+// ── Test 14: WHEN + classical -= ────────────────────────────────────────────
+// M10: Classical a(5) -= b(2) inside WHEN(flag) must produce super_mask != 0
+// and correct classical value 3.
+
+static void test_when_classical_sub_assign() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(5);
+    sturm::qint_t<4> b(2);
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    WHEN(flag) {
+        a -= b;
+    }
+    size_t after = sc.ir().size();
+
+    assert(after > before && "WHEN + -= must emit gates");
+    assert(a.super_mask != 0 && "a must be promoted to quantum inside WHEN");
+    assert(a.value == 3 && "classical value must be 5 - 2 = 3");
+
+    std::puts("PASS: test_when_classical_sub_assign");
+}
+
+// ── Test 15: WHEN + classical *= ────────────────────────────────────────────
+// M10: Classical a(3) *= b(2) inside WHEN(flag) must produce super_mask != 0
+// and correct classical value 6.
+
+static void test_when_classical_mul_assign() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);
+    sturm::qint_t<4> b(2);
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    WHEN(flag) {
+        a *= b;
+    }
+    size_t after = sc.ir().size();
+
+    assert(after > before && "WHEN + *= must emit gates");
+    assert(a.super_mask != 0 && "a must be promoted to quantum inside WHEN");
+    assert(a.value == 6 && "classical value must be 3 * 2 = 6");
+
+    std::puts("PASS: test_when_classical_mul_assign");
+}
+
+// ── Test 16: No WHEN: fast-path preserved for all arithmetic ops ────────────
+// M10: Outside WHEN, classical a op= b must have super_mask == 0 and no
+// qubits allocated for +=, -=, *=, /=, %=.
+
+static void test_no_when_arith_fast_path_all_ops() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    // += fast-path
+    {
+        sturm::qint_t<4> a(3), b(2);
+        size_t before = sc.ir().size();
+        a += b;
+        assert(sc.ir().size() == before && "+= outside WHEN must emit no gates");
+        assert(a.super_mask == 0 && "+= super_mask must be 0");
+        assert(a.value == 5);
+        for (int i = 0; i < 4; ++i) assert(a.qubits[i] == -1);
+    }
+    // -= fast-path
+    {
+        sturm::qint_t<4> a(5), b(2);
+        size_t before = sc.ir().size();
+        a -= b;
+        assert(sc.ir().size() == before && "-= outside WHEN must emit no gates");
+        assert(a.super_mask == 0 && "-= super_mask must be 0");
+        assert(a.value == 3);
+        for (int i = 0; i < 4; ++i) assert(a.qubits[i] == -1);
+    }
+    // *= fast-path
+    {
+        sturm::qint_t<4> a(3), b(2);
+        size_t before = sc.ir().size();
+        a *= b;
+        assert(sc.ir().size() == before && "*= outside WHEN must emit no gates");
+        assert(a.super_mask == 0 && "*= super_mask must be 0");
+        assert(a.value == 6);
+        for (int i = 0; i < 4; ++i) assert(a.qubits[i] == -1);
+    }
+    // /= fast-path
+    {
+        sturm::qint_t<4> a(6), b(2);
+        size_t before = sc.ir().size();
+        a /= b;
+        assert(sc.ir().size() == before && "/= outside WHEN must emit no gates");
+        assert(a.super_mask == 0 && "/= super_mask must be 0");
+        assert(a.value == 3);
+        for (int i = 0; i < 4; ++i) assert(a.qubits[i] == -1);
+    }
+    // %= fast-path
+    {
+        sturm::qint_t<4> a(7), b(3);
+        size_t before = sc.ir().size();
+        a %= b;
+        assert(sc.ir().size() == before && "%= outside WHEN must emit no gates");
+        assert(a.super_mask == 0 && "%= super_mask must be 0");
+        assert(a.value == 1);
+        for (int i = 0; i < 4; ++i) assert(a.qubits[i] == -1);
+    }
+
+    std::puts("PASS: test_no_when_arith_fast_path_all_ops");
+}
+
+// ── Test 17: Gate count comparison — WHEN-promoted vs pre-quantum += ────────
+// M10: Compare gate counts for WHEN-promoted (classical operands inside WHEN,
+// lazy promotion via BitProxy) vs pre-promoted (all-quantum) a += b.
+//
+// BitProxy performs classical folding: bits that are classically 0 in the
+// addend skip gate emission entirely.  Pre-promoted operands are fully quantum
+// so the adder processes all bit-pairs.  Therefore WHEN-promoted should emit
+// fewer-or-equal gates (classical folding optimizes), not more.
+// Both must emit a non-zero number of gates.
+
+static void test_gate_count_when_promoted_vs_prequantum_add() {
+    // Run 1: WHEN-promoted (classical operands, lazy promotion via BitProxy).
+    size_t gates_when;
+    {
+        sturm::QubitPool::instance().reset_for_testing();
+        ScopedAppendCtx sc;
+
+        sturm::qint_t<4> a(3);
+        sturm::qint_t<4> b(2);
+        sturm::qbool flag(0.5);
+
+        size_t before = sc.ir().size();
+        WHEN(flag) {
+            a += b;
+        }
+        gates_when = sc.ir().size() - before;
+    }
+
+    // Run 2: Pre-promoted (qubits allocated eagerly, all-quantum).
+    size_t gates_pre;
+    {
+        sturm::QubitPool::instance().reset_for_testing();
+        ScopedAppendCtx sc;
+
+        sturm::qint_t<4> a(3);
+        sturm::qint_t<4> b(2);
+        // Eagerly allocate qubits and set super_mask for both operands.
+        for (int i = 0; i < 4; ++i) {
+            a.qubits[i] = sturm::QubitPool::instance().allocate();
+            if ((a.value >> i) & 1) {
+                const auto q = static_cast<uint32_t>(a.qubits[i]);
+                execute_gate(*sc.ctx, STURM_GATE_X, &q, 1u, 0.0);
+            }
+        }
+        a.super_mask = 0xF;
+        for (int i = 0; i < 4; ++i) {
+            b.qubits[i] = sturm::QubitPool::instance().allocate();
+            if ((b.value >> i) & 1) {
+                const auto q = static_cast<uint32_t>(b.qubits[i]);
+                execute_gate(*sc.ctx, STURM_GATE_X, &q, 1u, 0.0);
+            }
+        }
+        b.super_mask = 0xF;
+
+        sturm::qbool flag(0.5);
+
+        size_t before = sc.ir().size();
+        WHEN(flag) {
+            a += b;
+        }
+        gates_pre = sc.ir().size() - before;
+    }
+
+    // Both must emit gates.
+    assert(gates_when > 0 && "WHEN-promoted gate count must be nonzero");
+    assert(gates_pre  > 0 && "pre-quantum gate count must be nonzero");
+
+    // WHEN-promoted uses BitProxy classical folding, so it should emit
+    // fewer-or-equal gates compared to the all-quantum path.
+    assert(gates_when <= gates_pre &&
+           "WHEN-promoted (classical folding) must emit <= gates vs pre-quantum");
+
+    std::printf("PASS: test_gate_count_when_promoted_vs_prequantum_add "
+                "(when=%zu pre=%zu)\n", gates_when, gates_pre);
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -519,7 +744,12 @@ int main() {
     test_when_qint_xor_per_bit_promotion();
     test_when_qint_and_promotion();
     test_no_when_classical_xor_fast_path();
+    test_when_classical_add_assign();
+    test_when_classical_sub_assign();
+    test_when_classical_mul_assign();
+    test_no_when_arith_fast_path_all_ops();
+    test_gate_count_when_promoted_vs_prequantum_add();
 
-    std::puts("\nAll M1/M2/M5 BitProxy tests passed.");
+    std::puts("\nAll M1/M2/M5/M10 BitProxy tests passed.");
     return 0;
 }
