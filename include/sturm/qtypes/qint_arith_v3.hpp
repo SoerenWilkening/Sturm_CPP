@@ -56,7 +56,7 @@ inline void release_anc(qbool& q) {
 // -- operator+= (in-place Cuccaro add) ----------------------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator+=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value = value + b.value; return *this;
     }
     auto b_mut = detail_arith::make_b_mut(b);
@@ -74,7 +74,7 @@ qint_t<W>& qint_t<W>::operator+=(const qint_t<W>& b) {
 // -- operator-= (in-place Cuccaro sub) ----------------------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator-=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value = value - b.value; return *this;
     }
     auto b_mut = detail_arith::make_b_mut(b);
@@ -92,7 +92,7 @@ qint_t<W>& qint_t<W>::operator-=(const qint_t<W>& b) {
 // -- operator*= (out-of-place mul, keep lower W bits) -------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value = value * b.value; return *this;
     }
     auto b_mut = detail_arith::make_b_mut(b);
@@ -119,7 +119,7 @@ qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
 // -- operator/= (out-of-place div, keep quotient) -----------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator/=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value = (b.value != 0) ? (value / b.value) : 0; return *this;
     }
     auto b_mut = detail_arith::make_b_mut(b);
@@ -147,7 +147,7 @@ qint_t<W>& qint_t<W>::operator/=(const qint_t<W>& b) {
 // -- operator%= (out-of-place mod, keep remainder) ----------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator%=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value = (b.value != 0) ? (value % b.value) : 0; return *this;
     }
     auto b_mut = detail_arith::make_b_mut(b);
