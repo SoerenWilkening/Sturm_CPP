@@ -1848,3 +1848,20 @@ target_compile_definitions(test_compound_arith_mixed_fastpath PRIVATE
 target_link_libraries(test_compound_arith_mixed_fastpath PRIVATE orkan_headers)
 add_test(NAME test_compound_arith_mixed_fastpath COMMAND test_compound_arith_mixed_fastpath)
 set_tests_properties(test_compound_arith_mixed_fastpath PROPERTIES LABELS "backend")
+
+# sturm-fbt M1: compound-assign bitwise mixed quantum/classical fast-path
+add_executable(test_compound_bitwise_mixed_fastpath
+    test_compound_bitwise_mixed_fastpath.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_compound_bitwise_mixed_fastpath PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_compound_bitwise_mixed_fastpath PRIVATE cxx_std_20)
+target_compile_definitions(test_compound_bitwise_mixed_fastpath PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_compound_bitwise_mixed_fastpath PRIVATE orkan_headers)
+add_test(NAME test_compound_bitwise_mixed_fastpath COMMAND test_compound_bitwise_mixed_fastpath)
+set_tests_properties(test_compound_bitwise_mixed_fastpath PROPERTIES LABELS "backend")
