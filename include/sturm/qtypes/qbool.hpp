@@ -77,6 +77,16 @@ public:
         return q;
     }
 
+    // 3-arg overload: propagates value and super_mask from the source operand.
+    static qbool make_non_owning(int idx, int64_t val, uint64_t mask) noexcept {
+        qbool q;
+        q.qubits[0]  = idx;
+        q.value       = val;
+        q.super_mask  = mask;
+        q.owning_     = false;
+        return q;
+    }
+
     // ── Destructor ────────────────────────────────────────────────────────
     // M7: trivial destructor — base class qint_t<1> handles uncompute_op::apply()
     // and qubit release via its own destructor (RAII Strategy B).
