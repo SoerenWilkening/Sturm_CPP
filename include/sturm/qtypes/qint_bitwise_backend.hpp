@@ -19,6 +19,7 @@
 #include "sturm/core/context.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/qtypes/lazy_expr.hpp"
+#include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/uncompute/uncompute_op.hpp"
 
 #include <cstddef>
@@ -42,13 +43,20 @@ qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
     }
 
     // Emit per-bit Toffoli: result[i] ^= (a[i] & b[i]).
+    // Uses BitProxy instead of raw qbool::make_non_owning to handle -1 qubit
+    // indices (classical bits) via classical folding.
     if ((a.super_mask | b.super_mask) != 0 && sturm_get_thread_context()) {
+        auto a_mut = detail_bw::make_b_mut(a);
+        auto b_mut = detail_bw::make_b_mut(b);
         for (std::size_t i = 0; i < W; ++i) {
-            qbool r_bit = qbool::make_non_owning(result.qubits[i]);
-            qbool a_bit = qbool::make_non_owning(a.qubits[i]);
-            qbool b_bit = qbool::make_non_owning(b.qubits[i]);
+            qbool r_q = qbool::make_non_owning(result.qubits[i]);
+            BitProxy r_bit(r_q);
+            BitProxy a_bit(a_mut, i);
+            BitProxy b_bit(b_mut, i);
             r_bit ^= (a_bit & b_bit);
         }
+        detail_bw::release_temp_qubits(a_mut, a);
+        detail_bw::release_temp_qubits(b_mut, b);
     }
 
     // BITWISE_SELF: AND is self-inverse (AND again with same inputs restores result).
@@ -76,13 +84,20 @@ qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
 
     // Emit per-bit OR: result[i] ^= (a[i] | b[i]) via OrExpr
     // (CNOT(a,r) + CNOT(b,r) + Toffoli(a,b,r) per bit).
+    // Uses BitProxy instead of raw qbool::make_non_owning to handle -1 qubit
+    // indices (classical bits) via classical folding.
     if ((a.super_mask | b.super_mask) != 0 && sturm_get_thread_context()) {
+        auto a_mut = detail_bw::make_b_mut(a);
+        auto b_mut = detail_bw::make_b_mut(b);
         for (std::size_t i = 0; i < W; ++i) {
-            qbool r_bit = qbool::make_non_owning(result.qubits[i]);
-            qbool a_bit = qbool::make_non_owning(a.qubits[i]);
-            qbool b_bit = qbool::make_non_owning(b.qubits[i]);
+            qbool r_q = qbool::make_non_owning(result.qubits[i]);
+            BitProxy r_bit(r_q);
+            BitProxy a_bit(a_mut, i);
+            BitProxy b_bit(b_mut, i);
             r_bit ^= (a_bit | b_bit);
         }
+        detail_bw::release_temp_qubits(a_mut, a);
+        detail_bw::release_temp_qubits(b_mut, b);
     }
 
     result.uncompute_ = uncompute_op::make_bitwise_self(
