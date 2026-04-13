@@ -47,7 +47,7 @@ void release_temp_qubits(qint_t<W>& b_mut, const qint_t<W>& orig) {
 // -- operator^= (in-place per-bit CNOT) ------------------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator^=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value ^= b.value;
         return *this;
     }
@@ -65,7 +65,7 @@ qint_t<W>& qint_t<W>::operator^=(const qint_t<W>& b) {
 // -- operator&= (out-of-place AND via Toffoli) -----------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator&=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value &= b.value;
         return *this;
     }
@@ -100,7 +100,7 @@ qint_t<W>& qint_t<W>::operator&=(const qint_t<W>& b) {
 // -- operator|= (out-of-place OR via CNOT+CNOT+Toffoli) -------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator|=(const qint_t<W>& b) {
-    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         value |= b.value;
         return *this;
     }
