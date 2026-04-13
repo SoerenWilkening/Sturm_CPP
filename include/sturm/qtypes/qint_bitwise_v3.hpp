@@ -47,7 +47,7 @@ qint_t<W>& qint_t<W>::operator^=(const qint_t<W>& b) {
     }
     for (std::size_t i = 0; i < W; ++i) {
         // Get non-owning qbools for bit i.
-        qbool this_bit = (*this)[i];
+        qbool this_bit = static_cast<const qint_t<W>&>(*this)[i];
         qbool b_bit    = b[i];
         // Per-bit CNOT: this[i] ^= b[i].
         this_bit ^= b_bit;
@@ -79,7 +79,7 @@ qint_t<W>& qint_t<W>::operator&=(const qint_t<W>& b) {
 
     // Compute result[i] ^= (this[i] & b[i]) per bit.
     for (std::size_t i = 0; i < W; ++i) {
-        qbool a_bit = (*this)[i];
+        qbool a_bit = static_cast<const qint_t<W>&>(*this)[i];
         qbool b_bit = b[i];
         // Toffoli: result[i] ^= (a[i] & b[i]) via AndExpr.
         res_bits[i] ^= (a_bit & b_bit);
@@ -121,7 +121,7 @@ qint_t<W>& qint_t<W>::operator|=(const qint_t<W>& b) {
 
     // Compute result[i] ^= (this[i] | b[i]) per bit via OrExpr.
     for (std::size_t i = 0; i < W; ++i) {
-        qbool a_bit = (*this)[i];
+        qbool a_bit = static_cast<const qint_t<W>&>(*this)[i];
         qbool b_bit = b[i];
         // OrExpr: CNOT(a,r) + CNOT(b,r) + Toffoli(a,b,r).
         res_bits[i] ^= (a_bit | b_bit);

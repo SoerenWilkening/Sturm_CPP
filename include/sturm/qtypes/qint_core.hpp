@@ -41,6 +41,13 @@ namespace sturm {
 // both headers are available).
 class qbool;
 
+// Forward declaration — full definition is in bit_proxy.hpp.
+// M2: BitProxy is backend-only; declared here so qint_t can declare the
+// non-const operator[] overload that returns BitProxy.
+#ifdef STURM_BACKEND_ENABLED
+struct BitProxy;
+#endif
+
 template <std::size_t Width>
 class qint_t {
     static_assert(Width >= 1 && Width <= 64,
@@ -271,6 +278,14 @@ public:
     // ── Bit subscript (returns qbool view) ───────────────────────────────────
     // Defined in qint_compare.hpp
     qbool operator[](std::size_t i) const;
+
+    // ── Non-const bit subscript (returns mutable BitProxy) ───────────────────
+    // M2: Returns a BitProxy that writes back to this register.
+    // Defined in qint_compare.hpp.  Only available when backend is enabled
+    // (BitProxy is a backend-only type).
+#ifdef STURM_BACKEND_ENABLED
+    BitProxy operator[](std::size_t i);
+#endif
 
     // ── PhiProxy ──────────────────────────────────────────────────────────────
     struct PhiProxy {

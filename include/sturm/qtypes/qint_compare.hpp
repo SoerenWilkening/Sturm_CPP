@@ -175,6 +175,22 @@ qbool qint_t<W>::operator[](std::size_t i) const {
 
 } // namespace sturm
 
+// ── Non-const operator[] — returns mutable BitProxy (M2) ────────────────────
+// BitProxy writes back to the parent register's qubit, value, and super_mask.
+// Only available when STURM_BACKEND_ENABLED is set (BitProxy is backend-only).
+#ifdef STURM_BACKEND_ENABLED
+#include "sturm/qtypes/bit_proxy.hpp"
+
+namespace sturm {
+
+template <std::size_t W>
+BitProxy qint_t<W>::operator[](std::size_t i) {
+    return BitProxy(*this, i);
+}
+
+} // namespace sturm
+#endif  // STURM_BACKEND_ENABLED
+
 // ── Backend-enabled comparison operator bodies (DSL library) ─────────────────
 // When STURM_BACKEND_ENABLED is set, provide comparison bodies that call the
 // DSL library functions (lib_eq_dsl, lib_lt_dsl, etc.) and stamp COMPARE tag.

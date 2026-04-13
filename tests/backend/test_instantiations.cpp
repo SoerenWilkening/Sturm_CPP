@@ -56,9 +56,9 @@ static void exercise() {
     auto lt = (b < a);
     CHECK(lt.value == false);
 
-    // operator[] bit subscript
+    // operator[] bit subscript (const overload returns qbool)
     Q c(1);
-    auto bit0 = c[0];
+    auto bit0 = static_cast<const Q&>(c)[0];
     CHECK(bit0.value == true);
 
     // super_mask starts 0 for classical value

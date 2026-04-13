@@ -43,7 +43,7 @@ qint_t<W>& qint_t<W>::operator+=(const qint_t<W>& b) {
     qbool this_bits[W];
     qbool b_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
-        this_bits[i] = (*this)[i];
+        this_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
         b_bits[i]    = b[i];
     }
 
@@ -77,7 +77,7 @@ qint_t<W>& qint_t<W>::operator-=(const qint_t<W>& b) {
     qbool this_bits[W];
     qbool b_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
-        this_bits[i] = (*this)[i];
+        this_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
         b_bits[i]    = b[i];
     }
 
@@ -110,7 +110,7 @@ qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
     qbool a_bits[W];
     qbool b_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = (*this)[i];
+        a_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
         b_bits[i] = b[i];
     }
 
@@ -161,7 +161,7 @@ qint_t<W>& qint_t<W>::operator/=(const qint_t<W>& b) {
     qbool a_bits[W];
     qbool b_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = (*this)[i];
+        a_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
         b_bits[i] = b[i];
     }
 
@@ -211,7 +211,7 @@ qint_t<W>& qint_t<W>::operator%=(const qint_t<W>& b) {
     qbool a_bits[W];
     qbool b_bits[W];
     for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = (*this)[i];
+        a_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
         b_bits[i] = b[i];
     }
 
