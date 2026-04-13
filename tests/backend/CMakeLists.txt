@@ -1607,3 +1607,36 @@ set_source_files_properties(
 )
 add_test(NAME test_phi_theta_backend COMMAND test_phi_theta_backend)
 set_tests_properties(test_phi_theta_backend PROPERTIES LABELS "backend")
+
+# ── WHEN arith promotion: classical operands inside WHEN get promoted ────────
+add_executable(test_when_arith_promotion
+    test_when_arith_promotion.cpp
+)
+target_include_directories(test_when_arith_promotion PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_arith_promotion PRIVATE cxx_std_20)
+add_test(NAME test_when_arith_promotion COMMAND test_when_arith_promotion)
+set_tests_properties(test_when_arith_promotion PROPERTIES LABELS "backend")
+
+# ── M1: BitProxy struct + operator bodies (per-bit lazy WHEN promotion) ──────
+add_executable(test_bitproxy_when_promotion
+    test_bitproxy_when_promotion.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_bitproxy_when_promotion PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_bitproxy_when_promotion PRIVATE cxx_std_20)
+target_compile_definitions(test_bitproxy_when_promotion PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_bitproxy_when_promotion PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_bitproxy_when_promotion COMMAND test_bitproxy_when_promotion)
+set_tests_properties(test_bitproxy_when_promotion PROPERTIES LABELS "backend")
