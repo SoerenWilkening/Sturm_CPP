@@ -1790,3 +1790,25 @@ set_source_files_properties(
 )
 add_test(NAME test_acceptance_prd COMMAND test_acceptance_prd)
 set_tests_properties(test_acceptance_prd PROPERTIES LABELS "backend")
+
+# ── M4: Free bitwise operators with -1 qubit indices (sturm-5hy) ─────────────
+add_executable(test_free_bitwise_neg1_qubits
+    test_free_bitwise_neg1_qubits.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_free_bitwise_neg1_qubits PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_free_bitwise_neg1_qubits PRIVATE cxx_std_20)
+target_compile_definitions(test_free_bitwise_neg1_qubits PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_free_bitwise_neg1_qubits PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_free_bitwise_neg1_qubits COMMAND test_free_bitwise_neg1_qubits)
+set_tests_properties(test_free_bitwise_neg1_qubits PROPERTIES LABELS "backend")

@@ -238,6 +238,14 @@ qint_t<W>& qint_t<W>::operator>>=(int n) {
 
 } // namespace sturm
 
+// ── Backend-enabled bitwise compound assign bodies (DSL logic) ────────────────
+// When STURM_BACKEND_ENABLED is set, &=, |=, ^= call DSL logic per bit.
+// Must come BEFORE backend so that detail_bw::make_b_mut and
+// detail_bw::release_temp_qubits are available to the free operators.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/qint_bitwise_v3.hpp"
+#endif
+
 // ── Backend-enabled AND/OR operator bodies ────────────────────────────────────
 // operator& and operator| (Toffoli / OR-DSL circuits) are defined here when backend.
 #ifdef STURM_BACKEND_ENABLED
@@ -248,10 +256,4 @@ qint_t<W>& qint_t<W>::operator>>=(int n) {
 // operator<< operator>> operator<<= operator>>= are defined here when backend.
 #ifdef STURM_BACKEND_ENABLED
 #  include "sturm/qtypes/qint_shift_backend.hpp"
-#endif
-
-// ── Backend-enabled bitwise compound assign bodies (DSL logic) ────────────────
-// When STURM_BACKEND_ENABLED is set, &=, |=, ^= call DSL logic per bit.
-#ifdef STURM_BACKEND_ENABLED
-#  include "sturm/qtypes/qint_bitwise_v3.hpp"
 #endif
