@@ -39,7 +39,8 @@ namespace sturm {
 //
 // Precondition: c must be in |0> if you want c = a OR b after the call.
 //               If c is not |0>, this XORs the OR result into c.
-inline void lib_or_dsl(qbool& a, qbool& b, qbool& c) {
+template <typename Bit>
+inline void lib_or_dsl(Bit& a, Bit& b, Bit& c) {
     c ^= (a | b);   // OrExpr path: CNOT(a,c) + CNOT(b,c) + CCX(a,b,c)
 }
 
@@ -49,7 +50,8 @@ inline void lib_or_dsl(qbool& a, qbool& b, qbool& c) {
 // = Toffoli(a,b,c) + X(c) = 2 gates.
 //
 // Precondition: c must be in |0> if you want c = NAND(a,b) after the call.
-inline void lib_nand_dsl(qbool& a, qbool& b, qbool& c) {
+template <typename Bit>
+inline void lib_nand_dsl(Bit& a, Bit& b, Bit& c) {
     c ^= (a & b);   // 1 CCX via AndExpr
     c.flip();       // 1 X (or lifted under WHEN)
 }
@@ -69,7 +71,8 @@ inline void lib_nand_dsl(qbool& a, qbool& b, qbool& c) {
 // a and b are restored to their original values.
 //
 // Precondition: c must be in |0> if you want c = NOR(a,b) after the call.
-inline void lib_nor_dsl(qbool& a, qbool& b, qbool& c) {
+template <typename Bit>
+inline void lib_nor_dsl(Bit& a, Bit& b, Bit& c) {
     a.flip();           // X(a): a becomes NOT(a)
     b.flip();           // X(b): b becomes NOT(b)
     c ^= (a & b);       // CCX: c ^= NOT(a_in) AND NOT(b_in) = NOR(a_in,b_in)
@@ -86,7 +89,8 @@ inline void lib_nor_dsl(qbool& a, qbool& b, qbool& c) {
 // After the X gate: c = NOT(a XOR b) = XNOR(a,b).
 //
 // Precondition: c must be in |0> if you want c = XNOR(a,b) after the call.
-inline void lib_xnor_dsl(qbool& a, qbool& b, qbool& c) {
+template <typename Bit>
+inline void lib_xnor_dsl(Bit& a, Bit& b, Bit& c) {
     c ^= a;     // CNOT(a, c)
     c ^= b;     // CNOT(b, c)
     c.flip();   // X(c): c = NOT(a XOR b) = XNOR(a,b)

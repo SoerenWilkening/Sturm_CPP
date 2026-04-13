@@ -35,19 +35,24 @@
 
 #include <cstddef>
 #include <cassert>
+#include <type_traits>
 
 namespace sturm {
 
+// ── Ancilla helper ───────────────────────────────────────────────────────────
+namespace detail_c_and {
+template <typename Bit>
+Bit make_ancilla_view(qbool& owner) {
+    if constexpr (std::is_same_v<Bit, qbool>) return qbool::make_non_owning(owner.qubits[0]);
+    else return Bit(owner);
+}
+} // namespace detail_c_and
+
 // ── lib_c_AND_dsl ─────────────────────────────────────────────────────────────
-//
-// 2-control AND: tgt ^= (c0 & c1).
-// This is a single Toffoli (CCX) gate via AndExpr — no ancilla needed.
-//
-// The Nielsen-Chuang "sandwich" (compute-anc-uncompute) would use 3 gates for
-// the same result; for exactly 2 controls the direct CCX is optimal.
-//
+// 2-control AND: tgt ^= (c0 & c1).  Single Toffoli (CCX) — no ancilla needed.
 // Gate cost: 1 CCX.
-inline void lib_c_AND_dsl(qbool& c0, qbool& c1, qbool& tgt) {
+template <typename Bit>
+inline void lib_c_AND_dsl(Bit& c0, Bit& c1, Bit& tgt) {
     tgt ^= (c0 & c1);   // AndExpr path: single CCX
 }
 
@@ -67,7 +72,8 @@ inline void lib_c_AND_dsl(qbool& c0, qbool& c1, qbool& tgt) {
 // Each ancilla is in |0> before the call and is restored to |0> after.
 //
 // Gate cost (n>=3): (n-1) CCX forward + (n-2) CCX reverse = (2n-3) CCX total.
-inline void lib_c_n_AND_dsl(qbool* controls, size_t n_controls, qbool& tgt) {
+template <typename Bit>
+inline void lib_c_n_AND_dsl(Bit* controls, size_t n_controls, Bit& tgt) {
     if (n_controls == 0u) {
         // No controls: unconditional X.
         tgt.flip();
@@ -89,10 +95,6 @@ inline void lib_c_n_AND_dsl(qbool* controls, size_t n_controls, qbool& tgt) {
     const size_t n_anc = n_controls - 2u;
 
     // Allocate ancilla qubit indices from the pool.
-    // Store as non-owning qbools we manage manually (to allow array use).
-    // We need n_anc ancilla slots.
-    //
-    // We manage them as a vector of (qubit_index, qbool) pairs.
     // Using a fixed-size stack array (max controls bounded by kMaxAnc).
     static constexpr size_t kMaxAnc = 30u;
     assert(n_anc <= kMaxAnc && "lib_c_n_AND_dsl: too many controls");
@@ -102,10 +104,12 @@ inline void lib_c_n_AND_dsl(qbool* controls, size_t n_controls, qbool& tgt) {
         anc_idx[i] = QubitPool::instance().allocate();
     }
 
-    // Build non-owning qbool wrappers for ancillas.
-    qbool anc[kMaxAnc];
+    // Build owning qbool storage + Bit views for ancillas.
+    qbool anc_own[kMaxAnc];
+    Bit   anc[kMaxAnc];
     for (size_t i = 0; i < n_anc; ++i) {
-        anc[i] = qbool::make_non_owning(anc_idx[i]);
+        anc_own[i] = qbool::make_non_owning(anc_idx[i]);
+        anc[i]     = detail_c_and::make_ancilla_view<Bit>(anc_own[i]);
     }
 
     // ── Forward sweep ─────────────────────────────────────────────────────────

@@ -30,6 +30,7 @@
 
 #include <utility>   // std::swap
 #include <cassert>
+#include <type_traits>
 
 namespace sturm {
 
@@ -57,33 +58,26 @@ namespace sturm {
 //   b — second qbool (must have a valid qubit: qubits[0] >= 0).
 //
 // Precondition: a.qubits[0] != b.qubits[0] (distinct qubits).
-inline void lib_swap_dsl(qbool& a, qbool& b) {
-    assert(a.qubits[0] >= 0 && b.qubits[0] >= 0
-           && "lib_swap_dsl: both qbools must have allocated qubits");
-
+template <typename Bit>
+inline void lib_swap_dsl(Bit& a, Bit& b) {
     // Check if a context exists (required for gate emission and stack check).
     sturm_backend_context_t* raw = sturm_get_thread_context();
     assert(raw && "lib_swap_dsl: no BackendContext installed");
     BackendContext& ctx = *raw;
 
-    if (ctx.control_stack.depth() == 0u) {
-        // ── Uncontrolled: pure index relabel ──────────────────────────────────
-        // Swap qubits[0] so each qbool now references the other's physical qubit.
-        std::swap(a.qubits[0], b.qubits[0]);
-        // Also swap classical metadata so the logical association is consistent.
-        std::swap(a.value,      b.value);
-        std::swap(a.super_mask, b.super_mask);
-        // Note: ownership flags are NOT swapped — each qbool retains its
-        // own ownership semantics for the qubit it now references.
-    } else {
-        // ── Controlled: Fredkin via three lifted CNOTs ────────────────────────
-        // a ^= b; b ^= a; a ^= b;
-        // Under depth controls, each CX becomes appropriately lifted.
-        // Under exactly 1 control: each ^= becomes CCX → total 3 CCX = Fredkin.
-        a ^= b;  // CNOT(b, a) lifted under current controls
-        b ^= a;  // CNOT(a, b) lifted under current controls
-        a ^= b;  // CNOT(b, a) lifted under current controls
+    if constexpr (std::is_same_v<Bit, qbool>) {
+        // qbool path: uncontrolled swap is a zero-gate index relabel.
+        assert(a.qubits[0] >= 0 && b.qubits[0] >= 0
+               && "lib_swap_dsl: both qbools must have allocated qubits");
+        if (ctx.control_stack.depth() == 0u) {
+            std::swap(a.qubits[0], b.qubits[0]);
+            std::swap(a.value,      b.value);
+            std::swap(a.super_mask, b.super_mask);
+            return;
+        }
     }
+    // Controlled (Fredkin) or non-qbool Bit: 3-CNOT swap decomposition.
+    a ^= b; b ^= a; a ^= b;
 }
 
 } // namespace sturm
