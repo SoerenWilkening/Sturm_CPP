@@ -139,7 +139,7 @@ qint_t<W> operator~(const qint_t<W>& a) {
     // is installed (quantum execution context present).
     if (sturm_get_thread_context()) {
         for (std::size_t i = 0; i < W; ++i) {
-            qbool bit = result[i];
+            qbool bit = static_cast<const qint_t<W>&>(result)[i];
             bit.flip();
         }
     }

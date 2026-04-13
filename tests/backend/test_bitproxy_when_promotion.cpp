@@ -322,6 +322,58 @@ static void test_sizeof_bitproxy() {
                 sizeof(sturm::BitProxy));
 }
 
+// ── Test 9: Non-const operator[] returns BitProxy (M2) ─────────────────────
+
+static void test_nonconst_operator_subscript_returns_bitproxy() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    // qint_t<4> with classical value 5 (binary 0101).
+    sturm::qint_t<4> reg(5);
+    // Allocate qubit for bit 0 to make it quantum.
+    reg.qubits[0] = sturm::QubitPool::instance().allocate();
+    reg.super_mask = 1ULL;
+
+    // Non-const operator[] should return BitProxy.
+    sturm::BitProxy bp0 = reg[0];
+    sturm::BitProxy bp1 = reg[1];
+    sturm::BitProxy bp2 = reg[2];
+
+    // bp0: qubit allocated, quantum, bit value = 1 (bit 0 of 5).
+    assert(bp0.qubit_index() == reg.qubits[0]);
+    assert(bp0.is_quantum() == true);
+    assert(bp0.bit_value() == true);
+
+    // bp1: classical, bit value = 0 (bit 1 of 5).
+    assert(bp1.qubit_index() == -1);
+    assert(bp1.is_quantum() == false);
+    assert(bp1.bit_value() == false);
+
+    // bp2: classical, bit value = 1 (bit 2 of 5).
+    assert(bp2.qubit_index() == -1);
+    assert(bp2.is_quantum() == false);
+    assert(bp2.bit_value() == true);
+
+    // Verify BitProxy writes back to parent via set_bit_value.
+    bp1.set_bit_value(true);
+    assert((reg.value & (1 << 1)) != 0 && "write-back to parent must work");
+    bp1.set_bit_value(false);
+    assert((reg.value & (1 << 1)) == 0);
+
+    // Verify BitProxy from operator[] can be used for quantum operations.
+    // Use bp2 (classical bit 2, value=1) as XOR source on a target.
+    sturm::qbool tgt(false);
+    sturm::BitProxy target(tgt);
+
+    // XOR target with bp0 (quantum source) -- should promote target and emit CX.
+    size_t before = sc.ir().size();
+    target ^= bp0;
+    assert(target.is_quantum() && "target must be promoted via operator[] BitProxy");
+    assert(count_kind(sc.ir(), STURM_GATE_CX, before) >= 1);
+
+    std::puts("PASS: test_nonconst_operator_subscript_returns_bitproxy");
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -333,7 +385,8 @@ int main() {
     test_and_xor_classical_0_skip();
     test_ensure_quantum_x_for_value_1();
     test_sizeof_bitproxy();
+    test_nonconst_operator_subscript_returns_bitproxy();
 
-    std::puts("\nAll M1 BitProxy tests passed.");
+    std::puts("\nAll M1/M2 BitProxy tests passed.");
     return 0;
 }

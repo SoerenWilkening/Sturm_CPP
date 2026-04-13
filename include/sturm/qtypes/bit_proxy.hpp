@@ -65,6 +65,18 @@ struct BitProxy {
         else   *value_ptr &= ~(int64_t(1) << bit_pos);
     }
 
+    // ── Implicit conversion to qbool ────────────────────────────────────
+    // Returns a non-owning qbool view of the bit, matching the semantics
+    // of the const operator[] on qint_t<W>.  This allows BitProxy to be
+    // used seamlessly wherever qbool was expected.
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    operator qbool() const {
+        qbool out = qbool::make_non_owning(*qubit_ptr);
+        out.value      = static_cast<int64_t>(bit_value());
+        out.super_mask = (*mask_ptr >> bit_pos) & 1ULL;
+        return out;
+    }
+
     // ── Promotion ────────────────────────────────────────────────────────
     // Allocate qubit if unallocated.  Initialize to classical value via X
     // gate.  Update parent's super_mask.  Requires active BackendContext.
