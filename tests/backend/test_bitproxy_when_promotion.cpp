@@ -1,4 +1,4 @@
-// test_bitproxy_when_promotion.cpp -- M1/M3/M5: BitProxy struct tests.
+// test_bitproxy_when_promotion.cpp -- M1/M3/M5/M10/M15: BitProxy struct tests.
 //
 // Tests:
 //   1. BitProxy construction from qint and qbool -- verify accessor values.
@@ -13,6 +13,14 @@
 //  10. WHEN + classical qint XOR with per-bit promotion (M5).
 //  11. WHEN + classical qint AND (M5).
 //  12. No WHEN: classical fast-path preserved (M5).
+//  13. WHEN + classical += (M10).
+//  14. WHEN + classical -= (M10).
+//  15. WHEN + classical *= (M10).
+//  16. No WHEN: fast-path preserved for all arithmetic ops (M10).
+//  17. Gate count comparison: WHEN-promoted vs pre-quantum += (M10).
+//  18. WHEN + free operator+ (M15).
+//  19. WHEN + shift left (M15).
+//  20. WHEN + comparison == (M15).
 //
 // Harness: APPEND mode BackendContext + GateIR inspection.
 
@@ -729,6 +737,96 @@ static void test_gate_count_when_promoted_vs_prequantum_add() {
                 "(when=%zu pre=%zu)\n", gates_when, gates_pre);
 }
 
+// ── Test 18: WHEN + free operator+ ──────────────────────────────────────────
+// M15: Classical a(3) + b(2) inside WHEN(flag) must produce a quantum result
+// (super_mask != 0) with correct classical value 5.
+
+static void test_when_free_operator_add() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);
+    sturm::qint_t<4> b(2);
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    // Use the free operator+ (not +=) inside WHEN.
+    // The free operator+ copies a into a fresh register and delegates to +=.
+    // Inside WHEN, the BitProxy adder lazily promotes classical bits.
+    size_t before = sc.ir().size();
+    sturm::qint_t<4> c(0);
+    WHEN(flag) {
+        c = a + b;
+    }
+    size_t after = sc.ir().size();
+
+    assert(after > before && "WHEN + free operator+ must emit gates");
+    assert(c.super_mask != 0 && "result must be quantum inside WHEN");
+    assert(c.value == 5 && "classical value must be 3 + 2 = 5");
+
+    std::puts("PASS: test_when_free_operator_add");
+}
+
+// ── Test 19: WHEN + shift ───────────────────────────────────────────────────
+// M15: Classical a(3) << 1 inside WHEN(flag) must produce a quantum result
+// (super_mask != 0) with correct classical value 6.
+
+static void test_when_shift_left() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);
+
+    assert(a.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    sturm::qint_t<4> c(0);
+    WHEN(flag) {
+        c = a << 1;
+    }
+    size_t after = sc.ir().size();
+
+    assert(after > before && "WHEN + shift must emit gates");
+    assert(c.super_mask != 0 && "result must be quantum inside WHEN");
+    assert(c.value == 6 && "classical value must be 3 << 1 = 6");
+
+    std::puts("PASS: test_when_shift_left");
+}
+
+// ── Test 20: WHEN + comparison ──────────────────────────────────────────────
+// M15: Classical a(3) == b(3) inside WHEN(flag) must produce a quantum qbool
+// result (super_mask != 0).
+
+static void test_when_comparison_eq() {
+    sturm::QubitPool::instance().reset_for_testing();
+    ScopedAppendCtx sc;
+
+    sturm::qint_t<4> a(3);
+    sturm::qint_t<4> b(3);
+
+    assert(a.super_mask == 0);
+    assert(b.super_mask == 0);
+
+    sturm::qbool flag(0.5);
+
+    size_t before = sc.ir().size();
+    sturm::qbool eq(false);
+    WHEN(flag) {
+        eq = (a == b);
+    }
+    size_t after = sc.ir().size();
+
+    assert(after > before && "WHEN + comparison must emit gates");
+    assert(eq.super_mask != 0 && "result qbool must be quantum inside WHEN");
+
+    std::puts("PASS: test_when_comparison_eq");
+}
+
 // ── main ─────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -749,7 +847,10 @@ int main() {
     test_when_classical_mul_assign();
     test_no_when_arith_fast_path_all_ops();
     test_gate_count_when_promoted_vs_prequantum_add();
+    test_when_free_operator_add();
+    test_when_shift_left();
+    test_when_comparison_eq();
 
-    std::puts("\nAll M1/M2/M5/M10 BitProxy tests passed.");
+    std::puts("\nAll M1/M2/M5/M10/M15 BitProxy tests passed.");
     return 0;
 }

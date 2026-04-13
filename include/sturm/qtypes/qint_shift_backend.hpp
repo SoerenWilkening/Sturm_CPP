@@ -65,7 +65,14 @@ qint_t<W> operator<<(const qint_t<W>& a, int n) {
         result.qubits[i] = QubitPool::instance().allocate();
     }
 
+    // Inside WHEN with classical source: all result bits are now quantum.
+    if (a.qubits[0] < 0) {
+        result.super_mask = detail::width_mask(static_cast<int>(W));
+    }
+
     // Emit CNOT to copy bits: result.qubits[i+n] ^= a.qubits[i] for i in 0..W-n-1.
+    // For classical source bits (inside WHEN), emit X gate to initialize
+    // result qubit to the classical value.
     if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
         int shift = n;
         for (int i = 0; i < static_cast<int>(W) - shift; ++i) {
@@ -73,6 +80,8 @@ qint_t<W> operator<<(const qint_t<W>& a, int n) {
                 primitive_XOR(*ctx,
                               static_cast<uint32_t>(a.qubits[i]),
                               static_cast<uint32_t>(result.qubits[i + shift]));
+            } else if (a.qubits[i] < 0 && ((a.value >> i) & 1) && result.qubits[i + shift] >= 0) {
+                emit_X_lifted(*ctx, static_cast<uint32_t>(result.qubits[i + shift]));
             }
         }
     }
@@ -117,7 +126,14 @@ qint_t<W> operator>>(const qint_t<W>& a, int n) {
         result.qubits[i] = QubitPool::instance().allocate();
     }
 
+    // Inside WHEN with classical source: all result bits are now quantum.
+    if (a.qubits[0] < 0) {
+        result.super_mask = detail::width_mask(static_cast<int>(W));
+    }
+
     // Emit CNOT to copy bits: result.qubits[i] ^= a.qubits[i+n] for i in 0..W-n-1.
+    // For classical source bits (inside WHEN), emit X gate to initialize
+    // result qubit to the classical value.
     if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
         int shift = n;
         for (int i = 0; i < static_cast<int>(W) - shift; ++i) {
@@ -125,6 +141,8 @@ qint_t<W> operator>>(const qint_t<W>& a, int n) {
                 primitive_XOR(*ctx,
                               static_cast<uint32_t>(a.qubits[i + shift]),
                               static_cast<uint32_t>(result.qubits[i]));
+            } else if (a.qubits[i + shift] < 0 && ((a.value >> (i + shift)) & 1) && result.qubits[i] >= 0) {
+                emit_X_lifted(*ctx, static_cast<uint32_t>(result.qubits[i]));
             }
         }
     }
