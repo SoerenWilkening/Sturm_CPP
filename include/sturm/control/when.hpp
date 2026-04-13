@@ -24,6 +24,7 @@
 //   qbool.hpp     — included transitively through when_fwd.hpp
 
 #include "sturm/control/when_fwd.hpp"   // current_control TLS
+#include "sturm/control/when_capture.hpp"  // WhenCapture for compound WHEN expressions
 // M5: when_fwd.hpp no longer includes qbool.hpp (only forward-declares qbool).
 // when.hpp uses qbool members directly, so we include the full definition here.
 #include "sturm/qtypes/qbool.hpp"
@@ -246,10 +247,18 @@ inline qbool  materialize_when(qbool&& q) noexcept { return std::move(q); }
 // make_when_guard — factory that enforces qbool-only usage at compile time.
 // Passing a non-qbool triggers the static_assert; compile-time rejection.
 // (PRD §11: "WHEN accepts qbool only; passing bool or int is a compile error")
+//
+// Also deactivates the WhenCapture: by this point the expression has been fully
+// evaluated and materialized into _when_val_, so no more intermediates should be
+// captured.
 template <class T>
 WhenGuard make_when_guard(T& expr) {
     static_assert(std::is_same_v<std::decay_t<T>, qbool>,
                   "WHEN(expr): expr must be of type sturm::qbool");
+    // Stop capturing intermediates now that expr is fully materialized.
+    // WhenCapture::stop_active() restores the previous callback, handling
+    // nesting correctly.
+    WhenCapture::stop_active();
     return WhenGuard(expr);
 }
 
@@ -257,27 +266,32 @@ WhenGuard make_when_guard(T& expr) {
 } // namespace sturm
 
 // ── WHEN macro ────────────────────────────────────────────────────────────────
-// Expands to a nested pair of `if` statements:
-//   1. Outer if: materializes expr into _when_val_ via materialize_when().
-//      - lvalue qbool → reference (zero cost, no copy)
-//      - rvalue qbool (e.g. c | d, ~c) → owned local via move
-//      - OrExpr/AndExpr (backend) → implicit conversion to qbool, then move
-//   2. Inner if: creates WhenGuard from the (now lvalue) _when_val_.
+// Expands to three nested `if` statements:
+//   1. Outermost if: creates WhenCapture to intercept intermediate temporaries
+//      from compound boolean expressions (e.g. (c | d) & e).
+//   2. Middle if: materializes expr into _when_val_ via materialize_when().
+//      - lvalue qbool -> reference (zero cost, no copy)
+//      - rvalue qbool (e.g. c | d, ~c) -> owned local via move
+//      - OrExpr/AndExpr (backend) -> implicit conversion to qbool, then move
+//   3. Innermost if: creates WhenGuard from the (now lvalue) _when_val_.
 //
-// Destruction order: inner guard destroyed first (restores TLS), then outer
-// _when_val_ destroyed (releases ancilla qubit if materialized).
+// Destruction order (correct reverse-order uncomputation):
+//   1. WhenGuard (innermost)  -- pops control TLS
+//   2. _when_val_ (middle)    -- uncomputes the final materialized qbool
+//   3. WhenCapture (outermost) -- uncomputes captured intermediates in LIFO order
 //
 // Usage:
 //   qbool flag(0.5);
-//   WHEN(flag) { ... }           // lvalue — no copy
-//   WHEN(c | d) { ... }          // rvalue — materialized, then guarded
-//   WHEN(~c) { ... }             // rvalue — same
+//   WHEN(flag) { ... }           // lvalue -- no copy, no capture overhead
+//   WHEN(c | d) { ... }          // rvalue -- materialized, then guarded
+//   WHEN((c | d) & e) { ... }    // compound -- intermediates captured by WhenCapture
 //
 // NOTE: Nested WHEN scopes: when STURM_BACKEND_ENABLED is active and a
 // BackendContext is installed, nested WHEN AND-folds the two controls into a
 // single ancilla qubit (principle B5).  Without a context, TLS is saved and
 // restored as before.
 #define WHEN(expr) \
+    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
     if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
     if (auto _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
         _when_guard_.should_run())

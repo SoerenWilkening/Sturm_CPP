@@ -368,6 +368,33 @@ set_source_files_properties(
 add_test(NAME test_qbool_uncompute COMMAND test_qbool_uncompute)
 set_tests_properties(test_qbool_uncompute PROPERTIES LABELS "backend")
 
+# ── WHEN compound uncompute (WhenCapture RAII) ────────────────────────────────
+add_executable(test_when_compound_uncompute
+    test_when_compound_uncompute.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_when_compound_uncompute PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_compound_uncompute PRIVATE cxx_std_20)
+target_compile_definitions(test_when_compound_uncompute PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_compound_uncompute PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_when_compound_uncompute COMMAND test_when_compound_uncompute)
+set_tests_properties(test_when_compound_uncompute PROPERTIES LABELS "backend")
+
 # ── M14: Classical-control reduction table ────────────────────────────────────
 add_executable(test_reduction_table
     test_reduction_table.cpp
