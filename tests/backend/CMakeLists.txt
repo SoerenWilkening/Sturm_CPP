@@ -1724,3 +1724,47 @@ set_source_files_properties(
 )
 add_test(NAME test_m7_template_dsl COMMAND test_m7_template_dsl)
 set_tests_properties(test_m7_template_dsl PROPERTIES LABELS "backend")
+
+# ── M13: WHEN + shift operators fast-path bypass ────────────────────────────
+add_executable(test_when_shift_promotion
+    test_when_shift_promotion.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_when_shift_promotion PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_shift_promotion PRIVATE cxx_std_20)
+target_compile_definitions(test_when_shift_promotion PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_shift_promotion PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_when_shift_promotion COMMAND test_when_shift_promotion)
+set_tests_properties(test_when_shift_promotion PROPERTIES LABELS "backend")
+
+# ── M12: copy_register only copies quantum bits ──────────────────────────────
+add_executable(test_copy_register_quantum_only
+    test_copy_register_quantum_only.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_copy_register_quantum_only PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_copy_register_quantum_only PRIVATE cxx_std_20)
+target_compile_definitions(test_copy_register_quantum_only PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_copy_register_quantum_only PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_copy_register_quantum_only COMMAND test_copy_register_quantum_only)
+set_tests_properties(test_copy_register_quantum_only PROPERTIES LABELS "backend")
