@@ -31,8 +31,27 @@
 
 #include <cstddef>
 #include <cassert>
+#include <type_traits>
 
 namespace sturm {
+
+// ── Ancilla helper ───────────────────────────────────────────────────────────
+// Creates a Bit that views a qbool's fields.  For Bit=BitProxy, uses the
+// BitProxy(qbool&) constructor (stores pointers into the qbool).  For
+// Bit=qbool, creates a non-owning qbool aliasing the qbool's qubit.
+// The owning qbool's destructor releases the qubit.
+namespace detail_adder {
+
+template <typename Bit>
+Bit make_ancilla_view(qbool& owner) {
+    if constexpr (std::is_same_v<Bit, qbool>) {
+        return qbool::make_non_owning(owner.qubits[0]);
+    } else {
+        return Bit(owner);
+    }
+}
+
+} // namespace detail_adder
 
 // ── MAJ gate ─────────────────────────────────────────────────────────────────
 //
@@ -49,7 +68,8 @@ namespace sturm {
 //   c = carry_in qubit (before), carry_out qubit (after)
 //   a = carry register bit (modified; restored by UMA)
 //   b = b_i register bit (modified; restored by UMA)
-inline void maj_dsl(qbool& a, qbool& b, qbool& c) {
+template <typename Bit>
+inline void maj_dsl(Bit& a, Bit& b, Bit& c) {
     b ^= c;           // CNOT: b ^= c
     a ^= c;           // CNOT: a ^= c
     c ^= (a & b);     // single Toffoli via AndExpr
@@ -63,7 +83,8 @@ inline void maj_dsl(qbool& a, qbool& b, qbool& c) {
 //   b ^= a;           CNOT: b becomes the sum bit
 //
 // After UMA: a is restored, b = sum bit, c = carry_in (restored).
-inline void uma_dsl(qbool& a, qbool& b, qbool& c) {
+template <typename Bit>
+inline void uma_dsl(Bit& a, Bit& b, Bit& c) {
     c ^= (a & b);     // Toffoli (undo)
     a ^= c;           // CNOT
     b ^= a;           // CNOT
@@ -87,12 +108,16 @@ inline void uma_dsl(qbool& a, qbool& b, qbool& c) {
 // WHEN lifting is automatic via qbool operators consulting the control stack.
 //
 // Gate cost: 6n + 1 (n MAJ * 3 + n UMA * 3 + 1 CX for carry copy).
-inline void lib_add_dsl(qbool* a_bits, qbool* b_bits, qbool& carry_out, size_t n) {
+template <typename Bit>
+inline void lib_add_dsl(Bit* a_bits, Bit* b_bits, Bit& carry_out, size_t n) {
     if (n == 0u) return;
 
-    // Borrow 1 ancilla for the initial carry_in (starts |0>).
-    int carry_anc_idx = QubitPool::instance().allocate();
-    qbool carry_anc   = qbool::make_non_owning(carry_anc_idx);
+    // Owning qbool for the initial carry_in ancilla (starts |0>).
+    // qbool destructor auto-releases the qubit.
+    qbool carry_anc_qbool;
+    carry_anc_qbool.qubits[0]  = QubitPool::instance().allocate();
+    carry_anc_qbool.super_mask = 1;
+    Bit carry_anc = detail_adder::make_ancilla_view<Bit>(carry_anc_qbool);
 
     // ── Forward pass: MAJ chain ───────────────────────────────────────────────
     // carry propagates through: carry_anc -> a[0] -> a[1] -> ... -> a[n-1]
@@ -120,8 +145,7 @@ inline void lib_add_dsl(qbool* a_bits, qbool* b_bits, qbool& carry_out, size_t n
     // Last UMA: carry_in = carry_anc
     uma_dsl(carry_anc, b_bits[0], a_bits[0]);
 
-    // Return carry ancilla (UMA restored it to |0>).
-    QubitPool::instance().release(carry_anc_idx);
+    // carry_anc_qbool destructor handles release (UMA restored it to |0>).
 }
 
 // ── lib_sub_dsl ───────────────────────────────────────────────────────────────
@@ -140,12 +164,17 @@ inline void lib_add_dsl(qbool* a_bits, qbool* b_bits, qbool& carry_out, size_t n
 //
 // Ancilla: 1 qubit borrowed from QubitPool for carry_in scratch.
 // WHEN lifting is automatic via qbool operators.
-inline void lib_sub_dsl(qbool* a_bits, qbool* b_bits, qbool& borrow_out, size_t n) {
+template <typename Bit>
+inline void lib_sub_dsl(Bit* a_bits, Bit* b_bits, Bit& borrow_out, size_t n) {
     if (n == 0u) return;
 
-    // Borrow 1 ancilla as carry_in scratch, initialized to |1> (+1 for two's complement).
-    int carry_anc_idx = QubitPool::instance().allocate();
-    qbool carry_anc   = qbool::make_non_owning(carry_anc_idx);
+    // Owning qbool for carry_in ancilla, initialized to |1> (+1 for two's complement).
+    // qbool destructor auto-releases the qubit.
+    qbool carry_anc_qbool;
+    carry_anc_qbool.qubits[0]  = QubitPool::instance().allocate();
+    carry_anc_qbool.super_mask = 1;
+    carry_anc_qbool.value      = 1;  // classical 1 for two's complement +1
+    Bit carry_anc = detail_adder::make_ancilla_view<Bit>(carry_anc_qbool);
 
     // Set carry_anc = |1> (+1 for two's complement).
     carry_anc.flip();
@@ -178,8 +207,7 @@ inline void lib_sub_dsl(qbool* a_bits, qbool* b_bits, qbool& borrow_out, size_t 
     }
     carry_anc.flip();  // restore carry_anc to |0>
 
-    // Return carry ancilla.
-    QubitPool::instance().release(carry_anc_idx);
+    // carry_anc_qbool destructor handles release.
 }
 
 } // namespace sturm

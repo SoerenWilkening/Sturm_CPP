@@ -826,6 +826,34 @@ set_source_files_properties(
 add_test(NAME test_adder_dsl COMMAND test_adder_dsl)
 set_tests_properties(test_adder_dsl PROPERTIES LABELS "backend")
 
+# ── M6: Template adder DSL (BitProxy instantiation) ──────────────────────────
+add_executable(test_adder_dsl_template
+    test_adder_dsl_template.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_adder_dsl_template PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_adder_dsl_template PRIVATE cxx_std_20)
+target_compile_definitions(test_adder_dsl_template PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_adder_dsl_template PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_adder_dsl_template COMMAND test_adder_dsl_template)
+set_tests_properties(test_adder_dsl_template PROPERTIES LABELS "backend")
+
 # ── M15: DSL-style logic (OR, NAND, NOR, XNOR) and c_AND / c_n_AND ──────────
 add_executable(test_logic_dsl
     test_logic_dsl.cpp
