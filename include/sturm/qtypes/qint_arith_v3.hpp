@@ -1,240 +1,170 @@
-// qint_arith_v3.hpp — M19 (PRD v3): Wire qint_t<W> arithmetic compound-assigns
-// to DSL library functions. Included by qint_arith.hpp when STURM_BACKEND_ENABLED.
-//
-// Operators: +=, -=, *=, /=, %=  (DSL library call per operator).
-// Each operator extracts qbool refs via a[i] (M18 subscript).
-// Target: <250 LoC.
-
+// qint_arith_v3.hpp -- M19/M9: qint_t<W> arithmetic compound-assigns via DSL.
+// Uses BitProxy for per-bit lazy WHEN promotion with classical folding.
+// Operators: +=, -=, *=, /=, %=
 #pragma once
-
 #ifndef STURM_BACKEND_ENABLED
 #  error "qint_arith_v3.hpp must only be included when STURM_BACKEND_ENABLED is set"
 #endif
-
 #include "sturm/qtypes/qint_core.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
+#include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/lib/adder_dsl.hpp"
 #include "sturm/lib/mul_dsl.hpp"
 #include "sturm/lib/div_dsl.hpp"
 #include "sturm/lib/mod_dsl.hpp"
-
-#include <array>
 #include <cstddef>
 
 namespace sturm {
+namespace detail_arith {
 
-// ── operator+= ────────────────────────────────────────────────────────────────
-// In-place: *this += b  (this is the target, b is the addend).
-// Calls lib_add_dsl(b_bits, this_bits, carry_out, W).
-// carry_out is a fresh ancilla qubit (released after the call).
+template <std::size_t W>
+qint_t<W> make_b_mut(const qint_t<W>& s) {
+    qint_t<W> m; m.value = s.value; m.super_mask = s.super_mask;
+    m.qubits = s.qubits; m.owning_ = false; return m;
+}
+template <std::size_t W>
+void release_temp_qubits(qint_t<W>& bm, const qint_t<W>& orig) {
+    for (std::size_t i = 0; i < W; ++i)
+        if (bm.qubits[i] >= 0 && orig.qubits[i] < 0)
+            QubitPool::instance().release(bm.qubits[i]);
+}
+template <std::size_t W>
+void rebuild_super_mask(qint_t<W>& q) {
+    q.super_mask = 0;
+    for (std::size_t i = 0; i < W; ++i)
+        if (q.qubits[i] >= 0) q.super_mask |= (1ULL << i);
+}
+template <std::size_t W>
+void build_proxy_pair(qint_t<W>& self, qint_t<W>& bm,
+                      BitProxy* sp, BitProxy* bp) {
+    for (std::size_t i = 0; i < W; ++i) {
+        sp[i] = BitProxy(self, i);
+        bp[i] = BitProxy(bm, i);
+    }
+}
+inline void release_anc(qbool& q) {
+    if (q.qubits[0] >= 0) {
+        QubitPool::instance().release(q.qubits[0]);
+        q.qubits[0] = -1;
+    }
+}
 
+} // namespace detail_arith
+
+// -- operator+= (in-place Cuccaro add) ----------------------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator+=(const qint_t<W>& b) {
-    // Classical fast-path: if no valid qubit indices are set, just update value.
-    // This handles the case where qint_t objects are used classically (qubits == -1).
-    if (qubits[0] < 0 || b.qubits[0] < 0) {
-        value = (value + b.value);
-        return *this;
+    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+        value = value + b.value; return *this;
     }
-
-    // Extract non-owning qbool arrays for 'this' (target) and 'b' (addend).
-    qbool this_bits[W];
-    qbool b_bits[W];
-    for (std::size_t i = 0; i < W; ++i) {
-        this_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
-        b_bits[i]    = b[i];
-    }
-
-    // Allocate carry_out ancilla (starts |0>).
-    int carry_idx = QubitPool::instance().allocate();
-    qbool carry   = qbool::make_non_owning(carry_idx);
-
-    // In-place: this += b  (lib_add_dsl computes this_bits += b_bits)
-    lib_add_dsl(b_bits, this_bits, carry, W);
-
-    // Release carry ancilla (lib_add_dsl restored it to |0>; we re-release).
-    QubitPool::instance().release(carry_idx);
-
-    // Update classical value.
-    value = (value + b.value);
+    auto b_mut = detail_arith::make_b_mut(b);
+    BitProxy tb[W], bb[W];
+    detail_arith::build_proxy_pair(*this, b_mut, tb, bb);
+    qbool carry_q; BitProxy carry(carry_q);
+    lib_add_dsl<BitProxy>(bb, tb, carry, W);
+    detail_arith::release_anc(carry_q);
+    detail_arith::release_temp_qubits(b_mut, b);
+    detail_arith::rebuild_super_mask(*this);
+    value = value + b.value;
     return *this;
 }
 
-// ── operator-= ────────────────────────────────────────────────────────────────
-// In-place: *this -= b.
-// Calls lib_sub_dsl(b_bits, this_bits, borrow_out, W).
-
+// -- operator-= (in-place Cuccaro sub) ----------------------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator-=(const qint_t<W>& b) {
-    // Classical fast-path.
-    if (qubits[0] < 0 || b.qubits[0] < 0) {
-        value = (value - b.value);
-        return *this;
+    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+        value = value - b.value; return *this;
     }
-
-    qbool this_bits[W];
-    qbool b_bits[W];
-    for (std::size_t i = 0; i < W; ++i) {
-        this_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
-        b_bits[i]    = b[i];
-    }
-
-    int borrow_idx = QubitPool::instance().allocate();
-    qbool borrow   = qbool::make_non_owning(borrow_idx);
-
-    // lib_sub_dsl: this_bits -= b_bits
-    lib_sub_dsl(b_bits, this_bits, borrow, W);
-
-    QubitPool::instance().release(borrow_idx);
-
-    value = (value - b.value);
+    auto b_mut = detail_arith::make_b_mut(b);
+    BitProxy tb[W], bb[W];
+    detail_arith::build_proxy_pair(*this, b_mut, tb, bb);
+    qbool borrow_q; BitProxy borrow(borrow_q);
+    lib_sub_dsl<BitProxy>(bb, tb, borrow, W);
+    detail_arith::release_anc(borrow_q);
+    detail_arith::release_temp_qubits(b_mut, b);
+    detail_arith::rebuild_super_mask(*this);
+    value = value - b.value;
     return *this;
 }
 
-// ── operator*= ────────────────────────────────────────────────────────────────
-// Out-of-place: result = this * b, then move lower W bits into 'this'.
-// Allocates a 2*W-bit result register (all |0>), calls lib_mul_dsl, then
-// moves result's qubits into this->qubits (lower W bits only).
-
+// -- operator*= (out-of-place mul, keep lower W bits) -------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
-    // Classical fast-path.
-    if (qubits[0] < 0 || b.qubits[0] < 0) {
-        value = (value * b.value);
-        return *this;
+    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+        value = value * b.value; return *this;
     }
-
-    // Extract non-owning qbool arrays.
-    qbool a_bits[W];
-    qbool b_bits[W];
-    for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
-        b_bits[i] = b[i];
-    }
-
-    // Allocate result register: 2*W qubits (all start |0>).
+    auto b_mut = detail_arith::make_b_mut(b);
+    BitProxy ab[W], bb[W];
+    detail_arith::build_proxy_pair(*this, b_mut, ab, bb);
     static constexpr std::size_t RW = 2u * W;
-    int res_idx[RW];
-    qbool res_bits[RW];
+    int ri[RW]; qbool rq[RW]; BitProxy rb[RW];
     for (std::size_t i = 0; i < RW; ++i) {
-        res_idx[i]  = QubitPool::instance().allocate();
-        res_bits[i] = qbool::make_non_owning(res_idx[i]);
+        ri[i] = QubitPool::instance().allocate();
+        rq[i] = qbool::make_non_owning(ri[i]);
+        rb[i] = BitProxy(rq[i]);
     }
-
-    // Compute: result = a * b (out-of-place).
-    lib_mul_dsl(a_bits, W, b_bits, W, res_bits, RW);
-
-    // Move result qubits into 'this' register.
-    // Step 1: Release old 'this' qubits (they still hold the original a value).
-    for (std::size_t i = 0; i < W; ++i) {
-        if (qubits[i] >= 0) {
-            QubitPool::instance().release(qubits[i]);
-        }
-    }
-    // Step 2: Assign first W result qubits to this->qubits.
-    for (std::size_t i = 0; i < W; ++i) {
-        qubits[i] = res_idx[i];
-    }
-    // Step 3: Release the upper W result qubits (bits W..2W-1 of the product).
-    for (std::size_t i = W; i < RW; ++i) {
-        QubitPool::instance().release(res_idx[i]);
-    }
-
-    // Update classical value (truncated to W bits).
-    value = (value * b.value);
+    lib_mul_dsl<BitProxy>(ab, W, bb, W, rb, RW);
+    detail_arith::release_temp_qubits(b_mut, b);
+    for (std::size_t i = 0; i < W; ++i)
+        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+    for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
+    for (std::size_t i = W; i < RW; ++i) QubitPool::instance().release(ri[i]);
+    detail_arith::rebuild_super_mask(*this);
+    value = value * b.value;
     return *this;
 }
 
-// ── operator/= ────────────────────────────────────────────────────────────────
-// Out-of-place: quotient_bits = this / b, then move quotient into 'this'.
-
+// -- operator/= (out-of-place div, keep quotient) -----------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator/=(const qint_t<W>& b) {
-    // Classical fast-path.
-    if (qubits[0] < 0 || b.qubits[0] < 0) {
-        value = (b.value != 0) ? (value / b.value) : 0;
-        return *this;
+    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+        value = (b.value != 0) ? (value / b.value) : 0; return *this;
     }
-
-    qbool a_bits[W];
-    qbool b_bits[W];
+    auto b_mut = detail_arith::make_b_mut(b);
+    BitProxy ab[W], bm[W];
+    detail_arith::build_proxy_pair(*this, b_mut, ab, bm);
+    int qi[W], ri[W]; qbool qq[W], rq[W]; BitProxy qb[W], rb[W];
     for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
-        b_bits[i] = b[i];
+        qi[i] = QubitPool::instance().allocate();
+        ri[i] = QubitPool::instance().allocate();
+        qq[i] = qbool::make_non_owning(qi[i]);
+        rq[i] = qbool::make_non_owning(ri[i]);
+        qb[i] = BitProxy(qq[i]); rb[i] = BitProxy(rq[i]);
     }
-
-    // Allocate quotient and remainder registers (W qubits each, all |0>).
-    int quot_idx[W];
-    int rem_idx[W];
-    qbool quot_bits[W];
-    qbool rem_bits[W];
-    for (std::size_t i = 0; i < W; ++i) {
-        quot_idx[i]  = QubitPool::instance().allocate();
-        rem_idx[i]   = QubitPool::instance().allocate();
-        quot_bits[i] = qbool::make_non_owning(quot_idx[i]);
-        rem_bits[i]  = qbool::make_non_owning(rem_idx[i]);
-    }
-
-    lib_div_dsl(a_bits, W, b_bits, W, quot_bits, rem_bits);
-
-    // Release old 'this' qubits.
-    for (std::size_t i = 0; i < W; ++i) {
+    lib_div_dsl<BitProxy>(ab, W, bm, W, qb, rb);
+    detail_arith::release_temp_qubits(b_mut, b);
+    for (std::size_t i = 0; i < W; ++i)
         if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-    }
-    // Assign quotient qubits to 'this'.
-    for (std::size_t i = 0; i < W; ++i) {
-        qubits[i] = quot_idx[i];
-    }
-    // Release remainder qubits.
-    for (std::size_t i = 0; i < W; ++i) {
-        QubitPool::instance().release(rem_idx[i]);
-    }
-
-    // Classical value: division by zero → 0.
+    for (std::size_t i = 0; i < W; ++i) qubits[i] = qi[i];
+    for (std::size_t i = 0; i < W; ++i) QubitPool::instance().release(ri[i]);
+    detail_arith::rebuild_super_mask(*this);
     value = (b.value != 0) ? (value / b.value) : 0;
     return *this;
 }
 
-// ── operator%= ────────────────────────────────────────────────────────────────
-// Out-of-place: remainder_bits = this % b, then move remainder into 'this'.
-
+// -- operator%= (out-of-place mod, keep remainder) ----------------------------
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator%=(const qint_t<W>& b) {
-    // Classical fast-path.
-    if (qubits[0] < 0 || b.qubits[0] < 0) {
-        value = (b.value != 0) ? (value % b.value) : 0;
-        return *this;
+    if ((qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+        value = (b.value != 0) ? (value % b.value) : 0; return *this;
     }
-
-    qbool a_bits[W];
-    qbool b_bits[W];
+    auto b_mut = detail_arith::make_b_mut(b);
+    BitProxy ab[W], bm[W];
+    detail_arith::build_proxy_pair(*this, b_mut, ab, bm);
+    int ri[W]; qbool rq[W]; BitProxy rb[W];
     for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = static_cast<const qint_t<W>&>(*this)[i];
-        b_bits[i] = b[i];
+        ri[i] = QubitPool::instance().allocate();
+        rq[i] = qbool::make_non_owning(ri[i]);
+        rb[i] = BitProxy(rq[i]);
     }
-
-    // Allocate remainder register (W qubits, all |0>).
-    int rem_idx[W];
-    qbool rem_bits[W];
-    for (std::size_t i = 0; i < W; ++i) {
-        rem_idx[i]  = QubitPool::instance().allocate();
-        rem_bits[i] = qbool::make_non_owning(rem_idx[i]);
-    }
-
-    lib_mod_dsl(a_bits, W, b_bits, W, rem_bits);
-
-    // Release old 'this' qubits.
-    for (std::size_t i = 0; i < W; ++i) {
+    lib_mod_dsl<BitProxy>(ab, W, bm, W, rb);
+    detail_arith::release_temp_qubits(b_mut, b);
+    for (std::size_t i = 0; i < W; ++i)
         if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-    }
-    // Assign remainder qubits to 'this'.
-    for (std::size_t i = 0; i < W; ++i) {
-        qubits[i] = rem_idx[i];
-    }
-
-    // Classical value.
+    for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
+    detail_arith::rebuild_super_mask(*this);
     value = (b.value != 0) ? (value % b.value) : 0;
     return *this;
 }
