@@ -1865,3 +1865,29 @@ target_compile_definitions(test_compound_bitwise_mixed_fastpath PRIVATE
 target_link_libraries(test_compound_bitwise_mixed_fastpath PRIVATE orkan_headers)
 add_test(NAME test_compound_bitwise_mixed_fastpath COMMAND test_compound_bitwise_mixed_fastpath)
 set_tests_properties(test_compound_bitwise_mixed_fastpath PROPERTIES LABELS "backend")
+
+# ── M5: Mixed quantum/classical integration tests (sturm-x7t) ────────────────
+# Verifies all 8 PRD acceptance criteria spanning M1-M4 fixes:
+#   AC1: XOR quantum^=classical emits X gates
+#   AC2: XOR classical^=quantum promotes and emits CNOT
+#   AC3: AND quantum&=classical emits gates for set bits
+#   AC4: OR quantum|=classical emits gates
+#   AC5: Free & mixed emits gates
+#   AC6: Free | mixed emits gates
+#   AC7: ADD quantum+=classical emits adder circuit
+#   AC8: Regression: both-classical still zero gates
+add_executable(test_mixed_quantum_classical
+    test_mixed_quantum_classical.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_mixed_quantum_classical PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mixed_quantum_classical PRIVATE cxx_std_20)
+target_compile_definitions(test_mixed_quantum_classical PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mixed_quantum_classical PRIVATE orkan_headers)
+add_test(NAME test_mixed_quantum_classical COMMAND test_mixed_quantum_classical)
+set_tests_properties(test_mixed_quantum_classical PROPERTIES LABELS "backend")
