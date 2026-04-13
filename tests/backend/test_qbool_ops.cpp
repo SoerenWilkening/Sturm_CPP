@@ -18,6 +18,8 @@
 #include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 
+#include "sturm/control/when.hpp"
+
 #include <cassert>
 #include <cstdio>
 #include <cstdint>
@@ -385,6 +387,103 @@ static void test_qbool_non_owning() {
     std::printf("  test_qbool_non_owning: PASS\n");
 }
 
+// ── Mixed quantum/classical qbool materialization tests ──────────────────────
+
+// Helper: make a quantum qbool (has qubit, super_mask=1, given value).
+static sturm::qbool make_quantum_qbool(int idx, bool val) {
+    auto q = sturm::qbool::make_non_owning(idx, val ? 1 : 0, 1ULL);
+    return q;
+}
+
+// (quantum & classical_true) preserves super_mask and qubit.
+static void test_qbool_and_mixed_quantum_classical_true() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_quantum_qbool(0, true);  // quantum, value=1
+    sturm::qbool b(true);                           // classical true, no qubit
+
+    sturm::qbool r = (a & b);
+
+    // true & quantum = quantum pass-through
+    assert(r.qubits[0] == 0);
+    assert(r.super_mask == 1ULL);
+    assert((r.value & 1) == 1);
+    assert(!r.owning_);
+    assert(sc.ctx->gate_count == 0u);  // no gates needed for classical fold
+
+    std::printf("  test_qbool_and_mixed_quantum_classical_true: PASS\n");
+}
+
+// (classical_false & quantum) returns classical false.
+static void test_qbool_and_mixed_classical_false_quantum() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a(false);                          // classical false, no qubit
+    sturm::qbool b = make_quantum_qbool(1, true);   // quantum, value=1
+
+    sturm::qbool r = (a & b);
+
+    // false & anything = false
+    assert(r.qubits[0] == -1);
+    assert(r.super_mask == 0ULL);
+    assert((r.value & 1) == 0);
+    assert(sc.ctx->gate_count == 0u);
+
+    std::printf("  test_qbool_and_mixed_classical_false_quantum: PASS\n");
+}
+
+// (quantum | classical_false) preserves super_mask and qubit.
+static void test_qbool_or_mixed_quantum_classical_false() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a = make_quantum_qbool(0, true);  // quantum, value=1
+    sturm::qbool b(false);                          // classical false, no qubit
+
+    sturm::qbool r = (a | b);
+
+    // quantum | false = quantum pass-through
+    assert(r.qubits[0] == 0);
+    assert(r.super_mask == 1ULL);
+    assert((r.value & 1) == 1);
+    assert(!r.owning_);
+    assert(sc.ctx->gate_count == 0u);
+
+    std::printf("  test_qbool_or_mixed_quantum_classical_false: PASS\n");
+}
+
+// (classical_true | quantum) returns classical true.
+static void test_qbool_or_mixed_classical_true_quantum() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool a(true);                           // classical true, no qubit
+    sturm::qbool b = make_quantum_qbool(1, false);  // quantum, value=0
+
+    sturm::qbool r = (a | b);
+
+    // true | anything = true
+    assert(r.qubits[0] == -1);
+    assert(r.super_mask == 0ULL);
+    assert((r.value & 1) == 1);
+    assert(sc.ctx->gate_count == 0u);
+
+    std::printf("  test_qbool_or_mixed_classical_true_quantum: PASS\n");
+}
+
+// WHEN(quantum & classical_true) enters body and emits controlled gates.
+static void test_qbool_when_mixed_and() {
+    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
+    sturm::qbool c = make_quantum_qbool(0, true);  // quantum, value=1, super_mask=1
+    sturm::qbool d(true);                           // classical true, no qubit
+    sturm::qbool target = make_qubit(1);
+
+    bool body_ran = false;
+    WHEN(c & d) {
+        body_ran = true;
+        target.flip();  // should emit controlled X (lifted to CX under 1 control)
+    }
+
+    assert(body_ran);
+    assert(sc.ctx->gate_count == 1u);  // CX (X lifted under 1 control)
+
+    std::printf("  test_qbool_when_mixed_and: PASS\n");
+}
+
 // ── Runner ────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -403,6 +502,12 @@ int main() {
     test_qbool_under_when_ir();
     test_qbool_under_when_and();
     test_qbool_non_owning();
+    // Mixed quantum/classical materialization tests
+    test_qbool_and_mixed_quantum_classical_true();
+    test_qbool_and_mixed_classical_false_quantum();
+    test_qbool_or_mixed_quantum_classical_false();
+    test_qbool_or_mixed_classical_true_quantum();
+    test_qbool_when_mixed_and();
     // M8: uncompute_op tag inspection tests
     operator_not_stamps_ADD_CONST_uncompute();
     and_expr_stamps_BITWISE_SELF_uncompute();

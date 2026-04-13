@@ -187,11 +187,11 @@ inline AndExpr<qbool>::operator qbool() const {
     // false & x = false; true & x = x.
     if (!a_q)
         return (a.value & 1)
-            ? qbool::make_non_owning(b.qubits[0])
+            ? qbool::make_non_owning(b.qubits[0], b.value, b.super_mask)
             : qbool(false);
     // !b_q
     return (b.value & 1)
-        ? qbool::make_non_owning(a.qubits[0])
+        ? qbool::make_non_owning(a.qubits[0], a.value, a.super_mask)
         : qbool(false);
 }
 
@@ -233,11 +233,11 @@ inline OrExpr<qbool>::operator qbool() const {
     if (!a_q)
         return (a.value & 1)
             ? qbool(true)
-            : qbool::make_non_owning(b.qubits[0]);
+            : qbool::make_non_owning(b.qubits[0], b.value, b.super_mask);
     // !b_q
     return (b.value & 1)
         ? qbool(true)
-        : qbool::make_non_owning(a.qubits[0]);
+        : qbool::make_non_owning(a.qubits[0], a.value, a.super_mask);
 }
 
 } // namespace sturm
