@@ -50,9 +50,14 @@ static qint_t<W> copy_register(const qint_t<W>& a) {
     result.value      = a.value;
     result.super_mask = a.super_mask;
 
-    // Allocate W fresh qubits (all start |0>).
+    // Allocate fresh qubits only where the source has them (quantum bits).
+    // Classical bits (qubits[i] == -1) are left unallocated; BitProxy will
+    // handle lazy promotion if needed downstream.
     for (std::size_t i = 0; i < W; ++i) {
-        result.qubits[i] = QubitPool::instance().allocate();
+        if (a.qubits[i] >= 0) {
+            result.qubits[i] = QubitPool::instance().allocate();
+        }
+        // else: leave result.qubits[i] = -1 (classical, BitProxy will handle)
     }
 
     // If a backend context is active, copy quantum state via CNOT per bit.
