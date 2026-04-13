@@ -18,6 +18,7 @@
 #include "sturm/qtypes/qint_core.hpp"
 #include "sturm/core/mask_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
+#include "sturm/control/when_fwd.hpp"         // current_control TLS
 #include "sturm/backend/primitives.hpp"
 
 #include <cstddef>
@@ -37,7 +38,10 @@ qint_t<W> operator<<(const qint_t<W>& a, int n) {
     result.super_mask = detail::mask_shl(a.super_mask, n, static_cast<int>(W));
 
     // Classical fast-path: no valid qubit indices or shift >= W.
-    if (a.qubits[0] < 0 || n <= 0 || n >= static_cast<int>(W)) {
+    // Bypassed inside WHEN (current_control != nullptr) so that classical
+    // operands get promoted to quantum with CNOT-based copy gates.
+    if ((a.qubits[0] < 0 && detail::current_control == nullptr)
+        || n <= 0 || n >= static_cast<int>(W)) {
         if (n <= 0 && a.qubits[0] >= 0) {
             // n==0: copy all bits via CNOT.
             for (std::size_t i = 0; i < W; ++i) {
@@ -87,8 +91,9 @@ qint_t<W> operator>>(const qint_t<W>& a, int n) {
     result.value = (n >= 0 && n < 64) ? (a.value >> n) : 0;
     result.super_mask = detail::mask_shr(a.super_mask, n, static_cast<int>(W));
 
-    // Classical fast-path.
-    if (a.qubits[0] < 0 || n <= 0 || n >= static_cast<int>(W)) {
+    // Classical fast-path (bypassed inside WHEN so CNOT copy gates are emitted).
+    if ((a.qubits[0] < 0 && detail::current_control == nullptr)
+        || n <= 0 || n >= static_cast<int>(W)) {
         if (n <= 0 && a.qubits[0] >= 0) {
             // n==0: copy all bits via CNOT.
             for (std::size_t i = 0; i < W; ++i) {
@@ -136,10 +141,17 @@ qint_t<W> operator>>(const qint_t<W>& a, int n) {
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator<<=(int n) {
     if (n <= 0) { if (n < 0) { /* no-op */ } return *this; }
-    if (qubits[0] < 0) {
-        // Classical fast-path.
+    if (qubits[0] < 0 && detail::current_control == nullptr) {
+        // Classical fast-path (bypassed inside WHEN for quantum promotion).
         value = (n < 64) ? (value << n) : 0;
         return *this;
+    }
+    // Inside WHEN with classical operand: allocate qubits for all bits so
+    // the relabeling below operates on valid qubit indices.
+    if (qubits[0] < 0) {
+        for (std::size_t i = 0; i < W; ++i) {
+            qubits[i] = QubitPool::instance().allocate();
+        }
     }
     if (n >= static_cast<int>(W)) {
         // All bits shift out — release all qubits and return 0.
@@ -180,10 +192,17 @@ qint_t<W>& qint_t<W>::operator<<=(int n) {
 template <std::size_t W>
 qint_t<W>& qint_t<W>::operator>>=(int n) {
     if (n <= 0) { if (n < 0) { /* no-op */ } return *this; }
-    if (qubits[0] < 0) {
-        // Classical fast-path.
+    if (qubits[0] < 0 && detail::current_control == nullptr) {
+        // Classical fast-path (bypassed inside WHEN for quantum promotion).
         value = (n < 64) ? (value >> n) : 0;
         return *this;
+    }
+    // Inside WHEN with classical operand: allocate qubits for all bits so
+    // the relabeling below operates on valid qubit indices.
+    if (qubits[0] < 0) {
+        for (std::size_t i = 0; i < W; ++i) {
+            qubits[i] = QubitPool::instance().allocate();
+        }
     }
     if (n >= static_cast<int>(W)) {
         // All bits shift out.
