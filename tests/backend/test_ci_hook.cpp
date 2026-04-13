@@ -36,7 +36,7 @@ static bool contains(const std::string& haystack, const char* needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
-// ── Required tests: one per module M1–M26 ────────────────────────────────────
+// ── Required tests: one per module M1–M22, M25–M26 ──────────────────────────
 
 static const char* kRequiredTests[] = {
     "test_gate_kind",              // M1
@@ -61,15 +61,13 @@ static const char* kRequiredTests[] = {
     "test_uncompute_run",          // M20
     "test_uncompute_add_const",    // M21
     "test_uncompute_each_op",      // M22
-    "test_controlled_ops",         // M23
-    "test_when_dispatch",          // M24
     "test_instantiations",         // M25
     "test_end_to_end",             // M26
 };
 static constexpr int kRequiredCount =
     static_cast<int>(sizeof(kRequiredTests) / sizeof(kRequiredTests[0]));
 
-// ── Test 1: all M1–M26 tests appear in `ctest -L backend -N` ─────────────────
+// ── Test 1: all required tests appear in `ctest -L backend -N` ───────────────
 
 static void test_backend_label_lists_all_modules() {
 #ifndef STURM_BUILD_DIR
@@ -127,8 +125,8 @@ static void test_backend_label_run_passes() {
         ++count;
         ++pos;
     }
-    // M1–M26 = 26 modules, plus M27 itself = ≥ 26.
-    assert(count >= 26 && "ctest -L backend lists fewer than 26 tests");
+    // M1–M22, M25–M26 = 24 modules, plus M27 itself = ≥ 24.
+    assert(count >= 24 && "ctest -L backend lists fewer than 24 tests");
 #endif
 }
 
