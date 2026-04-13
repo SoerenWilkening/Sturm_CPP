@@ -24,6 +24,7 @@
 
 #include <cstddef>
 #include <cassert>
+#include <type_traits>
 #include <vector>
 
 namespace sturm {
@@ -31,25 +32,37 @@ namespace sturm {
 // ── compute_overflow_or_dsl ───────────────────────────────────────────────────
 // overflow ^= OR(b_bits[lo..n-1]).  Self-inverse (call twice to restore).
 // lo >= n: no-op.
+template <typename Bit>
 static inline void compute_overflow_or_dsl(
-        qbool& overflow, qbool* b_bits, size_t lo, size_t n) {
+        Bit& overflow, Bit* b_bits, size_t lo, size_t n) {
     if (lo >= n) return;
     overflow ^= b_bits[lo];
     for (size_t j = lo + 1u; j < n; ++j) {
         // OR(x,y) = x XOR y XOR (x AND y): compute AND before modifying overflow.
-        qbool tmp = (overflow & b_bits[j]);  // materializes ancilla; uncomputes on destruct
-        overflow ^= b_bits[j];
-        overflow ^= tmp;
+        // For BitProxy, operator& returns AndExpr<BitProxy> which needs materialize_and().
+        // For qbool, implicit conversion from AndExpr<qbool> to qbool works directly.
+        if constexpr (std::is_same_v<Bit, qbool>) {
+            qbool tmp = (overflow & b_bits[j]);  // materializes ancilla; uncomputes on destruct
+            overflow ^= b_bits[j];
+            overflow ^= tmp;
+        } else {
+            qbool tmp = materialize_and(overflow, b_bits[j]);
+            overflow ^= b_bits[j];
+            // XOR with the materialized qbool via BitProxy(qbool&) temporary.
+            Bit tmp_proxy(tmp);
+            overflow ^= tmp_proxy;
+        }
     }
 }
 
 // ── lib_div_dsl ───────────────────────────────────────────────────────────────
 // Non-restoring n-bit division: quotient_bits = a/b, remainder_bits = a%b.
 // d must equal n (asserted). quotient_bits and remainder_bits must start |0>.
-inline void lib_div_dsl(qbool* dividend_bits, size_t n,
-                        qbool* divisor_bits,  size_t d,
-                        qbool* quotient_bits,
-                        qbool* remainder_bits) {
+template <typename Bit>
+inline void lib_div_dsl(Bit* dividend_bits, size_t n,
+                        Bit* divisor_bits,  size_t d,
+                        Bit* quotient_bits,
+                        Bit* remainder_bits) {
     if (n == 0u) return;
     assert(d == n && "lib_div_dsl: d must equal n");
 
@@ -58,27 +71,34 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
     BackendContext& ctx = *raw;
 
     // ── Allocate ancilla ──────────────────────────────────────────────────────
+    // Owning qbool objects manage pool lifetime; Bit views are used for operators.
     std::vector<int>   scratch_idx(n);
-    std::vector<qbool> scratch(n);
+    std::vector<qbool> scratch_own(n);
+    std::vector<Bit>   scratch(n);
     for (size_t k = 0u; k < n; ++k) {
         scratch_idx[k] = QubitPool::instance().allocate();
-        scratch[k]     = qbool::make_non_owning(scratch_idx[k]);
+        scratch_own[k] = qbool::make_non_owning(scratch_idx[k]);
+        scratch[k]     = detail_adder::make_ancilla_view<Bit>(scratch_own[k]);
     }
 
     size_t num_sgn = (n >= 2u) ? n - 1u : 0u;
     std::vector<int>   sgn_idx(num_sgn);
-    std::vector<qbool> sgn(num_sgn);
+    std::vector<qbool> sgn_own(num_sgn);
+    std::vector<Bit>   sgn(num_sgn);
     for (size_t k = 0u; k < num_sgn; ++k) {
         sgn_idx[k] = QubitPool::instance().allocate();
-        sgn[k]     = qbool::make_non_owning(sgn_idx[k]);
+        sgn_own[k] = qbool::make_non_owning(sgn_idx[k]);
+        sgn[k]     = detail_adder::make_ancilla_view<Bit>(sgn_own[k]);
     }
 
     int   overflow_idx  = QubitPool::instance().allocate();
-    qbool overflow      = qbool::make_non_owning(overflow_idx);
+    qbool overflow_own  = qbool::make_non_owning(overflow_idx);
+    Bit   overflow      = detail_adder::make_ancilla_view<Bit>(overflow_own);
     int   carry_anc_idx = QubitPool::instance().allocate();
-    qbool carry_anc     = qbool::make_non_owning(carry_anc_idx);
+    qbool carry_anc_own = qbool::make_non_owning(carry_anc_idx);
+    Bit   carry_anc     = detail_adder::make_ancilla_view<Bit>(carry_anc_own);
 
-    // Copy dividend → partial remainder P.
+    // Copy dividend -> partial remainder P.
     for (size_t i = 0u; i < n; ++i) remainder_bits[i] ^= dividend_bits[i];
 
     // ── Main loop ─────────────────────────────────────────────────────────────
@@ -91,8 +111,14 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
         compute_overflow_or_dsl(overflow, divisor_bits, lo, n);
         overflow.flip();
 
-        uint32_t ov_q = static_cast<uint32_t>(overflow.qubits[0]);
-        ctx.control_stack.push_control(ov_q);  // WHEN NOT(original overflow)
+        if constexpr (std::is_same_v<Bit, qbool>) {
+            uint32_t ov_q = static_cast<uint32_t>(overflow.qubits[0]);
+            ctx.control_stack.push_control(ov_q);
+        } else {
+            overflow.ensure_quantum();
+            ctx.control_stack.push_control(
+                static_cast<uint32_t>(overflow.qubit_index()));
+        }
 
         // Load scratch = b << i.
         for (size_t j = i; j < n; ++j) scratch[j] ^= divisor_bits[j - i];
@@ -103,9 +129,16 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
             for (size_t j = 0u; j < n; ++j) scratch[j].flip();
             carry_anc.flip();
         } else {
-            uint32_t sgn_q = static_cast<uint32_t>(sgn[i].qubits[0]);
-            sgn[i].flip();
-            ctx.control_stack.push_control(sgn_q);
+            if constexpr (std::is_same_v<Bit, qbool>) {
+                uint32_t sgn_q = static_cast<uint32_t>(sgn[i].qubits[0]);
+                sgn[i].flip();
+                ctx.control_stack.push_control(sgn_q);
+            } else {
+                sgn[i].ensure_quantum();
+                uint32_t sgn_q = static_cast<uint32_t>(sgn[i].qubit_index());
+                sgn[i].flip();
+                ctx.control_stack.push_control(sgn_q);
+            }
             for (size_t j = 0u; j < n; ++j) scratch[j].flip();
             carry_anc.flip();
             ctx.control_stack.pop_control();
@@ -113,11 +146,11 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
         }
 
         // Inline Cuccaro MAJ/UMA with carry_anc as carry_in.
-        // Computes: remainder += scratch + carry_anc. carry_out → quotient[i].
+        // Computes: remainder += scratch + carry_anc. carry_out -> quotient[i].
         maj_dsl(carry_anc, remainder_bits[0], scratch[0]);
         for (size_t k = 1u; k < n; ++k)
             maj_dsl(scratch[k - 1u], remainder_bits[k], scratch[k]);
-        quotient_bits[i] ^= scratch[n - 1u];  // carry_out → q[i]
+        quotient_bits[i] ^= scratch[n - 1u];  // carry_out -> q[i]
         for (size_t k = n - 1u; k >= 1u; --k)
             uma_dsl(scratch[k - 1u], remainder_bits[k], scratch[k]);
         uma_dsl(carry_anc, remainder_bits[0], scratch[0]);
@@ -127,9 +160,16 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
             carry_anc.flip();
             for (size_t j = 0u; j < n; ++j) scratch[j].flip();
         } else {
-            uint32_t sgn_q = static_cast<uint32_t>(sgn[i].qubits[0]);
-            sgn[i].flip();
-            ctx.control_stack.push_control(sgn_q);
+            if constexpr (std::is_same_v<Bit, qbool>) {
+                uint32_t sgn_q = static_cast<uint32_t>(sgn[i].qubits[0]);
+                sgn[i].flip();
+                ctx.control_stack.push_control(sgn_q);
+            } else {
+                sgn[i].ensure_quantum();
+                uint32_t sgn_q = static_cast<uint32_t>(sgn[i].qubit_index());
+                sgn[i].flip();
+                ctx.control_stack.push_control(sgn_q);
+            }
             carry_anc.flip();
             for (size_t j = 0u; j < n; ++j) scratch[j].flip();
             ctx.control_stack.pop_control();
@@ -151,8 +191,14 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
 
         // Overflow propagation: WHEN overflow AND i>0: sgn[i-1] ^= sgn[i].
         if (!first && i > 0u) {
-            uint32_t ov_orig_q = static_cast<uint32_t>(overflow.qubits[0]);
-            ctx.control_stack.push_control(ov_orig_q);
+            if constexpr (std::is_same_v<Bit, qbool>) {
+                uint32_t ov_orig_q = static_cast<uint32_t>(overflow.qubits[0]);
+                ctx.control_stack.push_control(ov_orig_q);
+            } else {
+                overflow.ensure_quantum();
+                ctx.control_stack.push_control(
+                    static_cast<uint32_t>(overflow.qubit_index()));
+            }
             sgn[i - 1u] ^= sgn[i];
             ctx.control_stack.pop_control();
         }
@@ -164,8 +210,14 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
             sgn[i] ^= quotient_bits[i + 1u];
             overflow.flip();
             {
-                uint32_t ov_prev_q = static_cast<uint32_t>(overflow.qubits[0]);
-                ctx.control_stack.push_control(ov_prev_q);
+                if constexpr (std::is_same_v<Bit, qbool>) {
+                    uint32_t ov_prev_q = static_cast<uint32_t>(overflow.qubits[0]);
+                    ctx.control_stack.push_control(ov_prev_q);
+                } else {
+                    overflow.ensure_quantum();
+                    ctx.control_stack.push_control(
+                        static_cast<uint32_t>(overflow.qubit_index()));
+                }
                 sgn[i].flip();
                 ctx.control_stack.pop_control();
             }
@@ -181,8 +233,14 @@ inline void lib_div_dsl(qbool* dividend_bits, size_t n,
     // WHEN NOT(q[0]): P += b. carry_anc starts |0>.
     quotient_bits[0].flip();
     {
-        uint32_t q0q = static_cast<uint32_t>(quotient_bits[0].qubits[0]);
-        ctx.control_stack.push_control(q0q);
+        if constexpr (std::is_same_v<Bit, qbool>) {
+            uint32_t q0q = static_cast<uint32_t>(quotient_bits[0].qubits[0]);
+            ctx.control_stack.push_control(q0q);
+        } else {
+            quotient_bits[0].ensure_quantum();
+            ctx.control_stack.push_control(
+                static_cast<uint32_t>(quotient_bits[0].qubit_index()));
+        }
         lib_add_dsl(divisor_bits, remainder_bits, carry_anc, n);
         ctx.control_stack.pop_control();
     }
