@@ -1812,3 +1812,22 @@ set_source_files_properties(
 )
 add_test(NAME test_free_bitwise_neg1_qubits COMMAND test_free_bitwise_neg1_qubits)
 set_tests_properties(test_free_bitwise_neg1_qubits PROPERTIES LABELS "backend")
+
+# ── M3: Free arithmetic operator fast-path fix (sturm-8w8) ───────────────────
+# Verifies that free operators (+, -, *, /, %) emit gates when one operand is
+# quantum and the other is classical.  Also regression: both-classical => 0 gates.
+add_executable(test_free_arith_mixed_fastpath
+    test_free_arith_mixed_fastpath.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_free_arith_mixed_fastpath PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_free_arith_mixed_fastpath PRIVATE cxx_std_20)
+target_compile_definitions(test_free_arith_mixed_fastpath PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_free_arith_mixed_fastpath PRIVATE orkan_headers)
+add_test(NAME test_free_arith_mixed_fastpath COMMAND test_free_arith_mixed_fastpath)
+set_tests_properties(test_free_arith_mixed_fastpath PROPERTIES LABELS "backend")

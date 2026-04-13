@@ -125,7 +125,7 @@ qint_t<W> operator+(const qint_t<W>& a, const qint_t<W>& b) {
     // Classical fast-path: if neither operand has quantum qubits and no WHEN
     // scope is active, skip circuits.  Inside WHEN the fast-path is bypassed so
     // the compound-assign (which uses BitProxy) handles per-bit promotion.
-    if ((a.qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((a.qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         qint_t<W> result;
         result.value      = a.value + b.value;
         result.super_mask = detail::mask_addsub(a.super_mask, b.super_mask,
@@ -153,7 +153,7 @@ qint_t<W> operator+(const qint_t<W>& a, const qint_t<W>& b) {
 template <std::size_t W>
 qint_t<W> operator-(const qint_t<W>& a, const qint_t<W>& b) {
     // Classical fast-path (bypassed inside WHEN so BitProxy handles promotion).
-    if ((a.qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((a.qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         qint_t<W> result;
         result.value      = a.value - b.value;
         result.super_mask = detail::mask_addsub(a.super_mask, b.super_mask,
@@ -183,7 +183,7 @@ qint_t<W> operator-(const qint_t<W>& a, const qint_t<W>& b) {
 template <std::size_t W>
 qint_t<W> operator*(const qint_t<W>& a, const qint_t<W>& b) {
     // Classical fast-path (bypassed inside WHEN so BitProxy handles promotion).
-    if ((a.qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((a.qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         qint_t<W> result;
         result.value      = a.value * b.value;
         result.super_mask = detail::mask_muldiv(a.super_mask, b.super_mask,
@@ -214,7 +214,7 @@ qint_t<W> operator*(const qint_t<W>& a, const qint_t<W>& b) {
 template <std::size_t W>
 qint_t<W> operator/(const qint_t<W>& a, const qint_t<W>& b) {
     // Classical fast-path (bypassed inside WHEN so BitProxy handles promotion).
-    if ((a.qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((a.qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         qint_t<W> result;
         result.value      = (b.value != 0) ? a.value / b.value : 0;
         result.super_mask = detail::mask_muldiv(a.super_mask, b.super_mask,
@@ -249,7 +249,7 @@ qint_t<W> operator/(const qint_t<W>& a, const qint_t<W>& b) {
 template <std::size_t W>
 qint_t<W> operator%(const qint_t<W>& a, const qint_t<W>& b) {
     // Classical fast-path (bypassed inside WHEN so BitProxy handles promotion).
-    if ((a.qubits[0] < 0 || b.qubits[0] < 0) && detail::current_control == nullptr) {
+    if ((a.qubits[0] < 0 && b.qubits[0] < 0) && detail::current_control == nullptr) {
         qint_t<W> result;
         result.value      = (b.value != 0) ? a.value % b.value : 0;
         result.super_mask = detail::mask_muldiv(a.super_mask, b.super_mask,
