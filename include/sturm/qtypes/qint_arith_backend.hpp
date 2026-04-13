@@ -95,13 +95,7 @@ qint_t<W> operator+(const qint_t<W>& a, int64_t c) {
     //                sequence is deterministic and invertible.
     result.qubits = a.qubits;
 
-    bool need_quantum = (a.super_mask != 0);
-    // Inside WHEN with classical operand: result must be quantum.
-    // Per-bit promotion is handled by BitProxy downstream; just set the flag.
-    if (!need_quantum && detail::current_control != nullptr) {
-        need_quantum = true;
-    }
-    if (need_quantum) {
+    if (a.super_mask != 0) {
         // Emit add_const gates via the active BackendContext (if any).
         if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
             qint_base view = result.as_qint_base();
