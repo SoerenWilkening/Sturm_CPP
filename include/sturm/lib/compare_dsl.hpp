@@ -22,22 +22,40 @@
 
 #include <cstddef>
 #include <cassert>
+#include <type_traits>
 
 namespace sturm {
 
+// ── Ancilla helper ───────────────────────────────────────────────────────────
+namespace detail_compare {
+
+template <typename Bit>
+Bit make_ancilla_view(qbool& owner) {
+    if constexpr (std::is_same_v<Bit, qbool>) {
+        return qbool::make_non_owning(owner.qubits[0]);
+    } else {
+        return Bit(owner);
+    }
+}
+
+} // namespace detail_compare
+
 // ── lib_eq_dsl ────────────────────────────────────────────────────────────────
 // result ^= (a == b). n==0: vacuously equal.
-inline void lib_eq_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
+template <typename Bit>
+inline void lib_eq_dsl(Bit* a_bits, Bit* b_bits, size_t n, Bit& result) {
     if (n == 0u) { result.flip(); return; }
 
     static constexpr size_t kMaxN = 16u;
     assert(n <= kMaxN);
 
     int   xnor_idx[kMaxN];
-    qbool xnor_bits[kMaxN];
+    qbool xnor_own[kMaxN];
+    Bit   xnor_bits[kMaxN];
     for (size_t i = 0u; i < n; ++i) {
         xnor_idx[i]  = QubitPool::instance().allocate();
-        xnor_bits[i] = qbool::make_non_owning(xnor_idx[i]);
+        xnor_own[i]  = qbool::make_non_owning(xnor_idx[i]);
+        xnor_bits[i] = detail_compare::make_ancilla_view<Bit>(xnor_own[i]);
     }
     for (size_t i = 0u; i < n; ++i)
         lib_xnor_dsl(a_bits[i], b_bits[i], xnor_bits[i]);
@@ -56,7 +74,8 @@ inline void lib_eq_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
 //   Compute a_copy = a (in ancilla), then a_copy -= b.
 //   The borrow output is 1 iff a < b.
 //   Copy borrow to result, then uncompute.
-inline void lib_lt_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
+template <typename Bit>
+inline void lib_lt_dsl(Bit* a_bits, Bit* b_bits, size_t n, Bit& result) {
     if (n == 0u) return;
 
     static constexpr size_t kMaxN = 16u;
@@ -64,20 +83,24 @@ inline void lib_lt_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
 
     // Allocate a_copy[n] ancilla (starts |0>).
     int   a_copy_idx[kMaxN];
-    qbool a_copy[kMaxN];
+    qbool a_copy_own[kMaxN];
+    Bit   a_copy[kMaxN];
     for (size_t i = 0u; i < n; ++i) {
         a_copy_idx[i] = QubitPool::instance().allocate();
-        a_copy[i]     = qbool::make_non_owning(a_copy_idx[i]);
+        a_copy_own[i] = qbool::make_non_owning(a_copy_idx[i]);
+        a_copy[i]     = detail_compare::make_ancilla_view<Bit>(a_copy_own[i]);
     }
     // Copy a into a_copy.
     for (size_t i = 0u; i < n; ++i)
         a_copy[i] ^= a_bits[i];
 
     // Allocate borrow and carry_scratch ancilla.
-    int   borrow_idx       = QubitPool::instance().allocate();
+    int   borrow_idx        = QubitPool::instance().allocate();
     int   carry_scratch_idx = QubitPool::instance().allocate();
-    qbool borrow       = qbool::make_non_owning(borrow_idx);
-    qbool carry_scratch = qbool::make_non_owning(carry_scratch_idx);
+    qbool borrow_own        = qbool::make_non_owning(borrow_idx);
+    qbool carry_scratch_own = qbool::make_non_owning(carry_scratch_idx);
+    Bit   borrow            = detail_compare::make_ancilla_view<Bit>(borrow_own);
+    Bit   carry_scratch     = detail_compare::make_ancilla_view<Bit>(carry_scratch_own);
 
     // Compute a_copy -= b; borrow = (a < b).
     lib_sub_dsl(b_bits, a_copy, borrow, n);
@@ -108,11 +131,14 @@ inline void lib_lt_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
 
 // ── lib_le_dsl ────────────────────────────────────────────────────────────────
 // result ^= (a <= b) = LT(a,b) OR EQ(a,b).
-inline void lib_le_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
+template <typename Bit>
+inline void lib_le_dsl(Bit* a_bits, Bit* b_bits, size_t n, Bit& result) {
     int lt_idx = QubitPool::instance().allocate();
     int eq_idx = QubitPool::instance().allocate();
-    qbool lt_r = qbool::make_non_owning(lt_idx);
-    qbool eq_r = qbool::make_non_owning(eq_idx);
+    qbool lt_own = qbool::make_non_owning(lt_idx);
+    qbool eq_own = qbool::make_non_owning(eq_idx);
+    Bit lt_r = detail_compare::make_ancilla_view<Bit>(lt_own);
+    Bit eq_r = detail_compare::make_ancilla_view<Bit>(eq_own);
     lib_lt_dsl(a_bits, b_bits, n, lt_r);
     lib_eq_dsl(a_bits, b_bits, n, eq_r);
     lib_or_dsl(lt_r, eq_r, result);
@@ -124,15 +150,18 @@ inline void lib_le_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
 
 // ── lib_gt_dsl ────────────────────────────────────────────────────────────────
 // result ^= (a > b) = LT(b, a).
-inline void lib_gt_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
+template <typename Bit>
+inline void lib_gt_dsl(Bit* a_bits, Bit* b_bits, size_t n, Bit& result) {
     lib_lt_dsl(b_bits, a_bits, n, result);
 }
 
 // ── lib_ge_dsl ────────────────────────────────────────────────────────────────
 // result ^= (a >= b) = NOT LT(a,b).
-inline void lib_ge_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
+template <typename Bit>
+inline void lib_ge_dsl(Bit* a_bits, Bit* b_bits, size_t n, Bit& result) {
     int lt_idx = QubitPool::instance().allocate();
-    qbool lt_r = qbool::make_non_owning(lt_idx);
+    qbool lt_own = qbool::make_non_owning(lt_idx);
+    Bit lt_r = detail_compare::make_ancilla_view<Bit>(lt_own);
     lib_lt_dsl(a_bits, b_bits, n, lt_r);
     lt_r.flip(); result ^= lt_r; lt_r.flip();
     lib_lt_dsl(a_bits, b_bits, n, lt_r);
@@ -141,9 +170,11 @@ inline void lib_ge_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
 
 // ── lib_ne_dsl ────────────────────────────────────────────────────────────────
 // result ^= (a != b) = NOT EQ(a,b).
-inline void lib_ne_dsl(qbool* a_bits, qbool* b_bits, size_t n, qbool& result) {
+template <typename Bit>
+inline void lib_ne_dsl(Bit* a_bits, Bit* b_bits, size_t n, Bit& result) {
     int eq_idx = QubitPool::instance().allocate();
-    qbool eq_r = qbool::make_non_owning(eq_idx);
+    qbool eq_own = qbool::make_non_owning(eq_idx);
+    Bit eq_r = detail_compare::make_ancilla_view<Bit>(eq_own);
     lib_eq_dsl(a_bits, b_bits, n, eq_r);
     eq_r.flip(); result ^= eq_r; eq_r.flip();
     lib_eq_dsl(a_bits, b_bits, n, eq_r);
