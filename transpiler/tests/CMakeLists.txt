@@ -52,6 +52,56 @@ target_compile_definitions(test_transpile_qir PRIVATE ${LLVM_DEFS_LIST_QIR})
 add_test(NAME test_transpile_qir COMMAND test_transpile_qir)
 set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 
+# ── Unit test: M7 AST matcher ────────────────────────────────────────────────
+# This test drives the `register_or_matcher` helper through a real Clang
+# tooling invocation (runToolOnCodeWithArgs). It therefore needs to link
+# against the same LibTooling components as sturm-transpile itself.
+add_executable(test_transpile_matcher
+    test_matcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_transpile_matcher PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_transpile_matcher PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_transpile_matcher PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_MATCHER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_transpile_matcher PRIVATE
+    ${LLVM_DEFS_LIST_MATCHER})
+# Mirror the main binary's shared-vs-static LLVM link discipline so we do
+# not double-register cl::opt tables (see the comment in the main CMake).
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_transpile_matcher PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_transpile_matcher PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_MATCHER support)
+    target_link_libraries(test_transpile_matcher PRIVATE ${LLVM_LIBS_MATCHER})
+endif()
+add_test(NAME test_transpile_matcher COMMAND test_transpile_matcher)
+set_tests_properties(test_transpile_matcher PROPERTIES LABELS "transpiler")
+
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
     test_driver.cpp
