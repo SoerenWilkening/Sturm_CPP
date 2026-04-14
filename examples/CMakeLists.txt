@@ -2,8 +2,17 @@ cmake_minimum_required(VERSION 3.16)
 enable_language(C)
 
 # ── Example: qint OR + ASCII circuit drawing ────────────────────────────────
-add_executable(example_or_circuit
+# Routed through sturm-transpile under STURM_TRANSPILE=ON via the
+# add_quantum_executable() helper (see cmake/SturmTranspile.cmake). Under
+# STURM_TRANSPILE=OFF the helper compiles the source directly without any
+# LLVM/Clang dependency.
+add_quantum_executable(example_or_circuit
     or_circuit.cpp
+)
+
+# Runtime implementation sources are not candidates for the transpiler;
+# attach them after target creation so they bypass the transpile step.
+target_sources(example_or_circuit PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
@@ -14,10 +23,6 @@ add_executable(example_or_circuit
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
-target_include_directories(example_or_circuit PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(example_or_circuit PRIVATE cxx_std_20)
 target_link_libraries(example_or_circuit PRIVATE orkan_headers)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
