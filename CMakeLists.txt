@@ -45,13 +45,26 @@ endif()
 option(STURM_TRANSPILE
        "Build the Clang LibTooling-based uncomputation transpiler" OFF)
 
-# ── Tests ─────────────────────────────────────────────────────────────────────
-enable_testing()
-add_subdirectory(tests)
+# ── Transpiler glue helper (M10) ──────────────────────────────────────────────
+# Define the add_quantum_executable() function for downstream consumers.
+# The helper degrades gracefully under STURM_TRANSPILE=OFF: it compiles the
+# source directly without reaching for LLVM/Clang. Included unconditionally
+# so that downstream code can reference the function symbol regardless of
+# the flag state (and so that the `cmake_flags_verify` configure probes
+# exercise both branches).
+include(${CMAKE_SOURCE_DIR}/cmake/SturmTranspile.cmake)
 
+# The transpiler subdirectory must be entered BEFORE tests/ so that the
+# sturm-transpile target is defined by the time tests/transpiler/ calls
+# add_quantum_executable() (which under STURM_TRANSPILE=ON wires an
+# add_custom_command DEPENDS on sturm-transpile).
 if(STURM_TRANSPILE)
     add_subdirectory(transpiler)
 endif()
+
+# ── Tests ─────────────────────────────────────────────────────────────────────
+enable_testing()
+add_subdirectory(tests)
 
 # ── Examples ──────────────────────────────────────────────────────────────────
 add_subdirectory(examples)
