@@ -17,7 +17,7 @@
 //     Classical a (super_mask==0): 0 gates (fast path, no quantum bits).
 //     Quantum a (super_mask=0xFF): 18 gates with the current stub decomposition:
 //       8 × H (add_const forward) + 8 × X (sub_const uncompute of temp) +
-//       1 × CX (compare_forward in qbool dtor) + 1 × CX (compare_inverse in qbool dtor)
+//       1 × Z (compare_forward in qbool dtor) + 1 × Z (compare_inverse in qbool dtor)
 //     If stubs are replaced by real circuits the count will change and this assertion
 //     fires, prompting the developer to update the pinned value.
 //
@@ -25,8 +25,8 @@
 //     and verify the IR record-for-record.  Golden sequence (18 records):
 //       [0..7]    STURM_GATE_H,  qubit=i (0..7),  param=5.0  (add_const stub)
 //       [8..15]   STURM_GATE_X,  qubit=i (0..7),  param=5.0  (sub_const uncompute)
-//       [16]      STURM_GATE_CX, qubit=0,           param=6.0  (compare_forward, CMP_GE)
-//       [17]      STURM_GATE_CX, qubit=0,           param=-6.0 (compare_inverse)
+//       [16]      STURM_GATE_Z,  qubit=0,           param=6.0  (compare_forward, CMP_GE)
+//       [17]      STURM_GATE_Z,  qubit=0,           param=-6.0 (compare_inverse)
 //
 //   SIMULATE — sweep a ∈ {-10..10} (classical qint, super_mask==0).
 //     For each input assert c.value == (a_val + 5 >= 0).
@@ -47,7 +47,7 @@
 #include <cstdio>
 
 // ── CMP_GE constant (matches detail::CMP_GE in qint_compare.hpp) ─────────────
-// compare_forward emits CX with param = cmp_kind; compare_inverse with -cmp_kind.
+// compare_forward emits Z with param = cmp_kind; compare_inverse with -cmp_kind.
 static constexpr double kCmpGe    =  6.0;   // CMP_GE == 6
 static constexpr double kCmpGeNeg = -6.0;
 
@@ -124,7 +124,7 @@ static void test_count_only_classical() {
 // With super_mask=0xFF (8 quantum bits) on qint_t<8>:
 //   - add_const emits 8 × H
 //   - sub_const (uncompute of (a+5) temporary) emits 8 × X
-//   - qbool.is_super = true → compare_forward emits 1 × CX, compare_inverse 1 × CX
+//   - qbool.is_super = true → compare_forward emits 1 × Z, compare_inverse 1 × Z
 // Pinned expected count: 18.
 //
 // NOTE: qubit indices are set manually (bypassing the pool) so the test does not
@@ -156,7 +156,7 @@ static void test_count_only_quantum() {
     const uint64_t count = sc.gate_count();
     // Pinned to current stub decomposition:
     //   8 H (add_const) + 8 X (sub_const uncompute) +
-    //   1 CX (compare_forward) + 1 CX (compare_inverse) = 18
+    //   1 Z (compare_forward) + 1 Z (compare_inverse) = 18
     static constexpr uint64_t kExpected = 18u;
     assert(count == kExpected
            && "COUNT_ONLY quantum: gate count must equal pinned value 18");
@@ -223,22 +223,22 @@ static void test_append_golden() {
                && "gate 8..15 param must be 5.0 (the constant c)");
     }
 
-    // Gate [16]: CX from compare_forward on qbool (qubit 0, param = CMP_GE)
+    // Gate [16]: Z from compare_forward on qbool (qubit 0, param = CMP_GE)
     {
         const auto& r = ir.at(16);
-        assert(r.kind      == STURM_GATE_CX
-               && "gate 16 must be CX (compare_forward stub)");
+        assert(r.kind      == STURM_GATE_Z
+               && "gate 16 must be Z (compare_forward stub)");
         assert(r.qubits[0] == 0u
                && "gate 16 must target qubit 0 (qbool qubit slot)");
         assert(r.param     == kCmpGe
                && "gate 16 param must be CMP_GE (6.0)");
     }
 
-    // Gate [17]: CX from compare_inverse on qbool (qubit 0, param = -CMP_GE)
+    // Gate [17]: Z from compare_inverse on qbool (qubit 0, param = -CMP_GE)
     {
         const auto& r = ir.at(17);
-        assert(r.kind      == STURM_GATE_CX
-               && "gate 17 must be CX (compare_inverse stub)");
+        assert(r.kind      == STURM_GATE_Z
+               && "gate 17 must be Z (compare_inverse stub)");
         assert(r.qubits[0] == 0u
                && "gate 17 must target qubit 0 (qbool qubit slot)");
         assert(r.param     == kCmpGeNeg

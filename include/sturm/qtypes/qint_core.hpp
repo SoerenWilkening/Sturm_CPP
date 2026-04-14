@@ -149,7 +149,7 @@ public:
                                                 ? Width : QINT_BASE_MAX_WIDTH);
         for (uint8_t i = 0; i < b.width; ++i) {
             b.qubits[i] = (qubits[i] >= 0)
-                          ? static_cast<uint32_t>(qubits[i]) : 0u;
+                          ? static_cast<uint32_t>(qubits[i]) : UINT32_MAX;
         }
         return b;
     }
