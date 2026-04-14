@@ -1,0 +1,309 @@
+// test_uncompute_pass.cpp — unit tests for the M8 uncompute synthesis pass.
+//
+// M8 takes a QUnit (produced by the M7 matcher) and returns a flat vector of
+// UncomputeInsertion records describing what text to inject and at which
+// SourceLocation. The pass performs NO AST rewriting — that's M9.
+//
+// The two properties under test here are:
+//
+//   1. **LIFO ordering within a scope.** The whole PRD hinges on emitting
+//      inverses in reverse of the forward order. Given `tmp0 = a|b; tmp1 =
+//      c|d;` the pass must emit `uncompute_or(tmp1, c, d);` BEFORE
+//      `uncompute_or(tmp0, a, b);` in the insertion list. The reviewer for
+//      M8 will check this explicitly.
+//
+//   2. **Scope anchoring.** Each insertion's `insert_before` must be the
+//      close-brace of the scope that originally contained the op, even when
+//      the QUnit has multiple scopes. Cross-scope contamination would mean
+//      the emitter inserts a `uncompute_or` into the wrong block.
+//
+// Tests are intentionally *synthetic*: we build QUnits by hand, no Clang
+// tool invocation. This keeps the suite in the microsecond range and makes
+// ordering regressions reproducible without a compiler.
+
+#include "sturm/transpile/qir.hpp"
+#include "sturm/transpile/uncompute_pass.hpp"
+
+#include "clang/Basic/SourceLocation.h"
+
+#include <cassert>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+using namespace sturm::transpile;
+
+// ── Test harness ──────────────────────────────────────────────────────────────
+static int tests_run  = 0;
+static int tests_pass = 0;
+
+#define CHECK(cond) do {                                              \
+    ++tests_run;                                                      \
+    if (cond) { ++tests_pass; }                                       \
+    else {                                                            \
+        std::fprintf(stderr, "FAIL  %s:%d  %s\n",                     \
+                     __FILE__, __LINE__, #cond);                      \
+    }                                                                 \
+} while (0)
+
+#define CHECK_EQ_STR(got, want) do {                                  \
+    ++tests_run;                                                      \
+    if ((got) == (want)) { ++tests_pass; }                            \
+    else {                                                            \
+        std::fprintf(stderr, "FAIL  %s:%d  strings differ\n"          \
+                             "  got:  <<<%s>>>\n"                     \
+                             "  want: <<<%s>>>\n",                    \
+                     __FILE__, __LINE__,                              \
+                     std::string(got).c_str(),                        \
+                     std::string(want).c_str());                      \
+    }                                                                 \
+} while (0)
+
+#define CHECK_EQ_SIZE(got, want) do {                                 \
+    ++tests_run;                                                      \
+    if (static_cast<std::size_t>(got) ==                              \
+        static_cast<std::size_t>(want)) { ++tests_pass; }             \
+    else {                                                            \
+        std::fprintf(stderr, "FAIL  %s:%d  sizes differ "             \
+                             "got=%zu want=%zu\n",                    \
+                     __FILE__, __LINE__,                              \
+                     static_cast<std::size_t>(got),                   \
+                     static_cast<std::size_t>(want));                 \
+    }                                                                 \
+} while (0)
+
+// SourceLocation is opaque value type; its raw encoding 0 is "invalid". Any
+// non-zero raw encoding yields a valid-looking location for equality checks.
+static clang::SourceLocation make_loc(std::uint32_t raw) {
+    return clang::SourceLocation::getFromRawEncoding(raw);
+}
+
+static std::uint32_t raw(clang::SourceLocation loc) {
+    return loc.getRawEncoding();
+}
+
+// ── Test: single op → single insertion, anchored at scope close_brace ───────
+
+static void test_single_op_one_insertion() {
+    // Hand-built QUnit representing:
+    //   { qbool tmp = a | b; }
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    // Code must match the exact format documented in the PRD and M8 plan.
+    // Four-space indent, function name `uncompute_or`, result then operands.
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(tmp, a, b);\n"));
+
+    // Insertion point is the scope's close brace — emitter injects BEFORE it.
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+// ── Test: two ops in one scope → LIFO order ─────────────────────────────────
+
+static void test_two_ops_lifo_order() {
+    // Hand-built QUnit representing:
+    //   { qbool tmp0 = a | b;
+    //     qbool tmp1 = c | d; }
+    // The forward order is [tmp0, tmp1]. LIFO uncompute ordering requires
+    // the insertion list to emit the inverse for `tmp1` FIRST, then `tmp0`.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op0;
+    op0.kind   = QOpKind::OR;
+    op0.result = QValueRef{"tmp0", make_loc(10)};
+    op0.operands = { QValueRef{"a", make_loc(2)},
+                     QValueRef{"b", make_loc(3)} };
+    op0.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+
+    QOperation op1;
+    op1.kind   = QOpKind::OR;
+    op1.result = QValueRef{"tmp1", make_loc(30)};
+    op1.operands = { QValueRef{"c", make_loc(4)},
+                     QValueRef{"d", make_loc(5)} };
+    op1.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+
+    scope.ops = { op0, op1 };
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+
+    // LIFO: tmp1 uncompute comes FIRST, tmp0 uncompute comes SECOND. This is
+    // the whole reason M8 exists as its own pass — if either line below
+    // flips, the post-MVP roadmap falls over.
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(tmp1, c, d);\n"));
+    CHECK_EQ_STR(ins[1].code,
+                 std::string("    uncompute_or(tmp0, a, b);\n"));
+
+    // Both insertions anchored at the same scope's close_brace.
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(99)));
+}
+
+// ── Test: two scopes with one op each → each anchored to own close_brace ────
+
+static void test_two_scopes_each_one_op() {
+    // Hand-built QUnit representing two sibling compound statements:
+    //   { qbool x = p | q; }   // close_brace @ 70
+    //   { qbool y = r | s; }   // close_brace @ 200
+    // Each insertion must target its own scope's close brace; contamination
+    // across scopes would put an uncompute_or in the wrong block.
+    QUnit unit;
+
+    {
+        QScope s;
+        s.open_brace  = make_loc(10);
+        s.close_brace = make_loc(70);
+
+        QOperation op;
+        op.kind   = QOpKind::OR;
+        op.result = QValueRef{"x", make_loc(20)};
+        op.operands = { QValueRef{"p", make_loc(12)},
+                        QValueRef{"q", make_loc(14)} };
+        op.stmt_range = clang::SourceRange(make_loc(20), make_loc(30));
+        s.ops.push_back(op);
+        unit.scopes.push_back(s);
+    }
+    {
+        QScope s;
+        s.open_brace  = make_loc(100);
+        s.close_brace = make_loc(200);
+
+        QOperation op;
+        op.kind   = QOpKind::OR;
+        op.result = QValueRef{"y", make_loc(150)};
+        op.operands = { QValueRef{"r", make_loc(110)},
+                        QValueRef{"s", make_loc(120)} };
+        op.stmt_range = clang::SourceRange(make_loc(150), make_loc(160));
+        s.ops.push_back(op);
+        unit.scopes.push_back(s);
+    }
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+
+    // Scopes are processed in source order (the order they appear in
+    // `unit.scopes`), so scope 0's insertion(s) come before scope 1's.
+    CHECK_EQ_STR(ins[0].code, std::string("    uncompute_or(x, p, q);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(70)));
+
+    CHECK_EQ_STR(ins[1].code, std::string("    uncompute_or(y, r, s);\n"));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(200)));
+}
+
+// ── Empty-unit and empty-scope edge cases ────────────────────────────────────
+
+static void test_empty_unit() {
+    QUnit unit;
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_empty_scope() {
+    // A scope that the matcher discovered (e.g. because it contained some
+    // other quantum op that M7 ignored) but which has no OR ops produces
+    // no insertions.
+    QUnit unit;
+    QScope s;
+    s.open_brace  = make_loc(1);
+    s.close_brace = make_loc(2);
+    // no ops
+    unit.scopes.push_back(s);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+// ── Multi-scope with multiple ops ────────────────────────────────────────────
+
+static void test_multi_scope_multi_op_lifo() {
+    // Confirms that LIFO is per-scope: within each scope we reverse, but the
+    // scope order itself is preserved.
+    QUnit unit;
+    {
+        QScope s;
+        s.open_brace  = make_loc(1);
+        s.close_brace = make_loc(50);
+        QOperation op0;
+        op0.kind = QOpKind::OR;
+        op0.result = QValueRef{"a0", make_loc(2)};
+        op0.operands = { QValueRef{"x", make_loc(3)},
+                         QValueRef{"y", make_loc(4)} };
+        QOperation op1;
+        op1.kind = QOpKind::OR;
+        op1.result = QValueRef{"a1", make_loc(5)};
+        op1.operands = { QValueRef{"x", make_loc(3)},
+                         QValueRef{"z", make_loc(6)} };
+        s.ops = { op0, op1 };
+        unit.scopes.push_back(s);
+    }
+    {
+        QScope s;
+        s.open_brace  = make_loc(100);
+        s.close_brace = make_loc(300);
+        QOperation op0;
+        op0.kind = QOpKind::OR;
+        op0.result = QValueRef{"b0", make_loc(110)};
+        op0.operands = { QValueRef{"m", make_loc(111)},
+                         QValueRef{"n", make_loc(112)} };
+        QOperation op1;
+        op1.kind = QOpKind::OR;
+        op1.result = QValueRef{"b1", make_loc(120)};
+        op1.operands = { QValueRef{"m", make_loc(111)},
+                         QValueRef{"p", make_loc(113)} };
+        s.ops = { op0, op1 };
+        unit.scopes.push_back(s);
+    }
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 4u);
+    if (ins.size() != 4) return;
+
+    // Scope 0 (close_brace=50): LIFO → a1 first, a0 second.
+    CHECK_EQ_STR(ins[0].code, std::string("    uncompute_or(a1, x, z);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+    CHECK_EQ_STR(ins[1].code, std::string("    uncompute_or(a0, x, y);\n"));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(50)));
+
+    // Scope 1 (close_brace=300): LIFO → b1 first, b0 second.
+    CHECK_EQ_STR(ins[2].code, std::string("    uncompute_or(b1, m, p);\n"));
+    CHECK_EQ_SIZE(raw(ins[2].insert_before), raw(make_loc(300)));
+    CHECK_EQ_STR(ins[3].code, std::string("    uncompute_or(b0, m, n);\n"));
+    CHECK_EQ_SIZE(raw(ins[3].insert_before), raw(make_loc(300)));
+}
+
+int main() {
+    test_single_op_one_insertion();
+    test_two_ops_lifo_order();
+    test_two_scopes_each_one_op();
+    test_empty_unit();
+    test_empty_scope();
+    test_multi_scope_multi_op_lifo();
+
+    std::printf("PASS: %d/%d\n", tests_pass, tests_run);
+    return tests_pass == tests_run ? 0 : 1;
+}
