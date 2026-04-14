@@ -52,6 +52,35 @@ target_compile_definitions(test_transpile_qir PRIVATE ${LLVM_DEFS_LIST_QIR})
 add_test(NAME test_transpile_qir COMMAND test_transpile_qir)
 set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 
+# ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
+# Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
+# wrapper — so the test does NOT need to link any LibTooling components. It
+# compiles in under a second and runs in microseconds because the QUnit under
+# test is constructed by hand. This is the whole reason M8 is separate from
+# M7 and M9: ordering regressions can be pinpointed without a compiler in the
+# loop.
+add_executable(test_transpile_uncompute_pass
+    test_uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_transpile_uncompute_pass PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_transpile_uncompute_pass PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_transpile_uncompute_pass PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_UNCOMPUTE NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_transpile_uncompute_pass PRIVATE
+    ${LLVM_DEFS_LIST_UNCOMPUTE})
+add_test(NAME test_transpile_uncompute_pass
+         COMMAND test_transpile_uncompute_pass)
+set_tests_properties(test_transpile_uncompute_pass PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: M7 AST matcher ────────────────────────────────────────────────
 # This test drives the `register_or_matcher` helper through a real Clang
 # tooling invocation (runToolOnCodeWithArgs). It therefore needs to link
