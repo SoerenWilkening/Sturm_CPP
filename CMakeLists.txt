@@ -17,9 +17,20 @@ add_library(sturm INTERFACE)
 target_include_directories(sturm INTERFACE ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(sturm INTERFACE cxx_std_20)
 
+# ── Transpiler build toggle (M4 skeleton) ─────────────────────────────────────
+# When ON, configure the Clang LibTooling-based uncomputation transpiler
+# under transpiler/. Defaults OFF so a vanilla STURM build never depends on
+# LLVM being installed. The full flag contract (including STURM_AUTO_UNCOMPUTE
+# and the add_quantum_executable helper) is the subject of M1 and M10.
+option(STURM_TRANSPILE "Build the Clang LibTooling-based uncomputation transpiler" OFF)
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 enable_testing()
 add_subdirectory(tests)
+
+if(STURM_TRANSPILE)
+    add_subdirectory(transpiler)
+endif()
 
 # ── Examples ──────────────────────────────────────────────────────────────────
 add_subdirectory(examples)
