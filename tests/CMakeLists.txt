@@ -39,3 +39,9 @@ endforeach()
 
 # ── Backend test subdirectory (M1 and later) ──────────────────────────────────
 add_subdirectory(backend)
+
+# ── CMake flag-contract verification (transpiler-MVP M1) ──────────────────────
+# This subdir holds a ctest entry that validates the STURM_AUTO_UNCOMPUTE and
+# STURM_TRANSPILE option contract by running fresh out-of-source configures
+# of the STURM source tree. See tests/cmake_flags/verify_flags.cmake.
+add_subdirectory(cmake_flags)
