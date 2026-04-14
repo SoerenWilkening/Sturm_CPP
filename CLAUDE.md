@@ -7,6 +7,7 @@ This file provides instructions and context for AI coding agents working on this
 At the start of every session, read:
 - `docs/01_principles.md` — core design principles
 - `docs/prd_transpiler_uncompute.md` — active PRD: Clang LibTooling-based transpiler for uncomputation (MVP)
+- `docs/implementation_plan_transpiler_uncompute.md` — 12-module TDD breakdown of the MVP (≤300 LOC/module)
 - `docs/roadmap_transpiler_post_mvp.md` — phases to execute after the MVP pipeline is green
 
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
