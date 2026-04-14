@@ -215,11 +215,15 @@ function(add_quantum_executable target)
 
     # A convenience aggregate custom-target wrapping all generated
     # outputs lets downstream CMake logic (e.g. `make sturm_gen`) force
-    # regeneration without having to build the final executable. Not
-    # required by the PRD but costs one line and is useful for debugging.
-    if(_deps AND NOT TARGET sturm_gen)
-        add_custom_target(sturm_gen DEPENDS ${_deps})
-    elseif(_deps)
-        add_dependencies(sturm_gen ${_deps})
+    # regeneration without having to build the final executable. Each
+    # call gets its own per-target intermediate (`${target}_xpile`) so
+    # that the top-level `sturm_gen` aggregate accumulates dependencies
+    # via target names — add_dependencies() rejects raw file paths.
+    if(_deps)
+        add_custom_target(${target}_xpile DEPENDS ${_deps})
+        if(NOT TARGET sturm_gen)
+            add_custom_target(sturm_gen)
+        endif()
+        add_dependencies(sturm_gen ${target}_xpile)
     endif()
 endfunction()
