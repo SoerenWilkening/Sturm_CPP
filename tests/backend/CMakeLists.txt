@@ -1914,3 +1914,67 @@ target_compile_definitions(test_when_bool_expr PRIVATE
 target_link_libraries(test_when_bool_expr PRIVATE orkan_headers)
 add_test(NAME test_when_bool_expr COMMAND test_when_bool_expr)
 set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")
+
+# ── Transpiler-MVP M2: destructor gating on STURM_AUTO_UNCOMPUTE ─────────────
+# Two targets built from the SAME source tests/test_destructor_gate.cpp so
+# that both branches of the #ifdef STURM_AUTO_UNCOMPUTE contract in
+# include/sturm/qtypes/qint_core.hpp are exercised by ctest on every CI run.
+#
+#   test_destructor_gate_on  : STURM_AUTO_UNCOMPUTE defined → destructor
+#                              emits inverse gates when uncompute_ is set.
+#   test_destructor_gate_off : STURM_AUTO_UNCOMPUTE undefined → destructor
+#                              is release-only; zero gates emitted.
+#
+# Both targets also assert the shared regression that a non-owning register
+# releases nothing in the pool regardless of the flag.
+#
+# Per-target target_compile_definitions are used (not add_compile_definitions)
+# so that the top-level STURM_AUTO_UNCOMPUTE option cannot accidentally leak
+# into the _off build — the off target must NEVER see STURM_AUTO_UNCOMPUTE
+# defined, even when the project-wide option is ON.
+
+# Flag ON build.
+add_executable(test_destructor_gate_on
+    ${CMAKE_SOURCE_DIR}/tests/test_destructor_gate.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_destructor_gate_on PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_destructor_gate_on PRIVATE cxx_std_20)
+target_compile_definitions(test_destructor_gate_on PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_AUTO_UNCOMPUTE=1
+)
+target_link_libraries(test_destructor_gate_on PRIVATE orkan_headers)
+add_test(NAME test_destructor_gate_on COMMAND test_destructor_gate_on)
+set_tests_properties(test_destructor_gate_on PROPERTIES LABELS "backend")
+
+# Flag OFF build.  Critically, this target must NOT receive the macro —
+# even if the project-wide STURM_AUTO_UNCOMPUTE option is ON.  We achieve
+# that by relying on target_compile_definitions() being additive over the
+# directory-level definitions and by NOT re-adding the macro here.  The
+# directory-level add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) is still
+# visible, so we explicitly undefine the macro for this target via the
+# compiler-level -U flag.
+add_executable(test_destructor_gate_off
+    ${CMAKE_SOURCE_DIR}/tests/test_destructor_gate.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_destructor_gate_off PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_destructor_gate_off PRIVATE cxx_std_20)
+target_compile_definitions(test_destructor_gate_off PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+# Force-undefine the project-wide STURM_AUTO_UNCOMPUTE macro (added at the
+# top-level CMakeLists.txt when the option is ON) for just this target, so
+# the OFF branch of the destructor's #ifdef is exercised even when the
+# project-wide option is ON.
+target_compile_options(test_destructor_gate_off PRIVATE -USTURM_AUTO_UNCOMPUTE)
+target_link_libraries(test_destructor_gate_off PRIVATE orkan_headers)
+add_test(NAME test_destructor_gate_off COMMAND test_destructor_gate_off)
+set_tests_properties(test_destructor_gate_off PROPERTIES LABELS "backend")

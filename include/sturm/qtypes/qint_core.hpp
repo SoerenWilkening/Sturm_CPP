@@ -163,6 +163,13 @@ public:
     // qubit-release-only destructor (frontend-only builds).
     ~qint_t() {
 #ifdef STURM_BACKEND_ENABLED
+#  ifdef STURM_AUTO_UNCOMPUTE
+        // M2 (transpiler MVP): the WhenCapture deferral and the Strategy-B
+        // inverse-emission steps are only active when STURM_AUTO_UNCOMPUTE is
+        // defined.  With the flag OFF, the destructor becomes release-only so
+        // that the transpiler's explicit uncompute_* calls can be validated
+        // in isolation against the legacy RAII path.
+        //
         // If a WhenCapture is active and capturing, defer this temporary's
         // uncompute + release so intermediates in compound WHEN expressions
         // (e.g. WHEN((c | d) & e)) survive until after the WHEN body.
@@ -199,9 +206,13 @@ public:
                 uncompute_.apply(*ctx, view);
             }
         }
-#endif
+#  endif // STURM_AUTO_UNCOMPUTE
+#endif // STURM_BACKEND_ENABLED
         // Step 2: release qubit indices back to the global pool.
         // Guard with owning_ so non-owning views don't double-release.
+        // This path is UNCONDITIONAL on STURM_AUTO_UNCOMPUTE: even when
+        // the auto-uncompute gate-emission is disabled, owning registers
+        // must still return their qubits to the pool.
         // TODO(backend): migrate to per-context pool when the full
         //                qubit-lifecycle wiring lands (M-future).
         if (owning_) {
