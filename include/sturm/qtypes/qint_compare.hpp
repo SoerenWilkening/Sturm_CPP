@@ -51,6 +51,7 @@ inline qbool make_compare_result(
     qbool out;
     out.value      = classical_val ? 1 : 0;
     out.super_mask = (detail::mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
+    if (out.super_mask) out.ensure_qubit();
 
     // Stamp the COMPARE uncompute op so the qbool destructor can emit the
     // compare circuit and its inverse (Bennett uncomputation).

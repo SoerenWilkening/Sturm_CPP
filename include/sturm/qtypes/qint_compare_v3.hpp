@@ -41,6 +41,7 @@ inline qbool make_dsl_compare_result(
         qbool result;
         result.value      = classical_val ? 1 : 0;
         result.super_mask = (mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
+        if (result.super_mask) result.ensure_qubit();
         result.uncompute_ = uncompute_op::make_compare(
             reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
             reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),

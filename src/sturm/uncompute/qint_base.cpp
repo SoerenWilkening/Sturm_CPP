@@ -23,6 +23,7 @@ namespace sturm {
 void qint_base::sub_const(int64_t c, BackendContext& ctx) const noexcept {
     for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
         if ((super_mask >> i) & 1u) {
+            if (qubits[i] == UINT32_MAX) continue;
             uint32_t q[1] = {qubits[i]};
             double param = static_cast<double>(c);
             execute_gate(ctx, STURM_GATE_X, q, 1u, param);
@@ -37,6 +38,7 @@ void qint_base::sub_const(int64_t c, BackendContext& ctx) const noexcept {
 void qint_base::add_const(int64_t c, BackendContext& ctx) const noexcept {
     for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
         if ((super_mask >> i) & 1u) {
+            if (qubits[i] == UINT32_MAX) continue;
             uint32_t q[1] = {qubits[i]};
             double param = static_cast<double>(c);
             execute_gate(ctx, STURM_GATE_H, q, 1u, param);
@@ -45,24 +47,26 @@ void qint_base::add_const(int64_t c, BackendContext& ctx) const noexcept {
 }
 
 // ── compare_forward ────────────────────────────────────────────────────────────
-// Emit STURM_GATE_CX on each superposed bit, carrying cmp_kind as param, as a
-// placeholder for the forward comparison circuit.
+// Emit STURM_GATE_Z on each superposed bit, carrying cmp_kind as param, as a
+// placeholder for the forward comparison circuit.  Z is arity 1, matching the
+// single-qubit array passed (CX was arity 2 and caused malformed gate records).
 // TODO(backend): replace with an actual comparator (ancilla fanout) — M22+.
 
 void qint_base::compare_forward(uint32_t cmp_kind,
                                 BackendContext& ctx) const noexcept {
     for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
         if ((super_mask >> i) & 1u) {
+            if (qubits[i] == UINT32_MAX) continue;
             uint32_t q[1] = {qubits[i]};
-            execute_gate(ctx, STURM_GATE_CX, q, 1u,
+            execute_gate(ctx, STURM_GATE_Z, q, 1u,
                          static_cast<double>(cmp_kind));
         }
     }
 }
 
 // ── compare_inverse ────────────────────────────────────────────────────────────
-// Emit STURM_GATE_CX with negated cmp_kind param as the inverse stub.
-// CX is self-inverse; using a negated param lets tests distinguish forward from
+// Emit STURM_GATE_Z with negated cmp_kind param as the inverse stub.
+// Z is self-inverse; using a negated param lets tests distinguish forward from
 // inverse in the IR record stream without a dedicated gate kind.
 // TODO(backend): replace with the actual uncomputation circuit — M22+.
 
@@ -70,8 +74,9 @@ void qint_base::compare_inverse(uint32_t cmp_kind,
                                 BackendContext& ctx) const noexcept {
     for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
         if ((super_mask >> i) & 1u) {
+            if (qubits[i] == UINT32_MAX) continue;
             uint32_t q[1] = {qubits[i]};
-            execute_gate(ctx, STURM_GATE_CX, q, 1u,
+            execute_gate(ctx, STURM_GATE_Z, q, 1u,
                          -static_cast<double>(cmp_kind));
         }
     }

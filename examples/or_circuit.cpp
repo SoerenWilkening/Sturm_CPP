@@ -58,7 +58,7 @@ void emit_or_bit(sturm::BackendContext &ctx,
 int main() {
     // ── 1. Create an APPEND-mode backend context ──────────────────────────────
     constexpr std::size_t W = 3;                   // 3-bit qints, keeps diagram small
-    constexpr uint32_t kNumQubits = 3 * W;         // a(0..2), b(3..5), a'(6..8)
+    constexpr uint32_t kNumQubits = 6 * W;         // a(0..2), b(3..5), a'(6..8)
     
     sturm_backend_context_t *ctx =
         sturm_backend_create(STURM_MODE_APPEND, kNumQubits);
@@ -72,30 +72,18 @@ int main() {
     
     sturm::qbool c(true);
     sturm::qbool d(false);
+    sturm::qbool e(false);
+    a.theta() += 2;
+    b.theta() += 2;
     c.theta() += 2;
-//    d.theta() += 2;
-//    b.theta() += 2;
-    WHEN(c | d) {
+    d.theta() += 2;
+    e.theta() += 2;
+    WHEN((a + b) == 0 & e) {
         a.theta() += 2;
     }
-//
-//    a |= b;
-    
-    
-    // ── 5. Print the recorded circuit ─────────────────────────────────────────
-    std::printf("Recorded %zu gates for a |= b (W=%zu)\n\n",
-                ctx->ir.size(), W);
-    std::printf("Qubit layout: q0..q%zu = a, q%zu..q%zu = b, q%zu..q%zu = a' (new a)\n\n",
-                W - 1, W, 2 * W - 1, 2 * W, 3 * W - 1);
-    
+
     std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
     std::fputs(diagram.c_str(), stdout);
-    
-    // ── 6. Cleanup — prevent qint destructors from touching the pool ──────────
-    a.qubits.fill(-1);
-    a.super_mask = 0;
-    b.qubits.fill(-1);
-    b.super_mask = 0;
     
     sturm_set_thread_context(nullptr);
     sturm_backend_destroy(ctx);
