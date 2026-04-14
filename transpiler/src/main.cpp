@@ -6,7 +6,7 @@
 //   (M8)            →  emit (M9)         →  file on disk
 //
 // Skip detection (the M5 idempotency / opt-out contract) is implemented
-// via should_skip() from the emitter module. Two cases:
+// via should_skip() from the skip module. Two cases:
 //   1. "// sturm-transpile: skip" magic comment → pass through unchanged.
 //   2. Our own AUTO-GENERATED header already present → pass through
 //      unchanged (enforces PRD AC #5: re-running on emitted output yields
@@ -20,6 +20,7 @@
 #include "sturm/transpile/io.hpp"
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
+#include "sturm/transpile/skip.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
 
 #include "clang/AST/ASTConsumer.h"
