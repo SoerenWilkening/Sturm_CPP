@@ -26,6 +26,32 @@ target_compile_features(test_transpile_io PRIVATE cxx_std_20)
 add_test(NAME test_transpile_io COMMAND test_transpile_io)
 set_tests_properties(test_transpile_io PROPERTIES LABELS "transpiler")
 
+# ── Unit test: Quantum IR (M6) ────────────────────────────────────────────────
+# The IR depends only on clang::SourceLocation / SourceRange, which are
+# header-inline, so the test compiles against the LLVM/Clang include dirs
+# but does NOT need to link any LibTooling components. This keeps the test
+# fast to build (< 1s) and runnable on any host with the Clang headers
+# installed.
+add_executable(test_transpile_qir
+    test_qir.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_transpile_qir PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+# Match the main binary's RTTI / definitions so the Clang headers see the
+# exact same configuration they were compiled with.
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_transpile_qir PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_transpile_qir PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QIR NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_transpile_qir PRIVATE ${LLVM_DEFS_LIST_QIR})
+add_test(NAME test_transpile_qir COMMAND test_transpile_qir)
+set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
+
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
     test_driver.cpp
