@@ -92,6 +92,7 @@ add_executable(test_transpile_emitter
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
 )
 target_include_directories(test_transpile_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -181,6 +182,28 @@ else()
 endif()
 add_test(NAME test_transpile_matcher COMMAND test_transpile_matcher)
 set_tests_properties(test_transpile_matcher PROPERTIES LABELS "transpiler")
+
+# ── Unit + integration test: M5 skip / idempotency ──────────────────────────
+# Pure string helpers plus a subprocess-driven round-trip over the two
+# fixtures in tests/fixtures/. The subprocess leg reuses the same
+# STURM_TRANSPILE_BIN macro the driver test does; the fixtures directory
+# is threaded in as STURM_TRANSPILE_FIXTURES_DIR so the test can find the
+# source-tree fixtures without guessing build-tree paths.
+add_executable(test_transpile_skip
+    test_skip.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+)
+target_include_directories(test_transpile_skip PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+target_compile_features(test_transpile_skip PRIVATE cxx_std_20)
+target_compile_definitions(test_transpile_skip PRIVATE
+    STURM_TRANSPILE_BIN="$<TARGET_FILE:sturm-transpile>"
+    STURM_TRANSPILE_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+add_dependencies(test_transpile_skip sturm-transpile)
+add_test(NAME test_transpile_skip COMMAND test_transpile_skip)
+set_tests_properties(test_transpile_skip PROPERTIES LABELS "transpiler")
 
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
