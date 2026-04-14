@@ -81,6 +81,57 @@ add_test(NAME test_transpile_uncompute_pass
 set_tests_properties(test_transpile_uncompute_pass PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
+# The emitter test invokes a real Clang SourceManager + Rewriter so it
+# mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
+# available, fallback to the static per-component archives otherwise.
+add_executable(test_transpile_emitter
+    test_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+)
+target_include_directories(test_transpile_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_transpile_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_transpile_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_EMITTER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_transpile_emitter PRIVATE
+    ${LLVM_DEFS_LIST_EMITTER})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_transpile_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_transpile_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_EMITTER support)
+    target_link_libraries(test_transpile_emitter PRIVATE ${LLVM_LIBS_EMITTER})
+endif()
+add_test(NAME test_transpile_emitter COMMAND test_transpile_emitter)
+set_tests_properties(test_transpile_emitter PROPERTIES LABELS "transpiler")
+
 # ── Unit test: M7 AST matcher ────────────────────────────────────────────────
 # This test drives the `register_or_matcher` helper through a real Clang
 # tooling invocation (runToolOnCodeWithArgs). It therefore needs to link
