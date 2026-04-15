@@ -107,6 +107,26 @@ void register_mul_assign_const_matcher(
 void register_div_assign_const_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 
+/// Phase C / PC-1..PC-5: Register the five `a <op>= b;` matchers for
+/// `+= -= *= /= %=` against a `qint_t<W>` LHS with another `qint_t<W>` RHS
+/// (a bare DeclRefExpr — no converting constructor fires, so the RHS has
+/// no CXXConstructExpr wrapper). Structurally disjoint from the Phase B
+/// matchers above: PB requires a CXXConstructExpr peel; PC requires a
+/// DeclRefExpr RHS, so no CXXOperatorCallExpr can trigger both. Each
+/// matcher records one QOperation of the matching ADD/SUB/MUL/DIV/
+/// MOD_ASSIGN_QINT kind; the M8 pass emits a single
+/// `uncompute_{add,sub,mul,div,mod}_qint(lhs, rhs);` line as inverse.
+void register_add_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_sub_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_mul_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_div_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_mod_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

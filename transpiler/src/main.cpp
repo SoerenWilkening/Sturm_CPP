@@ -105,6 +105,11 @@ public:
         sturm::transpile::register_sub_assign_const_matcher(finder_, unit_);
         sturm::transpile::register_mul_assign_const_matcher(finder_, unit_);
         sturm::transpile::register_div_assign_const_matcher(finder_, unit_);
+        sturm::transpile::register_add_assign_qint_matcher(finder_, unit_);
+        sturm::transpile::register_sub_assign_qint_matcher(finder_, unit_);
+        sturm::transpile::register_mul_assign_qint_matcher(finder_, unit_);
+        sturm::transpile::register_div_assign_qint_matcher(finder_, unit_);
+        sturm::transpile::register_mod_assign_qint_matcher(finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {

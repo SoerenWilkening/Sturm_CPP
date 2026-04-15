@@ -555,6 +555,229 @@ div_assign_const_callback_pool() {
     return pool;
 }
 
+// ── Phase C / PC-1..PC-5: qint_t compound-assign with qint_t RHS ────────────
+//
+// Five near-identical callbacks (ADD/SUB/MUL/DIV/MOD_ASSIGN_QINT). Each is
+// fed by a matcher that binds:
+//   * "call"      — the CXXOperatorCallExpr for the compound-assign
+//   * "lhs"       — the DeclRefExpr for the qint_t LHS
+//   * "rhs_expr"  — the DeclRefExpr for the qint_t RHS (post-ignoringImplicit,
+//                   no cxxConstructExpr peel because no converting
+//                   constructor fires in the qint-qint form)
+// Bound as "rhs_expr" (not "rhs") so the field type plus the
+// ignoringImplicit peel mirror Phase B's callback surface literally;
+// Lexer::getSourceText then returns the bare identifier text.
+
+class AddAssignQIntCallback : public MatchFinder::MatchCallback {
+public:
+    explicit AddAssignQIntCallback(QUnit* unit) : unit_(unit) {}
+    void run(const MatchFinder::MatchResult& r) override {
+        const auto* call = r.Nodes.getNodeAs<CXXOperatorCallExpr>("call");
+        const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
+        if (!call || !lhs || !rhs || !r.Context) return;
+
+        const CompoundStmt* cs =
+            enclosing_compound_stmt(*call, *r.Context);
+        if (!cs) return;
+
+        QScope& scope = find_or_create_scope(*unit_, *cs);
+
+        const SourceManager& sm = r.Context->getSourceManager();
+        const LangOptions& lo = r.Context->getLangOpts();
+        auto text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(rhs->getSourceRange()),
+            sm, lo);
+        if (text.empty()) return;
+
+        QValueRef rhs_ref;
+        rhs_ref.name = text.str();
+
+        QOperation op;
+        op.kind   = QOpKind::ADD_ASSIGN_QINT;
+        op.result = make_ref(*lhs);
+        op.operands.push_back(std::move(rhs_ref));
+        op.stmt_range = call->getSourceRange();
+        scope.ops.push_back(std::move(op));
+    }
+private:
+    QUnit* unit_;
+};
+
+std::vector<std::unique_ptr<AddAssignQIntCallback>>&
+add_assign_qint_callback_pool() {
+    static std::vector<std::unique_ptr<AddAssignQIntCallback>> pool;
+    return pool;
+}
+
+class SubAssignQIntCallback : public MatchFinder::MatchCallback {
+public:
+    explicit SubAssignQIntCallback(QUnit* unit) : unit_(unit) {}
+    void run(const MatchFinder::MatchResult& r) override {
+        const auto* call = r.Nodes.getNodeAs<CXXOperatorCallExpr>("call");
+        const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
+        if (!call || !lhs || !rhs || !r.Context) return;
+
+        const CompoundStmt* cs =
+            enclosing_compound_stmt(*call, *r.Context);
+        if (!cs) return;
+
+        QScope& scope = find_or_create_scope(*unit_, *cs);
+
+        const SourceManager& sm = r.Context->getSourceManager();
+        const LangOptions& lo = r.Context->getLangOpts();
+        auto text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(rhs->getSourceRange()),
+            sm, lo);
+        if (text.empty()) return;
+
+        QValueRef rhs_ref;
+        rhs_ref.name = text.str();
+
+        QOperation op;
+        op.kind   = QOpKind::SUB_ASSIGN_QINT;
+        op.result = make_ref(*lhs);
+        op.operands.push_back(std::move(rhs_ref));
+        op.stmt_range = call->getSourceRange();
+        scope.ops.push_back(std::move(op));
+    }
+private:
+    QUnit* unit_;
+};
+
+std::vector<std::unique_ptr<SubAssignQIntCallback>>&
+sub_assign_qint_callback_pool() {
+    static std::vector<std::unique_ptr<SubAssignQIntCallback>> pool;
+    return pool;
+}
+
+class MulAssignQIntCallback : public MatchFinder::MatchCallback {
+public:
+    explicit MulAssignQIntCallback(QUnit* unit) : unit_(unit) {}
+    void run(const MatchFinder::MatchResult& r) override {
+        const auto* call = r.Nodes.getNodeAs<CXXOperatorCallExpr>("call");
+        const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
+        if (!call || !lhs || !rhs || !r.Context) return;
+
+        const CompoundStmt* cs =
+            enclosing_compound_stmt(*call, *r.Context);
+        if (!cs) return;
+
+        QScope& scope = find_or_create_scope(*unit_, *cs);
+
+        const SourceManager& sm = r.Context->getSourceManager();
+        const LangOptions& lo = r.Context->getLangOpts();
+        auto text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(rhs->getSourceRange()),
+            sm, lo);
+        if (text.empty()) return;
+
+        QValueRef rhs_ref;
+        rhs_ref.name = text.str();
+
+        QOperation op;
+        op.kind   = QOpKind::MUL_ASSIGN_QINT;
+        op.result = make_ref(*lhs);
+        op.operands.push_back(std::move(rhs_ref));
+        op.stmt_range = call->getSourceRange();
+        scope.ops.push_back(std::move(op));
+    }
+private:
+    QUnit* unit_;
+};
+
+std::vector<std::unique_ptr<MulAssignQIntCallback>>&
+mul_assign_qint_callback_pool() {
+    static std::vector<std::unique_ptr<MulAssignQIntCallback>> pool;
+    return pool;
+}
+
+class DivAssignQIntCallback : public MatchFinder::MatchCallback {
+public:
+    explicit DivAssignQIntCallback(QUnit* unit) : unit_(unit) {}
+    void run(const MatchFinder::MatchResult& r) override {
+        const auto* call = r.Nodes.getNodeAs<CXXOperatorCallExpr>("call");
+        const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
+        if (!call || !lhs || !rhs || !r.Context) return;
+
+        const CompoundStmt* cs =
+            enclosing_compound_stmt(*call, *r.Context);
+        if (!cs) return;
+
+        QScope& scope = find_or_create_scope(*unit_, *cs);
+
+        const SourceManager& sm = r.Context->getSourceManager();
+        const LangOptions& lo = r.Context->getLangOpts();
+        auto text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(rhs->getSourceRange()),
+            sm, lo);
+        if (text.empty()) return;
+
+        QValueRef rhs_ref;
+        rhs_ref.name = text.str();
+
+        QOperation op;
+        op.kind   = QOpKind::DIV_ASSIGN_QINT;
+        op.result = make_ref(*lhs);
+        op.operands.push_back(std::move(rhs_ref));
+        op.stmt_range = call->getSourceRange();
+        scope.ops.push_back(std::move(op));
+    }
+private:
+    QUnit* unit_;
+};
+
+std::vector<std::unique_ptr<DivAssignQIntCallback>>&
+div_assign_qint_callback_pool() {
+    static std::vector<std::unique_ptr<DivAssignQIntCallback>> pool;
+    return pool;
+}
+
+class ModAssignQIntCallback : public MatchFinder::MatchCallback {
+public:
+    explicit ModAssignQIntCallback(QUnit* unit) : unit_(unit) {}
+    void run(const MatchFinder::MatchResult& r) override {
+        const auto* call = r.Nodes.getNodeAs<CXXOperatorCallExpr>("call");
+        const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
+        const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
+        if (!call || !lhs || !rhs || !r.Context) return;
+
+        const CompoundStmt* cs =
+            enclosing_compound_stmt(*call, *r.Context);
+        if (!cs) return;
+
+        QScope& scope = find_or_create_scope(*unit_, *cs);
+
+        const SourceManager& sm = r.Context->getSourceManager();
+        const LangOptions& lo = r.Context->getLangOpts();
+        auto text = clang::Lexer::getSourceText(
+            clang::CharSourceRange::getTokenRange(rhs->getSourceRange()),
+            sm, lo);
+        if (text.empty()) return;
+
+        QValueRef rhs_ref;
+        rhs_ref.name = text.str();
+
+        QOperation op;
+        op.kind   = QOpKind::MOD_ASSIGN_QINT;
+        op.result = make_ref(*lhs);
+        op.operands.push_back(std::move(rhs_ref));
+        op.stmt_range = call->getSourceRange();
+        scope.ops.push_back(std::move(op));
+    }
+private:
+    QUnit* unit_;
+};
+
+std::vector<std::unique_ptr<ModAssignQIntCallback>>&
+mod_assign_qint_callback_pool() {
+    static std::vector<std::unique_ptr<ModAssignQIntCallback>> pool;
+    return pool;
+}
+
 } // namespace
 
 void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
@@ -820,6 +1043,118 @@ void register_div_assign_const_matcher(
 
     auto& pool = div_assign_const_callback_pool();
     pool.push_back(std::make_unique<DivAssignConstCallback>(&unit));
+    finder.addMatcher(pattern, pool.back().get());
+}
+
+// ── Phase C / PC-1..PC-5: qint-qint compound-assign registration ────────────
+//
+// Structural difference from Phase B: the RHS is a bare DeclRefExpr to a
+// qint_t (no converting constructor, no CXXConstructExpr peel). The LHS
+// guard is the same hasCanonicalType+hasDeclaration chain Phase B uses to
+// peel through typedef + TemplateSpecializationType sugar to the qint_t
+// RecordDecl. The RHS guard mirrors it so both sides require a qint_t
+// type — this is what makes PB and PC mutually disjoint: PB's AST has a
+// CXXConstructExpr wrapping an int literal, PC's AST has a bare
+// DeclRefExpr to another qint_t. No CXXOperatorCallExpr can trigger
+// both matchers.
+
+void register_add_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
+    auto pattern = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("+="),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("lhs"))),
+        hasArgument(1, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("rhs_expr")))
+    ).bind("call");
+
+    auto& pool = add_assign_qint_callback_pool();
+    pool.push_back(std::make_unique<AddAssignQIntCallback>(&unit));
+    finder.addMatcher(pattern, pool.back().get());
+}
+
+void register_sub_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
+    auto pattern = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("-="),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("lhs"))),
+        hasArgument(1, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("rhs_expr")))
+    ).bind("call");
+
+    auto& pool = sub_assign_qint_callback_pool();
+    pool.push_back(std::make_unique<SubAssignQIntCallback>(&unit));
+    finder.addMatcher(pattern, pool.back().get());
+}
+
+void register_mul_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
+    auto pattern = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("*="),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("lhs"))),
+        hasArgument(1, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("rhs_expr")))
+    ).bind("call");
+
+    auto& pool = mul_assign_qint_callback_pool();
+    pool.push_back(std::make_unique<MulAssignQIntCallback>(&unit));
+    finder.addMatcher(pattern, pool.back().get());
+}
+
+void register_div_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
+    auto pattern = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("/="),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("lhs"))),
+        hasArgument(1, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("rhs_expr")))
+    ).bind("call");
+
+    auto& pool = div_assign_qint_callback_pool();
+    pool.push_back(std::make_unique<DivAssignQIntCallback>(&unit));
+    finder.addMatcher(pattern, pool.back().get());
+}
+
+void register_mod_assign_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
+    auto pattern = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("%="),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("lhs"))),
+        hasArgument(1, ignoringImplicit(
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
+                .bind("rhs_expr")))
+    ).bind("call");
+
+    auto& pool = mod_assign_qint_callback_pool();
+    pool.push_back(std::make_unique<ModAssignQIntCallback>(&unit));
     finder.addMatcher(pattern, pool.back().get());
 }
 

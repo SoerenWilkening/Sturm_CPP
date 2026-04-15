@@ -307,6 +307,62 @@ static QUnit run_pb_matchers(std::string_view user_src) {
     return unit;
 }
 
+// ── Phase C stub: qint_t<W> with qint-qint compound-assign operators ────────
+//
+// Same shape as kQIntStub, plus `operator%=` (new in Phase C — PB omitted
+// it). The converting constructor from `long long` is kept so PB fixtures
+// still parse under this stub, which lets a single PC test exercise the
+// PB/PC disjointness invariant both directions.
+static constexpr std::string_view kQIntStubPC = R"CPP(
+namespace sturm {
+
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    qint_t(long long) {}
+    qint_t& operator+=(const qint_t&) { return *this; }
+    qint_t& operator-=(const qint_t&) { return *this; }
+    qint_t& operator*=(const qint_t&) { return *this; }
+    qint_t& operator/=(const qint_t&) { return *this; }
+    qint_t& operator%=(const qint_t&) { return *this; }
+};
+
+} // namespace sturm
+
+using qint_t = sturm::qint_t<1>;
+)CPP";
+
+// Run all five Phase C matchers on `user_src` after prepending the PC stub.
+// All five are mutually exclusive by operator name, so a single
+// CXXOperatorCallExpr fires at most one of them. Returns the populated QUnit.
+static QUnit run_pc_matchers(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQIntStubPC.size() + user_src.size());
+    code.append(kQIntStubPC);
+    code.append(user_src);
+
+    QUnit unit;
+    clang::ast_matchers::MatchFinder finder;
+    register_add_assign_qint_matcher(finder, unit);
+    register_sub_assign_qint_matcher(finder, unit);
+    register_mul_assign_qint_matcher(finder, unit);
+    register_div_assign_qint_matcher(finder, unit);
+    register_mod_assign_qint_matcher(finder, unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PC matchers)\n");
+    }
+    return unit;
+}
+
 // ── Positive case ────────────────────────────────────────────────────────────
 
 static void test_positive_single_or() {
@@ -535,6 +591,129 @@ static void test_pb_negative_qint_qint_form_no_match() {
     CHECK(unit.scopes.empty());
 }
 
+// ── Phase C positive cases ──────────────────────────────────────────────────
+
+static void test_pc_add_assign_qint_binds_rhs_ident() {
+    // `a += b;` on two qint_t must produce ADD_ASSIGN_QINT with operand
+    // name "b" — the verbatim DeclRefExpr identifier extracted via
+    // Lexer::getSourceText. No CXXConstructExpr peel; the RHS is a bare
+    // DeclRefExpr in this form.
+    QUnit unit = run_pc_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    a += b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+
+    const auto& op = s.ops.front();
+    CHECK(op.kind == QOpKind::ADD_ASSIGN_QINT);
+    CHECK_EQ_STR(op.result.name, std::string("a"));
+    CHECK(op.operands.size() == 1);
+    if (op.operands.empty()) return;
+    CHECK_EQ_STR(op.operands[0].name, std::string("b"));
+}
+
+static void test_pc_sub_assign_qint_binds_rhs_ident() {
+    QUnit unit = run_pc_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    a -= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::SUB_ASSIGN_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("b"));
+    }
+}
+
+static void test_pc_mul_assign_qint_binds_rhs_ident() {
+    QUnit unit = run_pc_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    a *= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::MUL_ASSIGN_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("b"));
+    }
+}
+
+static void test_pc_div_assign_qint_binds_rhs_ident() {
+    QUnit unit = run_pc_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    a /= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::DIV_ASSIGN_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("b"));
+    }
+}
+
+static void test_pc_mod_assign_qint_binds_rhs_ident() {
+    QUnit unit = run_pc_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    a %= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::MOD_ASSIGN_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("b"));
+    }
+}
+
+// ── Phase C negative case: Phase B classical-RHS form must NOT match ────────
+
+static void test_pc_negative_classical_rhs_no_match() {
+    // Disjointness invariant (the other direction): the classical-RHS form
+    // `a += 3;` has a CXXConstructExpr wrapping the int literal (lifted via
+    // the qint_t(long long) converting constructor). The PC patterns
+    // require the RHS to be a bare DeclRefExpr to another qint_t, which
+    // rules out this shape entirely. Pinning this separation here means
+    // neither Phase B nor Phase C can shadow the other as matchers evolve.
+    QUnit unit = run_pc_matchers(
+        "void demo(qint_t a) {\n"
+        "    a += 3;\n"
+        "    a -= 7;\n"
+        "    a *= 2;\n"
+        "    a /= 5;\n"
+        "    a %= 4;\n"
+        "}\n");
+
+    CHECK(unit.scopes.empty());
+}
+
 static void test_stmt_range_round_trip() {
     // Read the recorded stmt_range back as source text via the Clang Lexer.
     // It must equal the original declaration (modulo the trailing
@@ -567,6 +746,13 @@ int main() {
     test_pb_mul_assign_const_binds_literal();
     test_pb_div_assign_const_binds_literal();
     test_pb_negative_qint_qint_form_no_match();
+
+    test_pc_add_assign_qint_binds_rhs_ident();
+    test_pc_sub_assign_qint_binds_rhs_ident();
+    test_pc_mul_assign_qint_binds_rhs_ident();
+    test_pc_div_assign_qint_binds_rhs_ident();
+    test_pc_mod_assign_qint_binds_rhs_ident();
+    test_pc_negative_classical_rhs_no_match();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
