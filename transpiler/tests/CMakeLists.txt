@@ -88,7 +88,10 @@ set_tests_properties(test_transpile_uncompute_pass PROPERTIES
 add_executable(test_transpile_emitter
     test_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
@@ -139,7 +142,10 @@ set_tests_properties(test_transpile_emitter PROPERTIES LABELS "transpiler")
 # against the same LibTooling components as sturm-transpile itself.
 add_executable(test_transpile_matcher
     test_matcher.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
 )
 target_include_directories(test_transpile_matcher PRIVATE

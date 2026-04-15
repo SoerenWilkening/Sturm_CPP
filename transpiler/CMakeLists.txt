@@ -51,7 +51,10 @@ add_executable(sturm-transpile
     src/io.cpp
     src/skip.cpp
     src/qir.cpp
-    src/matcher.cpp
+    src/matcher_qbool_bitwise.cpp
+    src/matcher_qbool_assign.cpp
+    src/matcher_qint_const.cpp
+    src/matcher_qint_qint.cpp
     src/uncompute_pass.cpp
     src/emitter.cpp
 )
