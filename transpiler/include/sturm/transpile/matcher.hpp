@@ -127,6 +127,31 @@ void register_div_assign_qint_matcher(
 void register_mod_assign_qint_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 
+/// Phase D / PD-1..PD-6: Register the six `qbool c = a OP b;` matchers for
+/// `== != < <= > >=` against two `qint_t<W>` operands (both bare
+/// DeclRefExprs). These are VarDecl-initializer matchers — the declared
+/// variable must be `qbool`, and the initializer is a CXXOperatorCallExpr
+/// whose overloaded operator is the corresponding comparison. Both
+/// arguments are guarded by hasCanonicalType+hasDeclaration → qint_t, so
+/// an `int == int` or `qbool == qbool` compare does NOT match.
+/// Each matcher records one QOperation of the matching EQ/NE/LT/LE/GT/GE
+/// _QINT kind with two operands (LHS ident, RHS ident). The M8 pass emits
+/// a single `uncompute_{eq,ne,lt,le,gt,ge}_qint(c, a, b);` line as inverse,
+/// re-dispatching to the self-adjoint DSL comparators in
+/// include/sturm/lib/compare_dsl.hpp.
+void register_eq_compare_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_ne_compare_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_lt_compare_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_le_compare_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_gt_compare_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_ge_compare_qint_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

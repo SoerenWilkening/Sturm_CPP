@@ -55,6 +55,7 @@ add_executable(sturm-transpile
     src/matcher_qbool_assign.cpp
     src/matcher_qint_const.cpp
     src/matcher_qint_qint.cpp
+    src/matcher_qint_compare.cpp
     src/uncompute_pass.cpp
     src/emitter.cpp
 )

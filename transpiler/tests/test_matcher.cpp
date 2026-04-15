@@ -363,6 +363,83 @@ static QUnit run_pc_matchers(std::string_view user_src) {
     return unit;
 }
 
+// ── Phase D stub: qbool + qint_t<W> with six comparison operators ───────────
+//
+// The Phase D matchers key off `cxxRecordDecl(hasName("qbool"))` on the
+// declared VarDecl type AND `cxxRecordDecl(hasName("qint_t"))` on both
+// argument types (via hasCanonicalType + hasDeclaration). The stub
+// below mirrors that shape: a plain `qbool` class, a templated
+// `qint_t<W>` with the six relational operator overloads returning
+// qbool by value (matching qint_compare_v3.hpp:93-127). The stub's
+// operators return a default-constructed qbool — the matcher never
+// executes user code, only inspects the AST, so a no-op body suffices.
+//
+// We deliberately do NOT provide implicit conversions from qint_t to qbool
+// (or vice versa), and we do not provide `operator==` between qbool and
+// qbool, so the negative test cases (wrong result type / wrong operand
+// types) have unambiguous AST shapes that the matcher's type guards
+// correctly reject.
+static constexpr std::string_view kQIntCompareStub = R"CPP(
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+};
+
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    qint_t(long long) {}
+    qbool operator==(const qint_t&) const { return qbool{}; }
+    qbool operator!=(const qint_t&) const { return qbool{}; }
+    qbool operator< (const qint_t&) const { return qbool{}; }
+    qbool operator<=(const qint_t&) const { return qbool{}; }
+    qbool operator> (const qint_t&) const { return qbool{}; }
+    qbool operator>=(const qint_t&) const { return qbool{}; }
+};
+
+} // namespace sturm
+
+using sturm::qbool;
+using qint_t = sturm::qint_t<1>;
+)CPP";
+
+// Run all six Phase D compare matchers on `user_src` after prepending the
+// PD stub. All six are mutually exclusive by operator name — a single
+// CXXOperatorCallExpr fires at most one of them. Returns the populated
+// QUnit.
+static QUnit run_pd_matchers(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQIntCompareStub.size() + user_src.size());
+    code.append(kQIntCompareStub);
+    code.append(user_src);
+
+    QUnit unit;
+    clang::ast_matchers::MatchFinder finder;
+    register_eq_compare_qint_matcher(finder, unit);
+    register_ne_compare_qint_matcher(finder, unit);
+    register_lt_compare_qint_matcher(finder, unit);
+    register_le_compare_qint_matcher(finder, unit);
+    register_gt_compare_qint_matcher(finder, unit);
+    register_ge_compare_qint_matcher(finder, unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PD matchers)\n");
+    }
+    return unit;
+}
+
 // ── Positive case ────────────────────────────────────────────────────────────
 
 static void test_positive_single_or() {
@@ -714,6 +791,197 @@ static void test_pc_negative_classical_rhs_no_match() {
     CHECK(unit.scopes.empty());
 }
 
+// ── Phase D positive cases ──────────────────────────────────────────────────
+
+static void test_pd_eq_compare_qint_binds_both_operands() {
+    // `qbool c = a == b;` on two qint_t must produce EQ_QINT with the
+    // declared var's name as the result and both qint_t identifiers as
+    // operands. Unlike PC's single-operand compound-assign callback, this
+    // records TWO operands — the comparator inverse depends on both
+    // inputs to flip the result bit back to |0⟩.
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c = a == b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+
+    const auto& op = s.ops.front();
+    CHECK(op.kind == QOpKind::EQ_QINT);
+    CHECK_EQ_STR(op.result.name, std::string("c"));
+    CHECK(op.operands.size() == 2);
+    if (op.operands.size() >= 2) {
+        CHECK_EQ_STR(op.operands[0].name, std::string("a"));
+        CHECK_EQ_STR(op.operands[1].name, std::string("b"));
+    }
+    CHECK(op.stmt_range.isValid());
+    CHECK(op.result.decl_loc.isValid());
+}
+
+static void test_pd_ne_compare_qint_binds_both_operands() {
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c = a != b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::NE_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("c"));
+    CHECK(s.ops.front().operands.size() == 2);
+    if (s.ops.front().operands.size() >= 2) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("a"));
+        CHECK_EQ_STR(s.ops.front().operands[1].name, std::string("b"));
+    }
+}
+
+static void test_pd_lt_compare_qint_binds_both_operands() {
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c = a < b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::LT_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("c"));
+    CHECK(s.ops.front().operands.size() == 2);
+    if (s.ops.front().operands.size() >= 2) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("a"));
+        CHECK_EQ_STR(s.ops.front().operands[1].name, std::string("b"));
+    }
+}
+
+static void test_pd_le_compare_qint_binds_both_operands() {
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c = a <= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::LE_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("c"));
+    CHECK(s.ops.front().operands.size() == 2);
+    if (s.ops.front().operands.size() >= 2) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("a"));
+        CHECK_EQ_STR(s.ops.front().operands[1].name, std::string("b"));
+    }
+}
+
+static void test_pd_gt_compare_qint_binds_both_operands() {
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c = a > b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::GT_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("c"));
+    CHECK(s.ops.front().operands.size() == 2);
+    if (s.ops.front().operands.size() >= 2) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("a"));
+        CHECK_EQ_STR(s.ops.front().operands[1].name, std::string("b"));
+    }
+}
+
+static void test_pd_ge_compare_qint_binds_both_operands() {
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c = a >= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::GE_QINT);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("c"));
+    CHECK(s.ops.front().operands.size() == 2);
+    if (s.ops.front().operands.size() >= 2) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("a"));
+        CHECK_EQ_STR(s.ops.front().operands[1].name, std::string("b"));
+    }
+}
+
+// ── Phase D negative cases ──────────────────────────────────────────────────
+
+static void test_pd_negative_wrong_result_type() {
+    // The declared variable is `int`, not `qbool`. Even though we invoke
+    // `operator==` on two qint_t operands (which would normally be a
+    // valid PD-1 target), the VarDecl type guard must reject because a
+    // classical result type has no uncompute story. We spell the
+    // initializer as `int c = 0;` alongside an otherwise-discardable
+    // compare so parsing succeeds; the point of the test is that no
+    // qbool-typed VarDecl exists, so no PD matcher may fire.
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    (void)(a == b);\n"
+        "    int c = 0;\n"
+        "}\n");
+    CHECK(unit.scopes.empty());
+}
+
+static void test_pd_negative_non_qint_operands() {
+    // Classical-int operands: `int == int` does not involve a qint_t
+    // record decl at either argument position, so the type guard rejects.
+    // A bare `int c = i == j;` is also a different VarDecl type.
+    QUnit unit = run_pd_matchers(
+        "void demo(int i, int j) {\n"
+        "    bool c = i == j;\n"
+        "}\n");
+    CHECK(unit.scopes.empty());
+}
+
+static void test_pd_six_ops_same_scope_hit_all_kinds() {
+    // A single block containing one of each comparison. All six ops
+    // should land in the same QScope (same enclosing CompoundStmt),
+    // in source order, with the correct per-op QOpKind.
+    QUnit unit = run_pd_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    qbool c0 = a == b;\n"
+        "    qbool c1 = a != b;\n"
+        "    qbool c2 = a <  b;\n"
+        "    qbool c3 = a <= b;\n"
+        "    qbool c4 = a >  b;\n"
+        "    qbool c5 = a >= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.size() != 1) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 6);
+    if (s.ops.size() != 6) return;
+
+    CHECK(s.ops[0].kind == QOpKind::EQ_QINT);
+    CHECK(s.ops[1].kind == QOpKind::NE_QINT);
+    CHECK(s.ops[2].kind == QOpKind::LT_QINT);
+    CHECK(s.ops[3].kind == QOpKind::LE_QINT);
+    CHECK(s.ops[4].kind == QOpKind::GT_QINT);
+    CHECK(s.ops[5].kind == QOpKind::GE_QINT);
+
+    CHECK_EQ_STR(s.ops[0].result.name, std::string("c0"));
+    CHECK_EQ_STR(s.ops[5].result.name, std::string("c5"));
+}
+
 static void test_stmt_range_round_trip() {
     // Read the recorded stmt_range back as source text via the Clang Lexer.
     // It must equal the original declaration (modulo the trailing
@@ -753,6 +1021,16 @@ int main() {
     test_pc_div_assign_qint_binds_rhs_ident();
     test_pc_mod_assign_qint_binds_rhs_ident();
     test_pc_negative_classical_rhs_no_match();
+
+    test_pd_eq_compare_qint_binds_both_operands();
+    test_pd_ne_compare_qint_binds_both_operands();
+    test_pd_lt_compare_qint_binds_both_operands();
+    test_pd_le_compare_qint_binds_both_operands();
+    test_pd_gt_compare_qint_binds_both_operands();
+    test_pd_ge_compare_qint_binds_both_operands();
+    test_pd_negative_wrong_result_type();
+    test_pd_negative_non_qint_operands();
+    test_pd_six_ops_same_scope_hit_all_kinds();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
