@@ -118,12 +118,19 @@ static void test_backend_label_run_passes() {
     std::string cmd = std::string("ctest --test-dir ") + STURM_BUILD_DIR
                       + " -L backend -N 2>&1";
     std::string output = run_command(cmd);
-    // Count lines matching "Test #"
+    // Count lines that introduce a test entry.  ctest pads test indices so
+    // 2-digit numbers render as "Test  #NN" (two spaces) and 3-digit as
+    // "Test #NNN" (one space).  Match on "Test " followed by any number of
+    // spaces and a '#' so both paddings are counted.
     int count = 0;
     size_t pos = 0;
-    while ((pos = output.find("Test #", pos)) != std::string::npos) {
-        ++count;
-        ++pos;
+    while ((pos = output.find("Test ", pos)) != std::string::npos) {
+        size_t p = pos + 5;  // advance past "Test "
+        while (p < output.size() && output[p] == ' ') { ++p; }
+        if (p < output.size() && output[p] == '#') {
+            ++count;
+        }
+        pos += 1;
     }
     // M1–M22, M25–M26 = 24 modules, plus M27 itself = ≥ 24.
     assert(count >= 24 && "ctest -L backend lists fewer than 24 tests");
