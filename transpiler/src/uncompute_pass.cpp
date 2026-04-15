@@ -77,6 +77,33 @@ std::string render_uncompute(const QOperation& op) {
            << ";\n";
         break;
     }
+    case QOpKind::ADD_ASSIGN_CONST: {
+        // Phase B: `a += C;` where C is a compile-time-readable classical
+        // constant source fragment stored verbatim in operands[0].name.
+        // The inverse is the dual operator over the same constant.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << " -= " << op.operands[0].name
+           << ";\n";
+        break;
+    }
+    case QOpKind::SUB_ASSIGN_CONST: {
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << " += " << op.operands[0].name
+           << ";\n";
+        break;
+    }
+    case QOpKind::MUL_ASSIGN_CONST: {
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << " /= " << op.operands[0].name
+           << ";\n";
+        break;
+    }
+    case QOpKind::DIV_ASSIGN_CONST: {
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << " *= " << op.operands[0].name
+           << ";\n";
+        break;
+    }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on
     // missing enum cases when default is absent.)
