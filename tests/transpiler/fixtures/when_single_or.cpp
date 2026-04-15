@@ -1,0 +1,66 @@
+// Phase F / PF-3 input for the sturm-transpile snapshot test.
+//
+// Exercises the single-op WHEN lift: `WHEN(b | c) { body }`. The PF-3
+// matcher must decompose the compound argument into a named temporary,
+// replace the in-macro `b | c` with the temp's identifier, inject one
+// flat `qbool __stu_t0 = b | c;` decl immediately before the `WHEN`
+// invocation, and plant one `uncompute_or(__stu_t0, b, c);` call
+// immediately after the WHEN body's closing brace:
+//
+//     qbool __stu_t0 = b | c;
+//     WHEN(__stu_t0) { (void)a; }    uncompute_or(__stu_t0, b, c);
+//
+// The per-op `insert_before_override = post_body_brace` is what keeps
+// the uncompute call next to the WHEN body rather than at the enclosing
+// function's closing brace — the Rewriter semantics for `{` insertion
+// are handled by Phase F PF-1 (the `insert_before_override` field on
+// QOperation). All lifted temps share the same override so sibling
+// ops inside a single WHEN stay grouped at the body-close anchor.
+//
+// The stub inlined below replicates the structure the matcher inspects:
+//   - `sturm::qbool` with `operator|` so `b | c` type-checks.
+//   - `sturm::detail::materialize_when` overload set the WHEN macro's
+//     middle `if` calls in its init-stmt.
+//   - The exact three-`if` WHEN macro from
+//     `include/sturm/control/when.hpp:293`. A no-op `WhenCapture` /
+//     `make_when_guard` pair keeps the init-stmts type-checked without
+//     dragging in the full runtime's `WhenGuard` / `QubitPool`.
+//
+// The sturm-transpile binary runs with a FixedCompilationDatabase that
+// carries no include paths, so this file must be hermetic — same rule
+// the Phase A..E snapshot fixtures follow.
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    bool should_run() const { return true; }
+};
+
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+
+namespace detail {
+
+inline qbool& materialize_when(qbool& q) { return q; }
+inline qbool  materialize_when(qbool&& q) { return static_cast<qbool&&>(q); }
+
+struct WhenCapture { WhenCapture() = default; };
+inline qbool& make_when_guard(qbool& q) { return q; }
+
+} // namespace detail
+} // namespace sturm
+
+using sturm::qbool;
+
+#define WHEN(expr) \
+    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
+    if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
+    if (auto& _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
+        _when_guard_.should_run())
+
+void demo(qbool a, qbool b, qbool c) {
+    WHEN(b | c) { (void)a; }
+}

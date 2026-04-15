@@ -417,6 +417,71 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase F / PF-3: snapshot fixtures for single-op WHEN lift ──────────────
+# Two fixtures exercising the WHEN-lift matcher's three-point rewrite:
+#   * when_single_or         — `WHEN(b | c) { body }` compound lift
+#   * when_named_passthrough — `WHEN(named_qbool) { body }` inert path
+#
+# The single-op fixture pins down the three scheduled edits (decl block
+# before the WHEN macro, argument replacement inside WHEN(...), and
+# uncompute call after the body close brace) as a byte-level golden.
+# The named-passthrough fixture pins the short-circuit invariant — the
+# transpiler's output for a bare DeclRefExpr argument must be identical
+# to the input modulo the AUTO-GENERATED header (no rewrite at all).
+# Both tests follow the same harness/driver shape as the Phase E
+# snapshot_compound_* tests; the idempotency companion feeds the
+# generated file back through sturm-transpile and asserts a byte-for-byte
+# round-trip via the AUTO-GENERATED sentinel.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_when_single_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_single_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_single_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_single_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_single_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_single_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_single_or/when_single_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_single_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_single_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_single_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_when_named_passthrough
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_named_passthrough.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_named_passthrough.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_named_passthrough
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_named_passthrough PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_named_passthrough
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_named_passthrough/when_named_passthrough.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_named_passthrough_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_named_passthrough PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_named_passthrough"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER
