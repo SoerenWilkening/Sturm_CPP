@@ -73,6 +73,13 @@ namespace sturm::transpile {
 /// intended contract.
 enum class QOpKind {
     OR,
+    // Phase E — second qbool bitwise kind. Same shape as OR (one result,
+    // two named operands); enters the IR via the compound-expression
+    // matcher in PE-4. Kept immediately after OR so switch cases that
+    // group "qbool bitwise" kinds stay contiguous. The inverse is a
+    // free-function call `uncompute_and(r, a, b);` declared in
+    // include/sturm/uncompute/uncompute_api.hpp.
+    AND,
     NOT,
     XOR,
     XOR_ASSIGN,

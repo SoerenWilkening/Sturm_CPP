@@ -452,6 +452,37 @@ static void test_dump_mod_assign_qint() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase E: AND enumerator ──────────────────────────────────────────────────
+//
+// PE-1 adds `QOpKind::AND` as the second qbool bitwise kind. The enum sits
+// immediately after OR in qir.hpp and must stringify to the literal "AND" in
+// dump() so the M7/M8 golden-test chain stays stable once the compound
+// matcher lands in PE-4. Operand shape mirrors OR exactly: one result + two
+// named operands.
+
+static void test_dump_and_op() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::AND;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] AND tmp@30 = a@20, b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -497,6 +528,8 @@ int main() {
     test_dump_mul_assign_qint();
     test_dump_div_assign_qint();
     test_dump_mod_assign_qint();
+
+    test_dump_and_op();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

@@ -817,6 +817,65 @@ static void test_eq_qint_wrong_operand_count_emits_nothing() {
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
+// ── Phase E / PE-1: AND render parity with OR ────────────────────────────────
+//
+// Phase E introduces a second qbool bitwise op (AND) as a compound-expression
+// building block. This slice is pure IR plumbing — no matcher yet — so the
+// test mirrors the OR single-op case exactly: hand-seed a QOperation with
+// `kind = QOpKind::AND` and assert the emitted inverse is the `uncompute_and`
+// free-function call declared in include/sturm/uncompute/uncompute_api.hpp
+// (shipped in PE-0 as sturm-oheo). The emission format mirrors OR byte-for-
+// byte: four-space indent, `uncompute_and(<result>, <op0>, <op1>);\n`.
+//
+// The AND render must also guard against malformed ops (operand count != 2),
+// because a future IR producer could seed a stray unary AND and we would
+// rather emit nothing than corrupt the user's file with invalid C++.
+
+static void test_and_op_emits_uncompute_and() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::AND;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_and(tmp, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_and_op_wrong_operand_count_emits_nothing() {
+    // Defensive: an AND op with the wrong operand count is malformed. The
+    // render function must return an empty string so no invalid C++ lands.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(2);
+
+    QOperation op;
+    op.kind   = QOpKind::AND;
+    op.result = QValueRef{"r", make_loc(1)};
+    op.operands.push_back(QValueRef{"a", make_loc(1)}); // only one operand
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
 // ── sturm-ny2: multi-kind ops seeded out of source order ────────────────────
 
 static void test_multi_kind_out_of_order_sorted_by_source() {
@@ -908,6 +967,8 @@ int main() {
     test_gt_qint_emits_uncompute_gt_qint();
     test_ge_qint_emits_uncompute_ge_qint();
     test_eq_qint_wrong_operand_count_emits_nothing();
+    test_and_op_emits_uncompute_and();
+    test_and_op_wrong_operand_count_emits_nothing();
     test_multi_kind_out_of_order_sorted_by_source();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);

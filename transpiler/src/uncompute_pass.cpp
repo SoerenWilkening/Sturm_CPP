@@ -46,6 +46,19 @@ std::string render_uncompute(const QOperation& op) {
            << op.operands[0].name << ", " << op.operands[1].name << ");\n";
         break;
     }
+    case QOpKind::AND: {
+        // Phase E: exact analogue of the OR case. The Phase E compound
+        // matcher (PE-4) records `qbool r = a & b;` with two operands
+        // (the two qbool inputs); the inverse is a free-function call
+        // `uncompute_and(r, a, b);` declared in
+        // include/sturm/uncompute/uncompute_api.hpp and landed in PE-0
+        // (sturm-oheo). Malformed seeds (operand count != 2) render
+        // nothing, matching the OR guard.
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_and(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
     case QOpKind::NOT: {
         // NOT is self-inverse: re-applying `~` to the result qubit
         // uncomputes it. The operand list is unused in the emission
