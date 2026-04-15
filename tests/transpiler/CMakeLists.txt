@@ -44,6 +44,31 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
+# Same driver and harness shape as snapshot_or_single, pointed at the
+# hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER
+# expected file, so it is EXPECTED TO FAIL until LP4 widens
+# register_or_matcher to peel the user-defined-conversion / operator qbool
+# chain and freezes the real golden.
+#
+# Registering this test at LP3 (rather than waiting for LP4) keeps the
+# TDD discipline explicit: the failure is visible in CI, the delta is
+# human-readable via the unified diff the run_snapshot driver emits, and
+# LP4's GREEN signal is unambiguously the flip of this one test.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_or_single_backend
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/or_single_backend.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/or_single_backend.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/or_single_backend
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_or_single_backend PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
