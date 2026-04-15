@@ -52,11 +52,13 @@ inline std::array<qbool, W> bit_array_view(const qint_t<W>& q,
     return bits;
 }
 
-// Build bit-view arrays and call compare_dsl; stamp COMPARE uncompute tag.
+// Build bit-view arrays and call compare_dsl. Phase D (2026-04-15): no longer
+// stamps a COMPARE uncompute tag — the transpiler now emits
+// uncompute_{eq,ne,lt,le,gt,ge}_qint(r, a, b) at scope exit.
 template <std::size_t W, typename DslFn>
 inline qbool make_dsl_compare_result(
         const qint_t<W>& a, const qint_t<W>& b,
-        bool classical_val, uint32_t cmp_sub_kind, DslFn dsl_fn) {
+        bool classical_val, DslFn dsl_fn) {
     const bool is_quantum = (mask_compare(a.super_mask, b.super_mask) != 0)
                              && (a.qubits[0] >= 0) && (b.qubits[0] >= 0);
     // Classical fast-path (M14: bypass inside WHEN).
@@ -65,10 +67,6 @@ inline qbool make_dsl_compare_result(
         result.value      = classical_val ? 1 : 0;
         result.super_mask = (mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
         if (result.super_mask) result.ensure_qubit();
-        result.uncompute_ = uncompute_op::make_compare(
-            reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
-            reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-            cmp_sub_kind);
         return result;
     }
     // Quantum path: allocate result qubit, build bit-views, call DSL.
@@ -81,10 +79,6 @@ inline qbool make_dsl_compare_result(
     auto a_bits = bit_array_view<W>(a, ctx);
     auto b_bits = bit_array_view<W>(b, ctx);
     dsl_fn(a_bits.data(), b_bits.data(), W, result);
-    result.uncompute_ = uncompute_op::make_compare(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        cmp_sub_kind);
     return result;
 }
 } // namespace detail
@@ -92,37 +86,37 @@ inline qbool make_dsl_compare_result(
 template <std::size_t W>
 qbool qint_t<W>::operator==(const qint_t<W>& b) const {
     return detail::make_dsl_compare_result<W>(
-        *this, b, value == b.value, detail::CMP_EQ,
+        *this, b, value == b.value,
         [](qbool* a, qbool* bb, std::size_t n, qbool& r) { lib_eq_dsl(a, bb, n, r); });
 }
 template <std::size_t W>
 qbool qint_t<W>::operator!=(const qint_t<W>& b) const {
     return detail::make_dsl_compare_result<W>(
-        *this, b, value != b.value, detail::CMP_NEQ,
+        *this, b, value != b.value,
         [](qbool* a, qbool* bb, std::size_t n, qbool& r) { lib_ne_dsl(a, bb, n, r); });
 }
 template <std::size_t W>
 qbool qint_t<W>::operator<(const qint_t<W>& b) const {
     return detail::make_dsl_compare_result<W>(
-        *this, b, value < b.value, detail::CMP_LT,
+        *this, b, value < b.value,
         [](qbool* a, qbool* bb, std::size_t n, qbool& r) { lib_lt_dsl(a, bb, n, r); });
 }
 template <std::size_t W>
 qbool qint_t<W>::operator<=(const qint_t<W>& b) const {
     return detail::make_dsl_compare_result<W>(
-        *this, b, value <= b.value, detail::CMP_LE,
+        *this, b, value <= b.value,
         [](qbool* a, qbool* bb, std::size_t n, qbool& r) { lib_le_dsl(a, bb, n, r); });
 }
 template <std::size_t W>
 qbool qint_t<W>::operator>(const qint_t<W>& b) const {
     return detail::make_dsl_compare_result<W>(
-        *this, b, value > b.value, detail::CMP_GT,
+        *this, b, value > b.value,
         [](qbool* a, qbool* bb, std::size_t n, qbool& r) { lib_gt_dsl(a, bb, n, r); });
 }
 template <std::size_t W>
 qbool qint_t<W>::operator>=(const qint_t<W>& b) const {
     return detail::make_dsl_compare_result<W>(
-        *this, b, value >= b.value, detail::CMP_GE,
+        *this, b, value >= b.value,
         [](qbool* a, qbool* bb, std::size_t n, qbool& r) { lib_ge_dsl(a, bb, n, r); });
 }
 

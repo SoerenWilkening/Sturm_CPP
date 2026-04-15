@@ -16,12 +16,14 @@
 //   ADD_CONST(c) → self.sub_const(c, ctx)
 //   SUB_CONST(c) → self.add_const(c, ctx)
 //   BITWISE_SELF → TODO(backend): re-run self-inverse bitwise op (M22)
-//   COMPARE      → TODO(backend): re-run comparison to clear ancilla (M22)
 //
 // Retired (Phase C, 2026-04-15): the five qint-qint arithmetic branches
 // (ADD_QINT, SUB_QINT, MUL_INVERSE, DIV_INVERSE, MOD_INVERSE) migrated to
 // the transpiler path — see uncompute_api.hpp::uncompute_{add,sub,mul,div,
 // mod}_qint.
+//
+// Retired (Phase D, 2026-04-15): the COMPARE branch migrated to the
+// transpiler path — see uncompute_api.hpp::uncompute_{eq,ne,lt,le,gt,ge}_qint.
 //
 // LOC budget: ≤ 300 (this file).
 #pragma once
@@ -45,7 +47,6 @@ struct uncompute_op {
         ADD_CONST,     ///< Inverse of +=c  → emit -=c  (data: int64_t c)
         SUB_CONST,     ///< Inverse of -=c  → emit +=c  (data: int64_t c)
         BITWISE_SELF,  ///< Self-inverse bitwise op            (data: op sub-kind + ptr)
-        COMPARE,       ///< Re-run comparison to uncompute ancilla (data: ptrs + op)
     };
 
     // ── data union ────────────────────────────────────────────────────────────
@@ -70,13 +71,6 @@ struct uncompute_op {
             uint32_t         a_qubit;    ///< First  source qubit (qbool AND/OR path)
             uint32_t         b_qubit;    ///< Second source qubit (qbool AND/OR path)
         } bitwise;
-
-        // COMPARE: pointers to lhs/rhs and comparison op code
-        struct {
-            const qint_base* lhs_ptr;
-            const qint_base* rhs_ptr;
-            uint32_t         cmp_kind;   ///< Which comparison (future enum)
-        } compare;
 
         data_t() noexcept : const_c(0) {}
     };
@@ -130,17 +124,6 @@ struct uncompute_op {
         op.data.bitwise.sub_kind  = sub_kind;
         op.data.bitwise.a_qubit   = a_qubit;
         op.data.bitwise.b_qubit   = b_qubit;
-        return op;
-    }
-
-    [[nodiscard]] static uncompute_op make_compare(const qint_base* lhs,
-                                                   const qint_base* rhs,
-                                                   uint32_t cmp_kind) noexcept {
-        uncompute_op op;
-        op.tag                  = kind::COMPARE;
-        op.data.compare.lhs_ptr = lhs;
-        op.data.compare.rhs_ptr = rhs;
-        op.data.compare.cmp_kind = cmp_kind;
         return op;
     }
 
@@ -202,19 +185,6 @@ struct uncompute_op {
                 }
             }
             // TODO(backend): implement general qint_base path for M9.
-            break;
-
-        case kind::COMPARE:
-            // Emit the stub compare circuit followed by its inverse on `self`
-            // (the qbool's ancilla-qubit view).  This satisfies the Bennett
-            // discipline: the forward and inverse sequences are symmetric and
-            // the IR captures both so callers can verify the round-trip.
-            //
-            // TODO(backend): replace with a proper ancilla-qubit comparator
-            //                circuit that operates on lhs_ptr / rhs_ptr once
-            //                the full comparator wiring lands (M22+).
-            self.compare_forward(data.compare.cmp_kind, ctx);
-            self.compare_inverse(data.compare.cmp_kind, ctx);
             break;
 
         default:

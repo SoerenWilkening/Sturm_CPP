@@ -67,10 +67,9 @@ static void test_tag_roundtrip() {
         auto op = sturm::uncompute_op::make_bitwise_self(nullptr, 0);
         assert(op.tag == kind::BITWISE_SELF);
     }
-    {
-        auto op = sturm::uncompute_op::make_compare(nullptr, nullptr, 0);
-        assert(op.tag == kind::COMPARE);
-    }
+    // COMPARE branch retired in Phase D (2026-04-15) — uncomputation of
+    // qbool-from-qint-comparison temporaries is now the transpiler's
+    // responsibility (uncompute_{eq,ne,lt,le,gt,ge}_qint).
 
     std::printf("  tag roundtrip: PASS\n");
 }

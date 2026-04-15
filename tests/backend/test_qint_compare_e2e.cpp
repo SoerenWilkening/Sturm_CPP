@@ -2,14 +2,17 @@
 //
 // Tests:
 //   test_qint_cmp_count     — qint_t::operator== and operator< emit gates
-//                              (via COMPARE uncompute destructor) when inputs are
+//                              (via the DSL compare library) when inputs are
 //                              superposed (super_mask != 0).
 //   test_qint_cmp_classical — classical comparisons return correct qbool.value
 //                              for all six operators (==, !=, <, <=, >, >=).
 //
-// Note: Under STURM_BACKEND_ENABLED, comparison operators use the COMPARE stub
-// which stamps an uncompute tag on the result qbool. Gates are emitted when
-// the qbool is destroyed (Bennett uncomputation). This test verifies:
+// Note: Under STURM_BACKEND_ENABLED, comparison operators call the DSL library
+// (lib_eq_dsl, lib_lt_dsl, etc.) directly when the inputs are quantum and
+// emit their forward gates eagerly. Phase D (2026-04-15) retired the COMPARE
+// uncompute tag — destruction of the result qbool no longer emits any
+// replay gates; uncomputation is now the transpiler's responsibility
+// (uncompute_*_qint). This test verifies:
 //   1. gate_count > 0 after a comparison qbool is constructed and destroyed.
 //   2. The returned qbool carries the correct classical result in .value.
 //
@@ -45,7 +48,7 @@ struct ScopedCtx {
 };
 
 // ── Helper: build a quantum qint_t<W> with manually assigned qubits ──────────
-// super_mask is set so that the COMPARE stub emits gates when the qbool destructs.
+// super_mask is set so that the DSL compare library emits forward gates.
 template <std::size_t W>
 static sturm::qint_t<W> make_quantum_qint(int64_t val, int base_qubit) {
     sturm::qint_t<W> q;
@@ -63,9 +66,10 @@ static void clear_qubits(sturm::qint_t<W>& q) {
 }
 
 // ── test_qint_cmp_count ───────────────────────────────────────────────────────
-// Verify that comparison operators emit gates via the COMPARE destructor.
-// The COMPARE stub emits 2 CX gates (forward + inverse) when the qbool is
-// destroyed and inputs have super_mask != 0.
+// Verify that comparison operators emit gates via the DSL compare library.
+// The DSL path emits lib_eq_dsl / lib_lt_dsl forward gates eagerly at
+// construction when super_mask != 0.  Phase D retired the COMPARE stub, so
+// destruction of the result qbool no longer emits additional replay gates.
 
 static void test_qint_cmp_count() {
     // Use COUNT_ONLY mode so gates go to gate_count.
@@ -80,14 +84,15 @@ static void test_qint_cmp_count() {
         uint64_t before = sc.ctx->gate_count;
         {
             sturm::qbool eq_result = (a == b);
-            // At this point, no gates are emitted yet (COMPARE tag is deferred).
+            // lib_eq_dsl emits forward gates eagerly during construction.
             (void)eq_result;
-            // eq_result goes out of scope here -> destructor emits compare gates.
+            // Phase D: destruction of eq_result does not emit any additional
+            // replay gates (uncomputation is now the transpiler's job).
         }
         uint64_t after = sc.ctx->gate_count;
 
-        // After qbool destruction, COMPARE stub emits gates.
-        assert(after > before && "a == b must emit gates when qbool is destroyed");
+        // The DSL forward circuit emitted gates between `before` and `after`.
+        assert(after > before && "a == b must emit DSL compare gates");
     }
 
     {
@@ -97,7 +102,7 @@ static void test_qint_cmp_count() {
             (void)lt_result;
         }
         uint64_t after = sc.ctx->gate_count;
-        assert(after > before && "a < b must emit gates when qbool is destroyed");
+        assert(after > before && "a < b must emit DSL compare gates");
     }
 
     clear_qubits(a);

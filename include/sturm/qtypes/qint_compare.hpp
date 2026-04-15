@@ -11,8 +11,10 @@
 // the DSL library (lib_eq_dsl, lib_lt_dsl, etc.) are provided by
 // qint_compare_v3.hpp. The non-backend dispatch_compare bodies are here.
 //
-// Note: STURM_BACKEND_ENABLED stubs that stamp the COMPARE uncompute tag are
-// preserved for backward compatibility with M22 uncompute tests.
+// Phase D retirement (2026-04-15): the COMPARE uncompute-tag stamping
+// infrastructure (make_compare_result, CMP_* sub-kind constants) was removed
+// once the transpiler path (uncompute_api.hpp::uncompute_{eq,ne,lt,le,gt,ge}_qint)
+// covered qbool-from-qint-comparison uncomputation.
 
 #include "sturm/qtypes/qint_core.hpp"
 #include "sturm/core/dispatch.hpp"
@@ -29,42 +31,7 @@ namespace detail {
 inline uint64_t mask_compare(uint64_t ma, uint64_t mb) noexcept {
     return ma | mb;  // non-zero means superposed
 }
-
-// Compare sub-kind constants for uncompute_op::COMPARE.
-static constexpr uint32_t CMP_EQ  = 1u;
-static constexpr uint32_t CMP_NEQ = 2u;
-static constexpr uint32_t CMP_LT  = 3u;
-static constexpr uint32_t CMP_LE  = 4u;
-static constexpr uint32_t CMP_GT  = 5u;
-static constexpr uint32_t CMP_GE  = 6u;
 } // namespace detail
-
-// ── Helper: stamp COMPARE tag onto a qbool result ────────────────────────────
-// Only compiled when STURM_BACKEND_ENABLED is set.
-
-#ifdef STURM_BACKEND_ENABLED
-namespace detail {
-template <std::size_t W>
-inline qbool make_compare_result(
-        const qint_t<W>& a, const qint_t<W>& b,
-        bool classical_val, uint32_t cmp_sub_kind) {
-    qbool out;
-    out.value      = classical_val ? 1 : 0;
-    out.super_mask = (detail::mask_compare(a.super_mask, b.super_mask) != 0) ? 1ULL : 0ULL;
-    if (out.super_mask) out.ensure_qubit();
-
-    // Stamp the COMPARE uncompute op so the qbool destructor can emit the
-    // compare circuit and its inverse (Bennett uncomputation).
-    // M19 note: a proper DSL-based comparison can be obtained from
-    // qint_compare_v3.hpp for contexts with properly pool-allocated qubits.
-    out.uncompute_ = uncompute_op::make_compare(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        cmp_sub_kind);
-    return out;
-}
-} // namespace detail
-#endif  // STURM_BACKEND_ENABLED
 
 // ── Comparison operator bodies (non-backend only) ────────────────────────────
 // When STURM_BACKEND_ENABLED is set, bodies are provided by qint_compare_v3.hpp
@@ -194,7 +161,9 @@ BitProxy qint_t<W>::operator[](std::size_t i) {
 
 // ── Backend-enabled comparison operator bodies (DSL library) ─────────────────
 // When STURM_BACKEND_ENABLED is set, provide comparison bodies that call the
-// DSL library functions (lib_eq_dsl, lib_lt_dsl, etc.) and stamp COMPARE tag.
+// DSL library functions (lib_eq_dsl, lib_lt_dsl, etc.). Phase D retired the
+// COMPARE uncompute tag, so these bodies no longer stamp anything — the
+// transpiler emits uncompute_{eq,ne,lt,le,gt,ge}_qint at scope exit.
 #ifdef STURM_BACKEND_ENABLED
 #  include "sturm/qtypes/qint_compare_v3.hpp"
 #endif
