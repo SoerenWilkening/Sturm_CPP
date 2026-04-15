@@ -292,6 +292,51 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase B: end-to-end injected observability + idempotency for the ───────
+# constant-arith example. Same harness pattern as LP5/LP6 above:
+#   1. build_example_constant_arith — SETUP fixture that builds the
+#      example_constant_arith target. Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/constant_arith.cpp via
+#      add_quantum_executable().
+#   2. transpiler_example_constant_arith_injected — reads the generated
+#      file and asserts each of the four PB inverses is present in LIFO
+#      order, and that the source example was not rewritten in place.
+#   3. transpiler_idempotent_example_constant_arith — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_constant_arith
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_constant_arith)
+    set_tests_properties(build_example_constant_arith PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_constant_arith_built")
+
+    add_test(
+        NAME transpiler_example_constant_arith_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/constant_arith.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/constant_arith.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_constant_arith.cmake)
+    set_tests_properties(transpiler_example_constant_arith_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_constant_arith_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_constant_arith
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/constant_arith.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_constant_arith_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_constant_arith PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_constant_arith_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
