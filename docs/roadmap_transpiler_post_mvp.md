@@ -102,13 +102,31 @@ Covered ops:
 
 ## Phase D — Comparison operations
 
+> **2026-04-15:** Complete. All six comparison patterns
+> (`c = (a == b);`, `!=`, `<`, `<=`, `>`, `>=` with `a`, `b` qints)
+> match and emit a free-function call as inverse
+> (`uncompute_eq_qint`, `uncompute_ne_qint`, `uncompute_lt_qint`,
+> `uncompute_le_qint`, `uncompute_gt_qint`, `uncompute_ge_qint`).
+> Snapshot fixtures in `tests/transpiler/fixtures/`:
+> `eq_compare_qint`, `ne_compare_qint`, `lt_compare_qint`,
+> `le_compare_qint`, `gt_compare_qint`, `ge_compare_qint`. End-to-end
+> behavior is pinned by `examples/comparison.cpp` and the
+> `transpiler_example_comparison_injected` +
+> `transpiler_idempotent_example_comparison` CTests. The replacement
+> free functions live in `uncompute_api.hpp`. Runtime-side, the
+> stopgap `kind::COMPARE` tagged-union branch — including its
+> `make_compare` factory and the `compare_forward` / `compare_inverse`
+> stubs in `uncompute_op.hpp` / `qint_base.hpp` — was retired in this
+> phase; the free functions in `uncompute_api.hpp` replace it. Next
+> up: Phase E.
+
 Non-self-inverse. Today's runtime emits forward + inverse back-to-back as a stopgap (`uncompute_op.hpp:284`); this phase replaces that with a proper ancilla-qubit comparator adjoint.
 
 Covered ops:
-- `c = (a == b);` → `uncompute_eq(c, a, b);`
-- `c = (a != b);`, `<`, `<=`, `>`, `>=` → analogous
+- `c = (a == b);` → `uncompute_eq_qint(c, a, b);` *(originally drafted as `uncompute_eq`)*
+- `c = (a != b);`, `<`, `<=`, `>`, `>=` → analogous (`uncompute_ne_qint`, `uncompute_lt_qint`, `uncompute_le_qint`, `uncompute_gt_qint`, `uncompute_ge_qint`; originally drafted as `uncompute_ne`, `uncompute_lt`, etc.)
 
-**Runtime work:** implement `uncompute_eq`, `uncompute_lt`, etc., using the existing primitive comparator circuits' adjoints. The library routines shipped with manual adjoints per **P9**; these inverse functions are thin wrappers that invoke those adjoints with the right qubit bindings.
+**Runtime work:** implement `uncompute_eq_qint`, `uncompute_lt_qint`, etc. (originally drafted as `uncompute_eq`, `uncompute_lt`), using the existing primitive comparator circuits' adjoints. The library routines shipped with manual adjoints per **P9**; these inverse functions are thin wrappers that invoke those adjoints with the right qubit bindings.
 
 **Deliverables:** library adjoint wiring, free functions, matchers, snapshots.
 
