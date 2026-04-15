@@ -23,3 +23,4 @@ Testing/
 
 .claude/agents/
 .claude/skills/
+.claude/scheduled_tasks.lock
