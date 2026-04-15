@@ -139,6 +139,50 @@ std::string render_uncompute(const QOperation& op) {
            << op.operands[0].name << ");\n";
         break;
     }
+    case QOpKind::EQ_QINT: {
+        // Phase D: `qbool c = a == b;` — c is the produced qbool result,
+        // operands[0] is the LHS qint identifier, operands[1] is the RHS
+        // qint identifier. The inverse is the `uncompute_eq_qint` free
+        // function declared in include/sturm/uncompute/uncompute_api.hpp,
+        // which re-dispatches to the self-adjoint DSL `lib_eq_dsl` in
+        // include/sturm/lib/compare_dsl.hpp. Two operands, not one, because
+        // the comparator adjoint needs both inputs to flip the result bit
+        // back to |0⟩.
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_eq_qint(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
+    case QOpKind::NE_QINT: {
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_ne_qint(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
+    case QOpKind::LT_QINT: {
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_lt_qint(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
+    case QOpKind::LE_QINT: {
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_le_qint(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
+    case QOpKind::GT_QINT: {
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_gt_qint(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
+    case QOpKind::GE_QINT: {
+        if (op.operands.size() != 2) return {};
+        os << "    uncompute_ge_qint(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on
     // missing enum cases when default is absent.)

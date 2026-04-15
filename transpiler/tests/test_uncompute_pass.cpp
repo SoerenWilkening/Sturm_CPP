@@ -634,6 +634,189 @@ static void test_mod_assign_qint_emits_uncompute_mod_qint() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
 }
 
+// ── Phase D: qint-qint comparison inverses ──────────────────────────────────
+//
+// PD-1..PD-6: `qbool c = (a OP b);` where OP is ==, !=, <, <=, >, >= and a, b
+// are qints. The matcher stores the result qbool as `op.result` and the LHS
+// and RHS qint identifiers in `operands[0].name` / `operands[1].name`. The
+// render emits `uncompute_{eq,ne,lt,le,gt,ge}_qint(c, a, b);` — a free
+// function declared in include/sturm/uncompute/uncompute_api.hpp that
+// re-dispatches to the self-adjoint DSL routines in
+// include/sturm/lib/compare_dsl.hpp. The call shape matches the Phase C
+// free-function convention but carries two operand names (LHS + RHS)
+// instead of one, because a comparator's inverse depends on both inputs.
+
+static void test_eq_qint_emits_uncompute_eq_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::EQ_QINT;
+    op.result = QValueRef{"c", make_loc(20)};
+    op.operands.push_back(QValueRef{"a", make_loc(24)});
+    op.operands.push_back(QValueRef{"b", make_loc(28)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_eq_qint(c, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_ne_qint_emits_uncompute_ne_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::NE_QINT;
+    op.result = QValueRef{"c", make_loc(20)};
+    op.operands.push_back(QValueRef{"a", make_loc(24)});
+    op.operands.push_back(QValueRef{"b", make_loc(28)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_ne_qint(c, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_lt_qint_emits_uncompute_lt_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::LT_QINT;
+    op.result = QValueRef{"c", make_loc(20)};
+    op.operands.push_back(QValueRef{"a", make_loc(24)});
+    op.operands.push_back(QValueRef{"b", make_loc(28)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_lt_qint(c, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_le_qint_emits_uncompute_le_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::LE_QINT;
+    op.result = QValueRef{"c", make_loc(20)};
+    op.operands.push_back(QValueRef{"a", make_loc(24)});
+    op.operands.push_back(QValueRef{"b", make_loc(28)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_le_qint(c, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_gt_qint_emits_uncompute_gt_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::GT_QINT;
+    op.result = QValueRef{"c", make_loc(20)};
+    op.operands.push_back(QValueRef{"a", make_loc(24)});
+    op.operands.push_back(QValueRef{"b", make_loc(28)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_gt_qint(c, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_ge_qint_emits_uncompute_ge_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::GE_QINT;
+    op.result = QValueRef{"c", make_loc(20)};
+    op.operands.push_back(QValueRef{"a", make_loc(24)});
+    op.operands.push_back(QValueRef{"b", make_loc(28)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_ge_qint(c, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+// Defensive: a comparison op seeded with the wrong operand count (not 2) is
+// malformed — the matcher always records exactly the LHS + RHS. The render
+// function must return empty so no invalid C++ lands.
+static void test_eq_qint_wrong_operand_count_emits_nothing() {
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(2);
+
+    QOperation op;
+    op.kind   = QOpKind::EQ_QINT;
+    op.result = QValueRef{"c", make_loc(1)};
+    op.operands.push_back(QValueRef{"a", make_loc(1)}); // only one operand
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
 // ── sturm-ny2: multi-kind ops seeded out of source order ────────────────────
 
 static void test_multi_kind_out_of_order_sorted_by_source() {
@@ -718,6 +901,13 @@ int main() {
     test_mul_assign_qint_emits_uncompute_mul_qint();
     test_div_assign_qint_emits_uncompute_div_qint();
     test_mod_assign_qint_emits_uncompute_mod_qint();
+    test_eq_qint_emits_uncompute_eq_qint();
+    test_ne_qint_emits_uncompute_ne_qint();
+    test_lt_qint_emits_uncompute_lt_qint();
+    test_le_qint_emits_uncompute_le_qint();
+    test_gt_qint_emits_uncompute_gt_qint();
+    test_ge_qint_emits_uncompute_ge_qint();
+    test_eq_qint_wrong_operand_count_emits_nothing();
     test_multi_kind_out_of_order_sorted_by_source();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);

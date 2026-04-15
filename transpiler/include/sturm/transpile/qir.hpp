@@ -94,6 +94,20 @@ enum class QOpKind {
     MUL_ASSIGN_QINT,
     DIV_ASSIGN_QINT,
     MOD_ASSIGN_QINT,
+    // Phase D — qint-qint comparisons producing a named qbool result
+    // (`qbool c = a == b;`, etc.). Each op carries one result QValueRef
+    // (the produced qbool) plus two operand QValueRefs naming the LHS/RHS
+    // qint identifiers. The inverse is a free-function call of the form
+    // `uncompute_{eq,ne,lt,le,gt,ge}_qint(c, a, b);` declared in
+    // include/sturm/uncompute/uncompute_api.hpp, which re-dispatches to
+    // the self-adjoint DSL comparators in include/sturm/lib/compare_dsl.hpp.
+    // See docs/roadmap_transpiler_post_mvp.md Phase D.
+    EQ_QINT,
+    NE_QINT,
+    LT_QINT,
+    LE_QINT,
+    GT_QINT,
+    GE_QINT,
     // ... — added per post-MVP phases.
 };
 
