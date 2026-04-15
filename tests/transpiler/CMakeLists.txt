@@ -535,6 +535,54 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase D: end-to-end injected observability + idempotency for the ───────
+# qint-qint comparison example. Same harness pattern as the Phase C block
+# above:
+#   1. build_example_comparison — SETUP fixture that builds the
+#      example_comparison target. Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/comparison.cpp via
+#      add_quantum_executable().
+#   2. transpiler_example_comparison_injected — reads the generated file
+#      and asserts each of the six PD-1..PD-6
+#      `uncompute_*_qint(c_xx, a, b);` calls is present in LIFO order,
+#      and that the source example is byte-identical (no injected
+#      statement signature in place).
+#   3. transpiler_idempotent_example_comparison — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_comparison
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_comparison)
+    set_tests_properties(build_example_comparison PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_comparison_built")
+
+    add_test(
+        NAME transpiler_example_comparison_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/comparison.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/comparison.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_comparison.cmake)
+    set_tests_properties(transpiler_example_comparison_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_comparison_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_comparison
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/comparison.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_comparison_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_comparison PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_comparison_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
