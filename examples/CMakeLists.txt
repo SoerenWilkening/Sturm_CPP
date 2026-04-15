@@ -73,3 +73,25 @@ target_sources(example_qint_arith PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_qint_arith PRIVATE orkan_headers)
+
+# ── Example: combined Phase A + B + C demo ──────────────────────────────────
+# Routed through sturm-transpile so every forward pattern from all three
+# phases receives its inverse injection in one file. LIFO rewind runs
+# Phase C → Phase B → Phase A just before the inner scope closes. Same
+# helper / bypass pattern as the single-phase examples above.
+add_quantum_executable(example_phase_abc_demo
+    phase_abc_demo.cpp
+)
+target_sources(example_phase_abc_demo PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_phase_abc_demo PRIVATE orkan_headers)
