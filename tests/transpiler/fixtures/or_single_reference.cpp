@@ -54,4 +54,13 @@ void demo(const sturm::qbool& a, const sturm::qbool& b) {
     sturm::uncompute_or(tmp, a, b);
 }
 
+// LP7: second reference that mirrors `examples/or_circuit.cpp`'s VarDecl
+// (`qbool c = a | b;`) so the M12 harness can bind PRD acceptance #5 to
+// the real example's pattern. The explicit `uncompute_or(c, a, b);` call
+// is what the transpiler must inject into the matching runtime fixture.
+void demo_or_circuit(const sturm::qbool& a, const sturm::qbool& b) {
+    sturm::qbool c = a | b;
+    sturm::uncompute_or(c, a, b);
+}
+
 } // namespace m12_reference

@@ -79,10 +79,15 @@
 
 namespace m12_transpiled {
 void demo(const sturm::qbool& a, const sturm::qbool& b);
+// LP7: pattern mirroring examples/or_circuit.cpp (`qbool c = a | b;`).
+void demo_or_circuit(const sturm::qbool& a, const sturm::qbool& b);
 } // namespace m12_transpiled
 
 namespace m12_reference {
 void demo(const sturm::qbool& a, const sturm::qbool& b);
+// LP7: hand-written reference for the or_circuit pattern with explicit
+// `uncompute_or(c, a, b);`.
+void demo_or_circuit(const sturm::qbool& a, const sturm::qbool& b);
 } // namespace m12_reference
 
 namespace {
@@ -244,6 +249,26 @@ int main() {
         std::fprintf(stderr, "gate-stream mismatch — see log above.\n");
         return rc;
     }
+
+    // LP7: re-assertion for the `examples/or_circuit.cpp` pattern —
+    // same shape (`qbool c = a | b;`) but with a variable name that
+    // matches the real example. This binds PRD acceptance #5 to the
+    // example's actual spelling. Streams must match gate-for-gate and
+    // operand-for-operand.
+    std::printf("LP7 gate-stream equivalence test (or_circuit pattern):\n");
+    const auto ref_c = run_and_capture(&m12_reference::demo_or_circuit);
+    const auto got_c = run_and_capture(&m12_transpiled::demo_or_circuit);
+    if (ref_c.empty()) {
+        std::fprintf(stderr,
+                     "or_circuit reference produced 0 gates — fixture not "
+                     "exercising the quantum OR circuit.\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_c, ref_c); rc != 0) {
+        std::fprintf(stderr, "or_circuit gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  or_circuit streams match (%zu gates).\n", ref_c.size());
 
     std::printf("  streams match (%zu gates).\n", ref_stream.size());
     std::printf("PASS\n");
