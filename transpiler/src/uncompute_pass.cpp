@@ -217,8 +217,9 @@ QSynthesisResult synthesize(const QUnit& unit) {
     result.replacements = unit.replacements;
 
     // Rough capacity reservation to avoid mid-loop reallocations on the
-    // common single-scope case. Worst-case each op yields one insertion.
-    std::size_t upper_bound = 0;
+    // common single-scope case. Worst-case each op yields one insertion,
+    // plus one per pre-staged `raw_insertions` entry (Phase F PF-1).
+    std::size_t upper_bound = unit.raw_insertions.size();
     for (const auto& scope : unit.scopes) upper_bound += scope.ops.size();
     out.reserve(upper_bound);
 
@@ -254,10 +255,30 @@ QSynthesisResult synthesize(const QUnit& unit) {
                 continue;
             }
             UncomputeInsertion rec;
-            rec.insert_before = scope.close_brace;
+            // Phase F PF-1: per-op anchor override. When the matcher set
+            // `insert_before_override` to a valid SourceLocation, honour it
+            // verbatim — that is how the WHEN-lift matcher targets the
+            // post-WHEN-body close brace instead of the enclosing scope's
+            // close brace. Default-constructed (invalid) overrides fall
+            // back to the legacy `scope.close_brace` anchor every Phase
+            // A..E matcher relies on, so existing snapshots stay
+            // byte-identical.
+            rec.insert_before = op.insert_before_override.isValid()
+                                    ? op.insert_before_override
+                                    : scope.close_brace;
             rec.code = std::move(code);
             out.push_back(std::move(rec));
         }
+    }
+
+    // Phase F PF-1: append pre-staged matcher insertions verbatim.
+    // Pre-Phase-F matchers leave `unit.raw_insertions` empty so this loop
+    // is a no-op on every pre-existing snapshot fixture. Order is
+    // preserved exactly — `synthesize()` does not sort, dedupe, or filter
+    // these records; the matcher controls their ordering and their
+    // anchor SourceLocations directly.
+    for (const auto& rec : unit.raw_insertions) {
+        out.push_back(rec);
     }
 
     return result;

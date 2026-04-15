@@ -78,7 +78,14 @@ void dump_op(std::ostringstream& os, const QOperation& op, std::size_t idx) {
     // from the trailing range annotation even when the operand list is
     // empty (post-MVP NOT / constant forms).
     os << "  range=[" << loc_to_string(op.stmt_range.getBegin())
-       << ".." << loc_to_string(op.stmt_range.getEnd()) << "]\n";
+       << ".." << loc_to_string(op.stmt_range.getEnd()) << "]";
+    // Phase F PF-1: surface the per-op insertion anchor override when (and
+    // only when) the matcher set one. Default (invalid) overrides print
+    // nothing so every Phase A..E snapshot fixture stays byte-identical.
+    if (op.insert_before_override.isValid()) {
+        os << " insert_before_override=" << loc_to_string(op.insert_before_override);
+    }
+    os << "\n";
 }
 
 void dump_scope(std::ostringstream& os, const QScope& scope, std::size_t idx) {

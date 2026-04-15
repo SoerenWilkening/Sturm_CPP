@@ -25,6 +25,10 @@
 
 #include "sturm/transpile/qir.hpp"
 
+// UncomputeInsertion is also defined in qir.hpp as of Phase F PF-1, so the
+// test can use it directly without dragging in the M8 pass header. We still
+// rely only on qir.hpp's transitive Clang dependency (SourceLocation).
+
 #include "clang/Basic/SourceLocation.h"
 
 #include <cassert>
@@ -57,6 +61,19 @@ static int tests_pass = 0;
                      __FILE__, __LINE__,                              \
                      std::string(got).c_str(),                        \
                      std::string(want).c_str());                      \
+    }                                                                 \
+} while (0)
+
+#define CHECK_EQ_SIZE(got, want) do {                                 \
+    ++tests_run;                                                      \
+    if (static_cast<std::size_t>(got) ==                              \
+        static_cast<std::size_t>(want)) { ++tests_pass; }             \
+    else {                                                            \
+        std::fprintf(stderr, "FAIL  %s:%d  sizes differ "             \
+                             "got=%zu want=%zu\n",                    \
+                     __FILE__, __LINE__,                              \
+                     static_cast<std::size_t>(got),                   \
+                     static_cast<std::size_t>(want));                 \
     }                                                                 \
 } while (0)
 
@@ -483,6 +500,98 @@ static void test_dump_and_op() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase F / PF-1: insert_before_override surfaces in dump() ─────────────────
+//
+// PF-1 introduces `QOperation::insert_before_override` — an optional per-op
+// SourceLocation that the M8 synthesis pass uses as the insertion anchor
+// instead of the enclosing scope's `close_brace` when the override is valid.
+// dump() must surface the override whenever it is set so the M7 matcher's
+// golden tests (and future Phase F snapshots) can witness which ops carry a
+// custom anchor — but it must produce byte-identical output for every prior
+// snapshot, which means: invalid (default) overrides must render NOTHING
+// extra. Both directions are covered below.
+
+static void test_dump_op_with_invalid_override_unchanged() {
+    // Mirror test_dump_single_op exactly: no override set means the dump
+    // line is byte-identical to the pre-PF-1 format. Existing Phase A..E
+    // snapshot fixtures depend on this property.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    // insert_before_override left default (invalid).
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] OR tmp@30 = a@20, b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_op_with_valid_override_surfaces() {
+    // When the override is valid, dump() appends a trailing
+    // " insert_before_override=<raw>" annotation to the op line.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::AND;
+    op.result = QValueRef{"r", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    op.insert_before_override = make_loc(77);
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] AND r@30 = a@20, b@25  range=[28..40] insert_before_override=77\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+// ── Phase F / PF-1: QUnit::raw_insertions storage ────────────────────────────
+//
+// PF-1 also introduces `QUnit::raw_insertions` — a vector of
+// pre-staged `UncomputeInsertion` records the matcher assembles directly
+// (used in PF-3 for the WHEN-lift decl-block injection). The IR must be
+// constructible with these records and the field must be accessible
+// without a SourceManager. dump() does NOT serialise this vector (it is
+// outside the locked golden-string format), but the field must be a
+// vector of complete UncomputeInsertion objects so both the matcher and
+// the M8 pass can read/write it directly.
+
+static void test_qunit_raw_insertions_is_default_empty() {
+    QUnit unit;
+    CHECK(unit.raw_insertions.empty());
+}
+
+static void test_qunit_raw_insertions_round_trip() {
+    QUnit unit;
+    UncomputeInsertion rec;
+    rec.insert_before = make_loc(123);
+    rec.code = "    uncompute_or(t, a, b);\n";
+    unit.raw_insertions.push_back(rec);
+    CHECK_EQ_SIZE(unit.raw_insertions.size(), 1u);
+    CHECK_EQ_STR(unit.raw_insertions[0].code,
+                 std::string("    uncompute_or(t, a, b);\n"));
+    CHECK(unit.raw_insertions[0].insert_before.getRawEncoding() == 123u);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -530,6 +639,11 @@ int main() {
     test_dump_mod_assign_qint();
 
     test_dump_and_op();
+
+    test_dump_op_with_invalid_override_unchanged();
+    test_dump_op_with_valid_override_surfaces();
+    test_qunit_raw_insertions_is_default_empty();
+    test_qunit_raw_insertions_round_trip();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

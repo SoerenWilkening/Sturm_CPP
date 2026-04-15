@@ -62,6 +62,7 @@
 
 namespace sturm::transpile {
 
+
 /// Kinds of quantum operations representable in the IR.
 ///
 /// MVP covers OR (`qbool tmp = a | b;`). Phase A adds the self-inverse
@@ -136,11 +137,23 @@ struct QValueRef {
 /// - `operands`   : inputs in source order; references resolve by name + loc.
 /// - `stmt_range` : full range of the originating statement, used by the
 ///                  M9 emitter to decide where to inject the uncompute code.
+/// - `insert_before_override` : optional per-op anchor for the M8 synthesis
+///                  pass (Phase F PF-1). Default-constructed (invalid)
+///                  means: use the enclosing scope's `close_brace` as the
+///                  insertion anchor (the legacy behaviour every Phase
+///                  A..E matcher relies on). When valid (any non-zero
+///                  raw encoding), `synthesize()` honours this location
+///                  instead — used by Phase F's `WHEN(expr)` lift to plant
+///                  the uncompute calls immediately past the WHEN body's
+///                  closing brace, NOT at the enclosing CompoundStmt's
+///                  close brace. Existing matchers leave it default, so
+///                  every prior snapshot stays byte-identical.
 struct QOperation {
     QOpKind kind;
     QValueRef result;
     std::vector<QValueRef> operands;
     clang::SourceRange stmt_range;
+    clang::SourceLocation insert_before_override{};
 };
 
 /// One compound statement (curly-brace block) in the user's source.
@@ -183,6 +196,26 @@ struct QReplacement {
     std::string replacement;
 };
 
+/// One pre-staged insertion record describing a single uncompute call to
+/// be applied verbatim by the M9 emitter. Mirrors the shape of the
+/// `UncomputeInsertion` records the M8 synthesis pass produces from
+/// QOperations — see uncompute_pass.hpp for the original definition and
+/// the M9 emitter contract. The struct is duplicated here (not just the
+/// type alias) because `QUnit::raw_insertions` is a vector of complete
+/// objects, so the type must be complete at the IR boundary, the same
+/// rationale as `QReplacement`.
+///
+/// Phase F PF-1 introduces this type to back the WHEN-lift matcher's
+/// "decl block" injection: the matcher assembles the flattened qbool
+/// declaration block as a single insertion record and the M8 pass
+/// concatenates it into its `QSynthesisResult.insertions` verbatim,
+/// without rendering it from a synthetic `QOpKind`. Pre-Phase-F
+/// matchers leave `QUnit::raw_insertions` empty.
+struct UncomputeInsertion {
+    clang::SourceLocation insert_before;
+    std::string code;
+};
+
 /// Top-level container: one per translation unit. Scopes are stored in
 /// source order (by `open_brace` location). The matcher appends as it
 /// walks the AST, so no post-hoc sort is required.
@@ -191,9 +224,17 @@ struct QReplacement {
 /// for the M9 emitter to apply before its insertion pass. Pre-Phase-E
 /// (MVP + Phases A..D) this vector is always empty; Phase E's compound
 /// matcher is the first producer.
+///
+/// `raw_insertions` carries pre-staged insertion records the matcher
+/// assembles directly (Phase F PF-1). The M8 synthesis pass concatenates
+/// these into its `QSynthesisResult.insertions` verbatim, after the
+/// per-op renderings produced from QOperation entries. Pre-Phase-F
+/// (MVP + Phases A..E) this vector is always empty, so existing snapshot
+/// fixtures stay byte-identical.
 struct QUnit {
-    std::vector<QScope>        scopes;
-    std::vector<QReplacement>  replacements;
+    std::vector<QScope>              scopes;
+    std::vector<QReplacement>        replacements;
+    std::vector<UncomputeInsertion>  raw_insertions;
 };
 
 /// Equality on QValueRef: both the name and the decl_loc must match.
