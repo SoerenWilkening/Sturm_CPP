@@ -404,6 +404,105 @@ static void test_xor_op_emits_two_xor_assigns() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
 }
 
+// ── Phase B: constant compound-assign inverses ──────────────────────────────
+//
+// PB-1..PB-4: `a += 3;` / `a -= 3;` / `a *= 3;` / `a /= 3;` on a qint whose RHS
+// is an int64_t lifted through the converting constructor. The matcher stores
+// the verbatim RHS source text (e.g. "3") in `operands[0].name`. The inverse
+// flips the operator to the classical-math inverse (+↔-, *↔/).
+
+static void test_add_assign_const_emits_sub() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::ADD_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"3", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    a -= 3;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_sub_assign_const_emits_add() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::SUB_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"7", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    a += 7;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_mul_assign_const_emits_div() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::MUL_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"2", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    a /= 2;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_div_assign_const_emits_mul() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::DIV_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"5", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    a *= 5;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
 // ── sturm-ny2: multi-kind ops seeded out of source order ────────────────────
 
 static void test_multi_kind_out_of_order_sorted_by_source() {
@@ -479,6 +578,10 @@ int main() {
     test_not_op_zero_operands_emits_nothing();
     test_xor_op_emits_two_xor_assigns();
     test_xor_assign_op_emits_verbatim();
+    test_add_assign_const_emits_sub();
+    test_sub_assign_const_emits_add();
+    test_mul_assign_const_emits_div();
+    test_div_assign_const_emits_mul();
     test_multi_kind_out_of_order_sorted_by_source();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
