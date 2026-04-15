@@ -44,6 +44,81 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase A / PA-1: snapshot fixture for `qbool tmp = ~a;` ─────────────────
+# Self-inverse NOT: the emitted inverse is `tmp = ~tmp;`, re-applying the
+# same X to the result qubit. Same harness / driver as snapshot_or_single;
+# only the fixture and golden change.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_not_single
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/not_single.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/not_single.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/not_single
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_not_single PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
+# ── Phase A / PA-2: snapshot fixture for `qbool tmp = a ^ b;` ──────────────
+# Self-inverse XOR: the emitted inverse is the two-line `tmp ^= a;`
+# followed by `tmp ^= b;`, together undoing the forward op because
+# (a^b)^a^b == 0. No library helper is required.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_xor_single
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/xor_single.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/xor_single.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/xor_single
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_xor_single PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
+# ── Phase A / PA-3: snapshot fixture for `a ^= b;` (quantum RHS) ───────────
+# XOR-assign is self-adjoint: the emitted inverse is a verbatim
+# re-emission of the same compound-assignment statement. First fixture
+# in Phase A that exercises a statement-level matcher rather than a
+# VarDecl initializer.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_xor_assign_qbool
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/xor_assign_qbool.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/xor_assign_qbool.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/xor_assign_qbool
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_xor_assign_qbool PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
+# ── Phase A / PA-4: snapshot fixture for `a ^= 1;` (classical RHS) ─────────
+# Classical-operand form: the matcher extracts the literal text via
+# Lexer::getSourceText and embeds it verbatim in the IR. The render
+# switch is unchanged from PA-3 — the operand name happens to be a
+# numeric literal rather than a variable name, but the emission is
+# textually identical.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_xor_assign_classical
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/xor_assign_classical.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/xor_assign_classical.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/xor_assign_classical
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_xor_assign_classical PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER

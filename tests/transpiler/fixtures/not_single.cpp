@@ -1,0 +1,23 @@
+// Phase A / PA-1 input for the sturm-transpile snapshot test.
+//
+// Exercises the minimal self-inverse form: `qbool tmp = ~a;` must be
+// paired with `tmp = ~tmp;` injected before the scope's close brace
+// (NOT is its own inverse when re-applied to the result qubit).
+//
+// The sturm-transpile binary runs with a FixedCompilationDatabase that
+// carries no include paths, so we inline a minimal qbool stub whose
+// shape is sufficient for the matcher to resolve `operator~`. The stub
+// mirrors the real header's shape (operator~ is a member in
+// include/sturm/qtypes/qbool_ops.hpp:141) so the snapshot exercises the
+// same AST node kind that the matcher sees under a real build.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool operator~() const { return qbool{}; }
+};
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a) { qbool tmp = ~a; }
