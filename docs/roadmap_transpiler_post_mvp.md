@@ -20,7 +20,7 @@ Phases are ordered by dependency. Each phase is independently shippable and inde
 > end-to-end in `examples/or_circuit.cpp` and verified by the
 > `example_or_circuit_injected` CTest. PA-2 and PA-4 remain
 > fixture-only until their forward operators (`operator^` on qbool,
-> `qbool::operator^=(int)`) ship on the real runtime. Next up: Phase B.
+> `qbool::operator^=(int)`) ship on the real runtime. Next up: Phase C.
 
 Add match rules and inverse emission for operations that are their own inverse. No new IR concepts; the "inverse" is emitting the same forward op again.
 
@@ -35,6 +35,20 @@ Covered ops:
 ---
 
 ## Phase B — Constant arithmetic
+
+> **2026-04-15:** Complete. All four compound-assign patterns
+> (`a += k;`, `a -= k;`, `a *= k;`, `a /= k;` with `k` a classical
+> constant lifted through the non-explicit `qint_t(int64_t)`
+> converting constructor) match and emit the dual operator as their
+> inverse. Snapshot fixtures in `tests/transpiler/fixtures/`:
+> `add_assign_const`, `sub_assign_const`, `mul_assign_const`,
+> `div_assign_const`. End-to-end behavior is pinned by
+> `examples/constant_arith.cpp` and the
+> `transpiler_example_constant_arith_injected` +
+> `transpiler_idempotent_example_constant_arith` CTests. The
+> coprime-with-modulus assumption for the PB-3 inverse (`a /= k` as
+> the inverse of `a *= k`) is documented here as user responsibility
+> — the transpiler does not emit a runtime check. Next up: Phase C.
 
 Non-self-inverse operations with a classical constant operand.
 
