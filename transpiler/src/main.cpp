@@ -117,6 +117,7 @@ public:
         sturm::transpile::register_gt_compare_qint_matcher(finder_, unit_);
         sturm::transpile::register_ge_compare_qint_matcher(finder_, unit_);
         sturm::transpile::register_compound_qbool_matcher(finder_, unit_);
+        sturm::transpile::register_when_lift_matcher(finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {
