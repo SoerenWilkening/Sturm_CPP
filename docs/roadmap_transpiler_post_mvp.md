@@ -66,6 +66,26 @@ Touches existing `sub_const` / `add_const` on `qint_base`. Already present; no r
 
 ## Phase C — qint-qint arithmetic
 
+> **2026-04-15:** Complete. All five compound-assign patterns
+> (`a += b;`, `a -= b;`, `a *= b;`, `a /= b;`, `a %= b;` with `b`
+> another qint) match and emit a free-function call as inverse
+> (`uncompute_add_qint`, `uncompute_sub_qint`, `uncompute_mul_qint`,
+> `uncompute_div_qint`, `uncompute_mod_qint`). Snapshot fixtures in
+> `tests/transpiler/fixtures/`: `add_assign_qint`, `sub_assign_qint`,
+> `mul_assign_qint`, `div_assign_qint`, `mod_assign_qint`. End-to-end
+> behavior is pinned by `examples/qint_arith.cpp` and the
+> `transpiler_example_qint_arith_injected` +
+> `transpiler_idempotent_example_qint_arith` CTests. Runtime-side,
+> the tagged-union branches `ADD_QINT`, `SUB_QINT`, `MUL_INVERSE`,
+> `DIV_INVERSE`, `MOD_INVERSE` in `uncompute_op.hpp` were retired in
+> this phase — their stamp sites, factories, enum values, and switch
+> cases are gone; the free functions in `uncompute_api.hpp` replace
+> them. The mul/div inverses carry the coprime-with-`2^W` /
+> no-overflow caveat documented in `uncompute_api.hpp` as user
+> responsibility; `uncompute_mod_qint` ships with a TODO stub body
+> (no clean dual — the forward op discards the quotient). Next up:
+> Phase D.
+
 Inverse requires access to the source `qint`, which must outlive its consumer. The transpiler enforces this by emitting the inverse in the same scope before either operand's named temporary goes out of scope.
 
 Covered ops:
