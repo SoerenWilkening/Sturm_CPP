@@ -25,6 +25,9 @@
 #pragma once
 
 #include "sturm/qtypes/qbool.hpp"
+#include "sturm/qtypes/qint.hpp"
+
+#include <cstddef>
 
 namespace sturm {
 
@@ -55,5 +58,39 @@ namespace sturm {
 // Preconditions: r, a, b all live; r owning; a and b byte-identical to
 // their state at the time of the forward OR.  Does not release any qubits.
 void uncompute_or(qbool& r, const qbool& a, const qbool& b);
+
+// ── Phase C — qint-qint arithmetic inverses ──────────────────────────────────
+//
+// Emitted verbatim by sturm-transpile as the inverse of each qint-qint
+// compound-assign. Every variant delegates to the forward compound-assign
+// on qint_t<W> (defined in qint_arith_v3.hpp); under STURM_BACKEND_ENABLED
+// those compound-assigns emit their library circuits against the active
+// BackendContext. The transpiler places the call inside the same scope as
+// the forward statement so `a` and `b` are still live when the inverse
+// runs.
+//
+// Caveats (user responsibility — the transpiler does not emit a runtime
+// guard, matching the Phase B coprime/overflow policy):
+//   uncompute_mul_qint: b must be coprime with 2^W (otherwise `a *= b` is
+//                       not invertible over the W-bit modular ring).
+//   uncompute_div_qint: the product `a * b` must not overflow W bits
+//                       (otherwise `a /= b` was lossy and cannot be
+//                       undone by multiplication).
+//   uncompute_mod_qint: no clean dual exists — the forward op throws away
+//                       the quotient. Ships as a stub body pending a real
+//                       modular-inverse adjoint (see TODO in the body).
+template <std::size_t W>
+inline void uncompute_add_qint(qint_t<W>& a, const qint_t<W>& b) { a -= b; }
+template <std::size_t W>
+inline void uncompute_sub_qint(qint_t<W>& a, const qint_t<W>& b) { a += b; }
+template <std::size_t W>
+inline void uncompute_mul_qint(qint_t<W>& a, const qint_t<W>& b) { a /= b; }
+template <std::size_t W>
+inline void uncompute_div_qint(qint_t<W>& a, const qint_t<W>& b) { a *= b; }
+template <std::size_t W>
+inline void uncompute_mod_qint(qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {
+    // TODO(phase-later): real modular-inverse adjoint.
+    // No simple dual — the forward `a %= b` throws away the quotient.
+}
 
 } // namespace sturm
