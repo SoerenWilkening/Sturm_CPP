@@ -40,10 +40,14 @@ std::string loc_to_string(clang::SourceLocation loc) {
 
 std::string kind_to_string(QOpKind kind) {
     switch (kind) {
-    case QOpKind::OR:         return "OR";
-    case QOpKind::NOT:        return "NOT";
-    case QOpKind::XOR:        return "XOR";
-    case QOpKind::XOR_ASSIGN: return "XOR_ASSIGN";
+    case QOpKind::OR:               return "OR";
+    case QOpKind::NOT:              return "NOT";
+    case QOpKind::XOR:              return "XOR";
+    case QOpKind::XOR_ASSIGN:       return "XOR_ASSIGN";
+    case QOpKind::ADD_ASSIGN_CONST: return "ADD_ASSIGN_CONST";
+    case QOpKind::SUB_ASSIGN_CONST: return "SUB_ASSIGN_CONST";
+    case QOpKind::MUL_ASSIGN_CONST: return "MUL_ASSIGN_CONST";
+    case QOpKind::DIV_ASSIGN_CONST: return "DIV_ASSIGN_CONST";
     }
     // Unreachable while every enumerator above is listed, but we emit a
     // deterministic placeholder so future additions that forget to update

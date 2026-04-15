@@ -225,6 +225,113 @@ static void test_dump_zero_operands() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase B: constant compound-assign enumerators ────────────────────────────
+//
+// Per the PB-1..PB-4 patterns in the post-MVP roadmap, `a += k;`, `a -= k;`,
+// `a *= k;`, `a /= k;` (k classical) each need their own QOpKind entry so
+// the matcher can tag the op at M7-time and the uncompute pass can emit the
+// dual `-=` / `+=` / `/=` / `*=` at M8-time. dump() is the single textual
+// representation shared by the matcher and uncompute goldens — if it did
+// not know these kinds, every downstream fixture that exercised them would
+// render as "<unknown-QOpKind>" and the golden test chain would silently
+// stop working. This test locks the stringification in *before* the matcher
+// and render cases land (those are the two blocked sibling issues).
+//
+// Shape per the issue description: each op carries one result QValueRef and
+// one operand QValueRef whose name is the verbatim RHS source text (PA-4
+// pattern — the operand is a classical literal, not a named qbool, so the
+// "decl_loc" is unused but we exercise the normal <name>@<loc> rendering
+// to guarantee the format is the same as for qbool operands).
+
+static void test_dump_add_assign_const() {
+    // `a += 7;` — classical constant RHS stored as the operand's name.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::ADD_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"7", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] ADD_ASSIGN_CONST a@20 = 7@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_sub_assign_const() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::SUB_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"3", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] SUB_ASSIGN_CONST a@20 = 3@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_mul_assign_const() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::MUL_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"5", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] MUL_ASSIGN_CONST a@20 = 5@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_div_assign_const() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::DIV_ASSIGN_CONST;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"2", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] DIV_ASSIGN_CONST a@20 = 2@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -259,6 +366,11 @@ int main() {
     test_dump_invalid_locations_render_as_placeholder();
     test_dump_zero_operands();
     test_dump_is_stable_across_calls();
+
+    test_dump_add_assign_const();
+    test_dump_sub_assign_const();
+    test_dump_mul_assign_const();
+    test_dump_div_assign_const();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
