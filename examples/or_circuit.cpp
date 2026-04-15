@@ -7,21 +7,17 @@
 #include "sturm/core/core.h"
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/control/when.hpp"
+// Pulls in the adjoint free-function API the transpiler injects below.
+#include "sturm/sturm.hpp"
 
 #include <cstdint>
 #include <cstdio>
 
 // To SEE what the transpiler does, compare this file against the generated
-// copy under build/sturm_gen/examples/or_circuit.cpp after a build. The MVP
-// transpiler (see docs/prd_transpiler_uncompute.md) fires on one pattern:
-//
-//     sturm::qbool X = a | b;
-//
-// For every such VarDecl it inserts
-//
-//     uncompute_or(X, a, b);
-//
-// just before the enclosing scope's closing brace, in LIFO order.
+// copy under build/sturm_gen/examples/or_circuit.cpp after a build. The
+// transpiler fires on the canonical VarDecl pattern `sturm::qbool X = a | b;`
+// and injects the matching adjoint call just before the enclosing scope's
+// closing brace, in LIFO order.
 
 int main() {
     // ── 1. Create an APPEND-mode backend context ──────────────────────────────
@@ -38,9 +34,9 @@ int main() {
     a.theta() += 1;
 
     // ── 3. Declare an OR temporary — this is what the transpiler rewrites ────
-    //    The initializer `a | b` matches the MVP AST pattern, so the
-    //    generated source will have `uncompute_or(c, a, b);` appended before
-    //    the end of main().
+    //    The initializer `a | b` matches the VarDecl pattern, so the
+    //    generated sibling will have the adjoint call appended before the
+    //    end of main().
     sturm::qbool c = a | b;
 
     std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);

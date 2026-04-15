@@ -131,6 +131,36 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── LP5: example-observability test ─────────────────────────────────────────
+# PRD acceptance criterion #3: after a clean build that routes
+# examples/or_circuit.cpp through sturm-transpile, the generated sibling
+# under ${CMAKE_BINARY_DIR}/sturm_gen/examples/or_circuit.cpp must contain
+# exactly one injected `uncompute_or(c, a, b);` call, AND the source file
+# must remain untouched (the transpiler never rewrites its input in
+# place). This test pins the widened matcher (LP4) to the real example —
+# the hermetic snapshot proves the matcher peels the lazy chain on a
+# mock, this test proves the same matcher fires under the real build.
+#
+# Fixture reuse: the generated file is produced by
+# add_quantum_executable(example_or_circuit ...). We reuse LP6's
+# `build_example_or_circuit` FIXTURES_SETUP test so ctest alone can run
+# this check (no prior `cmake --build` required). REQUIRED_FILES ties the
+# test to the sturm-transpile binary for consistency with the rest of the
+# transpiler test suite, even though the fixture already ensures the
+# binary is built and the generated file is produced.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME transpiler_example_or_circuit_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/or_circuit.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/or_circuit.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_or_circuit.cmake)
+    set_tests_properties(transpiler_example_or_circuit_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_or_circuit_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
