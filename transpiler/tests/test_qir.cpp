@@ -332,6 +332,126 @@ static void test_dump_div_assign_const() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase C: qint-qint compound-assign enumerators ───────────────────────────
+//
+// Per the PC-1..PC-5 patterns in the post-MVP roadmap, `a += b;`, `a -= b;`,
+// `a *= b;`, `a /= b;`, `a %= b;` (b another qint) each need their own
+// QOpKind entry. The operand shape mirrors Phase B — one result + one named
+// operand — but the operand is a qint identifier rather than a classical
+// literal. dump() must stringify each kind so that M7 matcher / M8 uncompute
+// goldens remain stable; without these cases the kinds render as
+// "<unknown-QOpKind>" and fixtures silently go dark.
+
+static void test_dump_add_assign_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::ADD_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] ADD_ASSIGN_QINT a@20 = b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_sub_assign_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::SUB_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] SUB_ASSIGN_QINT a@20 = b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_mul_assign_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::MUL_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] MUL_ASSIGN_QINT a@20 = b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_div_assign_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::DIV_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] DIV_ASSIGN_QINT a@20 = b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_mod_assign_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::MOD_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] MOD_ASSIGN_QINT a@20 = b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -371,6 +491,12 @@ int main() {
     test_dump_sub_assign_const();
     test_dump_mul_assign_const();
     test_dump_div_assign_const();
+
+    test_dump_add_assign_qint();
+    test_dump_sub_assign_qint();
+    test_dump_mul_assign_qint();
+    test_dump_div_assign_qint();
+    test_dump_mod_assign_qint();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

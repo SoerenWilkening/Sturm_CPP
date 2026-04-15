@@ -84,6 +84,16 @@ enum class QOpKind {
     SUB_ASSIGN_CONST,
     MUL_ASSIGN_CONST,
     DIV_ASSIGN_CONST,
+    // Phase C — qint-qint compound-assigns. Each op carries one result
+    // QValueRef (the LHS qint) plus one operand QValueRef naming the RHS
+    // qint identifier. The inverse is a free-function call of the form
+    // `uncompute_{add,sub,mul,div,mod}_qint(lhs, rhs);` — see the PC-ir
+    // section of docs/implementation_plan_transpiler_phase_c.md.
+    ADD_ASSIGN_QINT,
+    SUB_ASSIGN_QINT,
+    MUL_ASSIGN_QINT,
+    DIV_ASSIGN_QINT,
+    MOD_ASSIGN_QINT,
     // ... — added per post-MVP phases.
 };
 

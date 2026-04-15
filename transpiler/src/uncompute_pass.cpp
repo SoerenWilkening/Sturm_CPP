@@ -104,6 +104,41 @@ std::string render_uncompute(const QOperation& op) {
            << ";\n";
         break;
     }
+    case QOpKind::ADD_ASSIGN_QINT: {
+        // Phase C: `a += b;` where b is another qint named in source.
+        // operands[0].name carries the verbatim RHS identifier. The
+        // inverse is the `uncompute_add_qint` free function declared in
+        // include/sturm/uncompute/uncompute_api.hpp, which delegates to
+        // the forward `-=` compound-assign on the runtime side.
+        if (op.operands.size() != 1) return {};
+        os << "    uncompute_add_qint(" << op.result.name << ", "
+           << op.operands[0].name << ");\n";
+        break;
+    }
+    case QOpKind::SUB_ASSIGN_QINT: {
+        if (op.operands.size() != 1) return {};
+        os << "    uncompute_sub_qint(" << op.result.name << ", "
+           << op.operands[0].name << ");\n";
+        break;
+    }
+    case QOpKind::MUL_ASSIGN_QINT: {
+        if (op.operands.size() != 1) return {};
+        os << "    uncompute_mul_qint(" << op.result.name << ", "
+           << op.operands[0].name << ");\n";
+        break;
+    }
+    case QOpKind::DIV_ASSIGN_QINT: {
+        if (op.operands.size() != 1) return {};
+        os << "    uncompute_div_qint(" << op.result.name << ", "
+           << op.operands[0].name << ");\n";
+        break;
+    }
+    case QOpKind::MOD_ASSIGN_QINT: {
+        if (op.operands.size() != 1) return {};
+        os << "    uncompute_mod_qint(" << op.result.name << ", "
+           << op.operands[0].name << ");\n";
+        break;
+    }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on
     // missing enum cases when default is absent.)
