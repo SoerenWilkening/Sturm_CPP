@@ -951,6 +951,155 @@ static void test_pd_negative_non_qint_operands() {
     CHECK(unit.scopes.empty());
 }
 
+// ── Phase F / PF-2 stub: qbool + WHEN macro expansion ──────────────────────
+//
+// The PF-2 matcher anchors on the middle `if` in the three-`if` tower that
+// the real `WHEN(expr)` macro expands to (see include/sturm/control/when.hpp:293).
+// The stub below replicates only the structure the matcher inspects:
+//
+//   - A `sturm::detail::materialize_when` overload set that the init-stmt
+//     of the middle `if` calls.
+//   - A three-`if` `WHEN(expr)` macro whose middle `if` init-stmt declares
+//     `_when_val_` with initializer `::sturm::detail::materialize_when(expr)`.
+//
+// We deliberately do NOT model `WhenCapture` / `WhenGuard` — their types
+// appear only in the outer / inner `if`s, which the matcher does not bind.
+// A no-op placeholder `int` suffices to make the macro compile.
+static constexpr std::string_view kQBoolWhenStub = R"CPP(
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    bool should_run() const { return true; }
+};
+
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+
+namespace detail {
+
+inline qbool& materialize_when(qbool& q) { return q; }
+inline qbool  materialize_when(qbool&& q) { return static_cast<qbool&&>(q); }
+
+// Minimal stand-ins for WhenCapture / make_when_guard — the PF-2 matcher
+// does not inspect these, but the macro must reference them to compile.
+struct WhenCapture { WhenCapture() = default; };
+inline qbool& make_when_guard(qbool& q) { return q; }
+
+} // namespace detail
+} // namespace sturm
+
+using sturm::qbool;
+
+#define WHEN(expr) \
+    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
+    if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
+    if (auto& _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
+        _when_guard_.should_run())
+)CPP";
+
+// Run the PF-2 WHEN-lift matcher on `user_src`. Resets the detection
+// counter before the tool run so each test starts from zero, returns the
+// post-run count alongside the populated QUnit (the unit should be empty
+// at PF-2; we return it so tests can double-check that invariant).
+struct PFTwoRun {
+    QUnit unit;
+    int detections = 0;
+};
+
+static PFTwoRun run_pf_when_matcher(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQBoolWhenStub.size() + user_src.size());
+    code.append(kQBoolWhenStub);
+    code.append(user_src);
+
+    PFTwoRun out;
+    reset_when_lift_detection_count_for_test();
+
+    clang::ast_matchers::MatchFinder finder;
+    register_when_lift_matcher(finder, out.unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PF-2 WHEN matcher)\n");
+    }
+    out.detections = when_lift_detection_count_for_test();
+    return out;
+}
+
+// ── Phase F / PF-2 positive case ───────────────────────────────────────────
+
+static void test_pf_when_compound_detects_once() {
+    // WHEN(b | c) must fire the PF-2 detection path exactly once — the
+    // init-stmt binds `_when_val_` with initializer materialize_when(b|c),
+    // the if-loc originates in the WHEN macro body, and the materialize
+    // argument (after peel_to_payload) is NOT a bare DeclRefExpr so the
+    // named-passthrough short-circuit does NOT trigger.
+    PFTwoRun r = run_pf_when_matcher(
+        "void demo(qbool a, qbool b, qbool c) {\n"
+        "    WHEN(b | c) { (void)a; }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    // PF-2 is detection-only: QUnit must be untouched.
+    CHECK(r.unit.scopes.empty());
+    CHECK(r.unit.replacements.empty());
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+// ── Phase F / PF-2 negative cases ──────────────────────────────────────────
+
+static void test_pf_when_named_passthrough_short_circuits() {
+    // WHEN(named_qbool): the materialize argument peels to a bare
+    // DeclRefExpr to a named qbool — the callback takes the
+    // named-passthrough short-circuit and records zero detections.
+    PFTwoRun r = run_pf_when_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    WHEN(a) { (void)b; }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+    CHECK(r.unit.scopes.empty());
+}
+
+static void test_pf_when_bare_if_no_match() {
+    // A plain `if (auto x = f(); ...)` init-stmt is NOT inside any macro
+    // body expansion. The `isMacroBodyExpansion` guard rejects. We also
+    // name the local `_when_val_` here to prove the match-shape alone is
+    // NOT sufficient — the macro-body guard is load-bearing.
+    //
+    // The init has to be a CallExpr to a function named `materialize_when`
+    // to even reach the macro-body guard; we supply one in the stub so the
+    // test exercises exactly that guard.
+    PFTwoRun r = run_pf_when_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    if (decltype(auto) _when_val_ = \n"
+        "            ::sturm::detail::materialize_when(a | b); true) {\n"
+        "        (void)b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+}
+
+static void test_pf_when_direct_materialize_call_no_match() {
+    // A direct user-level call to `materialize_when(...)` OUTSIDE any
+    // WHEN macro body must NOT match. The `if`-anchored pattern rules
+    // this out at the pattern level (the call is the initializer of a
+    // regular VarDecl, not an if-init-stmt); even if a future widening
+    // of the pattern caught the VarDecl, the macro-body guard rejects.
+    PFTwoRun r = run_pf_when_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    auto x = ::sturm::detail::materialize_when(a | b);\n"
+        "    (void)x;\n"
+        "}\n");
+    CHECK(r.detections == 0);
+}
+
 static void test_pd_six_ops_same_scope_hit_all_kinds() {
     // A single block containing one of each comparison. All six ops
     // should land in the same QScope (same enclosing CompoundStmt),
@@ -1031,6 +1180,11 @@ int main() {
     test_pd_negative_wrong_result_type();
     test_pd_negative_non_qint_operands();
     test_pd_six_ops_same_scope_hit_all_kinds();
+
+    test_pf_when_compound_detects_once();
+    test_pf_when_named_passthrough_short_circuits();
+    test_pf_when_bare_if_no_match();
+    test_pf_when_direct_materialize_call_no_match();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

@@ -175,6 +175,42 @@ void register_ge_compare_qint_matcher(
 void register_compound_qbool_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 
+/// Phase F / PF-2: Register the `WHEN(expr) { body }` macro-invocation
+/// detection matcher. The matcher anchors on the middle `if` statement in
+/// the three-`if` tower the `WHEN` macro expands to — the one whose
+/// init-statement declares `_when_val_` with initializer
+/// `sturm::detail::materialize_when(arg)` (see include/sturm/control/when.hpp:293).
+///
+/// Guard: the matched `IfStmt` must live inside a macro *body* expansion
+/// (SourceManager::isMacroBodyExpansion) whose immediate-caller macro
+/// spelling is the literal token `WHEN`. This defends against a user
+/// calling `sturm::detail::materialize_when(...)` directly — the
+/// `_when_val_` VarDecl would bind but the macro-body guard rejects it.
+///
+/// On match this PF-2 callback performs **detection only** — it validates
+/// that the `_when_val_` initializer is a `CallExpr` to `materialize_when`,
+/// extracts the single argument, and short-circuits when the argument
+/// (after `peel_to_payload`) is a bare `DeclRefExpr` to a qbool
+/// (named-passthrough — no rewrite is needed because the user already
+/// has a named qbool in hand). The rewrite proper lands in PF-3.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at most
+/// once per QUnit; the QUnit must outlive the MatchFinder's run.
+void register_when_lift_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Test-only instrumentation (Phase F / PF-2). PF-2 is detection-only —
+/// the callback does not mutate the `QUnit`, so the PF-2 unit tests need
+/// a separate observable to pin down "how many liftable WHEN invocations
+/// did the matcher detect on this TU". These two helpers expose the
+/// detection counter maintained by `register_when_lift_matcher`'s
+/// callback implementation; `reset_when_lift_detection_count_for_test`
+/// zeroes the counter between test cases so the tests do not have to
+/// thread state across invocations. Production code must not touch
+/// either helper — they are intended strictly for the unit-test harness.
+int when_lift_detection_count_for_test();
+void reset_when_lift_detection_count_for_test();
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP
