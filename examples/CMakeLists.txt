@@ -122,6 +122,33 @@ target_sources(example_compound_expression PRIVATE
 )
 target_link_libraries(example_compound_expression PRIVATE orkan_headers)
 
+# ── Example: compound-`WHEN` integration (Phase F) ──────────────────────────
+# Routed through sturm-transpile so the `WHEN((b | c) & d) { ... }` macro
+# invocation is rewritten: two flat `qbool __stu_tN = ...;` decls are
+# injected ABOVE the WHEN line, the WHEN argument is substituted to the
+# outermost `__stu_t1` temp, and a LIFO `uncompute_and(__stu_t1,
+# __stu_t0, d); / uncompute_or(__stu_t0, b, c);` pair is planted
+# directly after the WHEN body's closing brace (still inside the
+# enclosing inner scope). Same helper / bypass pattern as
+# example_compound_expression; the Phase F matcher lives in
+# transpiler/src/matcher_when_lift.cpp.
+add_quantum_executable(example_when_integration
+    when_integration.cpp
+)
+target_sources(example_when_integration PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_when_integration PRIVATE orkan_headers)
+
 # ── Example: combined Phase A + B + C demo ──────────────────────────────────
 # Routed through sturm-transpile so every forward pattern from all three
 # phases receives its inverse injection in one file. LIFO rewind runs

@@ -186,6 +186,29 @@ Requires:
 
 ## Phase F — `WHEN` scope integration
 
+> **2026-04-15:** Complete. The `WHEN(expr) { body }` matcher
+> (`transpiler/src/matcher_when_lift.cpp`) now performs the three-point
+> lift: flat `qbool __stu_tN = ...;` decls injected before the WHEN,
+> the macro argument rewritten to the outermost temp, and a LIFO
+> `uncompute_*` pair planted directly after the WHEN body's `}`.
+> Coverage spans five hermetic snapshot fixtures in
+> `tests/transpiler/fixtures/`: `when_single_or` (PF-3, lift `b | c`),
+> `when_named_passthrough` (PF-3, bare-DeclRefExpr short-circuit),
+> `when_compound` (PF-4, the roadmap `(b | c) & d` shape),
+> `when_compare` (PF-4, the Phase D comparator widening), and
+> `when_nested_passthrough` (PF-5, per-WHEN post-body brace identity
+> through a nested `WHEN(a) { WHEN(b | c) { ... } }`). The end-to-end
+> demo `examples/when_integration.cpp` pins the full Phase F rewrite
+> against a real build, backed by two CTests
+> (`transpiler_example_when_integration_injected` and
+> `transpiler_idempotent_example_when_integration`). Zero runtime
+> changes were required — the existing `WhenGuard` / `WhenCapture` /
+> `make_when_guard` machinery in `include/sturm/control/when.hpp`
+> accepts the named temp unchanged; Phase F's entire contribution
+> lives in the transpiler + emitter. Next up: Phase G (nested-WHEN
+> AND-fold lowering in the transpiler, retiring the `WhenGuard`
+> AND-fold code path).
+
 The `WHEN(expr) { ... }` macro stays in user source. The transpiler's responsibility:
 
 1. If `expr` is already a named `qbool`, pass through.
