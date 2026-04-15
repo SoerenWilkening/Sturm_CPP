@@ -18,14 +18,22 @@
 //     the gate stream records the inverse sequence, and the input operands
 //     are left byte-identical (Bennett discipline).
 //
-// This file is header-only (declarations).  The body lives in
-// src/sturm/uncompute/uncompute_api.cpp.
+// This file is header-only (declarations + inline template bodies). The
+// non-template `uncompute_or` body lives in src/sturm/uncompute/uncompute_api.cpp;
+// the template inverses (arithmetic in Phase C, comparisons in Phase D) are
+// `inline` here so callers do not need an extra translation unit.
 //
-// LOC budget: ≤ 50 (implementation plan M3).
+// LOC budget: ≤ 300 (CLAUDE.md header budget).
 #pragma once
 
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qint.hpp"
+
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/qint_compare_v3.hpp"   // detail::bit_array_view + promote
+#  include "sturm/lib/compare_dsl.hpp"          // lib_{eq,ne,lt,le,gt,ge}_dsl
+#  include "sturm/core/context.hpp"             // sturm_get_thread_context
+#endif
 
 #include <cstddef>
 
@@ -92,5 +100,105 @@ inline void uncompute_mod_qint(qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {
     // TODO(phase-later): real modular-inverse adjoint.
     // No simple dual — the forward `a %= b` throws away the quotient.
 }
+
+// ── Phase D — qint-qint comparison inverses (sturm-999i) ─────────────────────
+//
+// Emitted verbatim by sturm-transpile as the inverse of each qint-qint
+// comparison `qbool r = (a OP b);`. The forward comparison is produced by
+// qint_t<W>::operator OP (see include/sturm/qtypes/qint_compare_v3.hpp) which
+// calls the corresponding `lib_{eq,ne,lt,le,gt,ge}_dsl` library routine on a
+// freshly-allocated result qubit held by `r`.
+//
+// The library DSL routines are self-uncomputing under the Bennett discipline:
+// each one flips `r` by XOR-ing the comparison result and leaves every
+// intermediate ancilla back at |0>. Calling the same routine a second time
+// therefore flips `r` once more, returning the ancilla it owns to |0>. This
+// header's six inverses are thin wrappers that rebuild the same bit-view
+// arrays the forward call used (via `detail::bit_array_view<W>`) and invoke
+// the same DSL routine a second time.
+//
+// Preconditions (user responsibility — the transpiler does not emit runtime
+// guards): `r` is owning and still holds the qubit allocated by the forward
+// operator OP; `a` and `b` are byte-identical to their state at the forward
+// call (no intervening writes to their qubits). No qubit is released — the
+// caller's scope continues to own `r`, `a`, and `b` after the inverse runs.
+//
+// Under STURM_BACKEND_ENABLED the bodies delegate to the library DSL; in the
+// non-backend build profile the forward comparison operators are lowered by
+// `qint_compare.hpp` through `dispatch_compare` (no ancilla allocation, no
+// self-inverse DSL circuit), so the adjoint is a no-op and the functions
+// simply return. This matches the existing split between `qint_compare.hpp`
+// and `qint_compare_v3.hpp`.
+
+#ifdef STURM_BACKEND_ENABLED
+
+template <std::size_t W>
+inline void uncompute_eq_qint(qbool& r, const qint_t<W>& a, const qint_t<W>& b) {
+    sturm_backend_context_t* ctx = sturm_get_thread_context();
+    auto a_bits = detail::bit_array_view<W>(a, ctx);
+    auto b_bits = detail::bit_array_view<W>(b, ctx);
+    lib_eq_dsl(a_bits.data(), b_bits.data(), W, r);
+}
+
+template <std::size_t W>
+inline void uncompute_ne_qint(qbool& r, const qint_t<W>& a, const qint_t<W>& b) {
+    sturm_backend_context_t* ctx = sturm_get_thread_context();
+    auto a_bits = detail::bit_array_view<W>(a, ctx);
+    auto b_bits = detail::bit_array_view<W>(b, ctx);
+    lib_ne_dsl(a_bits.data(), b_bits.data(), W, r);
+}
+
+template <std::size_t W>
+inline void uncompute_lt_qint(qbool& r, const qint_t<W>& a, const qint_t<W>& b) {
+    sturm_backend_context_t* ctx = sturm_get_thread_context();
+    auto a_bits = detail::bit_array_view<W>(a, ctx);
+    auto b_bits = detail::bit_array_view<W>(b, ctx);
+    lib_lt_dsl(a_bits.data(), b_bits.data(), W, r);
+}
+
+template <std::size_t W>
+inline void uncompute_le_qint(qbool& r, const qint_t<W>& a, const qint_t<W>& b) {
+    sturm_backend_context_t* ctx = sturm_get_thread_context();
+    auto a_bits = detail::bit_array_view<W>(a, ctx);
+    auto b_bits = detail::bit_array_view<W>(b, ctx);
+    lib_le_dsl(a_bits.data(), b_bits.data(), W, r);
+}
+
+template <std::size_t W>
+inline void uncompute_gt_qint(qbool& r, const qint_t<W>& a, const qint_t<W>& b) {
+    sturm_backend_context_t* ctx = sturm_get_thread_context();
+    auto a_bits = detail::bit_array_view<W>(a, ctx);
+    auto b_bits = detail::bit_array_view<W>(b, ctx);
+    lib_gt_dsl(a_bits.data(), b_bits.data(), W, r);
+}
+
+template <std::size_t W>
+inline void uncompute_ge_qint(qbool& r, const qint_t<W>& a, const qint_t<W>& b) {
+    sturm_backend_context_t* ctx = sturm_get_thread_context();
+    auto a_bits = detail::bit_array_view<W>(a, ctx);
+    auto b_bits = detail::bit_array_view<W>(b, ctx);
+    lib_ge_dsl(a_bits.data(), b_bits.data(), W, r);
+}
+
+#else  // !STURM_BACKEND_ENABLED
+
+// Non-backend build: the forward comparison does not emit a self-inverse DSL
+// circuit (see include/sturm/qtypes/qint_compare.hpp — dispatch_compare path),
+// so the adjoint has nothing to undo. Ship a no-op so the transpiler-emitted
+// call sites compile against both build profiles.
+template <std::size_t W>
+inline void uncompute_eq_qint(qbool& /*r*/, const qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {}
+template <std::size_t W>
+inline void uncompute_ne_qint(qbool& /*r*/, const qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {}
+template <std::size_t W>
+inline void uncompute_lt_qint(qbool& /*r*/, const qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {}
+template <std::size_t W>
+inline void uncompute_le_qint(qbool& /*r*/, const qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {}
+template <std::size_t W>
+inline void uncompute_gt_qint(qbool& /*r*/, const qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {}
+template <std::size_t W>
+inline void uncompute_ge_qint(qbool& /*r*/, const qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {}
+
+#endif  // STURM_BACKEND_ENABLED
 
 } // namespace sturm
