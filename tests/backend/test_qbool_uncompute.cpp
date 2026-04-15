@@ -1,17 +1,18 @@
-// test_qbool_uncompute.cpp — M22/M19: qbool from comparison stamps COMPARE tag.
+// test_qbool_uncompute.cpp — M22/M19: qbool from comparison emits DSL circuit.
+//
+// Phase D retirement (2026-04-15): the COMPARE uncompute tag was removed once
+// the transpiler emits `uncompute_{eq,ne,lt,le,gt,ge}_qint(r, a, b)` at scope
+// exit. The qbool destructor no longer stamps or replays a compare circuit —
+// so the tag-check in test_qbool_compare_uncompute was dropped and the test
+// now only verifies DSL gate emission and Bennett-pristine source registers.
 //
 // Tests:
-//   1. Constructing a qbool via operator== (a comparison) stamps the COMPARE
-//      uncompute tag on the returned qbool.
-//   2. When the comparison is performed, the DSL comparison circuit (lib_eq_dsl)
-//      emits gates into the IR.
-//   3. The source qint_t inputs are byte-identical before and after the block
+//   1. Constructing a qbool via operator== (a comparison) runs the DSL
+//      comparison circuit (lib_eq_dsl) and emits gates into the IR.
+//   2. The source qint_t inputs are byte-identical before and after the block
 //      (Bennett discipline: inputs are pristine).
 //
 // Strategy: use APPEND mode context so gate emissions are recorded in GateIR.
-// M19 wiring: comparison operators call compare_dsl functions (lib_eq_dsl etc.)
-// so gates are emitted during construction, and additional uncompute gates may
-// be emitted by the destructor via the COMPARE uncompute tag.
 
 #include "sturm/uncompute/uncompute_op.hpp"
 #include "sturm/uncompute/qint_base.hpp"
@@ -86,13 +87,14 @@ static void clear_qubits(sturm::qint_t<W>& q) {
     q.super_mask = 0;
 }
 
-// ── Test: qbool from comparison — DSL circuit emission + COMPARE tag check ────
+// ── Test: qbool from comparison — DSL circuit emission, Bennett pristine ────
 //
 // M19 wiring: operator== calls lib_eq_dsl which emits the DSL comparison circuit
 // during construction of the qbool (forward gates emitted eagerly).
 //
-// The test verifies:
-//   - COMPARE tag is stamped on the qbool (for uncompute destructor hook).
+// Phase D retirement (2026-04-15): the qbool destructor no longer replays a
+// COMPARE stub — the transpiler now emits `uncompute_eq_qint(r, a, b)` at the
+// matching scope exit. This test therefore only verifies:
 //   - IR grows (gates are emitted by the DSL comparison circuit).
 //   - Source inputs are byte-identical before and after (Bennett discipline).
 
@@ -109,19 +111,16 @@ static void test_qbool_compare_uncompute() {
     const std::size_t ir_before = sc.ir().size();
 
     {
-        // operator== calls lib_eq_dsl and returns a qbool with COMPARE tag.
-        // M19: forward comparison circuit gates are emitted immediately here.
+        // operator== calls lib_eq_dsl and emits the forward comparison circuit.
         sturm::qbool t = (a == b);
+        (void)t;
 
-        // Verify the COMPARE tag was stamped.
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "qbool from operator== must carry COMPARE uncompute tag");
-
-        // Scope exit: t destructor fires, calling apply(COMPARE) which emits
-        // additional uncompute gates on the qbool's ancilla view.
+        // Scope exit: t destructor fires. Phase D: the qbool no longer
+        // carries a COMPARE tag, so destruction does not emit extra gates;
+        // uncomputation is the transpiler's responsibility.
     }
 
-    // After destruction the IR must have grown (DSL circuit gates emitted).
+    // IR must have grown from the forward DSL circuit gates.
     const std::size_t ir_after = sc.ir().size();
     assert(ir_after > ir_before
            && "Expected IR growth: comparison DSL circuit gates must be emitted");

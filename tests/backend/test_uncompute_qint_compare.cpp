@@ -162,15 +162,15 @@ static void test_uncompute_eq_qint_roundtrip() {
         assert(b_sv == b_val
                && "uncompute_eq_qint must not touch b's register");
 
-        // Suppress the COMPARE destructor stamp so the qbool's RAII path does
-        // not double-emit a compare circuit on teardown (matches the pattern
-        // in tests/backend/test_qint_compare_simulate.cpp).
+        // Phase D (2026-04-15): the COMPARE destructor tag was retired,
+        // so clearing super_mask here is just a belt-and-braces no-op;
+        // the qbool RAII path no longer emits any compare-replay gates.
         r.super_mask = 0;
 
         // Prevent double-release of the reserved register qubits.
         a.qubits.fill(-1);
         b.qubits.fill(-1);
-    } // r destructs: pool release runs; compare tag suppressed.
+    } // r destructs: pool release runs; no compare replay.
 
     // Release the pre-reserved register qubits.
     for (uint32_t i = 0; i < N_REG; ++i)

@@ -205,15 +205,15 @@ static void run_one_cmp_test(const char* op_name,
         a.qubits.fill(-1);
         b.qubits.fill(-1);
 
-        // The COMPARE uncompute tag is a TODO(backend) stub that emits
-        // STURM_GATE_CX with a 1-element qubit array, which causes UB in
-        // exec_simulate_multiq (reads qubits[1] out of bounds → orkan crash).
-        // Clear is_super before destruction so compare_forward/inverse skip
-        // emission (they guard on super_mask bits). The qubit is still
-        // released to the pool correctly (owning_ remains true, qubits[0]
-        // is valid). Statevector has already been read above.
+        // Phase D (2026-04-15): the COMPARE uncompute tag and the
+        // compare_forward / compare_inverse stub helpers were retired.
+        // Clearing super_mask here is therefore a belt-and-braces no-op:
+        // the qbool destructor no longer emits any compare-replay gates.
+        // The qubit is still released to the pool correctly (owning_
+        // remains true, qubits[0] is valid). Statevector has already been
+        // read above.
         result.super_mask = 0;
-    } // result qbool destructs here (compare uncompute skipped; pool release runs)
+    } // result qbool destructs here (no compare uncompute; pool release runs)
 
     // Release the pre-reserved register qubits.
     for (uint32_t i = 0; i < N_REG; ++i)

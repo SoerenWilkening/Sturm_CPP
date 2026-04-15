@@ -46,40 +46,9 @@ void qint_base::add_const(int64_t c, BackendContext& ctx) const noexcept {
     }
 }
 
-// ── compare_forward ────────────────────────────────────────────────────────────
-// Emit STURM_GATE_Z on each superposed bit, carrying cmp_kind as param, as a
-// placeholder for the forward comparison circuit.  Z is arity 1, matching the
-// single-qubit array passed (CX was arity 2 and caused malformed gate records).
-// TODO(backend): replace with an actual comparator (ancilla fanout) — M22+.
-
-void qint_base::compare_forward(uint32_t cmp_kind,
-                                BackendContext& ctx) const noexcept {
-    for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
-        if ((super_mask >> i) & 1u) {
-            if (qubits[i] == UINT32_MAX) continue;
-            uint32_t q[1] = {qubits[i]};
-            execute_gate(ctx, STURM_GATE_Z, q, 1u,
-                         static_cast<double>(cmp_kind));
-        }
-    }
-}
-
-// ── compare_inverse ────────────────────────────────────────────────────────────
-// Emit STURM_GATE_Z with negated cmp_kind param as the inverse stub.
-// Z is self-inverse; using a negated param lets tests distinguish forward from
-// inverse in the IR record stream without a dedicated gate kind.
-// TODO(backend): replace with the actual uncomputation circuit — M22+.
-
-void qint_base::compare_inverse(uint32_t cmp_kind,
-                                BackendContext& ctx) const noexcept {
-    for (uint8_t i = 0; i < width && i < QINT_BASE_MAX_WIDTH; ++i) {
-        if ((super_mask >> i) & 1u) {
-            if (qubits[i] == UINT32_MAX) continue;
-            uint32_t q[1] = {qubits[i]};
-            execute_gate(ctx, STURM_GATE_Z, q, 1u,
-                         -static_cast<double>(cmp_kind));
-        }
-    }
-}
+// compare_forward / compare_inverse definitions retired in Phase D
+// (2026-04-15).  Uncomputation of qbool-from-qint-comparison temporaries is
+// now the transpiler's responsibility; see uncompute_api.hpp::
+// uncompute_{eq,ne,lt,le,gt,ge}_qint.
 
 } // namespace sturm

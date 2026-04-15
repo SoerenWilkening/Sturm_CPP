@@ -230,179 +230,15 @@ static void test_bitwise_not_tag() {
     std::printf("  test_bitwise_not_tag<W=%zu>: PASS\n", W);
 }
 
-// ── operator== (comparison → qbool) ──────────────────────────────────────────
-
-template <std::size_t W>
-static void test_compare_eq_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(5LL, 0);
-    auto b = make_quantum<W>(5LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = (a == b);
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "operator==(qint,qint) must stamp COMPARE tag on qbool result");
-        clear_qbool_qubits(t);
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator==: 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator==: 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_compare_eq_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator!= (comparison → qbool) ──────────────────────────────────────────
-
-template <std::size_t W>
-static void test_compare_neq_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(5LL, 0);
-    auto b = make_quantum<W>(7LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = (a != b);
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "operator!=(qint,qint) must stamp COMPARE tag on qbool result");
-        clear_qbool_qubits(t);
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator!=: 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator!=: 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_compare_neq_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator< (comparison → qbool) ───────────────────────────────────────────
-
-template <std::size_t W>
-static void test_compare_lt_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(3LL, 0);
-    auto b = make_quantum<W>(5LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = (a < b);
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "operator<(qint,qint) must stamp COMPARE tag on qbool result");
-        clear_qbool_qubits(t);
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator<: 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator<: 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_compare_lt_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator<= ────────────────────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_compare_le_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(3LL, 0);
-    auto b = make_quantum<W>(5LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = (a <= b);
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "operator<=(qint,qint) must stamp COMPARE tag on qbool result");
-        clear_qbool_qubits(t);
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator<=: 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator<=: 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_compare_le_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator> ─────────────────────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_compare_gt_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(7LL, 0);
-    auto b = make_quantum<W>(2LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = (a > b);
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "operator>(qint,qint) must stamp COMPARE tag on qbool result");
-        clear_qbool_qubits(t);
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator>: 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator>: 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_compare_gt_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator>= ────────────────────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_compare_ge_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(7LL, 0);
-    auto b = make_quantum<W>(7LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = (a >= b);
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::COMPARE
-               && "operator>=(qint,qint) must stamp COMPARE tag on qbool result");
-        clear_qbool_qubits(t);
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator>=: 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator>=: 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_compare_ge_tag<W=%zu>: PASS\n", W);
-}
+// ── qint-qint comparison tests retired ──────────────────────────────────────
+// The six qint-qint comparison operators (==, !=, <, <=, >, >=) no longer
+// stamp an uncompute tag — Phase D (2026-04-15) moved that uncomputation
+// responsibility to the transpiler (`sturm-transpile` emits
+// `uncompute_{eq,ne,lt,le,gt,ge}_qint(r, a, b);` at the matching scope exit).
+// The per-operator Bennett-discipline checks that lived here are redundant
+// with the transpiler snapshot + end-to-end suites and with
+// tests/backend/test_uncompute_qint_compare.cpp, so the six COMPARE-tag
+// tests were removed when the tag was retired.
 
 // ═══════════════════════════════════════════════════════════════════════════════
 // Width-parameterized runner macros
@@ -413,16 +249,12 @@ static void run_all_for_width() {
     std::printf("── W=%zu ──\n", W);
     // qint-qint arithmetic tests retired in Phase C — uncomputation is now
     // the transpiler's responsibility; see comment block above.
+    // qint-qint comparison tests retired in Phase D (2026-04-15) — same
+    // rationale; see the comment block in place of the six tests.
     test_bitwise_and_tag<W>();
     test_bitwise_or_tag<W>();
     test_bitwise_xor_tag<W>();
     test_bitwise_not_tag<W>();
-    test_compare_eq_tag<W>();
-    test_compare_neq_tag<W>();
-    test_compare_lt_tag<W>();
-    test_compare_le_tag<W>();
-    test_compare_gt_tag<W>();
-    test_compare_ge_tag<W>();
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────

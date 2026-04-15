@@ -12,22 +12,25 @@
 // with PRD §3 "c = (a+5) >= 0" semantics where the constant 5 is a
 // compile-time integer literal.
 //
+// Phase D retirement (2026-04-15): the qbool-from-qint comparison no longer
+// stamps a COMPARE uncompute tag, so the qbool destructor no longer emits the
+// two compare-stub Z gates. The pinned COUNT_ONLY/APPEND sequence therefore
+// drops from 18 records to 16. Uncomputation of the compare ancilla is the
+// transpiler's responsibility (uncompute_ge_qint).
+//
 // Three test groups:
 //
 //   COUNT_ONLY — pin the expected gate count.
 //     Classical a (super_mask==0): 0 gates (fast path, no quantum bits).
-//     Quantum a (super_mask=0xFF): 18 gates with the current stub decomposition:
-//       8 × H (add_const forward) + 8 × X (sub_const uncompute of temp) +
-//       1 × Z (compare_forward in qbool dtor) + 1 × Z (compare_inverse in qbool dtor)
+//     Quantum a (super_mask=0xFF): 16 gates with the current stub decomposition:
+//       8 × H (add_const forward) + 8 × X (sub_const uncompute of temp)
 //     If stubs are replaced by real circuits the count will change and this assertion
 //     fires, prompting the developer to update the pinned value.
 //
 //   APPEND — build the golden gate sequence with a quantum a (super_mask=0xFF)
-//     and verify the IR record-for-record.  Golden sequence (18 records):
+//     and verify the IR record-for-record.  Golden sequence (16 records):
 //       [0..7]    STURM_GATE_H,  qubit=i (0..7),  param=5.0  (add_const stub)
 //       [8..15]   STURM_GATE_X,  qubit=i (0..7),  param=5.0  (sub_const uncompute)
-//       [16]      STURM_GATE_Z,  qubit=0,           param=6.0  (compare_forward, CMP_GE)
-//       [17]      STURM_GATE_Z,  qubit=0,           param=-6.0 (compare_inverse)
 //
 //   SIMULATE — sweep a ∈ {-10..10} (classical qint, super_mask==0).
 //     For each input assert c.value == (a_val + 5 >= 0).
@@ -46,11 +49,6 @@
 
 #include <cassert>
 #include <cstdio>
-
-// ── CMP_GE constant (matches detail::CMP_GE in qint_compare.hpp) ─────────────
-// compare_forward emits Z with param = cmp_kind; compare_inverse with -cmp_kind.
-static constexpr double kCmpGe    =  6.0;   // CMP_GE == 6
-static constexpr double kCmpGeNeg = -6.0;
 
 // ── Fixture: scoped backend context ──────────────────────────────────────────
 // Creates a context with the given mode, installs it as the thread-local
@@ -125,8 +123,8 @@ static void test_count_only_classical() {
 // With super_mask=0xFF (8 quantum bits) on qint_t<8>:
 //   - add_const emits 8 × H
 //   - sub_const (uncompute of (a+5) temporary) emits 8 × X
-//   - qbool.is_super = true → compare_forward emits 1 × Z, compare_inverse 1 × Z
-// Pinned expected count: 18.
+// Pinned expected count: 16. (Phase D: compare-stub Z gates retired — the
+// transpiler now emits uncompute_ge_qint instead.)
 //
 // NOTE: qubit indices are set manually (bypassing the pool) so the test does not
 // consume pool capacity.  We clear qubits/super_mask on `a` before its destructor
@@ -155,12 +153,11 @@ static void test_count_only_quantum() {
     }
 
     const uint64_t count = sc.gate_count();
-    // Pinned to current stub decomposition:
-    //   8 H (add_const) + 8 X (sub_const uncompute) +
-    //   1 Z (compare_forward) + 1 Z (compare_inverse) = 18
-    static constexpr uint64_t kExpected = 18u;
+    // Pinned to current stub decomposition (Phase D retirement):
+    //   8 H (add_const) + 8 X (sub_const uncompute) = 16
+    static constexpr uint64_t kExpected = 16u;
     assert(count == kExpected
-           && "COUNT_ONLY quantum: gate count must equal pinned value 18");
+           && "COUNT_ONLY quantum: gate count must equal pinned value 16");
 
     std::printf("  test_count_only_quantum: PASS (gate count = %llu)\n",
                 (unsigned long long)count);
@@ -169,8 +166,9 @@ static void test_count_only_quantum() {
 // ── Test 3: APPEND — golden gate sequence ─────────────────────────────────────
 //
 // Verifies the exact gate sequence in APPEND mode.  With super_mask=0xFF on
-// an 8-bit register, the IR must contain exactly 18 gate records matching the
+// an 8-bit register, the IR must contain exactly 16 gate records matching the
 // golden sequence described in the file header comment.
+// (Phase D retirement: compare-stub Z gates at [16]/[17] removed.)
 
 static void test_append_golden() {
     ScopedCtx sc(STURM_MODE_APPEND);
@@ -195,8 +193,8 @@ static void test_append_golden() {
     const auto& ir = sc.ir();
 
     // Total gate count
-    assert(ir.size() == 18u
-           && "APPEND golden: IR must contain exactly 18 gate records");
+    assert(ir.size() == 16u
+           && "APPEND golden: IR must contain exactly 16 gate records");
 
     // Gates [0..7]: H from add_const — one per quantum bit, param = 5.0
     for (std::size_t i = 0; i < 8; ++i) {
@@ -222,28 +220,6 @@ static void test_append_golden() {
                && "X gate arity must be 1");
         assert(r.param      == 5.0
                && "gate 8..15 param must be 5.0 (the constant c)");
-    }
-
-    // Gate [16]: Z from compare_forward on qbool (qubit 0, param = CMP_GE)
-    {
-        const auto& r = ir.at(16);
-        assert(r.kind      == STURM_GATE_Z
-               && "gate 16 must be Z (compare_forward stub)");
-        assert(r.qubits[0] == 0u
-               && "gate 16 must target qubit 0 (qbool qubit slot)");
-        assert(r.param     == kCmpGe
-               && "gate 16 param must be CMP_GE (6.0)");
-    }
-
-    // Gate [17]: Z from compare_inverse on qbool (qubit 0, param = -CMP_GE)
-    {
-        const auto& r = ir.at(17);
-        assert(r.kind      == STURM_GATE_Z
-               && "gate 17 must be Z (compare_inverse stub)");
-        assert(r.qubits[0] == 0u
-               && "gate 17 must target qubit 0 (qbool qubit slot)");
-        assert(r.param     == kCmpGeNeg
-               && "gate 17 param must be -CMP_GE (-6.0)");
     }
 
     std::printf("  test_append_golden: PASS (%zu gate records, sequence verified)\n",
