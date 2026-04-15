@@ -118,7 +118,8 @@ qint_t<W> operator+(int64_t c, const qint_t<W>& a) {
 //
 // sturm-6qo: allocate a fresh result register, copy a's state into it via
 // CNOT, then call result += b (lib_add_dsl via qint_arith_v3.hpp).
-// Stamps ADD_QINT so the destructor emits result -= b (inverse) when it fires.
+// Uncomputation is the transpiler's responsibility (Phase C): sturm-transpile
+// injects `uncompute_add_qint(result, b);` before the enclosing scope closes.
 
 template <std::size_t W>
 qint_t<W> operator+(const qint_t<W>& a, const qint_t<W>& b) {
@@ -139,16 +140,14 @@ qint_t<W> operator+(const qint_t<W>& a, const qint_t<W>& b) {
     // Delegate to compound assign: result += b (emits adder circuit).
     result += b;
 
-    // Stamp ADD_QINT: destroying result will emit result -= b (Bennett inverse).
-    result.uncompute_ = uncompute_op::make_add_qint(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)));
     return result;
 }
 
 // ── operator- (binary, qint - qint) ──────────────────────────────────────────
 //
 // sturm-6qo: copy a into fresh register, then result -= b.
-// Stamps SUB_QINT so the destructor emits result += b (Bennett inverse).
+// Uncomputation is the transpiler's responsibility (Phase C): sturm-transpile
+// injects `uncompute_sub_qint(result, b);` before the enclosing scope closes.
 
 template <std::size_t W>
 qint_t<W> operator-(const qint_t<W>& a, const qint_t<W>& b) {
@@ -167,9 +166,6 @@ qint_t<W> operator-(const qint_t<W>& a, const qint_t<W>& b) {
     // Delegate to compound assign: result -= b (emits subtractor circuit).
     result -= b;
 
-    // Stamp SUB_QINT: destroying result will emit result += b (Bennett inverse).
-    result.uncompute_ = uncompute_op::make_sub_qint(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)));
     return result;
 }
 
@@ -178,7 +174,8 @@ qint_t<W> operator-(const qint_t<W>& a, const qint_t<W>& b) {
 // sturm-6qo: copy a into fresh register, then result *= b.
 // operator*= internally allocates a 2W product register, releases the copy
 // qubits, and remaps result.qubits to the lower W product bits.
-// Stamps MUL_INVERSE (Bennett uncompute tag).
+// Uncomputation is the transpiler's responsibility (Phase C): sturm-transpile
+// injects `uncompute_mul_qint(result, b);` before the enclosing scope closes.
 
 template <std::size_t W>
 qint_t<W> operator*(const qint_t<W>& a, const qint_t<W>& b) {
@@ -198,9 +195,6 @@ qint_t<W> operator*(const qint_t<W>& a, const qint_t<W>& b) {
     // operator*= will release the copy qubits and remap to product register.
     result *= b;
 
-    // Stamp MUL_INVERSE: destroying result emits the inverse circuit (Bennett).
-    result.uncompute_ = uncompute_op::make_mul_inverse(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)));
     return result;
 }
 
@@ -209,7 +203,8 @@ qint_t<W> operator*(const qint_t<W>& a, const qint_t<W>& b) {
 // sturm-6qo: copy a into fresh register, then result /= b.
 // operator/= allocates quotient and remainder registers, releases copy qubits,
 // and remaps result.qubits to the quotient register.
-// Stamps DIV_INVERSE (Bennett uncompute tag).
+// Uncomputation is the transpiler's responsibility (Phase C): sturm-transpile
+// injects `uncompute_div_qint(result, b);` before the enclosing scope closes.
 
 template <std::size_t W>
 qint_t<W> operator/(const qint_t<W>& a, const qint_t<W>& b) {
@@ -228,9 +223,6 @@ qint_t<W> operator/(const qint_t<W>& a, const qint_t<W>& b) {
     // Delegate to compound assign: result /= b.
     result /= b;
 
-    // Stamp DIV_INVERSE: destroying result emits the inverse circuit (Bennett).
-    result.uncompute_ = uncompute_op::make_div_inverse(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)));
     return result;
 }
 
@@ -244,7 +236,9 @@ qint_t<W> operator/(const qint_t<W>& a, const qint_t<W>& b) {
 // COUNT_ONLY tests (peak ~18 qubits, exceeds OrkanBridge 17-qubit limit).
 // See test_free_op_simulate.cpp comment block for the budget breakdown.
 //
-// Stamps MOD_INVERSE (Bennett uncompute tag).
+// Uncomputation is the transpiler's responsibility (Phase C): sturm-transpile
+// injects `uncompute_mod_qint(result, b);` before the enclosing scope closes.
+// `uncompute_mod_qint` ships with a stub body today (no clean dual).
 
 template <std::size_t W>
 qint_t<W> operator%(const qint_t<W>& a, const qint_t<W>& b) {
@@ -264,9 +258,6 @@ qint_t<W> operator%(const qint_t<W>& a, const qint_t<W>& b) {
     // operator%= will release the copy qubits and remap to remainder register.
     result %= b;
 
-    // Stamp MOD_INVERSE: destroying result emits the inverse circuit (Bennett).
-    result.uncompute_ = uncompute_op::make_mod_inverse(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)));
     return result;
 }
 

@@ -115,149 +115,13 @@ static void clear_qbool_qubits(sturm::qbool& b) {
 // Per-operator test templates (parameterized over W)
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// ── operator+ (qint + qint) ───────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_add_qint_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(3LL, 0);
-    auto b = make_quantum<W>(5LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = a + b;
-        // t must carry ADD_QINT tag (or ADD_CONST if implemented as such)
-        // The invariant: tag is not NONE — some uncompute info is stored.
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::ADD_QINT
-               && "operator+(qint,qint) must stamp ADD_QINT tag");
-        // Scope exit: t destructor runs uncompute inverse
-    }
-
-    // Bennett: inputs unchanged.
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator+(qint,qint): 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator+(qint,qint): 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_add_qint_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator- (qint - qint) ───────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_sub_qint_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(10LL, 0);
-    auto b = make_quantum<W>(4LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = a - b;
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::SUB_QINT
-               && "operator-(qint,qint) must stamp SUB_QINT tag");
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator-(qint,qint): 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator-(qint,qint): 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_sub_qint_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator* (qint * qint) ───────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_mul_qint_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(3LL, 0);
-    auto b = make_quantum<W>(4LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = a * b;
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::MUL_INVERSE
-               && "operator*(qint,qint) must stamp MUL_INVERSE tag");
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator*(qint,qint): 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator*(qint,qint): 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_mul_qint_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator/ (qint / qint) ───────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_div_qint_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(12LL, 0);
-    auto b = make_quantum<W>(3LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = a / b;
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::DIV_INVERSE
-               && "operator/(qint,qint) must stamp DIV_INVERSE tag");
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator/(qint,qint): 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator/(qint,qint): 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_div_qint_tag<W=%zu>: PASS\n", W);
-}
-
-// ── operator% (qint % qint) ───────────────────────────────────────────────────
-
-template <std::size_t W>
-static void test_mod_qint_tag() {
-    ScopedAppendCtx sc;
-
-    auto a = make_quantum<W>(10LL, 0);
-    auto b = make_quantum<W>(3LL, static_cast<int>(W));
-
-    const auto a_before = snap<W>(a);
-    const auto b_before = snap<W>(b);
-
-    {
-        auto t = a % b;
-        assert(t.uncompute_.tag == sturm::uncompute_op::kind::MOD_INVERSE
-               && "operator%(qint,qint) must stamp MOD_INVERSE tag");
-    }
-
-    assert(snap_eq<W>(snap<W>(a), a_before)
-           && "operator%(qint,qint): 'a' must be pristine after block");
-    assert(snap_eq<W>(snap<W>(b), b_before)
-           && "operator%(qint,qint): 'b' must be pristine after block");
-
-    clear_qubits(a);
-    clear_qubits(b);
-    std::printf("  test_mod_qint_tag<W=%zu>: PASS\n", W);
-}
+// ── qint-qint arithmetic tests retired ─────────────────────────────────────
+// The five qint-qint operators (+, -, *, /, %) no longer stamp an uncompute
+// tag — Phase C moved that uncomputation responsibility to the transpiler
+// (sturm-transpile emits `uncompute_{add,sub,mul,div,mod}_qint(a, b);` at
+// scope exit). The per-operator Bennett-discipline checks that lived here
+// were redundant with the transpiler snapshot + end-to-end suites, so the
+// five tests were removed when the tags were retired (2026-04-15).
 
 // ── operator& (bitwise AND) ───────────────────────────────────────────────────
 
@@ -547,11 +411,8 @@ static void test_compare_ge_tag() {
 template <std::size_t W>
 static void run_all_for_width() {
     std::printf("── W=%zu ──\n", W);
-    test_add_qint_tag<W>();
-    test_sub_qint_tag<W>();
-    test_mul_qint_tag<W>();
-    test_div_qint_tag<W>();
-    test_mod_qint_tag<W>();
+    // qint-qint arithmetic tests retired in Phase C — uncomputation is now
+    // the transpiler's responsibility; see comment block above.
     test_bitwise_and_tag<W>();
     test_bitwise_or_tag<W>();
     test_bitwise_xor_tag<W>();

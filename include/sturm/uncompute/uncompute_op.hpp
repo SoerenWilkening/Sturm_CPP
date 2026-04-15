@@ -15,13 +15,13 @@
 //   NONE tag → no-op.
 //   ADD_CONST(c) → self.sub_const(c, ctx)
 //   SUB_CONST(c) → self.add_const(c, ctx)
-//   ADD_QINT     → TODO(backend): subtract source qint (M21+)
-//   SUB_QINT     → TODO(backend): add source qint (M21+)
-//   MUL_INVERSE  → TODO(backend): bespoke inverse (M22)
-//   DIV_INVERSE  → TODO(backend): bespoke inverse (M22)
-//   MOD_INVERSE  → TODO(backend): bespoke inverse (M22)
 //   BITWISE_SELF → TODO(backend): re-run self-inverse bitwise op (M22)
 //   COMPARE      → TODO(backend): re-run comparison to clear ancilla (M22)
+//
+// Retired (Phase C, 2026-04-15): the five qint-qint arithmetic branches
+// (ADD_QINT, SUB_QINT, MUL_INVERSE, DIV_INVERSE, MOD_INVERSE) migrated to
+// the transpiler path — see uncompute_api.hpp::uncompute_{add,sub,mul,div,
+// mod}_qint.
 //
 // LOC budget: ≤ 300 (this file).
 #pragma once
@@ -44,11 +44,6 @@ struct uncompute_op {
         NONE,          ///< No inverse (measurement, or explicitly cleared)
         ADD_CONST,     ///< Inverse of +=c  → emit -=c  (data: int64_t c)
         SUB_CONST,     ///< Inverse of -=c  → emit +=c  (data: int64_t c)
-        ADD_QINT,      ///< Inverse of +=q  → emit -=q  (data: ptr to source qint_base)
-        SUB_QINT,      ///< Inverse of -=q  → emit +=q  (data: ptr to source qint_base)
-        MUL_INVERSE,   ///< Bespoke inverse for multiplication (data: ptr to factor)
-        DIV_INVERSE,   ///< Bespoke inverse for division       (data: ptr to divisor)
-        MOD_INVERSE,   ///< Bespoke inverse for modulo         (data: ptr to modulus)
         BITWISE_SELF,  ///< Self-inverse bitwise op            (data: op sub-kind + ptr)
         COMPARE,       ///< Re-run comparison to uncompute ancilla (data: ptrs + op)
     };
@@ -61,13 +56,6 @@ struct uncompute_op {
     union data_t {
         // ADD_CONST / SUB_CONST: the constant c
         int64_t const_c;
-
-        // ADD_QINT / SUB_QINT / MUL_INVERSE / DIV_INVERSE / MOD_INVERSE:
-        // non-owning pointer to the source qint_base.
-        // The pointed-to object must outlive this uncompute_op (Bennett discipline
-        // guarantees inputs are pristine when the inverse runs).
-        // TODO(backend): typed once the concrete qint is wired (M21/M22).
-        const qint_base* qint_ptr;
 
         // BITWISE_SELF: pointer to input and sub-kind tag (packed into two fields).
         // For qbool AND/OR uncompute, input_ptr is null and a_qubit / b_qubit
@@ -116,41 +104,6 @@ struct uncompute_op {
         uncompute_op op;
         op.tag          = kind::SUB_CONST;
         op.data.const_c = c;
-        return op;
-    }
-
-    [[nodiscard]] static uncompute_op make_add_qint(const qint_base* src) noexcept {
-        uncompute_op op;
-        op.tag             = kind::ADD_QINT;
-        op.data.qint_ptr   = src;
-        return op;
-    }
-
-    [[nodiscard]] static uncompute_op make_sub_qint(const qint_base* src) noexcept {
-        uncompute_op op;
-        op.tag             = kind::SUB_QINT;
-        op.data.qint_ptr   = src;
-        return op;
-    }
-
-    [[nodiscard]] static uncompute_op make_mul_inverse(const qint_base* factor) noexcept {
-        uncompute_op op;
-        op.tag           = kind::MUL_INVERSE;
-        op.data.qint_ptr = factor;
-        return op;
-    }
-
-    [[nodiscard]] static uncompute_op make_div_inverse(const qint_base* divisor) noexcept {
-        uncompute_op op;
-        op.tag           = kind::DIV_INVERSE;
-        op.data.qint_ptr = divisor;
-        return op;
-    }
-
-    [[nodiscard]] static uncompute_op make_mod_inverse(const qint_base* modulus) noexcept {
-        uncompute_op op;
-        op.tag           = kind::MOD_INVERSE;
-        op.data.qint_ptr = modulus;
         return op;
     }
 
@@ -210,27 +163,6 @@ struct uncompute_op {
         case kind::SUB_CONST:
             // Inverse of -=c is +=c.
             self.add_const(data.const_c, ctx);
-            break;
-
-        case kind::ADD_QINT:
-            // TODO(backend): subtract source qint from self (M21).
-            // Requires concrete qint_t<W> wiring; stub until then.
-            break;
-
-        case kind::SUB_QINT:
-            // TODO(backend): add source qint to self (M21).
-            break;
-
-        case kind::MUL_INVERSE:
-            // TODO(backend): bespoke inverse for multiplication (M22).
-            break;
-
-        case kind::DIV_INVERSE:
-            // TODO(backend): bespoke inverse for division (M22).
-            break;
-
-        case kind::MOD_INVERSE:
-            // TODO(backend): bespoke inverse for modulo (M22).
             break;
 
         case kind::BITWISE_SELF:
