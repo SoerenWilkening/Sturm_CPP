@@ -503,6 +503,137 @@ static void test_div_assign_const_emits_mul() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
 }
 
+// ── Phase C: qint-qint compound-assign inverses ─────────────────────────────
+//
+// PC-1..PC-5: `a += b;` / `a -= b;` / `a *= b;` / `a /= b;` / `a %= b;` where
+// b is another qint named in source. The matcher stores the verbatim RHS
+// identifier (e.g. "b") in `operands[0].name`; the render emits a
+// free-function call `uncompute_{add,sub,mul,div,mod}_qint(a, b);` declared
+// in include/sturm/uncompute/uncompute_api.hpp. The call-site shape is
+// uniform across all five ops so that later phases can extend it (mask
+// checks, instrumentation) in one place — see the PC-ir section of
+// docs/implementation_plan_transpiler_phase_c.md.
+
+static void test_add_assign_qint_emits_uncompute_add_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::ADD_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_add_qint(a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_sub_assign_qint_emits_uncompute_sub_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::SUB_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_sub_qint(a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_mul_assign_qint_emits_uncompute_mul_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::MUL_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_mul_qint(a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_div_assign_qint_emits_uncompute_div_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::DIV_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_div_qint(a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_mod_assign_qint_emits_uncompute_mod_qint() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::MOD_ASSIGN_QINT;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_mod_qint(a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
 // ── sturm-ny2: multi-kind ops seeded out of source order ────────────────────
 
 static void test_multi_kind_out_of_order_sorted_by_source() {
@@ -582,6 +713,11 @@ int main() {
     test_sub_assign_const_emits_add();
     test_mul_assign_const_emits_div();
     test_div_assign_const_emits_mul();
+    test_add_assign_qint_emits_uncompute_add_qint();
+    test_sub_assign_qint_emits_uncompute_sub_qint();
+    test_mul_assign_qint_emits_uncompute_mul_qint();
+    test_div_assign_qint_emits_uncompute_div_qint();
+    test_mod_assign_qint_emits_uncompute_mod_qint();
     test_multi_kind_out_of_order_sorted_by_source();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);

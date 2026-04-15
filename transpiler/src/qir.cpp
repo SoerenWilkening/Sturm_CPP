@@ -48,6 +48,11 @@ std::string kind_to_string(QOpKind kind) {
     case QOpKind::SUB_ASSIGN_CONST: return "SUB_ASSIGN_CONST";
     case QOpKind::MUL_ASSIGN_CONST: return "MUL_ASSIGN_CONST";
     case QOpKind::DIV_ASSIGN_CONST: return "DIV_ASSIGN_CONST";
+    case QOpKind::ADD_ASSIGN_QINT:  return "ADD_ASSIGN_QINT";
+    case QOpKind::SUB_ASSIGN_QINT:  return "SUB_ASSIGN_QINT";
+    case QOpKind::MUL_ASSIGN_QINT:  return "MUL_ASSIGN_QINT";
+    case QOpKind::DIV_ASSIGN_QINT:  return "DIV_ASSIGN_QINT";
+    case QOpKind::MOD_ASSIGN_QINT:  return "MOD_ASSIGN_QINT";
     }
     // Unreachable while every enumerator above is listed, but we emit a
     // deterministic placeholder so future additions that forget to update
