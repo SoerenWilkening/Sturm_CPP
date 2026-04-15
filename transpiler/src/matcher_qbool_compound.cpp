@@ -69,16 +69,48 @@ using detail::find_or_create_scope;
 using detail::make_ref;
 
 // Peel a sub-expression through any number of ParenExpr / ImplicitCastExpr
-// / ExprWithCleanups / CXXConstructExpr wrappers to reach the "shape" the
-// matcher is interested in. Clang's IgnoreParenImpCasts handles ParenExpr
-// and implicit casts; CXXConstructExpr is additionally peeled here because
-// the copy-initialization chain from `operator&`/`operator|` → qbool
-// sometimes materializes via a CXXConstructExpr wrapping the call
-// (same shape `matcher_qint_compare.cpp:163-183` documents).
+// / ExprWithCleanups / CXXConstructExpr / MaterializeTemporaryExpr /
+// CXXBindTemporaryExpr / user-defined-conversion CXXMemberCallExpr
+// wrappers to reach the "shape" the matcher is interested in. Clang's
+// IgnoreParenImpCasts handles ParenExpr and implicit casts;
+// CXXConstructExpr is additionally peeled here because the copy-
+// initialization chain from `operator&`/`operator|` → qbool sometimes
+// materializes via a CXXConstructExpr wrapping the call (same shape
+// `matcher_qint_compare.cpp:163-183` documents).
+//
+// PE-5 widens this peel to also descend through:
+//   * MaterializeTemporaryExpr / CXXBindTemporaryExpr — the temporary-
+//     materialization wrappers that appear around lazy_expr.hpp's
+//     `OrExpr<qbool>` / `AndExpr<qbool>` results in real
+//     STURM_BACKEND_ENABLED builds.
+//   * CXXMemberCallExpr that represents a user-defined conversion via
+//     `OrExpr<qbool>::operator qbool()` / `AndExpr<qbool>::operator
+//     qbool()`. These conversion calls wrap the actual `|`/`&`
+//     CXXOperatorCallExpr we want to recurse into. Without this peel
+//     the matcher would never fire on `qbool r = (b | c) & d;` written
+//     against the real lazy-expression headers — only against the
+//     hermetic fixture stubs that return `qbool` directly.
+//
+// The peel through a CXXMemberCallExpr is conservatively restricted to
+// the conversion-operator shape: a zero-argument member call whose
+// callee is a CXXConversionDecl. This keeps regular qbool member calls
+// (e.g. `b.flip()`) from being silently descended into.
 const Expr* peel_to_payload(const Expr* e) {
     if (!e) return nullptr;
     const Expr* cur = e->IgnoreParenImpCasts();
     while (true) {
+        if (const auto* mte = dyn_cast<MaterializeTemporaryExpr>(cur)) {
+            if (const Expr* sub = mte->getSubExpr()) {
+                cur = sub->IgnoreParenImpCasts();
+                continue;
+            }
+        }
+        if (const auto* bte = dyn_cast<CXXBindTemporaryExpr>(cur)) {
+            if (const Expr* sub = bte->getSubExpr()) {
+                cur = sub->IgnoreParenImpCasts();
+                continue;
+            }
+        }
         if (const auto* ctor = dyn_cast<CXXConstructExpr>(cur)) {
             // Degenerate ctors (zero-arg, or the implicit copy-from-temp
             // wrapping the real call) have exactly one argument we should
@@ -87,6 +119,23 @@ const Expr* peel_to_payload(const Expr* e) {
             if (ctor->getNumArgs() == 1 && ctor->getArg(0)) {
                 cur = ctor->getArg(0)->IgnoreParenImpCasts();
                 continue;
+            }
+        }
+        if (const auto* mce = dyn_cast<CXXMemberCallExpr>(cur)) {
+            // User-defined conversion: zero-arg member call whose target
+            // is a CXXConversionDecl (e.g. `OrExpr<qbool>::operator
+            // qbool()` in lazy_expr.hpp). Descend into the implicit object
+            // argument so we can keep walking toward the wrapped `|`/`&`
+            // CXXOperatorCallExpr.
+            if (mce->getNumArgs() == 0) {
+                if (const auto* method = mce->getMethodDecl()) {
+                    if (isa<CXXConversionDecl>(method)) {
+                        if (const Expr* obj = mce->getImplicitObjectArgument()) {
+                            cur = obj->IgnoreParenImpCasts();
+                            continue;
+                        }
+                    }
+                }
             }
         }
         break;
@@ -286,6 +335,19 @@ public:
             return;
         }
 
+        // Disjointness from the MVP OR matcher: when neither argument
+        // produced an intermediate (flat_lines stays empty), the init
+        // is a single, non-nested op-call like `qbool r = b | c;` —
+        // which the MVP matcher_qbool_bitwise.cpp callback already
+        // handles. Bail without emitting a flat decl so the two
+        // matchers do not double-bind the same VarDecl.
+        if (flat_lines.empty()) {
+            if (scope.ops.size() > ops_high_water) {
+                scope.ops.resize(ops_high_water);
+            }
+            return;
+        }
+
         // Outermost op: result is the original VarDecl name, operands are
         // the two collected (possibly-temp) names.
         QOperation outer_op;
@@ -348,38 +410,69 @@ std::vector<std::unique_ptr<CompoundQBoolCallback>>& compound_callback_pool() {
 
 void register_compound_qbool_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
-    // The inner op-call shape — a qbool-returning bitwise call on `|` or
-    // `&`. Deliberately keep the arg guards loose (no DRE requirement):
+    // The inner op-call shape — a bitwise `|` or `&` overloaded-operator
+    // call. Deliberately keep the arg guards loose (no DRE requirement):
     // the callback's flatten_arg walker recursively re-peels and will
-    // reject anything non-structural. This keeps the matcher pattern
-    // readable and shifts the leaf/interior discrimination into code,
-    // which is easier to follow and extend than a deeply-nested matcher
-    // DSL expression.
+    // reject anything non-structural.
     auto nested_bitwise_call = cxxOperatorCallExpr(
         hasAnyOverloadedOperatorName("|", "&"),
         argumentCountIs(2));
 
+    // Helper: a bitwise op-call argument that may be wrapped in a
+    // user-defined conversion `OrExpr<qbool>::operator qbool()` /
+    // `AndExpr<qbool>::operator qbool()` (the lazy_expr.hpp shape used
+    // under STURM_BACKEND_ENABLED). Matches either the bare op-call or
+    // the conversion-wrapped form. Both shapes are valid nested-arg
+    // candidates for the compound matcher. `ignoringImplicit` peels
+    // ImplicitCastExpr, MaterializeTemporaryExpr and CXXBindTemporaryExpr
+    // — the wrapper trio that wraps the `OrExpr<qbool>` lvalue between
+    // its `operator qbool()` member call and its producing `|`/`&`
+    // CXXOperatorCallExpr.
+    auto nested_or_lazy_wrapped = anyOf(
+        nested_bitwise_call,
+        cxxMemberCallExpr(on(ignoringImplicit(nested_bitwise_call))));
+
     // Outer op-call: `|` or `&` with AT LEAST ONE argument that (after
-    // paren+impl-cast peel) is itself a nested bitwise op-call. The anyOf
+    // implicit-node peel) is itself a nested bitwise op-call OR a
+    // user-defined-conversion call wrapping a nested op-call. The anyOf
     // covers both "nested on the left" and "nested on the right" shapes;
     // the "nested on both" case is covered by either branch matching.
     auto outer_bitwise_call = cxxOperatorCallExpr(
         hasAnyOverloadedOperatorName("|", "&"),
         argumentCountIs(2),
         anyOf(
-            hasArgument(0, ignoringParenImpCasts(nested_bitwise_call)),
-            hasArgument(1, ignoringParenImpCasts(nested_bitwise_call))));
+            hasArgument(0, ignoringImplicit(nested_or_lazy_wrapped)),
+            hasArgument(1, ignoringImplicit(nested_or_lazy_wrapped))));
 
-    // Two initializer shapes reach a qbool VarDecl — direct (copy-elided)
-    // and ctor-wrapped (elidable copy). Mirror the Phase D comparator
-    // matcher's peel at matcher_qint_compare.cpp:163-183.
-    auto direct_init  = ignoringParenImpCasts(outer_bitwise_call);
-    auto ctor_wrapped = ignoringParenImpCasts(
-        cxxConstructExpr(has(ignoringParenImpCasts(outer_bitwise_call))));
+    // Three initializer shapes can reach a qbool VarDecl whose RHS is a
+    // compound `(b|c) & d`-style expression:
+    //   (a) direct  — the outer op-call sits under the VarDecl init,
+    //                  modulo implicit wrappers (hermetic fixture
+    //                  shape, where `operator&` returns `qbool`);
+    //   (b) ctor-wrapped — same as (a) but with an elidable copy ctor
+    //                       (mirrors Phase D comparator at
+    //                       matcher_qint_compare.cpp:163-183);
+    //   (c) lazy-wrapped — under STURM_BACKEND_ENABLED `operator&`
+    //                       returns `AndExpr<qbool>`, materialized via
+    //                       `AndExpr<qbool>::operator qbool()`. The init
+    //                       chain is:
+    //                         ExprWithCleanups
+    //                         → ImplicitCastExpr<UserDefinedConversion>
+    //                         → CXXMemberCallExpr (operator qbool())
+    //                         → ImplicitCastExpr<NoOp>
+    //                         → MaterializeTemporaryExpr
+    //                         → CXXOperatorCallExpr `&`
+    //                       — same shape the MVP OR matcher peels in
+    //                       matcher_qbool_bitwise.cpp:223-224.
+    auto direct_init  = ignoringImplicit(outer_bitwise_call);
+    auto ctor_wrapped = ignoringImplicit(
+        cxxConstructExpr(has(ignoringImplicit(outer_bitwise_call))));
+    auto lazy_wrapped = ignoringImplicit(
+        cxxMemberCallExpr(on(ignoringImplicit(outer_bitwise_call))));
 
     auto pattern = varDecl(
         hasType(cxxRecordDecl(hasName("qbool"))),
-        hasInitializer(anyOf(direct_init, ctor_wrapped))
+        hasInitializer(anyOf(direct_init, ctor_wrapped, lazy_wrapped))
     ).bind("var");
 
     auto& pool = compound_callback_pool();

@@ -673,6 +673,57 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase E / PE-5: end-to-end injected observability + idempotency for ────
+# the compound qbool expression example. Same harness pattern as the
+# Phase D comparison block above:
+#   1. build_example_compound_expression — SETUP fixture that builds the
+#      example_compound_expression target. Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/compound_expression.cpp via
+#      add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_compound_expression_injected — reads the
+#      generated file and asserts the PE-4 flat decl sequence
+#      (`qbool __stu_t0 = b | c;` + `qbool r = __stu_t0 & d;`) appears
+#      in place of the original `qbool r = (b | c) & d;` VarDecl, and
+#      that the LIFO inverse pair (`uncompute_and(r, __stu_t0, d);`
+#      then `uncompute_or(__stu_t0, b, c);`) is injected before the
+#      enclosing scope's close brace. Also confirms the source is
+#      byte-identical (no injected fragment in place).
+#   3. transpiler_idempotent_example_compound_expression — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_compound_expression
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_compound_expression)
+    set_tests_properties(build_example_compound_expression PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_compound_expression_built")
+
+    add_test(
+        NAME transpiler_example_compound_expression_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/compound_expression.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/compound_expression.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_compound_expression.cmake)
+    set_tests_properties(transpiler_example_compound_expression_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_compound_expression_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_compound_expression
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/compound_expression.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_compound_expression_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_compound_expression PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_compound_expression_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
