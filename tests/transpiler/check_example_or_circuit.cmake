@@ -22,8 +22,12 @@
 #   2. GENERATED contains `uncompute_or(c, a, b)` exactly once — the
 #      injected call. The regex tolerates internal whitespace so an
 #      emitter tweak that changes formatting does not trip this check.
-#   3. SOURCE does NOT contain `uncompute_or` anywhere — the transpiler
-#      must not contaminate its input (no in-place edit, no stray copy).
+#   3. SOURCE does NOT contain the exact injected signature
+#      `uncompute_or(c, a, b)` — the transpiler must not contaminate its
+#      input (no in-place edit, no stray copy). The check mirrors the
+#      generated-file regex (same whitespace tolerance) rather than a
+#      bare `uncompute_or` substring so the example is free to discuss
+#      the helper by name in its documentation comments.
 #
 # The script exits 0 on success, 1 on any failure.
 
@@ -65,16 +69,18 @@ if(NOT gen_hit_count EQUAL 1)
         "source has a stray reference that leaked through.")
 endif()
 
-# ── Assertion 2: SOURCE does not contain `uncompute_or` anywhere ────────────
+# ── Assertion 2: SOURCE does not contain the injected signature ─────────────
 file(READ "${SOURCE}" src_content)
-string(REGEX MATCH "uncompute_or" src_hit "${src_content}")
+string(REGEX MATCH
+    "uncompute_or[ \t]*\\([ \t]*c[ \t]*,[ \t]*a[ \t]*,[ \t]*b[ \t]*\\)"
+    src_hit "${src_content}")
 if(src_hit)
     message(FATAL_ERROR
-        "check_example_or_circuit: `uncompute_or` appeared in SOURCE "
-        "${SOURCE}.\n"
+        "check_example_or_circuit: the injected signature "
+        "`uncompute_or(c, a, b)` appeared in SOURCE ${SOURCE}.\n"
         "The transpiler must never rewrite its input in place. If this file "
-        "genuinely needs the symbol (e.g. the hand-written reference), it "
-        "belongs in tests/transpiler/fixtures/, not in examples/.")
+        "genuinely needs the call (e.g. a hand-written reference), it belongs "
+        "in tests/transpiler/fixtures/, not in examples/.")
 endif()
 
 message(STATUS
