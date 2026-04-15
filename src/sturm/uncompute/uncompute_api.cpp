@@ -162,4 +162,101 @@ void uncompute_or(qbool& r, const qbool& a, const qbool& b) {
     // (0, 0): nothing to do.
 }
 
+// ── uncompute_and ─────────────────────────────────────────────────────────────
+// See header for the full quadrant contract.  Uses the thread-local
+// BackendContext resolved via sturm_get_thread_context().
+//
+// Forward decompositions (from bit_proxy.hpp `materialize_and`):
+//   (a_q, b_q)   : CCX(a, b, r)
+//   (a_q, b=0)   : (none)
+//   (a_q, b=1)   : CX(a, r)
+//   (a=0, b_q)   : (none)
+//   (a=1, b_q)   : CX(b, r)
+//   (classical)  : X(r) when a=b=1, otherwise (none)
+//
+// The adjoint is the reversed list with each gate inverted; every gate
+// used by the forward path (X, CX, CCX) is self-inverse, so the
+// adjoint is the same single gate as the forward emission — except no
+// gate fires when the forward path was empty.
+void uncompute_and(qbool& r, const qbool& a, const qbool& b) {
+    const bool a_q = is_quantum(a);
+    const bool b_q = is_quantum(b);
+    const bool r_q = is_quantum(r);
+
+    // Pure-classical (no ancilla) case: the forward AND never allocated
+    // `r`, so there is nothing to undo.  Mirrors the uncompute_or short
+    // circuit.
+    if (!a_q && !b_q && !r_q) {
+        return;
+    }
+
+    // Inverse requires an ancilla qubit on r.  Missing r qubit with
+    // quantum inputs would mean the caller paired uncompute_and with a
+    // non-materialized result — not supported by this API.
+    assert(r_q && "uncompute_and: r must hold an ancilla qubit");
+    if (!r_q) {
+        return;
+    }
+
+    sturm_backend_context_t* raw = sturm_get_thread_context();
+    assert(raw && "uncompute_and: no BackendContext installed");
+    BackendContext& ctx = *raw;
+
+    const uint32_t qr = static_cast<uint32_t>(r.qubits[0]);
+
+    auto emit_x = [&](uint32_t q) {
+        uint32_t args[1] = {q};
+        execute_gate(ctx, STURM_GATE_X, args, 1u, 0.0);
+    };
+    auto emit_cx = [&](uint32_t ctrl, uint32_t tgt) {
+        uint32_t args[2] = {ctrl, tgt};
+        execute_gate(ctx, STURM_GATE_CX, args, 2u, 0.0);
+    };
+    auto emit_ccx = [&](uint32_t c0, uint32_t c1, uint32_t tgt) {
+        uint32_t args[3] = {c0, c1, tgt};
+        execute_gate(ctx, STURM_GATE_CCX, args, 3u, 0.0);
+    };
+
+    // ── Both quantum ───────────────────────────────────────────────────
+    // Forward: CCX(a, b, r).  Adjoint: CCX(a, b, r) — self-inverse.
+    if (a_q && b_q) {
+        const uint32_t qa = static_cast<uint32_t>(a.qubits[0]);
+        const uint32_t qb = static_cast<uint32_t>(b.qubits[0]);
+        emit_ccx(qa, qb, qr);
+        return;
+    }
+
+    // ── Mixed: a quantum, b classical ──────────────────────────────────
+    if (a_q) {
+        if (b.value & 1) {
+            // Forward (a_q, b=1): CX(a, r).  Adjoint: CX(a, r).
+            const uint32_t qa = static_cast<uint32_t>(a.qubits[0]);
+            emit_cx(qa, qr);
+        }
+        // (a_q, b=0): forward emits nothing; adjoint emits nothing.
+        return;
+    }
+
+    // ── Mixed: a classical, b quantum ──────────────────────────────────
+    if (b_q) {
+        if (a.value & 1) {
+            // Forward (a=1, b_q): CX(b, r).  Adjoint: CX(b, r).
+            const uint32_t qb = static_cast<uint32_t>(b.qubits[0]);
+            emit_cx(qb, qr);
+        }
+        // (a=0, b_q): forward emits nothing; adjoint emits nothing.
+        return;
+    }
+
+    // ── Both classical, r quantum (materialize_and classical branch) ───
+    // Forward only emits when a=b=1: single X(r); otherwise nothing.
+    // Adjoint reverses that single-gate list (X self-inverse).
+    const bool av = (a.value & 1) != 0;
+    const bool bv = (b.value & 1) != 0;
+    if (av && bv) {
+        emit_x(qr);
+    }
+    // (0,0), (0,1), (1,0): nothing to do.
+}
+
 } // namespace sturm

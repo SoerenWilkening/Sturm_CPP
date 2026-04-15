@@ -67,6 +67,31 @@ namespace sturm {
 // their state at the time of the forward OR.  Does not release any qubits.
 void uncompute_or(qbool& r, const qbool& a, const qbool& b);
 
+// ── uncompute_and ─────────────────────────────────────────────────────────────
+//
+// Uncompute a bitwise-AND ancilla produced by `r = a & b`.  Emits the
+// inverse of the forward AND decomposition (see
+// include/sturm/qtypes/bit_proxy.hpp `materialize_and`) against the
+// active sink.  The forward decomposition is a *single* gate per
+// quadrant, so the adjoint is also a single gate — X, CX and CCX are
+// each self-inverse:
+//   (a_q, b_q)   fwd CCX(a,b,r)                     adj CCX(a,b,r)
+//   (a_q, b=0)   fwd (none)                          adj (none)
+//   (a_q, b=1)   fwd CX(a,r)                         adj CX(a,r)
+//   (a=0, b_q)   fwd (none)                          adj (none)
+//   (a=1, b_q)   fwd CX(b,r)                         adj CX(b,r)
+//   (a=0, b=0)   fwd (none)                          adj (none)
+//   (a=0, b=1)   fwd (none)                          adj (none)
+//   (a=1, b=0)   fwd (none)                          adj (none)
+//   (a=1, b=1)   fwd X(r)                            adj X(r)
+//
+// Preconditions: r, a, b all live; r owning; a and b byte-identical to
+// their state at the time of the forward AND.  Does not release any
+// qubits.  Phase E transpiler-emitted call site: the outer result qbool
+// of a compound expression such as `qbool r = (b | c) & d;` — see
+// docs/implementation_plan_transpiler_phase_e.md.
+void uncompute_and(qbool& r, const qbool& a, const qbool& b);
+
 // ── Phase C — qint-qint arithmetic inverses ──────────────────────────────────
 //
 // Emitted verbatim by sturm-transpile as the inverse of each qint-qint
