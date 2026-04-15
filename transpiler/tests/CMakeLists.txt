@@ -26,6 +26,20 @@ target_compile_features(test_transpile_io PRIVATE cxx_std_20)
 add_test(NAME test_transpile_io COMMAND test_transpile_io)
 set_tests_properties(test_transpile_io PROPERTIES LABELS "transpiler")
 
+# ── Unit test: FreshNameAllocator (PE-3) ────────────────────────────────────
+# The fresh-name helper is a header-only class (transpiler/src/fresh_names.hpp)
+# with no LibTooling or Clang dependency — just <string> — so the test compiles
+# and links in under a second with no extra include paths.
+add_executable(test_transpile_fresh_names
+    test_fresh_names.cpp
+)
+target_include_directories(test_transpile_fresh_names PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+target_compile_features(test_transpile_fresh_names PRIVATE cxx_std_20)
+add_test(NAME test_transpile_fresh_names COMMAND test_transpile_fresh_names)
+set_tests_properties(test_transpile_fresh_names PROPERTIES LABELS "transpiler")
+
 # ── Unit test: Quantum IR (M6) ────────────────────────────────────────────────
 # The IR depends only on clang::SourceLocation / SourceRange, which are
 # header-inline, so the test compiles against the LLVM/Clang include dirs
