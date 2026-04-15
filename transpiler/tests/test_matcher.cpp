@@ -1034,37 +1034,126 @@ static PFTwoRun run_pf_when_matcher(std::string_view user_src) {
     return out;
 }
 
-// ── Phase F / PF-2 positive case ───────────────────────────────────────────
+// ── Phase F / PF-3 positive case ───────────────────────────────────────────
 
 static void test_pf_when_compound_detects_once() {
-    // WHEN(b | c) must fire the PF-2 detection path exactly once — the
-    // init-stmt binds `_when_val_` with initializer materialize_when(b|c),
-    // the if-loc originates in the WHEN macro body, and the materialize
-    // argument (after peel_to_payload) is NOT a bare DeclRefExpr so the
-    // named-passthrough short-circuit does NOT trigger.
+    // WHEN(b | c) must fire the PF-3 rewrite path exactly once. The
+    // detection counter bumps (same PF-2 signal), and the QUnit gains the
+    // three scheduled edits the plan specifies:
+    //   (1) one QReplacement covering the `b | c` spelling range with the
+    //       fresh `__stu_t0` identifier,
+    //   (2) one raw_insertions entry carrying the flat decl block
+    //       `qbool __stu_t0 = b | c;\n`,
+    //   (3) one QOperation{kind=OR, result=__stu_t0, operands=[b,c]} on
+    //       the enclosing CompoundStmt's QScope, tagged with a valid
+    //       `insert_before_override` (the post-WHEN-body close-brace loc).
     PFTwoRun r = run_pf_when_matcher(
         "void demo(qbool a, qbool b, qbool c) {\n"
         "    WHEN(b | c) { (void)a; }\n"
         "}\n");
     CHECK(r.detections == 1);
-    // PF-2 is detection-only: QUnit must be untouched.
-    CHECK(r.unit.scopes.empty());
-    CHECK(r.unit.replacements.empty());
-    CHECK(r.unit.raw_insertions.empty());
+
+    // (1) Exactly one replacement, with the lifted top-temp name.
+    CHECK(r.unit.replacements.size() == 1);
+    if (r.unit.replacements.size() == 1) {
+        CHECK_EQ_STR(r.unit.replacements[0].replacement,
+                     std::string("__stu_t0"));
+        CHECK(r.unit.replacements[0].range.isValid());
+    }
+
+    // (2) Exactly one raw insertion, whose code is the flat decl block.
+    CHECK(r.unit.raw_insertions.size() == 1);
+    if (r.unit.raw_insertions.size() == 1) {
+        CHECK_EQ_STR(r.unit.raw_insertions[0].code,
+                     std::string("qbool __stu_t0 = b | c;\n"));
+        CHECK(r.unit.raw_insertions[0].insert_before.isValid());
+    }
+
+    // (3) Exactly one scope with exactly one op — QOpKind::OR with the
+    // fresh temp as result, `b` / `c` as operands, and a valid
+    // insert_before_override so the M8 pass anchors the uncompute at
+    // the WHEN body's close brace rather than the enclosing scope's.
+    CHECK(r.unit.scopes.size() == 1);
+    if (r.unit.scopes.size() == 1) {
+        const auto& s = r.unit.scopes.front();
+        CHECK(s.ops.size() == 1);
+        if (s.ops.size() == 1) {
+            const auto& op = s.ops.front();
+            CHECK(op.kind == QOpKind::OR);
+            CHECK_EQ_STR(op.result.name, std::string("__stu_t0"));
+            CHECK(op.operands.size() == 2);
+            if (op.operands.size() == 2) {
+                CHECK_EQ_STR(op.operands[0].name, std::string("b"));
+                CHECK_EQ_STR(op.operands[1].name, std::string("c"));
+            }
+            CHECK(op.insert_before_override.isValid());
+        }
+    }
 }
 
-// ── Phase F / PF-2 negative cases ──────────────────────────────────────────
+// ── Phase F / PF-3 negative cases ──────────────────────────────────────────
 
 static void test_pf_when_named_passthrough_short_circuits() {
     // WHEN(named_qbool): the materialize argument peels to a bare
     // DeclRefExpr to a named qbool — the callback takes the
-    // named-passthrough short-circuit and records zero detections.
+    // named-passthrough short-circuit and records zero detections. The
+    // QUnit must be entirely untouched so the emitter's output is
+    // byte-identical to the input (snapshot_when_named_passthrough
+    // enforces the same invariant at the file level).
     PFTwoRun r = run_pf_when_matcher(
         "void demo(qbool a, qbool b) {\n"
         "    WHEN(a) { (void)b; }\n"
         "}\n");
     CHECK(r.detections == 0);
     CHECK(r.unit.scopes.empty());
+    CHECK(r.unit.replacements.empty());
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+// ── Phase F / PF-3 NOT-case positive ───────────────────────────────────────
+
+static void test_pf_when_not_lifts_once() {
+    // WHEN(~a) must lift via flatten_arg's unary-NOT branch:
+    //   - One QReplacement mapping the `~a` spelling range to the top
+    //     temp name.
+    //   - One raw_insertions entry with code `qbool __stu_t0 = ~a;\n`.
+    //   - One QOperation{kind=NOT, result=__stu_t0, operands=[a]} on the
+    //     enclosing scope, with a valid `insert_before_override`.
+    PFTwoRun r = run_pf_when_matcher(
+        "namespace sturm { inline qbool operator~(const qbool&)"
+        "    { return qbool{}; } }\n"
+        "void demo(qbool a, qbool b) {\n"
+        "    WHEN(~a) { (void)b; }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+
+    CHECK(r.unit.replacements.size() == 1);
+    if (r.unit.replacements.size() == 1) {
+        CHECK_EQ_STR(r.unit.replacements[0].replacement,
+                     std::string("__stu_t0"));
+    }
+
+    CHECK(r.unit.raw_insertions.size() == 1);
+    if (r.unit.raw_insertions.size() == 1) {
+        CHECK_EQ_STR(r.unit.raw_insertions[0].code,
+                     std::string("qbool __stu_t0 = ~a;\n"));
+    }
+
+    CHECK(r.unit.scopes.size() == 1);
+    if (r.unit.scopes.size() == 1) {
+        const auto& s = r.unit.scopes.front();
+        CHECK(s.ops.size() == 1);
+        if (s.ops.size() == 1) {
+            const auto& op = s.ops.front();
+            CHECK(op.kind == QOpKind::NOT);
+            CHECK_EQ_STR(op.result.name, std::string("__stu_t0"));
+            CHECK(op.operands.size() == 1);
+            if (op.operands.size() == 1) {
+                CHECK_EQ_STR(op.operands[0].name, std::string("a"));
+            }
+            CHECK(op.insert_before_override.isValid());
+        }
+    }
 }
 
 static void test_pf_when_bare_if_no_match() {
@@ -1183,6 +1272,7 @@ int main() {
 
     test_pf_when_compound_detects_once();
     test_pf_when_named_passthrough_short_circuits();
+    test_pf_when_not_lifts_once();
     test_pf_when_bare_if_no_match();
     test_pf_when_direct_materialize_call_no_match();
 

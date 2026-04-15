@@ -168,23 +168,29 @@ inline const clang::Expr* peel_to_payload(const clang::Expr* e) {
 }
 
 // Return the QOpKind corresponding to a CXXOperatorCallExpr's overloaded
-// operator, or std::nullopt if the operator is not one of the two qbool
-// bitwise kinds the compound matcher handles. The caller treats nullopt as
-// a "leaf" signal (the sub-expression is not a recognized bitwise op, so
-// it must reduce to a bare DeclRefExpr).
+// operator, or std::nullopt if the operator is not one of the qbool
+// kinds the compound / WHEN-lift matchers handle. OR and AND are the two
+// binary bitwise kinds (Phase E compound matcher); NOT is the unary
+// bitwise kind added in Phase F PF-3 for the `WHEN(~a) { body }` lift.
+// The caller treats nullopt as a "leaf" signal (the sub-expression is
+// not a recognized bitwise op, so it must reduce to a bare DeclRefExpr).
 inline std::optional<QOpKind>
 op_kind_for(const clang::CXXOperatorCallExpr* call) {
     if (!call) return std::nullopt;
     switch (call->getOperator()) {
     case clang::OO_Pipe:   return QOpKind::OR;
     case clang::OO_Amp:    return QOpKind::AND;
+    case clang::OO_Tilde:  return QOpKind::NOT;
     default:               return std::nullopt;
     }
 }
 
-// Render a single flat decl line. Intermediate temps include the `;`;
-// the outer VarDecl omits it (the original source's terminating `;` lies
-// just past the VarDecl range and the Rewriter preserves it).
+// Render a single flat decl line for a binary bitwise op (OR or AND).
+// Intermediate temps include the `;`; the outer VarDecl in the Phase E
+// compound matcher omits it (the original source's terminating `;` lies
+// just past the VarDecl range and the Rewriter preserves it). Phase F
+// PF-3 always passes `include_semicolon=true` because the original
+// WHEN-argument source range does not include the user's trailing `;`.
 inline std::string render_decl_line(const std::string& name,
                                     QOpKind kind,
                                     const std::string& lhs,
@@ -197,12 +203,30 @@ inline std::string render_decl_line(const std::string& name,
     return os.str();
 }
 
-// Forward decl — flatten_arg and flatten_inner_call are mutually recursive.
+// Render a single flat decl line for a unary NOT (Phase F PF-3). Shape is
+// `qbool <name> = ~<operand>` with an optional trailing semicolon.
+inline std::string render_not_decl_line(const std::string& name,
+                                        const std::string& operand,
+                                        bool include_semicolon) {
+    std::ostringstream os;
+    os << "qbool " << name << " = ~" << operand;
+    if (include_semicolon) os << ";";
+    return os.str();
+}
+
+// Forward decl — flatten_arg, flatten_inner_call, and flatten_unary_not_call
+// are mutually recursive.
 inline std::string flatten_arg(const clang::Expr* arg,
                                QScope& scope,
                                FreshNameAllocator& alloc,
                                clang::SourceRange stmt_range,
                                std::vector<std::string>& flat_lines);
+
+inline std::string flatten_unary_not_call(const clang::CXXOperatorCallExpr* call,
+                                          QScope& scope,
+                                          FreshNameAllocator& alloc,
+                                          clang::SourceRange stmt_range,
+                                          std::vector<std::string>& flat_lines);
 
 // Flatten an inner op-call node. Allocates a fresh temp name, flattens
 // both of the call's arguments recursively, records one QOperation into
@@ -255,8 +279,45 @@ inline std::string flatten_inner_call(const clang::CXXOperatorCallExpr* call,
     return temp;
 }
 
+// Flatten a unary NOT op-call (Phase F PF-3). Allocates a fresh temp
+// name, flattens the single argument recursively, records one
+// QOperation{kind=NOT} into `scope.ops`, and appends one decl line to
+// `flat_lines`. Returns the allocated temp name.
+inline std::string flatten_unary_not_call(const clang::CXXOperatorCallExpr* call,
+                                          QScope& scope,
+                                          FreshNameAllocator& alloc,
+                                          clang::SourceRange stmt_range,
+                                          std::vector<std::string>& flat_lines) {
+    const clang::Expr* arg0 = call->getArg(0);
+    std::string operand_name = flatten_arg(arg0, scope, alloc, stmt_range,
+                                           flat_lines);
+    if (operand_name.empty()) return {};
+
+    std::string temp = alloc.next();
+
+    QOperation op;
+    op.kind = QOpKind::NOT;
+    op.result.name     = temp;
+    op.result.decl_loc = {}; // synthetic intermediate
+    QValueRef operand_ref;
+    operand_ref.name = operand_name;
+    const clang::Expr* inner = peel_to_payload(arg0);
+    if (const auto* dre = clang::dyn_cast_or_null<clang::DeclRefExpr>(inner)) {
+        if (const clang::NamedDecl* nd = dre->getDecl()) {
+            operand_ref.decl_loc = nd->getLocation();
+        }
+    }
+    op.operands.push_back(std::move(operand_ref));
+    op.stmt_range = stmt_range;
+    scope.ops.push_back(std::move(op));
+
+    flat_lines.push_back(render_not_decl_line(
+        temp, operand_name, /*include_semicolon=*/true));
+    return temp;
+}
+
 // Walk an argument of a compound qbool operator-call. If the argument is
-// itself a recognized `|`/`&` op-call, recurse to flatten the subtree:
+// itself a recognized `|`/`&`/`~` op-call, recurse to flatten the subtree:
 // emit a QOperation for every interior node with a fresh `__stu_t<N>`
 // result name, append each decl line to `flat_lines`, and return the
 // allocated temp name so the caller can cite it as an operand. If the
@@ -282,9 +343,14 @@ inline std::string flatten_arg(const clang::Expr* arg,
         return {};
     }
 
-    // Interior: CXXOperatorCallExpr on `|` or `&`.
+    // Interior: CXXOperatorCallExpr on `|`, `&`, or `~`.
     if (const auto* call = clang::dyn_cast<clang::CXXOperatorCallExpr>(inner)) {
         if (auto kind = op_kind_for(call)) {
+            if (*kind == QOpKind::NOT) {
+                if (call->getNumArgs() != 1) return {};
+                return flatten_unary_not_call(call, scope, alloc,
+                                              stmt_range, flat_lines);
+            }
             if (call->getNumArgs() != 2) return {};
             return flatten_inner_call(call, *kind, scope, alloc,
                                       stmt_range, flat_lines);

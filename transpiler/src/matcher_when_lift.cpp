@@ -1,45 +1,74 @@
-// matcher_when_lift.cpp — Phase F / PF-2 WHEN(expr) macro detection matcher.
+// matcher_when_lift.cpp — Phase F / PF-3 WHEN(expr) lift matcher.
 //
 // Purpose
 // -------
-// Detects `WHEN(expr) { body }` macro invocations in user source. PF-2 is
-// detection-only; PF-3 will layer the three-point rewrite on top. Today the
-// callback:
+// Detects `WHEN(expr) { body }` macro invocations in user source and
+// performs the three-point rewrite that promotes a compound / unary
+// `WHEN` argument into a named qbool temporary:
 //
-//   (1) Matches the middle `if` statement in the three-`if` tower the
-//       `WHEN` macro expands to — specifically, the `if` whose init-stmt
-//       declares `_when_val_` with initializer
-//       `::sturm::detail::materialize_when(arg)`.
-//   (2) Guards the match with `SourceManager::isMacroBodyExpansion` + a
-//       walk up the `getImmediateMacroCallerLoc` chain to confirm the
-//       immediate-expansion macro spelling is the literal token `WHEN`.
-//       This rejects a user call to `materialize_when(...)` outside any
-//       macro context — the init-stmt shape alone is not sufficient.
-//   (3) Short-circuits named-passthrough: when the materialize_when
-//       argument (after `detail::peel_to_payload`) is a bare `DeclRefExpr`
-//       to a qbool, the callback returns without scheduling any rewrite.
-//       The final lift path (PF-3) would produce no edits for this shape
-//       regardless, so the short-circuit is a correctness + performance
-//       win both at PF-2 and PF-3.
+//   qbool __stu_t0 = b | c;              // (1) pre-WHEN decl block
+//   WHEN(__stu_t0) { body }              // (2) arg replaced with top temp
+//   uncompute_or(__stu_t0, b, c);        // (3) uncompute after WHEN body
 //
-// No `QOperation`, no `QReplacement`, no `QUnit::raw_insertions` is
-// produced by this matcher today. Emission is entirely PF-3's concern.
-// The detection callback is still valuable standalone: the PF-3 slice
-// will only add the scheduling logic, leaving this slice's match-shape
-// and guards untouched.
+// The PF-2 slice (sturm-q3uo) landed the detection logic; PF-3 layers on
+// the emission logic. PF-2's detection counter remains in place — it is
+// incremented on every lift for easy unit-test observability. The
+// named-passthrough short-circuit (PF-2) is preserved verbatim: when the
+// `WHEN` argument (after `peel_to_payload`) is a bare `DeclRefExpr` to a
+// qbool, no rewrite is scheduled. The emitter's output for that shape is
+// byte-identical to the input (the arg already names a qbool).
 //
-// Disjointness from the Phase E compound matcher: that matcher keys on a
-// VarDecl whose type is `qbool` and whose initializer is a
-// `CXXOperatorCallExpr`. Phase F keys on an `IfStmt` whose init-stmt
-// declares `_when_val_` (not a `qbool` VarDecl — it binds `decltype(auto)`,
-// which may or may not be `qbool&`). Even if the name collided, the
-// initializer of `_when_val_` is a plain `CallExpr` (to `materialize_when`),
-// not a `CXXOperatorCallExpr`, so Phase E's `hasInitializer(anyOf(...))`
-// rejects it. No double-bind.
+// Mechanics (Option A from the issue description):
+//
+//   (1) Flatten the peeled payload via `detail::flatten_arg` against a
+//       scratch `QScope` + fresh `FreshNameAllocator`. Unlike the Phase E
+//       compound matcher — which gives the outermost node the user's
+//       VarDecl name — Phase F names the outermost with a fresh
+//       `__stu_t<N>` temp. `flatten_arg` achieves this automatically: when
+//       the payload is an op-call it recurses into `flatten_inner_call`
+//       which allocates a fresh name.
+//
+//   (2) Schedule one `QReplacement` over `arg->getSourceRange()` mapped
+//       through `SourceManager::getSpellingLoc` + `Lexer::makeFileCharRange`
+//       to a pure file-range, with replacement text equal to the top
+//       temp name. This substitutes the user's compound expression inside
+//       the `WHEN(...)` argument list with a bare identifier.
+//
+//   (3) Schedule one `UncomputeInsertion` on `QUnit::raw_insertions`. The
+//       text is the full decl block (every line from `flat_lines`, joined
+//       by newlines, with a trailing newline). The anchor is the WHEN
+//       macro's expansion loc — the file location where `WHEN(...)` is
+//       spelled — so the new decls land on the line preceding the
+//       macro invocation.
+//
+//   (4) Transfer every op from the scratch scope into the enclosing
+//       CompoundStmt's `QScope`, each tagged with a per-op
+//       `insert_before_override = post_body_brace`. The post-body loc is
+//       computed by descending `when_if->getThen()` twice (first hop:
+//       inner `if (auto _when_guard_ = ...; ...)`; second hop: the user's
+//       body CompoundStmt), taking `CompoundStmt::getRBracLoc()`, and
+//       stepping past it with `Lexer::getLocForEndOfToken`.
+//
+// Disjointness
+// ------------
+// From the Phase E compound matcher: that matcher keys on a VarDecl whose
+// type is `qbool` and whose initializer is a `CXXOperatorCallExpr`.
+// Phase F keys on an `IfStmt` whose init-stmt declares `_when_val_`
+// (which binds `decltype(auto)`, not `qbool`, and whose initializer is a
+// plain `CallExpr` to `materialize_when`, not a `CXXOperatorCallExpr`).
+// No double-bind.
+//
+// From the Phase F PF-1 per-op override discipline: every op this matcher
+// emits carries a valid `insert_before_override`, so the M8 synthesis
+// pass plants each uncompute call at the WHEN-body close brace — not at
+// the enclosing `CompoundStmt`'s close brace — without affecting any
+// pre-Phase-F matcher's output (those matchers leave the override
+// default-constructed / invalid).
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
 #include "matcher_common.hpp"
+#include "fresh_names.hpp"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
@@ -53,6 +82,7 @@
 #include "clang/Lex/Lexer.h"
 
 #include <memory>
+#include <sstream>
 #include <string>
 #include <utility>
 #include <vector>
@@ -63,13 +93,10 @@ namespace {
 
 // Test-only detection counter. Incremented by `WhenLiftCallback::run` on
 // every run that passes every guard and is NOT short-circuited by the
-// named-passthrough path. The PF-2 unit tests read this value via
-// `when_lift_detection_count_for_test()` to pin down the "exactly-one
-// match for WHEN(b | c)" / "zero matches for WHEN(named_qbool)" etc.
-// acceptance criteria. Production code never reads it; PF-3 and later
-// will observe `QUnit` mutations instead.
-//
-// A plain non-atomic int is fine — the transpiler is single-threaded by
+// named-passthrough path. Phase F PF-2 added this counter for its
+// detection-only phase; PF-3 continues to bump it on every successful
+// lift so the unit tests (PF-2 + PF-3) share one observable. A plain
+// non-atomic int is fine — the transpiler is single-threaded by
 // construction (LibTooling drives one AST at a time).
 static int g_when_lift_detection_count = 0;
 
@@ -101,6 +128,56 @@ static bool is_expansion_of_macro(SourceLocation loc,
         cur = next;
     }
     return false;
+}
+
+// Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
+// invocation. The WHEN macro expands to three nested `if`s:
+//
+//   if (WhenCapture _when_capture_{}; true)       // outer
+//       if (decltype(auto) _when_val_ = ...; true) // middle (bound as when_if)
+//           if (auto _when_guard_ = ...; ...)      // inner
+//               { body }                           // CompoundStmt
+//
+// Starting from the middle `if` (our match anchor), descend `getThen()`
+// twice to reach the user's body CompoundStmt. The first descent lands
+// on the innermost `if` (the `_when_guard_` gate); the second descent
+// lands on the CompoundStmt body. We then return the location immediately
+// past the closing `}` so insertions anchored here land after the user's
+// body, outside the WHEN's scope.
+//
+// Returns an invalid SourceLocation on any structural mismatch (e.g.
+// WHEN macro wrapped in an unexpected statement shape) — the caller
+// treats that as a hard bail and skips the whole lift.
+static SourceLocation compute_post_body_brace(const IfStmt* when_if,
+                                              const SourceManager& sm,
+                                              const LangOptions& lang) {
+    if (!when_if) return {};
+    const Stmt* first = when_if->getThen();
+    const auto* inner_if = dyn_cast_or_null<IfStmt>(first);
+    if (!inner_if) return {};
+    const Stmt* second = inner_if->getThen();
+    const auto* body = dyn_cast_or_null<CompoundStmt>(second);
+    if (!body) return {};
+    const SourceLocation rbrac = body->getRBracLoc();
+    if (rbrac.isInvalid()) return {};
+    // `getLocForEndOfToken` on the `}` token returns the location
+    // immediately past the closing brace. Passing 0 for the `Offset`
+    // parameter is the standard convention (we want end-of-token, not
+    // end-of-token+N).
+    return Lexer::getLocForEndOfToken(rbrac, /*Offset=*/0, sm, lang);
+}
+
+// Materialize the full decl block (newline-terminated). Each entry in
+// `flat_lines` is a single `qbool __stu_tN = ... ;` statement (with
+// trailing semicolon). We append a newline after every line so the
+// inserted block sits on its own line(s) immediately above the WHEN
+// macro invocation.
+static std::string render_decl_block(const std::vector<std::string>& flat_lines) {
+    std::ostringstream os;
+    for (const auto& line : flat_lines) {
+        os << line << "\n";
+    }
+    return os.str();
 }
 
 class WhenLiftCallback : public MatchFinder::MatchCallback {
@@ -141,28 +218,113 @@ public:
         // Named-passthrough short-circuit: when the user wrote
         // `WHEN(named_qbool)` the peeled argument is a bare DeclRefExpr
         // to a qbool and no rewrite is needed — the existing named temp
-        // already satisfies the WHEN contract.
+        // already satisfies the WHEN contract. This matches PF-2's
+        // behaviour verbatim and keeps the generated output for that
+        // shape byte-identical to the input.
         const Expr* peeled = detail::peel_to_payload(arg);
         if (clang::isa_and_nonnull<DeclRefExpr>(peeled)) {
             return;
         }
 
-        // Reaching this point means PF-2 has detected a liftable WHEN
-        // invocation: the argument is some non-DRE expression (e.g.
-        // `b | c`, `(b | c) & d`, `a == b`). PF-3 will schedule:
-        //   - one QReplacement for the argument spelling range,
-        //   - one QUnit::raw_insertions entry for the flat-decl block,
-        //   - one QOperation per lifted sub-expression, each with
-        //     `insert_before_override = post-body-brace`.
+        // Enclosing CompoundStmt — required for scope / close_brace
+        // lookup. The enclosing stmt is where the `WHEN(...)` call site
+        // sits (one level up from the outer `if` of the macro body — we
+        // need the lexical scope the *user* wrote in, not the one the
+        // macro synthesized).
+        const CompoundStmt* cs =
+            detail::enclosing_compound_stmt(*when_if, *r.Context);
+        if (!cs) return;
+
+        // Resolve the post-body close-brace anchor — fails fast if the
+        // WHEN macro body shape is not the three-`if` tower we expect.
+        const SourceLocation post_body_brace =
+            compute_post_body_brace(when_if, sm, lang);
+        if (post_body_brace.isInvalid()) return;
+
+        // Step (1): flatten the peeled payload against a scratch scope
+        // with a fresh allocator. Using a scratch scope (rather than the
+        // enclosing scope directly) lets us roll back atomically on any
+        // structural failure mid-flatten, and gives us a stable vector
+        // of ops that we can post-tag with `insert_before_override`
+        // before transferring them to the real scope.
         //
-        // PF-2 is detection only. We deliberately do NOT mutate `unit_`
-        // so the acceptance-criterion snapshot diffs stay byte-identical
-        // for every pre-Phase-F fixture. Instead we bump a test-only
-        // counter (see g_when_lift_detection_count above) that the PF-2
-        // unit tests observe via
-        // `when_lift_detection_count_for_test()`.
+        // The `stmt_range` we pass down is the arg's source range — used
+        // only for IR-level metadata (the M8 pass sorts ops by
+        // stmt_range.getBegin() before reversing, so ordering among
+        // multiple WHEN invocations in one scope stays source-LIFO).
+        QScope scratch;
+        FreshNameAllocator alloc;
+        std::vector<std::string> flat_lines;
+        const SourceRange stmt_range = arg->getSourceRange();
+
+        std::string top_name =
+            detail::flatten_arg(peeled, scratch, alloc, stmt_range, flat_lines);
+        if (top_name.empty() || flat_lines.empty()) {
+            // Not a supported shape (e.g. `WHEN(foo(a))` or a literal).
+            // Scratch scope is local so there's nothing to roll back.
+            return;
+        }
+
+        // Step (2): schedule a QReplacement over the arg's spelling-loc
+        // file range. `arg->getSourceRange()` may carry macro-body
+        // encodings (the arg was reached through the WHEN macro's
+        // materialize_when(expr) call); the Rewriter can only edit file
+        // locations, so we normalise both endpoints to their spelling
+        // locations via `SourceManager::getSpellingLoc`. The result is a
+        // pure-file SourceRange spanning the user-written expression
+        // inside `WHEN(...)` — e.g. `b | c` with begin at `b`'s first
+        // char and end at `c`'s first char (SourceRange semantics: the
+        // end location is the START of the last token, and the Rewriter
+        // extends through that token via `Lexer::MeasureTokenLength`).
+        //
+        // We additionally validate the range by round-tripping it
+        // through `Lexer::makeFileCharRange` — if that yields an
+        // invalid CharSourceRange, the spelling locs sit in a
+        // non-representable part of the file (scratch buffer / macro
+        // expansion without a spelling) and we bail without scheduling
+        // an edit. The CharSourceRange itself is not what we store; the
+        // SourceRange form is what `QReplacement` carries today and
+        // what the M9 emitter's `Rewriter::ReplaceText(SourceRange, ...)`
+        // call expects.
+        const SourceLocation spelling_begin =
+            sm.getSpellingLoc(arg->getBeginLoc());
+        const SourceLocation spelling_end =
+            sm.getSpellingLoc(arg->getEndLoc());
+        const CharSourceRange file_char_range =
+            Lexer::makeFileCharRange(
+                CharSourceRange::getTokenRange(spelling_begin, spelling_end),
+                sm, lang);
+        if (file_char_range.isInvalid()) return;
+
+        QReplacement rep;
+        rep.range = SourceRange(spelling_begin, spelling_end);
+        rep.replacement = top_name;
+        unit_->replacements.push_back(std::move(rep));
+
+        // Step (3): stage a raw insertion for the pre-WHEN decl block.
+        // Anchor at the WHEN macro's expansion loc — the file location
+        // where `WHEN(...)` is spelled — so the decls land immediately
+        // before the user's `WHEN(...)` call site.
+        UncomputeInsertion decl_block;
+        decl_block.insert_before = sm.getExpansionLoc(if_loc);
+        decl_block.code = render_decl_block(flat_lines);
+        unit_->raw_insertions.push_back(std::move(decl_block));
+
+        // Step (4): transfer scratch ops into the enclosing scope, each
+        // tagged with `insert_before_override = post_body_brace`. The
+        // M8 synthesis pass then plants the `uncompute_*` calls directly
+        // after the WHEN body's closing brace — not at the enclosing
+        // CompoundStmt's close brace — preserving the user's quantum
+        // control scope as the lifetime boundary for the lifted temps.
+        QScope& out_scope = detail::find_or_create_scope(*unit_, *cs);
+        for (auto& op : scratch.ops) {
+            op.insert_before_override = post_body_brace;
+            out_scope.ops.push_back(std::move(op));
+        }
+
+        // Bump the detection counter (shared with PF-2 tests). Reaching
+        // this point means we performed a full three-point rewrite.
         ++g_when_lift_detection_count;
-        (void)unit_; // unused until PF-3
         (void)when_val;
     }
 
@@ -191,9 +353,9 @@ void register_when_lift_matcher(
     //
     // Why match the IfStmt rather than the VarDecl directly? Two reasons:
     //   (a) The PF-3 rewrite needs the IfStmt to walk down to the inner
-    //       body's closing brace (see plan §3 "Body close-brace anchor").
-    //       Binding the IfStmt here lets PF-3 reuse the same node without
-    //       re-walking the AST in a second matcher.
+    //       body's closing brace. Binding the IfStmt here lets PF-3
+    //       reuse the same node without re-walking the AST in a second
+    //       matcher.
     //   (b) Matching on the IfStmt naturally filters out user code that
     //       happens to name a local `_when_val_` — a VarDecl-only match
     //       would fire on any such decl regardless of enclosing shape.
