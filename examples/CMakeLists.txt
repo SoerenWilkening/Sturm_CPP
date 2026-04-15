@@ -97,6 +97,31 @@ target_sources(example_comparison PRIVATE
 )
 target_link_libraries(example_comparison PRIVATE orkan_headers)
 
+# ── Example: compound qbool expressions (Phase E) ──────────────────────────
+# Routed through sturm-transpile so the compound `qbool r = (b | c) & d;`
+# initializer gets REPLACED with a flat two-decl sequence (one fresh
+# `__stu_t<N>` for the inner OR, the original VarDecl name on the outer
+# AND) and a LIFO `uncompute_and` / `uncompute_or` pair injected before
+# the enclosing scope closes. Same helper / bypass pattern as
+# example_comparison; the new uncompute_and runtime symbol added in
+# Phase E PE-0 is linked from src/sturm/uncompute/uncompute_api.cpp.
+add_quantum_executable(example_compound_expression
+    compound_expression.cpp
+)
+target_sources(example_compound_expression PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_compound_expression PRIVATE orkan_headers)
+
 # ── Example: combined Phase A + B + C demo ──────────────────────────────────
 # Routed through sturm-transpile so every forward pattern from all three
 # phases receives its inverse injection in one file. LIFO rewind runs
