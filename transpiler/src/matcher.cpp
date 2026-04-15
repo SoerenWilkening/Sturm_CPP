@@ -170,8 +170,8 @@ std::vector<std::unique_ptr<OrCallback>>& callback_pool() {
 void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
                          QUnit& unit) {
     // Widened AST pattern (LP4) — see
-    // `docs/implementation_plan_transpiler_matcher_lazy_peel.md` and the
-    // LP2 AST calibration notes on issue sturm-ea7. Fires on both
+    // `docs/archive/implementation_plan_transpiler_matcher_lazy_peel.md`
+    // and the LP2 AST calibration notes on issue sturm-ea7. Fires on both
     // initializer shapes `examples/or_circuit.cpp` can take:
     //   (a) EAGER: `operator|(...) -> qbool`. VarDecl initializer is the
     //       CXXOperatorCallExpr itself (modulo implicit glue). MVP shape.
