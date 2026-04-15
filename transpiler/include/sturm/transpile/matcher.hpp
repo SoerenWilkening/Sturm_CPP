@@ -51,6 +51,43 @@ namespace sturm::transpile {
 void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
                          QUnit& unit);
 
+/// Phase A / PA-1: Register the `qbool tmp = ~a;` self-inverse matcher.
+/// On match, appends a QOperation{kind=NOT, result, operands=[a]} to the
+/// scope corresponding to the VarDecl's enclosing CompoundStmt. The M8
+/// pass emits `<result> = ~<result>;` as the inverse (NOT is self-inverse
+/// when applied to the result qubit). Contract mirrors register_or_matcher.
+void register_not_matcher(clang::ast_matchers::MatchFinder& finder,
+                          QUnit& unit);
+
+/// Phase A / PA-2: Register the `qbool tmp = a ^ b;` self-inverse matcher.
+/// On match, appends a QOperation{kind=XOR, result, operands=[a, b]} to
+/// the scope corresponding to the VarDecl's enclosing CompoundStmt. The
+/// M8 pass emits the two-line self-inverse `<result> ^= <a>;` then
+/// `<result> ^= <b>;` — exploiting (a^b)^a^b = 0.
+void register_xor_matcher(clang::ast_matchers::MatchFinder& finder,
+                          QUnit& unit);
+
+/// Phase A / PA-3: Register the `a ^= b;` quantum-operand self-inverse
+/// matcher. Unlike PA-1/PA-2 which match VarDecl initializers, this
+/// matches a bare compound-assignment statement. On match, records
+/// QOperation{kind=XOR_ASSIGN, result=a, operands=[b]}; the M8 pass
+/// re-emits `<a> ^= <b>;` at scope exit (self-adjoint under XOR).
+/// RHS must be a DeclRefExpr — classical constants are PA-4's scope.
+void register_xor_assign_matcher(clang::ast_matchers::MatchFinder& finder,
+                                 QUnit& unit);
+
+/// Phase A / PA-4: Register the `a ^= <expr>;` classical-operand matcher.
+/// Covers literals (`1`, `true`, `0xff`) and compound classical
+/// expressions (`x & y`) — any RHS whose post-implicit-cast form is not
+/// a DeclRefExpr. On match, extracts the verbatim source text of the
+/// RHS via Lexer::getSourceText and stores it in the IR as
+/// QValueRef{name=<text>, decl_loc=invalid}. Shares QOpKind::XOR_ASSIGN
+/// with PA-3; the render switch needs no additional case because the
+/// operand name is embedded verbatim regardless of whether it came from
+/// a DeclRefExpr or a literal.
+void register_xor_assign_classical_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

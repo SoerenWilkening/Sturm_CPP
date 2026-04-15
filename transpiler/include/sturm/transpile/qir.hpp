@@ -64,13 +64,17 @@ namespace sturm::transpile {
 
 /// Kinds of quantum operations representable in the IR.
 ///
-/// MVP includes only OR (`qbool tmp = a | b;`). Post-MVP phases add AND,
-/// XOR, NOT, and classical-control forms — each new kind must be handled
-/// by every switch in the uncompute pass and emitter, so keep this enum
-/// small and intentional.
+/// MVP covers OR (`qbool tmp = a | b;`). Phase A adds the self-inverse
+/// family — NOT is the first of these. Each new kind must be handled by
+/// every switch in the uncompute pass and emitter; absence of a `default:`
+/// in those switches makes a missing case a build failure, which is the
+/// intended contract.
 enum class QOpKind {
     OR,
-    // AND, XOR, NOT, ... — added per post-MVP phases.
+    NOT,
+    XOR,
+    XOR_ASSIGN,
+    // ... — added per post-MVP phases.
 };
 
 /// Symbolic reference to a named qbool / qint in user code.

@@ -1,0 +1,23 @@
+// Phase A / PA-3 input for the sturm-transpile snapshot test.
+//
+// Exercises the compound-assignment self-inverse form: `a ^= b;` (both
+// qbool) must be paired with an identical `a ^= b;` injected before the
+// scope's close brace. The statement is self-adjoint: applying the same
+// XOR to `a` twice returns it to its pre-forward state.
+//
+// Unlike PA-1/PA-2 which rewrite a VarDecl initializer, this matcher
+// rewrites a bare statement — there is no new qbool introduced, only a
+// mutation of an existing one. The IR kind QOpKind::XOR_ASSIGN stores
+// the mutated LHS as `result` and the RHS as a single-entry `operands`
+// list.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator^=(const qbool&) { return *this; }
+};
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b) { a ^= b; }

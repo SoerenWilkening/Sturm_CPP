@@ -96,6 +96,11 @@ public:
         : source_path_(std::move(source_path)),
           output_dir_(std::move(output_dir)) {
         sturm::transpile::register_or_matcher(finder_, unit_);
+        sturm::transpile::register_not_matcher(finder_, unit_);
+        sturm::transpile::register_xor_matcher(finder_, unit_);
+        sturm::transpile::register_xor_assign_matcher(finder_, unit_);
+        sturm::transpile::register_xor_assign_classical_matcher(
+            finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {

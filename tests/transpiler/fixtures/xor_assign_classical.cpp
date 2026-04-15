@@ -1,0 +1,22 @@
+// Phase A / PA-4 input for the sturm-transpile snapshot test.
+//
+// Exercises the classical-operand form of XOR-assign: `a ^= 1;` must be
+// paired with an identical `a ^= 1;` injected before the scope's close
+// brace. The RHS is an integer literal, not a DeclRefExpr, so PA-3's
+// pattern rejects it; PA-4's matcher extracts the verbatim source text
+// via Lexer::getSourceText and re-embeds it in the IR operand name.
+//
+// Shares QOpKind::XOR_ASSIGN with PA-3 — the render switch is unchanged
+// because the emitted text is the same shape regardless of whether the
+// operand came from a variable reference or a literal.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator^=(int) { return *this; }
+};
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a) { a ^= 1; }

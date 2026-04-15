@@ -40,9 +40,12 @@ std::string loc_to_string(clang::SourceLocation loc) {
 
 std::string kind_to_string(QOpKind kind) {
     switch (kind) {
-    case QOpKind::OR: return "OR";
+    case QOpKind::OR:         return "OR";
+    case QOpKind::NOT:        return "NOT";
+    case QOpKind::XOR:        return "XOR";
+    case QOpKind::XOR_ASSIGN: return "XOR_ASSIGN";
     }
-    // Unreachable under the MVP's single-kind enum, but we emit a
+    // Unreachable while every enumerator above is listed, but we emit a
     // deterministic placeholder so future additions that forget to update
     // this switch are immediately visible in any dump() output rather than
     // silently rendering nothing.

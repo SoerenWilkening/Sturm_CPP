@@ -14,6 +14,7 @@
 
 #include "sturm/transpile/qir.hpp"
 
+#include <algorithm>
 #include <sstream>
 #include <string>
 #include <vector>
@@ -24,12 +25,15 @@ namespace {
 
 // Build the source-text snippet for a single forward op's inverse. The
 // exact format is locked down by the M8 tests and the PRD's output
-// contract: four-space indent, `uncompute_or(<result>, <op0>, <op1>);\n`.
+// contract: four-space indent, `uncompute_or(<result>, <op0>, <op1>);\n`
+// (and analogous per-kind forms for later phases).
 //
-// NOTE: only `QOpKind::OR` is handled in the MVP. When the post-MVP
-// roadmap introduces AND / XOR / NOT / arithmetic inverses, extend this
-// switch — the tests in test_uncompute_pass.cpp will have to be extended
-// with matching goldens.
+// Phase A adds NOT. Per the roadmap, NOT is its own inverse: applying the
+// same `~` to the result qubit uncomputes it. The emitted form is
+// `<result> = ~<result>;` rather than a separate `uncompute_not(...)`
+// free function, because there is no meaningful out-of-place inverse for
+// a single-qubit X gate — the in-place form composes to identity with
+// zero ancilla cost.
 std::string render_uncompute(const QOperation& op) {
     std::ostringstream os;
     switch (op.kind) {
@@ -40,6 +44,37 @@ std::string render_uncompute(const QOperation& op) {
         if (op.operands.size() != 2) return {};
         os << "    uncompute_or(" << op.result.name << ", "
            << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
+    case QOpKind::NOT: {
+        // NOT is self-inverse: re-applying `~` to the result qubit
+        // uncomputes it. The operand list is unused in the emission
+        // (the inverse touches only the result) but must be non-empty —
+        // an op with no operand would indicate a malformed IR seed.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << " = ~" << op.result.name << ";\n";
+        break;
+    }
+    case QOpKind::XOR: {
+        // XOR is self-inverse with a two-step reduction: applying the
+        // same two operands via `^=` to the result undoes it, because
+        // (a^b)^a^b == 0. Emitted on two separate source lines for
+        // readability; the order is lhs then rhs, matching the forward
+        // source order of the original `a ^ b`.
+        if (op.operands.size() != 2) return {};
+        os << "    " << op.result.name << " ^= " << op.operands[0].name
+           << ";\n"
+           << "    " << op.result.name << " ^= " << op.operands[1].name
+           << ";\n";
+        break;
+    }
+    case QOpKind::XOR_ASSIGN: {
+        // `a ^= b;` is self-adjoint: applying the same statement twice
+        // returns a to its original state. The emitted inverse is a
+        // verbatim re-emission of the forward call.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << " ^= " << op.operands[0].name
+           << ";\n";
         break;
     }
     // No `default:` — adding a new QOpKind should fail the build here
@@ -65,8 +100,24 @@ std::vector<UncomputeInsertion> synthesize(const QUnit& unit) {
     // iterated in REVERSE to realize the LIFO uncompute schedule the PRD
     // is built around. This reverse iteration is the single load-bearing
     // line in this module — do not replace it with a forward walk.
+    //
+    // Ops are first sorted by their statement's source-begin location so
+    // the reverse walk produces true source-LIFO. The matcher populates
+    // scope.ops in MatchFinder callback-firing order, which is per-matcher
+    // (registration) order rather than source order: when multiple
+    // Phase A matchers contribute to the same scope, a raw reverse walk
+    // would flip the inter-matcher ordering. Sorting pins LIFO to the
+    // user's code, not the matcher's dispatch schedule. Regression:
+    // sturm-ny2.
     for (const auto& scope : unit.scopes) {
-        for (auto it = scope.ops.rbegin(); it != scope.ops.rend(); ++it) {
+        std::vector<QOperation> sorted_ops = scope.ops;
+        std::sort(sorted_ops.begin(), sorted_ops.end(),
+                  [](const QOperation& a, const QOperation& b) {
+                      return a.stmt_range.getBegin().getRawEncoding() <
+                             b.stmt_range.getBegin().getRawEncoding();
+                  });
+
+        for (auto it = sorted_ops.rbegin(); it != sorted_ops.rend(); ++it) {
             const QOperation& op = *it;
             std::string code = render_uncompute(op);
             if (code.empty()) {

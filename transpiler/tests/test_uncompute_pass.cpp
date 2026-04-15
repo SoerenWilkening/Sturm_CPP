@@ -296,6 +296,178 @@ static void test_multi_scope_multi_op_lifo() {
     CHECK_EQ_SIZE(raw(ins[3].insert_before), raw(make_loc(300)));
 }
 
+// ── Phase A / PA-1: NOT self-inverse render ─────────────────────────────────
+
+static void test_not_op_emits_self_inverse() {
+    // Hand-built QUnit for `qbool tmp = ~a;`. The expected inverse is an
+    // in-place self-inverse: `tmp = ~tmp;` re-applied to the result qubit.
+    // Operand `a` is recorded on the op but does not appear in the inverse
+    // (the uncompute acts only on the result ancilla).
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::NOT;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    tmp = ~tmp;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_not_op_zero_operands_emits_nothing() {
+    // Defensive: a NOT op seeded with zero operands is malformed (the
+    // matcher always records the single source operand). The render
+    // function must return an empty string so no invalid C++ lands.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(2);
+
+    QOperation op;
+    op.kind   = QOpKind::NOT;
+    op.result = QValueRef{"r", make_loc(1)};
+    // operands deliberately empty
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+// ── Phase A / PA-2: XOR two-line self-inverse render ────────────────────────
+
+// ── Phase A / PA-3: XOR_ASSIGN self-adjoint render ──────────────────────────
+
+static void test_xor_assign_op_emits_verbatim() {
+    // `a ^= b;` has a one-line inverse that re-emits the same statement.
+    // The IR stores a as `result` and b as the single operand.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::XOR_ASSIGN;
+    op.result = QValueRef{"a", make_loc(20)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    a ^= b;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_xor_op_emits_two_xor_assigns() {
+    // Hand-built QUnit for `qbool tmp = a ^ b;`. Expected inverse is the
+    // two-line `tmp ^= a;` then `tmp ^= b;` — both in a single insertion
+    // record because M8 collapses contiguous lines for one op into one
+    // UncomputeInsertion.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::XOR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    tmp ^= a;\n    tmp ^= b;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+// ── sturm-ny2: multi-kind ops seeded out of source order ────────────────────
+
+static void test_multi_kind_out_of_order_sorted_by_source() {
+    // Regression for sturm-ny2: when multiple Phase A matchers contribute
+    // ops to the same QScope, clang::ast_matchers::MatchFinder dispatches
+    // per-matcher callbacks in registration order, not source order, so
+    // scope.ops accumulates in matcher-firing order. A naive reverse walk
+    // would then yield LIFO-of-matcher-order instead of LIFO-of-source.
+    //
+    // Repro shape matches examples/or_circuit.cpp after Phase A:
+    //   forward source order is OR@begin=10, NOT@begin=20, XOR_ASSIGN@30.
+    // The observed buggy push order in the real transpiler is
+    //   [NOT, OR, XOR_ASSIGN] — the OR matcher fires AFTER NOT despite
+    // OR appearing earlier in source. A naive reverse walk would emit
+    //   [XOR_ASSIGN, OR, NOT] — wrong (OR and NOT flipped relative to
+    // source). The sort-by-stmt_range.getBegin() fix pins emission to
+    //   [XOR_ASSIGN, NOT, OR] — the true source-LIFO.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op_or;
+    op_or.kind = QOpKind::OR;
+    op_or.result = QValueRef{"c", make_loc(10)};
+    op_or.operands = { QValueRef{"a", make_loc(10)},
+                       QValueRef{"b", make_loc(10)} };
+    op_or.stmt_range = clang::SourceRange(make_loc(10), make_loc(15));
+
+    QOperation op_not;
+    op_not.kind = QOpKind::NOT;
+    op_not.result = QValueRef{"nc", make_loc(20)};
+    op_not.operands.push_back(QValueRef{"c", make_loc(20)});
+    op_not.stmt_range = clang::SourceRange(make_loc(20), make_loc(25));
+
+    QOperation op_xa;
+    op_xa.kind = QOpKind::XOR_ASSIGN;
+    op_xa.result = QValueRef{"d", make_loc(30)};
+    op_xa.operands.push_back(QValueRef{"c", make_loc(30)});
+    op_xa.stmt_range = clang::SourceRange(make_loc(30), make_loc(35));
+
+    // Push in matcher-firing order (NOT, OR, XOR_ASSIGN) — NOT the true
+    // source order. Without the sort, reverse iteration produces
+    // [XOR_ASSIGN, OR, NOT]. With the sort, it produces [XOR_ASSIGN,
+    // NOT, OR], which is the correct source-LIFO.
+    scope.ops = { op_not, op_or, op_xa };
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit);
+    CHECK_EQ_SIZE(ins.size(), 3u);
+    if (ins.size() != 3) return;
+
+    // True source-LIFO: XOR_ASSIGN (source-last) first, then NOT, then OR.
+    CHECK_EQ_STR(ins[0].code, std::string("    d ^= c;\n"));
+    CHECK_EQ_STR(ins[1].code, std::string("    nc = ~nc;\n"));
+    CHECK_EQ_STR(ins[2].code, std::string("    uncompute_or(c, a, b);\n"));
+
+    // All three insertions anchored at the same scope's close brace.
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(99)));
+    CHECK_EQ_SIZE(raw(ins[2].insert_before), raw(make_loc(99)));
+}
+
 int main() {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
@@ -303,6 +475,11 @@ int main() {
     test_empty_unit();
     test_empty_scope();
     test_multi_scope_multi_op_lifo();
+    test_not_op_emits_self_inverse();
+    test_not_op_zero_operands_emits_nothing();
+    test_xor_op_emits_two_xor_assigns();
+    test_xor_assign_op_emits_verbatim();
+    test_multi_kind_out_of_order_sorted_by_source();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
