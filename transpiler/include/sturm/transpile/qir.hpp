@@ -65,7 +65,9 @@ namespace sturm::transpile {
 /// Kinds of quantum operations representable in the IR.
 ///
 /// MVP covers OR (`qbool tmp = a | b;`). Phase A adds the self-inverse
-/// family — NOT is the first of these. Each new kind must be handled by
+/// family — NOT is the first of these. Phase B adds the non-self-inverse
+/// constant compound-assign family (`a += k;`, `a -= k;`, `a *= k;`,
+/// `a /= k;` where k is classical). Each new kind must be handled by
 /// every switch in the uncompute pass and emitter; absence of a `default:`
 /// in those switches makes a missing case a build failure, which is the
 /// intended contract.
@@ -74,6 +76,14 @@ enum class QOpKind {
     NOT,
     XOR,
     XOR_ASSIGN,
+    // Phase B — constant compound-assigns. Each op still carries one
+    // result QValueRef plus one operand QValueRef whose .name is the
+    // verbatim RHS source text (classical integer literal / expression),
+    // mirroring the PA-4 shape used for `a ^= c;` with classical c.
+    ADD_ASSIGN_CONST,
+    SUB_ASSIGN_CONST,
+    MUL_ASSIGN_CONST,
+    DIV_ASSIGN_CONST,
     // ... — added per post-MVP phases.
 };
 
