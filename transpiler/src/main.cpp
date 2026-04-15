@@ -236,13 +236,21 @@ int main(int argc, const char** argv) {
         return 0;
     }
 
-    // Full pipeline. Run the tool with a FixedCompilationDatabase and our
-    // custom factory; the factory's consumer drives M7 → M8 → M9.
+    // Full pipeline. Run the tool with the compilation database resolved
+    // by CommonOptionsParser and our custom factory; the factory's consumer
+    // drives M7 → M8 → M9.
+    //
+    // We deliberately use parser.getCompilations() rather than constructing
+    // our own empty FixedCompilationDatabase: doing so lets sturm-transpile
+    // honor `--extra-arg=-I...`, `--extra-arg=-D...`, `--extra-arg=-std=...`,
+    // and any compile_commands.json that lives alongside the input. This is
+    // what lets the build-system glue (cmake/SturmTranspile.cmake) propagate
+    // the include paths and feature defines a real example like
+    // examples/or_circuit.cpp needs in order for `sturm::qbool` to resolve
+    // — without those, the matcher's `cxxRecordDecl(hasName("qbool"))`
+    // would never fire on the real header chain (LP4 risk R1).
     std::vector<std::string> source_paths{input_path};
-    auto compilations =
-        std::make_unique<clang::tooling::FixedCompilationDatabase>(
-            /*Directory=*/".", /*CommandLine=*/std::vector<std::string>{});
-    clang::tooling::ClangTool tool(*compilations, source_paths);
+    clang::tooling::ClangTool tool(parser.getCompilations(), source_paths);
     // Suppress diagnostics: the MVP transpiler does not need to surface
     // parse errors (the user will re-see them in the downstream compile).
     tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());

@@ -171,12 +171,35 @@ function(add_quantum_executable target)
                 set(_working_dir "${CMAKE_SOURCE_DIR}")
             endif()
 
+            # Propagate the compile context the source actually needs to
+            # parse cleanly. sturm-transpile runs Clang via libTooling
+            # without a compilation database, so unless we forward the
+            # include paths and feature defines explicitly, types like
+            # `sturm::qbool` resolve to `<dependent>` / `int` and the
+            # matcher's `cxxRecordDecl(hasName("qbool"))` never fires
+            # (LP4 risk R1). The transpiler honors `--extra-arg=...`
+            # via parser.getCompilations() so each flag is passed as a
+            # separate argument here.
+            #
+            # We mirror the minimum the runtime headers require: the
+            # repository's `include/` directory and the two compile-time
+            # toggles that gate the backend code path the transpiler
+            # needs to see (STURM_BACKEND_ENABLED selects the lazy
+            # OrExpr<qbool> chain over the eager qbool path;
+            # STURM_ANCILLA_CAPACITY is required by qubit_pool.hpp).
+            set(_xa_args
+                "--extra-arg=-std=c++20"
+                "--extra-arg=-I${CMAKE_SOURCE_DIR}/include"
+                "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
+                "--extra-arg=-DSTURM_ANCILLA_CAPACITY=256")
+
             add_custom_command(
                 OUTPUT "${gen_src}"
                 COMMAND "${CMAKE_COMMAND}" -E make_directory "${gen_dir}"
                 COMMAND $<TARGET_FILE:sturm-transpile>
                         "${_input_for_tool}"
                         --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+                        ${_xa_args}
                 WORKING_DIRECTORY "${_working_dir}"
                 DEPENDS "${abs_src}" sturm-transpile
                 COMMENT "sturm-transpile ${rel_src}"
