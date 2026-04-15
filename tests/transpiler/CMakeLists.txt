@@ -552,6 +552,56 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase F / PF-5: snapshot fixture for nested-WHEN passthrough ────────────
+# Single fixture covering `WHEN(a) { WHEN(b | c) { body } }`: two WHEN
+# invocations produce two independent three-`if` towers. The PF-2 matcher
+# fires on each middle `_when_val_` IfStmt independently — the outer
+# takes the named-passthrough short-circuit (peeled payload is a bare
+# DeclRefExpr to `a`), the inner performs the full compound lift
+# (flat `qbool __stu_t0 = b | c;` before the inner WHEN, argument
+# rewritten to `__stu_t0`, `uncompute_or(__stu_t0, b, c);` after the
+# INNER body's `}`).
+#
+# The load-bearing invariant this test pins is per-WHEN identity: the
+# inner lift's post-body brace must anchor on the INNER body's `}`, not
+# the outer's. `compute_post_body_brace` descends `when_if->getThen()`
+# twice from the matched tower's middle IfStmt, so each WHEN's brace is
+# unique to its own tower — a naive shared-state implementation that
+# tracked only the latest post-body brace across matcher runs would
+# misplace the `uncompute_or` after the OUTER `}` and the byte-compare
+# would fail.
+#
+# No matcher changes are expected for PF-5 — PF-3/PF-4 already drive
+# per-IfStmt identity through `when_if->getThen()` descent. The slice is
+# a regression guard + golden snapshot. The idempotency companion
+# follows the same pattern as PF-3/PF-4's WHEN snapshots: the
+# AUTO-GENERATED sentinel makes re-transpile a verbatim copy.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_when_nested_passthrough
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_passthrough.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_passthrough.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_passthrough
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_nested_passthrough PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_nested_passthrough
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_passthrough/when_nested_passthrough.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_passthrough_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_nested_passthrough PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_nested_passthrough"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER
