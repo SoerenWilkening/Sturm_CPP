@@ -41,6 +41,7 @@ std::string loc_to_string(clang::SourceLocation loc) {
 std::string kind_to_string(QOpKind kind) {
     switch (kind) {
     case QOpKind::OR:               return "OR";
+    case QOpKind::AND:              return "AND";
     case QOpKind::NOT:              return "NOT";
     case QOpKind::XOR:              return "XOR";
     case QOpKind::XOR_ASSIGN:       return "XOR_ASSIGN";
