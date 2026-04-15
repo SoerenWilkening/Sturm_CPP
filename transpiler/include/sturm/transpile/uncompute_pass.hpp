@@ -51,26 +51,25 @@
 
 namespace sturm::transpile {
 
-/// One record describing a single uncompute call to be inserted by M9.
-///
-/// - `insert_before` is the SourceLocation at which M9 inserts the text.
-///   It is the `close_brace` of the originating QScope, so the resulting
-///   `uncompute_or(...)` call lands inside the original `{ ... }` block
-///   and immediately before its closing `}`.
-/// - `code` is the complete source snippet to inject, terminated by '\n'
-///   and indented with four spaces. The exact format is locked — M8 tests
-///   golden-compare against it, and the M12 end-to-end snapshot depends on
-///   it being stable.
-struct UncomputeInsertion {
-    clang::SourceLocation insert_before;
-    std::string code;
-};
-
-// QReplacement is defined in qir.hpp (it is part of the QUnit data shape,
-// so its storage must be complete at the IR boundary). It is visible here
-// via qir.hpp's include above — this comment stands in place of a
-// re-export so callers reading uncompute_pass.hpp know where to find the
-// definition.
+// UncomputeInsertion and QReplacement are defined in qir.hpp (both are part
+// of the QUnit data shape — `QUnit::raw_insertions` and `QUnit::replacements`
+// store complete objects of these types — so the definitions must be at the
+// IR boundary). They are visible here via qir.hpp's include above. This
+// comment stands in place of a re-export so callers reading
+// uncompute_pass.hpp know where to find the definitions.
+//
+// `UncomputeInsertion` records:
+//   - `insert_before` is the SourceLocation at which M9 inserts the text.
+//     For ops produced by the M8 synthesis pass this defaults to the
+//     `close_brace` of the originating QScope (so the resulting call
+//     lands inside the originating `{ ... }` block, just before its
+//     closing `}`). Phase F PF-1 introduces `QOperation::insert_before_
+//     override` so individual ops can target a different location (e.g.
+//     a WHEN body's closing brace inside an enclosing scope).
+//   - `code` is the complete source snippet to inject, terminated by '\n'
+//     and (for synthesised ops) indented with four spaces. The format is
+//     locked — M8 tests golden-compare against it and the M12 end-to-end
+//     snapshot depends on it being stable.
 
 /// Output of the M8 synthesis pass: both the LIFO-ordered uncompute
 /// insertion list AND any source-text replacements the matcher produced

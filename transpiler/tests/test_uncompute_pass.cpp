@@ -940,6 +940,167 @@ static void test_multi_kind_out_of_order_sorted_by_source() {
     CHECK_EQ_SIZE(raw(ins[2].insert_before), raw(make_loc(99)));
 }
 
+// ── Phase F / PF-1: per-op insert_before_override precedence ────────────────
+//
+// PF-1 introduces `QOperation::insert_before_override`. When the matcher
+// sets it to a valid SourceLocation, the M8 synthesis pass must use it as
+// the insertion anchor, NOT the enclosing scope's `close_brace`. When it
+// is left default (invalid), the pass must fall back to `close_brace` —
+// which is the behaviour every Phase A..E snapshot fixture relies on.
+// Both directions are covered below.
+
+static void test_insert_before_override_takes_precedence() {
+    // Hand-built QUnit representing two ops in one scope:
+    //   - op0: legacy (no override) → anchored at scope.close_brace.
+    //   - op1: override set to make_loc(77) → anchored there instead.
+    // Both ops share the same kind/operand shape so the only thing the
+    // test exercises is the anchor selection.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op0;
+    op0.kind   = QOpKind::OR;
+    op0.result = QValueRef{"r0", make_loc(10)};
+    op0.operands = { QValueRef{"a", make_loc(2)},
+                     QValueRef{"b", make_loc(3)} };
+    op0.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    // op0.insert_before_override default-constructed (invalid).
+
+    QOperation op1;
+    op1.kind   = QOpKind::OR;
+    op1.result = QValueRef{"r1", make_loc(30)};
+    op1.operands = { QValueRef{"c", make_loc(4)},
+                     QValueRef{"d", make_loc(5)} };
+    op1.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    op1.insert_before_override = make_loc(77);
+
+    scope.ops = { op0, op1 };
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+
+    // LIFO within the scope: r1 first (source-last), r0 second. r1 must
+    // honour its override (77); r0 falls back to close_brace (99).
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(r1, c, d);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(77)));
+
+    CHECK_EQ_STR(ins[1].code,
+                 std::string("    uncompute_or(r0, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(99)));
+}
+
+static void test_invalid_override_falls_back_to_close_brace() {
+    // Defensive companion: a default-constructed (invalid) override must
+    // not poison the anchor — the pass falls back to close_brace exactly
+    // as it did pre-PF-1. Without this guarantee every prior snapshot
+    // fixture would silently retarget to <invalid> and break.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    // op.insert_before_override left default (invalid). Note we do NOT
+    // explicitly assign clang::SourceLocation() — we want the test to
+    // exercise the documented "default-constructed = invalid" contract.
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(tmp, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+// ── Phase F / PF-1: QUnit::raw_insertions pass-through ──────────────────────
+//
+// PF-1 also adds `QUnit::raw_insertions` — pre-staged UncomputeInsertion
+// records the matcher assembles directly. The M8 pass concatenates them
+// into its `QSynthesisResult.insertions` verbatim, after the per-op
+// renderings. Order is preserved exactly. The test below asserts both
+// shape (count + concatenation order) and identity (each record's
+// `insert_before` and `code` survive untouched).
+
+static void test_raw_insertions_appended_verbatim() {
+    // One QOperation produces one synthesised insertion ([uncompute_or]).
+    // Two raw insertions are pre-staged. Result: 1 + 2 = 3 insertions in
+    // the M8 output, with the synthesised one first and the two raws in
+    // their original order after it.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    UncomputeInsertion pre0;
+    pre0.insert_before = make_loc(200);
+    pre0.code = "qbool __stu_t0 = a | b;\n";
+    UncomputeInsertion pre1;
+    pre1.insert_before = make_loc(300);
+    pre1.code = "    uncompute_and(__stu_t1, __stu_t0, d);\n";
+    unit.raw_insertions = { pre0, pre1 };
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 3u);
+    if (ins.size() != 3) return;
+
+    // Synthesised op comes first.
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(tmp, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+
+    // raw_insertions follow in their original order.
+    CHECK_EQ_STR(ins[1].code, std::string("qbool __stu_t0 = a | b;\n"));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(200)));
+
+    CHECK_EQ_STR(ins[2].code,
+                 std::string("    uncompute_and(__stu_t1, __stu_t0, d);\n"));
+    CHECK_EQ_SIZE(raw(ins[2].insert_before), raw(make_loc(300)));
+}
+
+static void test_raw_insertions_only_no_ops() {
+    // QUnit with zero scopes (no QOperations) but one raw insertion. The
+    // pass must still emit the raw verbatim — Phase F's WHEN-lift matcher
+    // can pre-stage its decl block on a unit that has no qualifying scope
+    // ops (e.g. a WHEN at top level), so this edge case is load-bearing.
+    QUnit unit;
+    UncomputeInsertion pre;
+    pre.insert_before = make_loc(42);
+    pre.code = "qbool __stu_t0 = b | c;\n";
+    unit.raw_insertions.push_back(pre);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("qbool __stu_t0 = b | c;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(42)));
+}
+
 int main() {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
@@ -970,6 +1131,11 @@ int main() {
     test_and_op_emits_uncompute_and();
     test_and_op_wrong_operand_count_emits_nothing();
     test_multi_kind_out_of_order_sorted_by_source();
+
+    test_insert_before_override_takes_precedence();
+    test_invalid_override_falls_back_to_close_brace();
+    test_raw_insertions_appended_verbatim();
+    test_raw_insertions_only_no_ops();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
