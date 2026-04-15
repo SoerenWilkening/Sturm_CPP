@@ -134,6 +134,33 @@ Covered ops:
 
 ## Phase E — Compound expressions with named intermediates
 
+> **2026-04-15:** Complete. Nested qbool bitwise compounds in a single
+> VarDecl initializer now decompose into a flat sequence of named
+> intermediates with LIFO uncompute. Coverage includes the roadmap
+> example `qbool r = (b | c) & d;` plus the two mirror shapes from
+> PE-4: `qbool r = (b & c) | d;` and `qbool r = (a | b) | (c | d);`.
+> Runtime-side, the new free function `uncompute_and(qbool&, const
+> qbool&, const qbool&)` lives in `include/sturm/uncompute/uncompute_api.hpp`
+> (impl in `src/sturm/uncompute/uncompute_api.cpp`) alongside
+> `uncompute_or`. IR-side, `QOpKind::AND` was added; the emitter
+> gained `Rewriter.ReplaceText` support via a new `QReplacement`
+> struct returned from `synthesize()` in a `QSynthesisResult`
+> wrapper (replacements applied before insertions). Transpiler-side,
+> a new `FreshNameAllocator` helper (`transpiler/src/fresh_names.hpp`)
+> produces `__stu_t<N>` temporaries, and the new matcher
+> `transpiler/src/matcher_qbool_compound.cpp` recognises nested qbool
+> bitwise compounds. Snapshot fixtures in `tests/transpiler/fixtures/`:
+> `compound_or_and`, `compound_and_or`, `compound_nested_or`. End-to-end
+> behavior is pinned by `examples/compound_expression.cpp` and the
+> `transpiler_example_compound_expression_injected` +
+> `transpiler_idempotent_example_compound_expression` CTests.
+> Still deferred to later phases: XOR / NOT nesting, mixed qint/qbool
+> compounds inside a single initializer, and liveness analysis for
+> when a named temporary can be freed earlier than scope exit (Phase
+> H). The Phase E implementation plan has been archived to
+> `docs/archive/implementation_plan_transpiler_phase_e.md`. Next up:
+> Phase F.
+
 First phase that requires real data-flow work. The transpiler must decompose `qbool r = (b | c) & d;` into a sequence with named intermediates and insert uncomputation in LIFO order.
 
 Example transformation:
