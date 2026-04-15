@@ -29,6 +29,29 @@ inline void promote_qbool_if_classical(qbool& q, sturm_backend_context_t* ctx) {
         emit_X_lifted(*ctx, static_cast<uint32_t>(q.qubits[0]));
 }
 
+// ── bit_array_view ──────────────────────────────────────────────────────────
+// Hoisted bit-extraction helper (sturm-999i Phase D).
+//
+// Build a std::array<qbool, W> of per-bit views over `q`, performing the same
+// classical-to-quantum promotion used by `make_dsl_compare_result` so that
+// every DSL-library consumer sees the exact same bit-view shape regardless of
+// whether it is the forward comparison or its adjoint. Callers must pass the
+// active BackendContext (obtained via sturm_get_thread_context()).
+//
+// The returned array aliases `q`'s qubits (each view is non-owning). Callers
+// must not use the views after `q` is destroyed; lifetime of the views is
+// tied to the array, which is a local on the caller's stack.
+template <std::size_t W>
+inline std::array<qbool, W> bit_array_view(const qint_t<W>& q,
+                                            sturm_backend_context_t* ctx) {
+    std::array<qbool, W> bits;
+    for (std::size_t i = 0; i < W; ++i) {
+        bits[i] = q[i];
+        promote_qbool_if_classical(bits[i], ctx);
+    }
+    return bits;
+}
+
 // Build bit-view arrays and call compare_dsl; stamp COMPARE uncompute tag.
 template <std::size_t W, typename DslFn>
 inline qbool make_dsl_compare_result(
@@ -54,13 +77,9 @@ inline qbool make_dsl_compare_result(
     result.owning_    = true;
     result.value      = classical_val ? 1 : 0;
     result.super_mask = 1ULL;
-    std::array<qbool, W> a_bits, b_bits;
     sturm_backend_context_t* ctx = sturm_get_thread_context();
-    for (std::size_t i = 0; i < W; ++i) {
-        a_bits[i] = a[i]; b_bits[i] = b[i];
-        promote_qbool_if_classical(a_bits[i], ctx);
-        promote_qbool_if_classical(b_bits[i], ctx);
-    }
+    auto a_bits = bit_array_view<W>(a, ctx);
+    auto b_bits = bit_array_view<W>(b, ctx);
     dsl_fn(a_bits.data(), b_bits.data(), W, result);
     result.uncompute_ = uncompute_op::make_compare(
         reinterpret_cast<const qint_base*>(static_cast<const void*>(&a)),
