@@ -151,11 +151,42 @@ struct QScope {
     std::vector<QOperation> ops;
 };
 
+/// A source-text replacement the matcher schedules for the M9 emitter to
+/// apply ahead of its insertion pass. Introduced in Phase E (PE-2) to back
+/// the compound-expression matcher, which decomposes a nested VarDecl
+/// initializer into a flat decl sequence — the original VarDecl's source
+/// range is replaced verbatim with the flattened text.
+///
+/// - `range` is the source range of the AST node being replaced
+///   (typically the full range of the original compound VarDecl).
+/// - `replacement` is the new source text that will be written in place
+///   of that range. Callers are responsible for any trailing newline or
+///   indentation — the emitter injects it byte-for-byte.
+///
+/// Replacements and insertions are disjoint by construction (a VarDecl
+/// body vs. the scope's `close_brace`), so the emitter applies all
+/// replacements first and then lays down the insertion pass without any
+/// overlap-merging logic.
+///
+/// Defined in qir.hpp (and re-exported from uncompute_pass.hpp for
+/// readability) because `QUnit` stores a vector of these, so the
+/// type must be complete at the IR boundary.
+struct QReplacement {
+    clang::SourceRange range;
+    std::string replacement;
+};
+
 /// Top-level container: one per translation unit. Scopes are stored in
 /// source order (by `open_brace` location). The matcher appends as it
 /// walks the AST, so no post-hoc sort is required.
+///
+/// `replacements` carries source-text replacements the matcher schedules
+/// for the M9 emitter to apply before its insertion pass. Pre-Phase-E
+/// (MVP + Phases A..D) this vector is always empty; Phase E's compound
+/// matcher is the first producer.
 struct QUnit {
-    std::vector<QScope> scopes;
+    std::vector<QScope>        scopes;
+    std::vector<QReplacement>  replacements;
 };
 
 /// Equality on QValueRef: both the name and the decl_loc must match.

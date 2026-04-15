@@ -66,6 +66,28 @@ struct UncomputeInsertion {
     std::string code;
 };
 
+// QReplacement is defined in qir.hpp (it is part of the QUnit data shape,
+// so its storage must be complete at the IR boundary). It is visible here
+// via qir.hpp's include above — this comment stands in place of a
+// re-export so callers reading uncompute_pass.hpp know where to find the
+// definition.
+
+/// Output of the M8 synthesis pass: both the LIFO-ordered uncompute
+/// insertion list AND any source-text replacements the matcher produced
+/// for the emitter to apply ahead of the insertion pass.
+///
+/// Pre-Phase-E, `replacements` is always empty — the MVP matcher + Phases
+/// A..D only ever schedule `close_brace` insertions. Phase E's compound
+/// matcher is the first producer of `replacements`.
+///
+/// The struct exists so the return type of `synthesize()` stays a single
+/// value (the PRD API shape is preserved) while carrying both vectors
+/// through to `emit()` in one call.
+struct QSynthesisResult {
+    std::vector<UncomputeInsertion> insertions;
+    std::vector<QReplacement>       replacements;
+};
+
 /// Synthesize uncompute insertions for every QOperation in `unit`.
 ///
 /// Ordering contract:
@@ -78,10 +100,11 @@ struct UncomputeInsertion {
 ///     pass is defensive in case a future IR-level consumer seeds unit
 ///     with placeholders.
 ///
-/// Returns a flat vector of insertions. The caller (M9 emitter) treats the
-/// ordering as authoritative and feeds insertions to clang::Rewriter in
-/// the order returned.
-std::vector<UncomputeInsertion> synthesize(const QUnit& unit);
+/// Returns a QSynthesisResult holding the LIFO-ordered insertion list and
+/// the (possibly empty) list of replacements the matcher attached to
+/// `unit`. The caller (M9 emitter) feeds both to clang::Rewriter with the
+/// replacement pass run first.
+QSynthesisResult synthesize(const QUnit& unit);
 
 } // namespace sturm::transpile
 

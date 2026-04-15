@@ -102,7 +102,7 @@ static void test_single_op_one_insertion() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -146,7 +146,7 @@ static void test_two_ops_lifo_order() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 2u);
     if (ins.size() != 2) return;
 
@@ -202,7 +202,7 @@ static void test_two_scopes_each_one_op() {
         unit.scopes.push_back(s);
     }
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 2u);
     if (ins.size() != 2) return;
 
@@ -219,7 +219,7 @@ static void test_two_scopes_each_one_op() {
 
 static void test_empty_unit() {
     QUnit unit;
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
@@ -234,7 +234,7 @@ static void test_empty_scope() {
     // no ops
     unit.scopes.push_back(s);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
@@ -279,7 +279,7 @@ static void test_multi_scope_multi_op_lifo() {
         unit.scopes.push_back(s);
     }
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 4u);
     if (ins.size() != 4) return;
 
@@ -317,7 +317,7 @@ static void test_not_op_emits_self_inverse() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -342,7 +342,7 @@ static void test_not_op_zero_operands_emits_nothing() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
@@ -367,7 +367,7 @@ static void test_xor_assign_op_emits_verbatim() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -395,7 +395,7 @@ static void test_xor_op_emits_two_xor_assigns() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -426,7 +426,7 @@ static void test_add_assign_const_emits_sub() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -449,7 +449,7 @@ static void test_sub_assign_const_emits_add() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -472,7 +472,7 @@ static void test_mul_assign_const_emits_div() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -495,7 +495,7 @@ static void test_div_assign_const_emits_mul() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -529,7 +529,7 @@ static void test_add_assign_qint_emits_uncompute_add_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -553,7 +553,7 @@ static void test_sub_assign_qint_emits_uncompute_sub_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -577,7 +577,7 @@ static void test_mul_assign_qint_emits_uncompute_mul_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -601,7 +601,7 @@ static void test_div_assign_qint_emits_uncompute_div_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -625,7 +625,7 @@ static void test_mod_assign_qint_emits_uncompute_mod_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -662,7 +662,7 @@ static void test_eq_qint_emits_uncompute_eq_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -687,7 +687,7 @@ static void test_ne_qint_emits_uncompute_ne_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -712,7 +712,7 @@ static void test_lt_qint_emits_uncompute_lt_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -737,7 +737,7 @@ static void test_le_qint_emits_uncompute_le_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -762,7 +762,7 @@ static void test_gt_qint_emits_uncompute_gt_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -787,7 +787,7 @@ static void test_ge_qint_emits_uncompute_ge_qint() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
 
@@ -813,7 +813,7 @@ static void test_eq_qint_wrong_operand_count_emits_nothing() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
@@ -866,7 +866,7 @@ static void test_multi_kind_out_of_order_sorted_by_source() {
     QUnit unit;
     unit.scopes.push_back(scope);
 
-    auto ins = synthesize(unit);
+    auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 3u);
     if (ins.size() != 3) return;
 

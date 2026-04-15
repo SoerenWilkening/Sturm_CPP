@@ -76,9 +76,31 @@ namespace sturm::transpile {
 bool emit(const clang::SourceManager& sm,
           clang::Rewriter& rw,
           const std::vector<UncomputeInsertion>& insertions,
+          const std::vector<QReplacement>& replacements,
           std::string_view source_path,
           std::string_view output_dir) {
-    // Step 1: apply every insertion. Reverse iteration — see file-level
+    // Step 1 (PE-2): apply every source-range replacement BEFORE the
+    // insertion pass. The replacement ranges (VarDecl bodies) and the
+    // insertion anchor (scope `close_brace`) are disjoint by construction,
+    // so Clang's Rewriter handles them independently with no merging
+    // logic on our side. Replacements are applied in the order supplied
+    // so the matcher can schedule them in whatever sequence is most
+    // natural for its own bookkeeping.
+    for (const auto& rep : replacements) {
+        if (!rep.range.isValid()) {
+            // Defensive: a malformed matcher output with an invalid range
+            // is not representable by the Rewriter. Skip rather than abort
+            // so a single bad replacement doesn't discard the whole run.
+            continue;
+        }
+        // ReplaceText returns true on failure (unrewritable range); we
+        // ignore the return so partial replacements still propagate to
+        // disk. An unrewritable range is a bug elsewhere and swallowing
+        // the specific record here keeps the rest of the output intact.
+        (void)rw.ReplaceText(rep.range, rep.replacement);
+    }
+
+    // Step 2: apply every insertion. Reverse iteration — see file-level
     // comment for why this is correct and why forward iteration would be
     // wrong for multi-op scopes.
     for (auto it = insertions.rbegin(); it != insertions.rend(); ++it) {
@@ -97,7 +119,7 @@ bool emit(const clang::SourceManager& sm,
         (void)rw.InsertTextBefore(ins.insert_before, ins.code);
     }
 
-    // Step 2: serialize the rewritten main-file buffer into a string.
+    // Step 3: serialize the rewritten main-file buffer into a string.
     clang::FileID main_id = sm.getMainFileID();
     const clang::RewriteBuffer* buf = rw.getRewriteBufferFor(main_id);
 
@@ -115,13 +137,13 @@ bool emit(const clang::SourceManager& sm,
         (void)fe;
     }
 
-    // Step 3: prepend the idempotency header (helper from M5's skip module).
+    // Step 4: prepend the idempotency header (helper from M5's skip module).
     std::string out;
     out.reserve(body.size() + 128);
     out.append(idempotency_header(source_path));
     out.append(body);
 
-    // Step 4: write to <output_dir>/<resolved path>. Resolve via the same
+    // Step 5: write to <output_dir>/<resolved path>. Resolve via the same
     // helper the identity-copy path uses so the layout rules are identical.
     fs::path dst = sturm::transpile::resolve_output_path(
         fs::path(source_path), fs::path(output_dir));
@@ -132,6 +154,24 @@ bool emit(const clang::SourceManager& sm,
         return false;
     }
     return true;
+}
+
+// ── Back-compat overload ─────────────────────────────────────────────────────
+//
+// PE-2: pre-Phase-E call sites (the MVP driver, the emitter test harness,
+// and any external integrator) pass only an insertion list. Rather than
+// churn every such site with an explicit empty-vector argument, we forward
+// through the five-argument form with an empty replacement list. The
+// semantics match the old four-argument emit() bit-for-bit, which is what
+// the "byte-identical existing snapshot fixtures" acceptance criterion
+// requires.
+bool emit(const clang::SourceManager& sm,
+          clang::Rewriter& rw,
+          const std::vector<UncomputeInsertion>& insertions,
+          std::string_view source_path,
+          std::string_view output_dir) {
+    static const std::vector<QReplacement> kEmpty{};
+    return emit(sm, rw, insertions, kEmpty, source_path, output_dir);
 }
 
 } // namespace sturm::transpile
