@@ -909,6 +909,64 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase F / PF-6: end-to-end injected observability + idempotency for ────
+# the compound-WHEN integration example. Same harness pattern as the
+# Phase E PE-5 compound_expression block above:
+#   1. build_example_when_integration — SETUP fixture that builds the
+#      example_when_integration target. Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/when_integration.cpp via
+#      add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_when_integration_injected — reads the generated
+#      file and asserts the PF-4 three-point rewrite of
+#      `WHEN((b | c) & d) { a.value ^= 1; }`:
+#        - two flat `qbool __stu_tN = ...;` decls injected BEFORE the
+#          WHEN line (inner `b | c` → `__stu_t0`, outer `__stu_t0 & d`
+#          → `__stu_t1`),
+#        - WHEN argument substituted to `__stu_t1`,
+#        - LIFO `uncompute_and(__stu_t1, __stu_t0, d); /
+#          uncompute_or(__stu_t0, b, c);` pair planted directly after
+#          the WHEN body's `}`.
+#      Also confirms the source is byte-identical (no injected fragment
+#      leaks into the user's hand-written main body) — the "no-leak"
+#      search anchors after `int main()` to avoid false-positives on
+#      the top-of-file comment block that discusses the rewrite shape
+#      by bare name.
+#   3. transpiler_idempotent_example_when_integration — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_when_integration
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_when_integration)
+    set_tests_properties(build_example_when_integration PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_when_integration_built")
+
+    add_test(
+        NAME transpiler_example_when_integration_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/when_integration.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/when_integration.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_when_integration.cmake)
+    set_tests_properties(transpiler_example_when_integration_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_when_integration_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_when_integration
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/when_integration.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_when_integration_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_when_integration PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_when_integration_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
