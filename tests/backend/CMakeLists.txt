@@ -1934,22 +1934,33 @@ set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")
 # defined, even when the project-wide option is ON.
 
 # Flag ON build.
-add_executable(test_destructor_gate_on
-    ${CMAKE_SOURCE_DIR}/tests/test_destructor_gate.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_destructor_gate_on PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_destructor_gate_on PRIVATE cxx_std_20)
-target_compile_definitions(test_destructor_gate_on PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-    STURM_AUTO_UNCOMPUTE=1
-)
-target_link_libraries(test_destructor_gate_on PRIVATE orkan_headers)
-add_test(NAME test_destructor_gate_on COMMAND test_destructor_gate_on)
-set_tests_properties(test_destructor_gate_on PROPERTIES LABELS "backend")
+#
+# The ON target only makes sense when the project-wide STURM_AUTO_UNCOMPUTE
+# option is also ON — otherwise we would be locally defining the macro for
+# just this target, which would leak STURM_AUTO_UNCOMPUTE=1 into
+# compile_commands.json even when the option is OFF (breaking the
+# cmake_flags_verify contract at tests/cmake_flags/verify_flags.cmake).
+# Gating the entire target + registration on STURM_AUTO_UNCOMPUTE keeps the
+# OFF configure clean; the OFF branch of the destructor contract is still
+# exercised by test_destructor_gate_off above.
+if(STURM_AUTO_UNCOMPUTE)
+    add_executable(test_destructor_gate_on
+        ${CMAKE_SOURCE_DIR}/tests/test_destructor_gate.cpp
+        ${M19_SOURCES}
+    )
+    target_include_directories(test_destructor_gate_on PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(test_destructor_gate_on PRIVATE cxx_std_20)
+    target_compile_definitions(test_destructor_gate_on PRIVATE
+        STURM_ANCILLA_CAPACITY=256
+        STURM_BACKEND_ENABLED=1
+        STURM_AUTO_UNCOMPUTE=1
+    )
+    target_link_libraries(test_destructor_gate_on PRIVATE orkan_headers)
+    add_test(NAME test_destructor_gate_on COMMAND test_destructor_gate_on)
+    set_tests_properties(test_destructor_gate_on PROPERTIES LABELS "backend")
+endif()
 
 # Flag OFF build.  Critically, this target must NOT receive the macro —
 # even if the project-wide STURM_AUTO_UNCOMPUTE option is ON.  We achieve
