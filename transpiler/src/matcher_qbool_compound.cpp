@@ -64,216 +64,15 @@ namespace {
 
 using namespace clang;
 using namespace clang::ast_matchers;
+// The compound-flatten helpers (peel_to_payload, op_kind_for, flatten_arg,
+// flatten_inner_call, render_decl_line) live in `detail` in
+// matcher_common.hpp since Phase F PF-0, alongside the existing
+// enclosing_compound_stmt / find_or_create_scope / make_ref helpers. We
+// reach them via fully-qualified names below; no `using` for the flatten
+// helpers, so it stays obvious which calls land in shared code.
 using detail::enclosing_compound_stmt;
 using detail::find_or_create_scope;
 using detail::make_ref;
-
-// Peel a sub-expression through any number of ParenExpr / ImplicitCastExpr
-// / ExprWithCleanups / CXXConstructExpr / MaterializeTemporaryExpr /
-// CXXBindTemporaryExpr / user-defined-conversion CXXMemberCallExpr
-// wrappers to reach the "shape" the matcher is interested in. Clang's
-// IgnoreParenImpCasts handles ParenExpr and implicit casts;
-// CXXConstructExpr is additionally peeled here because the copy-
-// initialization chain from `operator&`/`operator|` → qbool sometimes
-// materializes via a CXXConstructExpr wrapping the call (same shape
-// `matcher_qint_compare.cpp:163-183` documents).
-//
-// PE-5 widens this peel to also descend through:
-//   * MaterializeTemporaryExpr / CXXBindTemporaryExpr — the temporary-
-//     materialization wrappers that appear around lazy_expr.hpp's
-//     `OrExpr<qbool>` / `AndExpr<qbool>` results in real
-//     STURM_BACKEND_ENABLED builds.
-//   * CXXMemberCallExpr that represents a user-defined conversion via
-//     `OrExpr<qbool>::operator qbool()` / `AndExpr<qbool>::operator
-//     qbool()`. These conversion calls wrap the actual `|`/`&`
-//     CXXOperatorCallExpr we want to recurse into. Without this peel
-//     the matcher would never fire on `qbool r = (b | c) & d;` written
-//     against the real lazy-expression headers — only against the
-//     hermetic fixture stubs that return `qbool` directly.
-//
-// The peel through a CXXMemberCallExpr is conservatively restricted to
-// the conversion-operator shape: a zero-argument member call whose
-// callee is a CXXConversionDecl. This keeps regular qbool member calls
-// (e.g. `b.flip()`) from being silently descended into.
-const Expr* peel_to_payload(const Expr* e) {
-    if (!e) return nullptr;
-    const Expr* cur = e->IgnoreParenImpCasts();
-    while (true) {
-        if (const auto* mte = dyn_cast<MaterializeTemporaryExpr>(cur)) {
-            if (const Expr* sub = mte->getSubExpr()) {
-                cur = sub->IgnoreParenImpCasts();
-                continue;
-            }
-        }
-        if (const auto* bte = dyn_cast<CXXBindTemporaryExpr>(cur)) {
-            if (const Expr* sub = bte->getSubExpr()) {
-                cur = sub->IgnoreParenImpCasts();
-                continue;
-            }
-        }
-        if (const auto* ctor = dyn_cast<CXXConstructExpr>(cur)) {
-            // Degenerate ctors (zero-arg, or the implicit copy-from-temp
-            // wrapping the real call) have exactly one argument we should
-            // descend into. If the ctor has a different arity, bail — it
-            // is not the copy-elision wrapper pattern we know how to peel.
-            if (ctor->getNumArgs() == 1 && ctor->getArg(0)) {
-                cur = ctor->getArg(0)->IgnoreParenImpCasts();
-                continue;
-            }
-        }
-        if (const auto* mce = dyn_cast<CXXMemberCallExpr>(cur)) {
-            // User-defined conversion: zero-arg member call whose target
-            // is a CXXConversionDecl (e.g. `OrExpr<qbool>::operator
-            // qbool()` in lazy_expr.hpp). Descend into the implicit object
-            // argument so we can keep walking toward the wrapped `|`/`&`
-            // CXXOperatorCallExpr.
-            if (mce->getNumArgs() == 0) {
-                if (const auto* method = mce->getMethodDecl()) {
-                    if (isa<CXXConversionDecl>(method)) {
-                        if (const Expr* obj = mce->getImplicitObjectArgument()) {
-                            cur = obj->IgnoreParenImpCasts();
-                            continue;
-                        }
-                    }
-                }
-            }
-        }
-        break;
-    }
-    return cur;
-}
-
-// Return the QOpKind corresponding to a CXXOperatorCallExpr's overloaded
-// operator, or std::nullopt if the operator is not one of the two qbool
-// bitwise kinds this matcher handles. The caller treats nullopt as a
-// "leaf" signal (the sub-expression is not a recognized bitwise op, so
-// it must reduce to a bare DeclRefExpr).
-std::optional<QOpKind> op_kind_for(const CXXOperatorCallExpr* call) {
-    if (!call) return std::nullopt;
-    switch (call->getOperator()) {
-    case OO_Pipe:   return QOpKind::OR;
-    case OO_Amp:    return QOpKind::AND;
-    default:        return std::nullopt;
-    }
-}
-
-// Render a single flat decl line. Used both for the intermediate temps
-// (`qbool __stu_t<N> = <lhs> <op> <rhs>;`) and for the outer VarDecl
-// (`qbool <r> = <lhs> <op> <rhs>` — no trailing `;`, since the original
-// source's terminating semicolon is outside the VarDecl source range and
-// remains in place after ReplaceText).
-std::string render_decl_line(const std::string& name,
-                             QOpKind kind,
-                             const std::string& lhs,
-                             const std::string& rhs,
-                             bool include_semicolon) {
-    std::ostringstream os;
-    const char* op = (kind == QOpKind::OR) ? "|" : "&";
-    os << "qbool " << name << " = " << lhs << " " << op << " " << rhs;
-    if (include_semicolon) os << ";";
-    return os.str();
-}
-
-// Walk an argument of a compound qbool operator-call. If the argument is
-// itself a recognized `|`/`&` op-call, recurse to flatten the subtree:
-// emit a QOperation for every interior node with a fresh `__stu_t<N>`
-// result name, append each decl line to `flat_lines`, and return the
-// allocated temp name so the caller can cite it as an operand. If the
-// argument is a bare DeclRefExpr, return its identifier unchanged (no
-// new op is emitted).
-//
-// Returns an empty string on a structural match failure (non-DRE leaf
-// that is not a recognized op-call) — the caller interprets that as
-// "reject the whole compound match" and no ops are appended.
-std::string flatten_arg(const Expr* arg,
-                        QScope& scope,
-                        FreshNameAllocator& alloc,
-                        SourceRange stmt_range,
-                        std::vector<std::string>& flat_lines);
-
-// Same as flatten_arg but specifically for an inner op-call node. Allocates
-// a fresh temp name, flattens both of the call's arguments recursively,
-// records one QOperation into `scope.ops`, and appends one decl line to
-// `flat_lines`. Returns the allocated temp name.
-std::string flatten_inner_call(const CXXOperatorCallExpr* call,
-                               QOpKind kind,
-                               QScope& scope,
-                               FreshNameAllocator& alloc,
-                               SourceRange stmt_range,
-                               std::vector<std::string>& flat_lines) {
-    const Expr* arg0 = call->getArg(0);
-    const Expr* arg1 = call->getArg(1);
-    std::string lhs_name = flatten_arg(arg0, scope, alloc, stmt_range,
-                                       flat_lines);
-    if (lhs_name.empty()) return {};
-    std::string rhs_name = flatten_arg(arg1, scope, alloc, stmt_range,
-                                       flat_lines);
-    if (rhs_name.empty()) return {};
-
-    std::string temp = alloc.next();
-
-    // Resolve each operand's decl_loc by peeling back to the leaf
-    // DeclRefExpr when the operand is a bare identifier. For an
-    // intermediate temp (result of a nested op-call), we leave decl_loc
-    // invalid — the temp is not a user-written decl, and the uncompute
-    // pass does not need decl_loc for its text rendering.
-    QOperation op;
-    op.kind = kind;
-    op.result.name     = temp;
-    op.result.decl_loc = {}; // synthetic intermediate
-    // operands: rebuild QValueRefs. We already know the names; we still
-    // want decl_loc for the leaf DRE case so the uncompute pass's scope
-    // bookkeeping stays honest. Re-peel the args to find the DRE (or
-    // recognize they are temps by matching the trailing flat_lines entry).
-    auto build_ref = [&](const Expr* a, const std::string& name) {
-        QValueRef ref;
-        ref.name = name;
-        const Expr* inner = peel_to_payload(a);
-        if (const auto* dre = dyn_cast_or_null<DeclRefExpr>(inner)) {
-            if (const NamedDecl* nd = dre->getDecl()) {
-                ref.decl_loc = nd->getLocation();
-            }
-        }
-        return ref;
-    };
-    op.operands.push_back(build_ref(arg0, lhs_name));
-    op.operands.push_back(build_ref(arg1, rhs_name));
-    op.stmt_range = stmt_range;
-    scope.ops.push_back(std::move(op));
-
-    flat_lines.push_back(render_decl_line(
-        temp, kind, lhs_name, rhs_name, /*include_semicolon=*/true));
-    return temp;
-}
-
-std::string flatten_arg(const Expr* arg,
-                        QScope& scope,
-                        FreshNameAllocator& alloc,
-                        SourceRange stmt_range,
-                        std::vector<std::string>& flat_lines) {
-    const Expr* inner = peel_to_payload(arg);
-    if (!inner) return {};
-
-    // Leaf: bare DeclRefExpr to a named qbool.
-    if (const auto* dre = dyn_cast<DeclRefExpr>(inner)) {
-        if (const NamedDecl* nd = dre->getDecl()) {
-            return nd->getNameAsString();
-        }
-        return {};
-    }
-
-    // Interior: CXXOperatorCallExpr on `|` or `&`.
-    if (const auto* call = dyn_cast<CXXOperatorCallExpr>(inner)) {
-        if (auto kind = op_kind_for(call)) {
-            if (call->getNumArgs() != 2) return {};
-            return flatten_inner_call(call, *kind, scope, alloc,
-                                      stmt_range, flat_lines);
-        }
-    }
-    // Anything else (member call, non-bitwise op, literal, ...) is not a
-    // supported compound-expression shape. Reject.
-    return {};
-}
 
 class CompoundQBoolCallback : public MatchFinder::MatchCallback {
 public:
@@ -285,9 +84,9 @@ public:
 
         // Peel the VarDecl initializer to reach the outermost op-call.
         const Expr* init = var->getInit();
-        const Expr* outer = peel_to_payload(init);
+        const Expr* outer = detail::peel_to_payload(init);
         const auto* outer_call = dyn_cast_or_null<CXXOperatorCallExpr>(outer);
-        auto outer_kind = op_kind_for(outer_call);
+        auto outer_kind = detail::op_kind_for(outer_call);
         if (!outer_call || !outer_kind || outer_call->getNumArgs() != 2) {
             return;
         }
@@ -320,12 +119,12 @@ public:
         // reject and avoid polluting the IR with partial flattenings.
         const std::size_t ops_high_water = scope.ops.size();
 
-        std::string lhs_name = flatten_arg(outer_call->getArg(0), scope,
-                                           names_, stmt_range, flat_lines);
+        std::string lhs_name = detail::flatten_arg(
+            outer_call->getArg(0), scope, names_, stmt_range, flat_lines);
         std::string rhs_name;
         if (!lhs_name.empty()) {
-            rhs_name = flatten_arg(outer_call->getArg(1), scope, names_,
-                                   stmt_range, flat_lines);
+            rhs_name = detail::flatten_arg(
+                outer_call->getArg(1), scope, names_, stmt_range, flat_lines);
         }
         if (lhs_name.empty() || rhs_name.empty()) {
             // Partial match — roll back any ops appended so far.
@@ -361,7 +160,7 @@ public:
         auto build_ref = [&](const Expr* a, const std::string& name) {
             QValueRef ref;
             ref.name = name;
-            const Expr* inner = peel_to_payload(a);
+            const Expr* inner = detail::peel_to_payload(a);
             if (const auto* dre = dyn_cast_or_null<DeclRefExpr>(inner)) {
                 if (const NamedDecl* nd = dre->getDecl()) {
                     ref.decl_loc = nd->getLocation();
@@ -385,9 +184,9 @@ public:
         for (const auto& line : flat_lines) {
             body << line << "\n    ";
         }
-        body << render_decl_line(var->getNameAsString(), *outer_kind,
-                                 lhs_name, rhs_name,
-                                 /*include_semicolon=*/false);
+        body << detail::render_decl_line(var->getNameAsString(), *outer_kind,
+                                         lhs_name, rhs_name,
+                                         /*include_semicolon=*/false);
 
         QReplacement rep;
         rep.range       = stmt_range;
