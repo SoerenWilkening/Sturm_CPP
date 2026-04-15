@@ -152,6 +152,29 @@ void register_gt_compare_qint_matcher(
 void register_ge_compare_qint_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 
+/// Phase E / PE-4: Register the compound qbool bitwise-expression matcher.
+/// Fires on `VarDecl` of type `qbool` whose initializer is a
+/// `CXXOperatorCallExpr` on `|` or `&` where AT LEAST ONE argument (after
+/// paren + implicit-cast peel) is itself a `CXXOperatorCallExpr` on `|` or
+/// `&`. On match, the callback flattens the nested expression tree into a
+/// sequence of single-op VarDecls: each interior sub-expression gets a
+/// fresh `__stu_t<N>` intermediate name, and the outermost sub-expression
+/// keeps the original VarDecl's name. Every flattened sub-expression
+/// becomes one `QOperation` in the enclosing `QScope` (OR or AND); the
+/// LIFO uncompute pass then produces the correct reverse-order
+/// `uncompute_{and,or}` calls at scope close, with no Phase-E-specific
+/// scheduler changes needed. The matcher also appends one `QReplacement`
+/// to `unit.replacements` covering the original VarDecl's source range,
+/// with the flat decl sequence as its replacement text.
+///
+/// Disjointness contract: the MVP OR matcher
+/// (`register_or_matcher`) requires BOTH outer-call arguments to be bare
+/// `DeclRefExpr`s, while this matcher requires AT LEAST ONE argument to be
+/// a nested op-call — mutually exclusive, so both matchers can be
+/// registered without double-binding any VarDecl.
+void register_compound_qbool_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP
