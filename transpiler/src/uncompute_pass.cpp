@@ -237,9 +237,20 @@ QSynthesisResult synthesize(const QUnit& unit) {
     // would flip the inter-matcher ordering. Sorting pins LIFO to the
     // user's code, not the matcher's dispatch schedule. Regression:
     // sturm-ny2.
+    //
+    // Phase F PF-4: use `std::stable_sort` instead of `std::sort`. All
+    // Phase F ops lifted from a single `WHEN(expr)` invocation share the
+    // same `stmt_range` (the expansion range of the macro argument), so
+    // multiple ops compare equal under the begin-loc key. `std::stable_sort`
+    // preserves their relative insertion order — which the Phase F matcher
+    // controls to be innermost-first → outermost-last (post-order from the
+    // compound flattener). The subsequent reverse walk then produces
+    // outermost-first, innermost-last: true source LIFO. Pre-Phase-F
+    // snapshots contain one op per stmt_range, so stable_sort is a no-op
+    // tiebreaker on those inputs — byte-identical output is guaranteed.
     for (const auto& scope : unit.scopes) {
         std::vector<QOperation> sorted_ops = scope.ops;
-        std::sort(sorted_ops.begin(), sorted_ops.end(),
+        std::stable_sort(sorted_ops.begin(), sorted_ops.end(),
                   [](const QOperation& a, const QOperation& b) {
                       return a.stmt_range.getBegin().getRawEncoding() <
                              b.stmt_range.getBegin().getRawEncoding();
