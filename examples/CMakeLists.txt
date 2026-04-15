@@ -51,3 +51,25 @@ target_sources(example_constant_arith PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_constant_arith PRIVATE orkan_headers)
+
+# ── Example: qint qint-qint compound-assigns (Phase C) ──────────────────────
+# Routed through sturm-transpile so each `a += b; a -= b; a *= b; a /= b;
+# a %= b;` statement gets a `uncompute_*_qint(a, b);` free-function call
+# injected before the enclosing scope closes. Same helper / bypass pattern
+# as example_constant_arith.
+add_quantum_executable(example_qint_arith
+    qint_arith.cpp
+)
+target_sources(example_qint_arith PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_qint_arith PRIVATE orkan_headers)
