@@ -221,7 +221,32 @@ Cleanup lands as one or a few focused commits once every construct has a green s
 
 ---
 
-## Phase L — Long-term stretches
+## Phase L — Distribution and one-line install
+
+The CMake invocation developers use today (`cmake -DSTURM_TRANSPILE=ON -DLLVM_DIR=... -DClang_DIR=...`) is a contributor workflow, not an end-user experience. For adoption the transpiler must install in one or two commands on macOS and Linux.
+
+LLVM is structurally required — any Clang-based source-to-source tool depends on `libclangTooling`, `libclangAST`, and `libLLVMSupport` for semantic C++ parsing — but the dependency can be hidden from end users by moving it into a package manager or a prebuilt binary. The complexity doesn't shrink; it moves off the critical path of a first-time user.
+
+Options, not mutually exclusive:
+
+| Channel | End-user command | How LLVM is hidden |
+|---|---|---|
+| Homebrew formula (macOS + Linux) | `brew install sturm/tap/sturm-transpile` | Formula declares `depends_on "llvm@17"`; Homebrew resolves it |
+| Debian package | `apt install sturm-transpile` | `Depends: libclang-17-dev, llvm-17` |
+| Prebuilt static binary (GitHub Releases) | `curl -L .../sturm-transpile-$(uname -sm) -o sturm-transpile && chmod +x` | LLVM statically linked into a ~150–300 MB binary |
+| Docker image | `docker run -v $PWD:/w sturm/transpile /w/src.cpp` | LLVM lives inside the image |
+
+**Deliverables:**
+- `sturm-transpile.rb` Homebrew formula hosted in a `homebrew-sturm` tap.
+- GitHub Actions release workflow producing prebuilt binaries for `x86_64-linux`, `aarch64-linux`, `x86_64-macos`, `aarch64-macos` on each tagged release.
+- CI smoke test that runs the prebuilt binary on a clean VM with no system LLVM installed (regression guard against "works on my machine" static-linking bugs and `cl::opt` double-registration, see `transpiler/CMakeLists.txt:77`).
+- README install section: one `brew install` line, one `apt install` line, and a curl fallback. Nothing about `LLVM_DIR`.
+
+**Ordering:** this phase runs **in parallel** with Phases B–J and only blocks on the MVP being feature-complete enough to be useful (roughly after Phase E). Packaging infrastructure built early is cheap to maintain; retrofitted late, it delays every release.
+
+---
+
+## Phase M — Long-term stretches
 
 Lower priority, tracked for visibility.
 
@@ -246,6 +271,6 @@ The current principles in `docs/01_principles.md` align with this plan with one 
 
 ## Ordering Rationale
 
-Phases A–D widen the simple cases (single intermediate, named temporaries). Phase E introduces the first real analysis (expression decomposition). Phases F–H integrate control flow. Phase I closes the loop on user-defined routines. Phase J adds optimization. Phase K retires the old system. Phase L is stretch.
+Phases A–D widen the simple cases (single intermediate, named temporaries). Phase E introduces the first real analysis (expression decomposition). Phases F–H integrate control flow. Phase I closes the loop on user-defined routines. Phase J adds optimization. Phase K retires the old system. Phase L (distribution) runs in parallel with B–J once the MVP is usable. Phase M is stretch.
 
 Each phase is a checkpoint: the transpiler's coverage strictly grows, snapshot tests strictly accumulate, and the legacy system remains as a reference implementation until Phase K.
