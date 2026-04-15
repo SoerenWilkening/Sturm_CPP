@@ -64,26 +64,6 @@ static void test_tag_roundtrip() {
         assert(op.tag == kind::SUB_CONST);
     }
     {
-        auto op = sturm::uncompute_op::make_add_qint(nullptr);
-        assert(op.tag == kind::ADD_QINT);
-    }
-    {
-        auto op = sturm::uncompute_op::make_sub_qint(nullptr);
-        assert(op.tag == kind::SUB_QINT);
-    }
-    {
-        auto op = sturm::uncompute_op::make_mul_inverse(nullptr);
-        assert(op.tag == kind::MUL_INVERSE);
-    }
-    {
-        auto op = sturm::uncompute_op::make_div_inverse(nullptr);
-        assert(op.tag == kind::DIV_INVERSE);
-    }
-    {
-        auto op = sturm::uncompute_op::make_mod_inverse(nullptr);
-        assert(op.tag == kind::MOD_INVERSE);
-    }
-    {
         auto op = sturm::uncompute_op::make_bitwise_self(nullptr, 0);
         assert(op.tag == kind::BITWISE_SELF);
     }

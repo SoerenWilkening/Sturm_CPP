@@ -7,9 +7,10 @@
 //
 // Note: uses 5LL (int64_t literal) to trigger the operator+(qint, int64_t) path
 // which emits gates via add_const when the operand is quantum (super_mask != 0).
-// Using Q(5) (qint+qint) takes the ADD_QINT stub path which is a TODO and emits
-// no gates.  This is consistent with PRD §3 "c = (a+5) >= 0" semantics where
-// the constant 5 is a compile-time integer literal.
+// Using Q(5) (qint+qint) takes the qint-qint path whose uncomputation moved
+// to the transpiler in Phase C (no tag is stamped here). This is consistent
+// with PRD §3 "c = (a+5) >= 0" semantics where the constant 5 is a
+// compile-time integer literal.
 //
 // Three test groups:
 //
@@ -142,8 +143,8 @@ static void test_count_only_quantum() {
         for (int i = 0; i < 8; ++i) a.qubits[i] = i;
 
         // Use int64_t literal 5LL to trigger operator+(qint, int64_t) which emits
-        // gates via add_const.  Q(5) would take the qint+qint path (ADD_QINT stub)
-        // which has a TODO and emits no gates.
+        // gates via add_const.  Q(5) would take the qint+qint path whose
+        // uncomputation moved to the transpiler in Phase C (no stamp at runtime).
         sturm::qbool c = (a + 5LL) >= Q(0);
         (void)c;
         // c and (a+5LL) temporary destroyed here.
