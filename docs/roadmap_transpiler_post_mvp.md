@@ -12,6 +12,16 @@ Phases are ordered by dependency. Each phase is independently shippable and inde
 
 ## Phase A — Self-inverse operations
 
+> **2026-04-15:** Complete. All four patterns match and emit correct
+> inverses under snapshot fixtures in `tests/transpiler/fixtures/`:
+> `not_single` (PA-1), `xor_single` (PA-2), `xor_assign_qbool` (PA-3),
+> `xor_assign_classical` (PA-4). The three patterns whose forward op is
+> shipped on the runtime (MVP OR, PA-1, PA-3) are also exercised
+> end-to-end in `examples/or_circuit.cpp` and verified by the
+> `example_or_circuit_injected` CTest. PA-2 and PA-4 remain
+> fixture-only until their forward operators (`operator^` on qbool,
+> `qbool::operator^=(int)`) ship on the real runtime. Next up: Phase B.
+
 Add match rules and inverse emission for operations that are their own inverse. No new IR concepts; the "inverse" is emitting the same forward op again.
 
 Covered ops:
