@@ -110,6 +110,12 @@ public:
         sturm::transpile::register_mul_assign_qint_matcher(finder_, unit_);
         sturm::transpile::register_div_assign_qint_matcher(finder_, unit_);
         sturm::transpile::register_mod_assign_qint_matcher(finder_, unit_);
+        sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
+        sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
+        sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
+        sturm::transpile::register_le_compare_qint_matcher(finder_, unit_);
+        sturm::transpile::register_gt_compare_qint_matcher(finder_, unit_);
+        sturm::transpile::register_ge_compare_qint_matcher(finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {
