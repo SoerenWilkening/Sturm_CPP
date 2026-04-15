@@ -327,6 +327,96 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase E / PE-4: snapshot fixtures for compound qbool bitwise exprs ─────
+# Three fixtures exercising the compound matcher's expression-tree
+# flattening:
+#   * compound_or_and   — `qbool r = (b | c) & d;` (roadmap example)
+#   * compound_and_or   — `qbool r = (b & c) | d;` (mirror shape)
+#   * compound_nested_or — `qbool r = (a | b) | (c | d);` (both arms nested)
+#
+# Each snapshot_* test transpiles the fixture and byte-compares the output
+# against its .expected.cpp golden. A sibling transpiler_idempotent_*
+# test feeds the generated file back through sturm-transpile and asserts
+# byte-for-byte equality — the AUTO-GENERATED sentinel triggers the skip
+# path in main.cpp's driver, so the invariant is trivially preserved
+# today, but the explicit check regresses any future widening that
+# might accidentally re-transpile already-generated output.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_compound_or_and
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_or_and.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_or_and.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_or_and
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_compound_or_and PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_compound_or_and
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_or_and/compound_or_and.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_or_and_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_compound_or_and PROPERTIES
+        LABELS "transpiler"
+        # Snapshot test produces the generated file the idempotency
+        # check consumes, so sequence them via DEPENDS.
+        DEPENDS "snapshot_compound_or_and"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_compound_and_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_and_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_and_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_and_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_compound_and_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_compound_and_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_and_or/compound_and_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_and_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_compound_and_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_compound_and_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_compound_nested_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_nested_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_nested_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_nested_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_compound_nested_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_compound_nested_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_nested_or/compound_nested_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_nested_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_compound_nested_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_compound_nested_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER

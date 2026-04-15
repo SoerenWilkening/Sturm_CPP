@@ -1,0 +1,35 @@
+// Phase E / PE-4 input for the sturm-transpile snapshot test.
+//
+// Depth-2 pure-OR with BOTH outer arguments compound:
+// `qbool r = (a | b) | (c | d);`. Two nested `|` sub-expressions feed a
+// third outer `|`, so the decomposition produces two intermediate
+// `__stu_t<N>` names (post-order, LHS-first):
+//
+//     qbool __stu_t0 = a | b;
+//     qbool __stu_t1 = c | d;
+//     qbool r = __stu_t0 | __stu_t1;
+//
+// and the LIFO uncompute close-brace insertions are
+//
+//     uncompute_or(r, __stu_t0, __stu_t1);
+//     uncompute_or(__stu_t1, c, d);
+//     uncompute_or(__stu_t0, a, b);
+//
+// Outermost is uncomputed first, then `__stu_t1` (the later-allocated
+// intermediate), then `__stu_t0`.
+//
+// The stub matches compound_or_and.cpp's (hermetic operator| overload;
+// `operator&` included for parity with the other two Phase E fixtures
+// even though this one exercises only `|`).
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+};
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b, qbool c, qbool d) { qbool r = (a | b) | (c | d); }

@@ -1,0 +1,29 @@
+// Phase E / PE-4 input for the sturm-transpile snapshot test.
+//
+// Depth-2 mirror of the roadmap shape: `qbool r = (b & c) | d;` swaps OR
+// for AND in the outer slot and vice-versa. The decomposition order is
+// preserved (LHS-first post-order), so `__stu_t0` is the nested AND and
+// the outer OR uses it as its LHS operand:
+//
+//     qbool __stu_t0 = b & c;
+//     qbool r = __stu_t0 | d;
+//
+// and the LIFO uncompute close-brace insertions are
+//
+//     uncompute_or(r, __stu_t0, d);
+//     uncompute_and(__stu_t0, b, c);
+//
+// The stub is identical to compound_or_and.cpp's — hermetic, no include
+// paths required for the sturm-transpile binary to resolve the overloads.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+};
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool b, qbool c, qbool d) { qbool r = (b & c) | d; }
