@@ -1,17 +1,25 @@
-// matcher_when_lift.cpp — Phase F / PF-3 WHEN(expr) lift matcher.
+// matcher_when_lift.cpp — Phase F / PF-3+PF-4 WHEN(expr) lift matcher.
 //
 // Purpose
 // -------
 // Detects `WHEN(expr) { body }` macro invocations in user source and
-// performs the three-point rewrite that promotes a compound / unary
-// `WHEN` argument into a named qbool temporary:
+// performs the three-point rewrite that promotes a compound / unary /
+// comparator `WHEN` argument into a named qbool temporary:
 //
 //   qbool __stu_t0 = b | c;              // (1) pre-WHEN decl block
 //   WHEN(__stu_t0) { body }              // (2) arg replaced with top temp
 //   uncompute_or(__stu_t0, b, c);        // (3) uncompute after WHEN body
 //
-// The PF-2 slice (sturm-q3uo) landed the detection logic; PF-3 layers on
-// the emission logic. PF-2's detection counter remains in place — it is
+// The PF-2 slice (sturm-q3uo) landed the detection logic; PF-3 layered on
+// the emission logic for single-op and compound bitwise (`|`, `&`, `~`)
+// shapes; PF-4 extended `flatten_when_arg` to additionally recognise
+// Phase D comparator `CXXOperatorCallExpr` shapes (`==`, `!=`, `<`, `<=`,
+// `>`, `>=`) and emit the matching `*_QINT` `QOpKind`. The compound
+// recursive shape (`WHEN((b | c) & d)`) works transparently through the
+// same `detail::flatten_arg` call path PF-3 established — PF-4's
+// additional contribution there is to pair with the `std::stable_sort`
+// switch in `uncompute_pass.cpp` so that multi-op lifts from a single
+// WHEN-argument expansion emit their inverses in source LIFO order. PF-2's detection counter remains in place — it is
 // incremented on every lift for easy unit-test observability. The
 // named-passthrough short-circuit (PF-2) is preserved verbatim: when the
 // `WHEN` argument (after `peel_to_payload`) is a bare `DeclRefExpr` to a
@@ -77,11 +85,13 @@
 #include "clang/AST/Stmt.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
 
 #include <memory>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <utility>
@@ -180,6 +190,140 @@ static std::string render_decl_block(const std::vector<std::string>& flat_lines)
     return os.str();
 }
 
+// Phase F PF-4: map a Phase D comparator OverloadedOperatorKind to the
+// matching `*_QINT` QOpKind, plus the source-level operator spelling used
+// when rendering the decl line. The spelling is the two- or one-character
+// operator text as it appears in user source (`==`, `!=`, `<`, `<=`, `>`,
+// `>=`). Returns std::nullopt for any non-comparator operator.
+static std::optional<std::pair<QOpKind, const char*>>
+comparator_kind_for(clang::OverloadedOperatorKind op) {
+    switch (op) {
+    case clang::OO_EqualEqual:       return {{QOpKind::EQ_QINT, "=="}};
+    case clang::OO_ExclaimEqual:     return {{QOpKind::NE_QINT, "!="}};
+    case clang::OO_Less:             return {{QOpKind::LT_QINT, "<"}};
+    case clang::OO_LessEqual:        return {{QOpKind::LE_QINT, "<="}};
+    case clang::OO_Greater:          return {{QOpKind::GT_QINT, ">"}};
+    case clang::OO_GreaterEqual:     return {{QOpKind::GE_QINT, ">="}};
+    default:                          return std::nullopt;
+    }
+}
+
+// Render a single flat decl line for a Phase D comparator (Phase F PF-4).
+// Shape is `qbool <name> = <lhs> <op> <rhs>;` with a terminating semicolon
+// — comparators always go into the flat decl block, never the user's
+// VarDecl source range, so the semicolon is always emitted.
+static std::string render_compare_decl_line(const std::string& name,
+                                            const std::string& lhs,
+                                            const char* op_spelling,
+                                            const std::string& rhs) {
+    std::ostringstream os;
+    os << "qbool " << name << " = " << lhs << " " << op_spelling << " "
+       << rhs << ";";
+    return os.str();
+}
+
+// Phase F PF-4: extract the identifier for an argument of a comparator
+// CXXOperatorCallExpr. The Phase D matcher binds these as bare
+// DeclRefExprs (see matcher_qint_compare.cpp:154-161) — we apply the same
+// expectation here, peeling implicit / paren / bind-temporary wrappers
+// with `peel_to_payload` before reading the identifier. Returns an empty
+// string on any structural mismatch (non-DRE leaf) so the caller can bail
+// the whole lift cleanly.
+static std::string leaf_name_for_compare_arg(const clang::Expr* arg) {
+    const clang::Expr* inner = detail::peel_to_payload(arg);
+    if (!inner) return {};
+    if (const auto* dre = clang::dyn_cast<clang::DeclRefExpr>(inner)) {
+        if (const clang::NamedDecl* nd = dre->getDecl()) {
+            return nd->getNameAsString();
+        }
+    }
+    return {};
+}
+
+// Phase F PF-4: WHEN-specific argument flattener. Top-level routing for a
+// peeled `WHEN(...)` payload:
+//
+//   - Phase D comparator shape (CXXOperatorCallExpr on `==`, `!=`, `<`,
+//     `<=`, `>`, `>=` with exactly two DeclRefExpr args): allocate a
+//     fresh temp, record one QOperation with the corresponding `*_QINT`
+//     kind, append one `qbool __stu_tN = a == b;` decl line, return the
+//     temp name. The render switch in `uncompute_pass.cpp` (`EQ_QINT`
+//     case and siblings) already emits the matching
+//     `uncompute_{eq,ne,lt,le,gt,ge}_qint` inverse — no emitter change.
+//
+//   - Anything else: delegate to the Phase E `detail::flatten_arg`, which
+//     handles bitwise `|`/`&`/`~` (including recursive compounds like
+//     `(b | c) & d`) and bare DeclRefExpr leaves (though a bare leaf is
+//     already short-circuited via the named-passthrough path earlier).
+//
+// Returns an empty string on structural failure; the caller bails without
+// scheduling any edit.
+static std::string flatten_when_arg(const clang::Expr* peeled,
+                                    QScope& scope,
+                                    FreshNameAllocator& alloc,
+                                    clang::SourceRange stmt_range,
+                                    std::vector<std::string>& flat_lines) {
+    if (!peeled) return {};
+
+    // Comparator branch: CXXOperatorCallExpr with a relational operator.
+    if (const auto* op_call =
+            clang::dyn_cast<clang::CXXOperatorCallExpr>(peeled)) {
+        if (auto mapped = comparator_kind_for(op_call->getOperator())) {
+            // Comparators in Phase D are binary: exactly two operands in
+            // the CXXOperatorCallExpr arg list (member form: arg0 = object,
+            // arg1 = rhs; free form: arg0 = lhs, arg1 = rhs — both present
+            // as a 2-arg CXXOperatorCallExpr by the time the AST is
+            // populated). Any other arity means we matched something we do
+            // not understand; bail.
+            if (op_call->getNumArgs() != 2) return {};
+
+            std::string lhs_name = leaf_name_for_compare_arg(op_call->getArg(0));
+            if (lhs_name.empty()) return {};
+            std::string rhs_name = leaf_name_for_compare_arg(op_call->getArg(1));
+            if (rhs_name.empty()) return {};
+
+            std::string temp = alloc.next();
+
+            QOperation op;
+            op.kind = mapped->first;
+            op.result.name = temp;
+            op.result.decl_loc = {}; // synthetic WHEN-lift temp
+
+            // Resolve each operand's decl_loc so downstream consumers
+            // (QValueRef equality, diagnostics) stay consistent with the
+            // Phase D matcher's shape. Missing decl_loc is tolerated by
+            // the emitter's text rendering, but we fill it in when the
+            // peeled leaf is a DeclRefExpr (it always is for the shapes
+            // the matcher accepts).
+            auto make_ref = [&](const clang::Expr* a, const std::string& name) {
+                QValueRef ref;
+                ref.name = name;
+                const clang::Expr* inner = detail::peel_to_payload(a);
+                if (const auto* dre =
+                        clang::dyn_cast_or_null<clang::DeclRefExpr>(inner)) {
+                    if (const clang::NamedDecl* nd = dre->getDecl()) {
+                        ref.decl_loc = nd->getLocation();
+                    }
+                }
+                return ref;
+            };
+            op.operands.push_back(make_ref(op_call->getArg(0), lhs_name));
+            op.operands.push_back(make_ref(op_call->getArg(1), rhs_name));
+            op.stmt_range = stmt_range;
+            scope.ops.push_back(std::move(op));
+
+            flat_lines.push_back(render_compare_decl_line(
+                temp, lhs_name, mapped->second, rhs_name));
+            return temp;
+        }
+    }
+
+    // Non-comparator: delegate to the Phase E bitwise / unary-NOT
+    // flattener. `detail::flatten_arg` handles recursive compounds
+    // (`(b | c) & d`) and bare leaves.
+    return detail::flatten_arg(peeled, scope, alloc, stmt_range, flat_lines);
+}
+
 class WhenLiftCallback : public MatchFinder::MatchCallback {
 public:
     explicit WhenLiftCallback(QUnit* unit) : unit_(unit) {}
@@ -258,7 +402,7 @@ public:
         const SourceRange stmt_range = arg->getSourceRange();
 
         std::string top_name =
-            detail::flatten_arg(peeled, scratch, alloc, stmt_range, flat_lines);
+            flatten_when_arg(peeled, scratch, alloc, stmt_range, flat_lines);
         if (top_name.empty() || flat_lines.empty()) {
             // Not a supported shape (e.g. `WHEN(foo(a))` or a literal).
             // Scratch scope is local so there's nothing to roll back.

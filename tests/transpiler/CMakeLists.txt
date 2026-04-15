@@ -482,6 +482,76 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase F / PF-4: snapshot fixtures for compound + comparator WHEN lifts ──
+# Two fixtures exercising the PF-4 widening of `flatten_when_arg`:
+#   * when_compound — `WHEN((b | c) & d) { body }` — the exact roadmap
+#     shape, pinning the LIFO-order requirement on compound lifts. Two
+#     ops share a single `stmt_range` (the WHEN macro's expansion range),
+#     so the emitted `uncompute_and` must precede `uncompute_or` — the
+#     tiebreaker comes from `std::stable_sort` in `uncompute_pass.cpp`
+#     and from the innermost-first → outermost-last callback-append
+#     order in `flatten_when_arg`.
+#   * when_compare — `WHEN(a == b) { body }` — exercises the Phase D
+#     comparator `CXXOperatorCallExpr` branch of `flatten_when_arg`.
+#     Emits a single `EQ_QINT` op with matching `uncompute_eq_qint`
+#     inverse via the existing renderer switch in `uncompute_pass.cpp`.
+#
+# Both tests follow the same harness/driver shape as PF-3's
+# snapshot_when_single_or / snapshot_when_named_passthrough tests; the
+# idempotency companion feeds the generated file back through
+# sturm-transpile and asserts byte-identical round-trip via the
+# AUTO-GENERATED sentinel (no new lifts fire on the already-rewritten
+# `WHEN(__stu_tN)` named-passthrough shape).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_when_compound
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_compound.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_compound.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_compound
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_compound PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_compound
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_compound/when_compound.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_compound_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_compound PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_compound"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_when_compare
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_compare.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_compare.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_compare
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_compare PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_compare
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_compare/when_compare.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_compare_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_compare PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_compare"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER

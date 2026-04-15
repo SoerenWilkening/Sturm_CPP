@@ -1,0 +1,71 @@
+// Phase F / PF-4 input for the sturm-transpile snapshot test.
+//
+// Exercises the comparator WHEN lift: `WHEN(a == b) { body }` where `a`
+// and `b` are bare `qint_t<W>` DeclRefExprs. The matcher's
+// `flatten_when_arg` recognises the Phase D comparator shape
+// (CXXOperatorCallExpr on `==`), allocates a fresh `__stu_t0` temp, and
+// emits one `qbool __stu_t0 = a == b;` decl line plus a matching
+// `uncompute_eq_qint(__stu_t0, a, b);` call after the body close brace:
+//
+//     qbool __stu_t0 = a == b;
+//     WHEN(__stu_t0) { (void)d; }    uncompute_eq_qint(__stu_t0, a, b);
+//
+// The render switch in `uncompute_pass.cpp` (`QOpKind::EQ_QINT` case)
+// already handles this kind — PF-4 only widens the WHEN-lift matcher's
+// payload recogniser to produce it, without touching the renderer.
+//
+// The stub inlined below replicates the structure the matcher inspects:
+//   - `sturm::qbool` with a copy/move chain that type-checks under
+//     `materialize_when(qbool&&)` when the comparator's return value
+//     is bound into the WHEN's init-stmt.
+//   - `sturm::qint_t<W>` with `operator==` returning `qbool` — the same
+//     shape the Phase D PD-1 matcher consumes in
+//     `tests/transpiler/fixtures/eq_compare_qint.cpp`.
+//   - `sturm::detail::materialize_when` overload set the WHEN macro's
+//     middle `if` calls in its init-stmt.
+//   - The exact three-`if` WHEN macro from
+//     `include/sturm/control/when.hpp:293`.
+//
+// The sturm-transpile binary runs with a FixedCompilationDatabase that
+// carries no include paths, so this file must be hermetic — same rule
+// the Phase A..E snapshot fixtures follow.
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    bool should_run() const { return true; }
+};
+
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qbool operator==(const qint_t&) const { return qbool{}; }
+};
+
+namespace detail {
+
+inline qbool& materialize_when(qbool& q) { return q; }
+inline qbool  materialize_when(qbool&& q) { return static_cast<qbool&&>(q); }
+
+struct WhenCapture { WhenCapture() = default; };
+inline qbool& make_when_guard(qbool& q) { return q; }
+
+} // namespace detail
+} // namespace sturm
+
+using sturm::qbool;
+
+#define WHEN(expr) \
+    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
+    if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
+    if (auto& _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
+        _when_guard_.should_run())
+
+void demo(sturm::qint_t<8> a, sturm::qint_t<8> b, qbool d) {
+    WHEN(a == b) { (void)d; }
+}
