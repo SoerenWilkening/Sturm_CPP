@@ -68,4 +68,10 @@ using sturm::qbool;
 // That is the contract the transpiler must uphold.
 void demo(const qbool& a, const qbool& b) { qbool tmp = a | b; }
 
+// LP7: second demo that mirrors `examples/or_circuit.cpp`'s VarDecl
+// (variable name `c` instead of `tmp`) so the M12 harness can bind
+// PRD acceptance #5 to the real example's pattern. Transpiler is
+// expected to inject `uncompute_or(c, a, b);` before the closing brace.
+void demo_or_circuit(const qbool& a, const qbool& b) { qbool c = a | b; }
+
 } // namespace m12_transpiled
