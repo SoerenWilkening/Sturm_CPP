@@ -122,15 +122,21 @@ public:
         // M7: populate the QUnit via the match finder.
         finder_.matchAST(ctx);
 
-        // M8: synthesize uncompute insertions from the QUnit.
-        auto insertions = sturm::transpile::synthesize(unit_);
+        // M8: synthesize uncompute insertions + replacements from the QUnit.
+        // PE-2: the return type is QSynthesisResult — a struct of two
+        // vectors. Pre-Phase-E the `replacements` field is empty, so this
+        // call produces byte-identical output to the pre-PE-2 pipeline
+        // (the "existing snapshot fixtures byte-identical" acceptance
+        // criterion is enforced by the snapshot tests downstream).
+        auto synth = sturm::transpile::synthesize(unit_);
 
         // M9: build a Rewriter over the same SourceManager/LangOptions and
-        // let emit() apply insertions, prepend the header, and write the
-        // output file.
+        // let emit() apply replacements, insertions, prepend the header,
+        // and write the output file.
         clang::Rewriter rw(ctx.getSourceManager(), ctx.getLangOpts());
         (void)sturm::transpile::emit(ctx.getSourceManager(), rw,
-                                     insertions, source_path_, output_dir_);
+                                     synth.insertions, synth.replacements,
+                                     source_path_, output_dir_);
     }
 
 private:

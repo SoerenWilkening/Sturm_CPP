@@ -192,8 +192,16 @@ std::string render_uncompute(const QOperation& op) {
 
 } // namespace
 
-std::vector<UncomputeInsertion> synthesize(const QUnit& unit) {
-    std::vector<UncomputeInsertion> out;
+QSynthesisResult synthesize(const QUnit& unit) {
+    QSynthesisResult result;
+    std::vector<UncomputeInsertion>& out = result.insertions;
+
+    // PE-2: pass replacements through unchanged. Pre-Phase-E the matcher
+    // never populates this vector, so the loop is a no-op on existing
+    // snapshot fixtures (byte-identical output guaranteed). When Phase E's
+    // compound matcher lands it will append to `unit.replacements` and
+    // the emitter will apply every entry ahead of the insertion pass.
+    result.replacements = unit.replacements;
 
     // Rough capacity reservation to avoid mid-loop reallocations on the
     // common single-scope case. Worst-case each op yields one insertion.
@@ -239,7 +247,7 @@ std::vector<UncomputeInsertion> synthesize(const QUnit& unit) {
         }
     }
 
-    return out;
+    return result;
 }
 
 } // namespace sturm::transpile

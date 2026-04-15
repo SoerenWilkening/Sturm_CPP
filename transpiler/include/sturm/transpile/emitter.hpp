@@ -58,18 +58,37 @@ namespace sturm::transpile {
 ///   - `sm`            : the SourceManager bound to the parsed user source.
 ///   - `rw`            : a Rewriter constructed against `sm`.
 ///   - `insertions`    : M8 output, in LIFO-within-scope order.
+///   - `replacements`  : M8 output, zero or more source-range text
+///                       replacements to apply before the insertion pass.
+///                       (PE-2: pre-Phase-E this is always empty; Phase E
+///                       compound matcher is the first producer.)
 ///   - `source_path`   : path to embed in the idempotency header.
 ///   - `output_dir`    : directory under which the output is placed; the
 ///                       relative path of `source_path` is mirrored under
 ///                       it (via `resolve_output_path` from M4).
 ///
 /// Behavior:
-///   1. Apply every `rw.InsertTextBefore(ins.insert_before, ins.code)`.
-///   2. Fetch the rewrite buffer for the main file; serialize to string.
-///   3. Prepend `idempotency_header(source_path)`.
-///   4. Write the result to `resolve_output_path(source_path, output_dir)`.
+///   1. Apply every `rw.ReplaceText(rep.range, rep.replacement)` in
+///      the order supplied. Replacements and insertion anchors are
+///      disjoint by construction so no overlap handling is required.
+///   2. Apply every `rw.InsertTextBefore(ins.insert_before, ins.code)`.
+///   3. Fetch the rewrite buffer for the main file; serialize to string.
+///   4. Prepend `idempotency_header(source_path)`.
+///   5. Write the result to `resolve_output_path(source_path, output_dir)`.
 ///
 /// Returns true on success, false on any I/O or Rewriter failure.
+bool emit(const clang::SourceManager& sm,
+          clang::Rewriter& rw,
+          const std::vector<UncomputeInsertion>& insertions,
+          const std::vector<QReplacement>& replacements,
+          std::string_view source_path,
+          std::string_view output_dir);
+
+/// Back-compat overload used by call sites that have no replacements. PE-2
+/// keeps the MVP-era two-vector shape (`insertions` only) working so the
+/// snapshot fixtures and existing tests stay byte-identical without
+/// churning every caller. New callers (Phase E and later) should use the
+/// five-argument form above.
 bool emit(const clang::SourceManager& sm,
           clang::Rewriter& rw,
           const std::vector<UncomputeInsertion>& insertions,
