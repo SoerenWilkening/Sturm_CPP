@@ -247,6 +247,64 @@ static std::string round_trip_range(std::string_view user_src) {
     return grab.text;
 }
 
+// ── Phase B stub: qint_t with implicit int64_t converting constructor ───────
+//
+// The Phase B matchers key off `cxxRecordDecl(hasName("qint_t"))` and a
+// classical RHS that arrives wrapped in a CXXConstructExpr (via the
+// non-explicit qint_t(int64_t) converting constructor, qint_core.hpp:89).
+// The stub mirrors that shape: non-templated `qint_t` with a converting
+// constructor from `long long` and compound-assign operators taking
+// another `qint_t`. `long long` matches the real `int64_t` lift in
+// production — inline integer literals in the user source convert to it
+// through the usual integer promotion rules.
+static constexpr std::string_view kQIntStub = R"CPP(
+namespace sturm {
+
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    qint_t(long long) {}
+    qint_t& operator+=(const qint_t&) { return *this; }
+    qint_t& operator-=(const qint_t&) { return *this; }
+    qint_t& operator*=(const qint_t&) { return *this; }
+    qint_t& operator/=(const qint_t&) { return *this; }
+};
+
+} // namespace sturm
+
+using sturm::qint_t;
+)CPP";
+
+// Run the four Phase B matchers on `user_src` after prepending the qint_t
+// stub. All four are registered at once because they are mutually
+// exclusive by operator name — a single CXXOperatorCallExpr cannot trigger
+// more than one of them. Returns the populated QUnit.
+static QUnit run_pb_matchers(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQIntStub.size() + user_src.size());
+    code.append(kQIntStub);
+    code.append(user_src);
+
+    QUnit unit;
+    clang::ast_matchers::MatchFinder finder;
+    register_add_assign_const_matcher(finder, unit);
+    register_sub_assign_const_matcher(finder, unit);
+    register_mul_assign_const_matcher(finder, unit);
+    register_div_assign_const_matcher(finder, unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PB matchers)\n");
+    }
+    return unit;
+}
+
 // ── Positive case ────────────────────────────────────────────────────────────
 
 static void test_positive_single_or() {
@@ -372,6 +430,109 @@ static void test_two_ops_same_scope() {
 
 // ── stmt_range round-trip ────────────────────────────────────────────────────
 
+// ── Phase B positive cases ──────────────────────────────────────────────────
+
+static void test_pb_add_assign_const_binds_literal() {
+    // `a += 3;` on a qint_t must produce ADD_ASSIGN_CONST with operand
+    // name "3" — the verbatim source text of the IntegerLiteral extracted
+    // via Lexer::getSourceText after peeling the CXXConstructExpr wrapper.
+    QUnit unit = run_pb_matchers(
+        "void demo(qint_t a) {\n"
+        "    a += 3;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+
+    const auto& op = s.ops.front();
+    CHECK(op.kind == QOpKind::ADD_ASSIGN_CONST);
+    CHECK_EQ_STR(op.result.name, std::string("a"));
+    CHECK(op.operands.size() == 1);
+    if (op.operands.empty()) return;
+    CHECK_EQ_STR(op.operands[0].name, std::string("3"));
+}
+
+static void test_pb_sub_assign_const_binds_literal() {
+    QUnit unit = run_pb_matchers(
+        "void demo(qint_t a) {\n"
+        "    a -= 7;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::SUB_ASSIGN_CONST);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("7"));
+    }
+}
+
+static void test_pb_mul_assign_const_binds_literal() {
+    QUnit unit = run_pb_matchers(
+        "void demo(qint_t a) {\n"
+        "    a *= 2;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::MUL_ASSIGN_CONST);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("2"));
+    }
+}
+
+static void test_pb_div_assign_const_binds_literal() {
+    QUnit unit = run_pb_matchers(
+        "void demo(qint_t a) {\n"
+        "    a /= 5;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& s = unit.scopes.front();
+    CHECK(s.ops.size() == 1);
+    if (s.ops.empty()) return;
+    CHECK(s.ops.front().kind == QOpKind::DIV_ASSIGN_CONST);
+    CHECK_EQ_STR(s.ops.front().result.name, std::string("a"));
+    CHECK(s.ops.front().operands.size() == 1);
+    if (!s.ops.front().operands.empty()) {
+        CHECK_EQ_STR(s.ops.front().operands[0].name, std::string("5"));
+    }
+}
+
+// ── Phase B negative case: Phase C qint-qint form must NOT match ────────────
+
+static void test_pb_negative_qint_qint_form_no_match() {
+    // Phase C disjointness invariant: the qint-qint form `a += b;` (both
+    // operands are DeclRefExpr references to qint_t locals) has no
+    // CXXConstructExpr wrapper on the RHS because no converting
+    // constructor fires. The PB pattern requires the cxxConstructExpr
+    // peel and therefore must not match this form. This test pins the
+    // separation so Phase C (qint-qint) can later land its own matcher
+    // without either matcher shadowing the other.
+    QUnit unit = run_pb_matchers(
+        "void demo(qint_t a, qint_t b) {\n"
+        "    a += b;\n"
+        "    a -= b;\n"
+        "    a *= b;\n"
+        "    a /= b;\n"
+        "}\n");
+
+    CHECK(unit.scopes.empty());
+}
+
 static void test_stmt_range_round_trip() {
     // Read the recorded stmt_range back as source text via the Clang Lexer.
     // It must equal the original declaration (modulo the trailing
@@ -398,6 +559,12 @@ int main() {
     test_two_ops_same_scope();
 
     test_stmt_range_round_trip();
+
+    test_pb_add_assign_const_binds_literal();
+    test_pb_sub_assign_const_binds_literal();
+    test_pb_mul_assign_const_binds_literal();
+    test_pb_div_assign_const_binds_literal();
+    test_pb_negative_qint_qint_form_no_match();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

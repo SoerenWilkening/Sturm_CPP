@@ -88,6 +88,25 @@ void register_xor_assign_matcher(clang::ast_matchers::MatchFinder& finder,
 void register_xor_assign_classical_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 
+/// Phase B / PB-1..PB-4: Register the four `a <op>= <classical>;` matchers
+/// for `+= -= *= /=` against a `qint_t<W>` LHS with a non-qint RHS that
+/// reaches the operator via the non-explicit `qint_t(int64_t)` converting
+/// constructor (qint_core.hpp:89). Each matcher peels one extra
+/// CXXConstructExpr layer beyond PA-4 to reach the classical source text,
+/// extracts it verbatim via Lexer::getSourceText, and records one
+/// QOperation of the matching ADD/SUB/MUL/DIV_ASSIGN_CONST kind. The LHS
+/// type guard on `qint_t` is what separates PB from a future Phase C
+/// qint-qint matcher (where the RHS is a DeclRefExpr and no converting
+/// constructor fires).
+void register_add_assign_const_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_sub_assign_const_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_mul_assign_const_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_div_assign_const_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

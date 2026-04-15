@@ -101,6 +101,10 @@ public:
         sturm::transpile::register_xor_assign_matcher(finder_, unit_);
         sturm::transpile::register_xor_assign_classical_matcher(
             finder_, unit_);
+        sturm::transpile::register_add_assign_const_matcher(finder_, unit_);
+        sturm::transpile::register_sub_assign_const_matcher(finder_, unit_);
+        sturm::transpile::register_mul_assign_const_matcher(finder_, unit_);
+        sturm::transpile::register_div_assign_const_matcher(finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {
