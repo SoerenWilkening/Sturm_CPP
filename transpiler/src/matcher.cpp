@@ -727,17 +727,26 @@ void register_add_assign_const_matcher(
     // Lexer::getSourceText returns the verbatim token ("3" rather than
     // "qint_t(3)").
     //
-    // The LHS `hasType(cxxRecordDecl(hasName("qint_t")))` guard is what
-    // separates PB from a future Phase C qint-qint matcher. When a future
-    // phase registers a matcher for `a += b;` (both operands qint_t
-    // DeclRefExprs), the two patterns remain structurally disjoint: PC's
-    // RHS has no CXXConstructExpr wrapper because no converting
-    // constructor fires.
+    // The LHS guard is what separates PB from a future Phase C qint-qint
+    // matcher. When a future phase registers a matcher for `a += b;`
+    // (both operands qint_t DeclRefExprs), the two patterns remain
+    // structurally disjoint: PC's RHS has no CXXConstructExpr wrapper
+    // because no converting constructor fires.
+    //
+    // The guard peels through the typedef + TemplateSpecializationType
+    // sugar that the real qint_t<Width> type wears (qint_core.hpp:52):
+    //   hasCanonicalType(hasDeclaration(cxxRecordDecl(hasName("qint_t"))))
+    // A bare `hasType(cxxRecordDecl(hasName("qint_t")))` does NOT fire
+    // on `qint_t<1>` because the DeclRefExpr's type is a sugared
+    // TemplateSpecializationType, not a RecordType directly. This was
+    // caught at fixture time: non-template stubs matched, the real
+    // templated form did not — canonical-type peel is the fix.
     auto pattern = cxxOperatorCallExpr(
         hasOverloadedOperatorName("+="),
         argumentCountIs(2),
         hasArgument(0, ignoringImplicit(
-            declRefExpr(hasType(cxxRecordDecl(hasName("qint_t"))))
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
                 .bind("lhs"))),
         hasArgument(1, ignoringImplicit(cxxConstructExpr(
             argumentCountIs(1),
@@ -758,7 +767,8 @@ void register_sub_assign_const_matcher(
         hasOverloadedOperatorName("-="),
         argumentCountIs(2),
         hasArgument(0, ignoringImplicit(
-            declRefExpr(hasType(cxxRecordDecl(hasName("qint_t"))))
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
                 .bind("lhs"))),
         hasArgument(1, ignoringImplicit(cxxConstructExpr(
             argumentCountIs(1),
@@ -778,7 +788,8 @@ void register_mul_assign_const_matcher(
         hasOverloadedOperatorName("*="),
         argumentCountIs(2),
         hasArgument(0, ignoringImplicit(
-            declRefExpr(hasType(cxxRecordDecl(hasName("qint_t"))))
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
                 .bind("lhs"))),
         hasArgument(1, ignoringImplicit(cxxConstructExpr(
             argumentCountIs(1),
@@ -798,7 +809,8 @@ void register_div_assign_const_matcher(
         hasOverloadedOperatorName("/="),
         argumentCountIs(2),
         hasArgument(0, ignoringImplicit(
-            declRefExpr(hasType(cxxRecordDecl(hasName("qint_t"))))
+            declRefExpr(hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))
                 .bind("lhs"))),
         hasArgument(1, ignoringImplicit(cxxConstructExpr(
             argumentCountIs(1),

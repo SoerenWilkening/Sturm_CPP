@@ -247,19 +247,21 @@ static std::string round_trip_range(std::string_view user_src) {
     return grab.text;
 }
 
-// ── Phase B stub: qint_t with implicit int64_t converting constructor ───────
+// ── Phase B stub: qint_t<W> with implicit int64_t converting constructor ────
 //
-// The Phase B matchers key off `cxxRecordDecl(hasName("qint_t"))` and a
-// classical RHS that arrives wrapped in a CXXConstructExpr (via the
-// non-explicit qint_t(int64_t) converting constructor, qint_core.hpp:89).
-// The stub mirrors that shape: non-templated `qint_t` with a converting
-// constructor from `long long` and compound-assign operators taking
-// another `qint_t`. `long long` matches the real `int64_t` lift in
-// production — inline integer literals in the user source convert to it
-// through the usual integer promotion rules.
+// The Phase B matchers key off `cxxRecordDecl(hasName("qint_t"))` wrapped
+// in hasCanonicalType + hasDeclaration so the LHS type guard fires on
+// the templated production type qint_t<Width> (qint_core.hpp:52) through
+// the Typedef + TemplateSpecialization sugar chain. The stub mirrors
+// that shape: a template class `qint_t<W>` with a converting constructor
+// from `long long` and compound-assign operators taking another qint_t.
+// `long long` matches the real `int64_t` lift in production — inline
+// integer literals in the user source convert to it through the usual
+// integer promotion rules.
 static constexpr std::string_view kQIntStub = R"CPP(
 namespace sturm {
 
+template <int W>
 class qint_t {
 public:
     qint_t() {}
@@ -274,7 +276,7 @@ public:
 
 } // namespace sturm
 
-using sturm::qint_t;
+using qint_t = sturm::qint_t<1>;
 )CPP";
 
 // Run the four Phase B matchers on `user_src` after prepending the qint_t
