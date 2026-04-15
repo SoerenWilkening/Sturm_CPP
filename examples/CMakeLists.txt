@@ -16,6 +16,7 @@ target_sources(example_or_circuit PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
