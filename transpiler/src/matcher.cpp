@@ -37,6 +37,7 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/SourceLocation.h"
 
+#include <cassert>
 #include <cstdint>
 #include <memory>
 #include <string>
@@ -118,6 +119,21 @@ public:
 
         QScope& scope = find_or_create_scope(*unit_, *cs);
 
+        // Debug-build guard (Risk R3, LP4 §"Optional hardening"): the widened
+        // `anyOf(eager_init, lazy_init)` pattern is mutually exclusive by
+        // overload resolution (eager returns qbool, lazy returns
+        // OrExpr<qbool>), but a pathological reshuffle could still cause one
+        // VarDecl to bind twice. Assert that we have not already emitted an
+        // op for this var's declaration location in the current QScope.
+#ifndef NDEBUG
+        const auto var_key = var->getLocation().getRawEncoding();
+        for (const auto& existing : scope.ops) {
+            assert(existing.result.decl_loc.getRawEncoding() != var_key &&
+                   "OrCallback double-matched the same VarDecl "
+                   "(anyOf eager/lazy branches are not mutually exclusive)");
+        }
+#endif
+
         QOperation op;
         op.kind = QOpKind::OR;
         op.result.name     = var->getNameAsString();
@@ -153,18 +169,39 @@ std::vector<std::unique_ptr<OrCallback>>& callback_pool() {
 
 void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
                          QUnit& unit) {
-    // MVP AST pattern — see matcher.hpp / implementation plan M7 for the
-    // rationale. Note the `hasName("qbool")` matches both `sturm::qbool`
-    // (unqualified within the namespace) and plain `qbool` via using-
-    // declarations. Wider patterns (templated qbool, different operators)
-    // are Phase A / B concerns, not MVP.
+    // Widened AST pattern (LP4) — see
+    // `docs/implementation_plan_transpiler_matcher_lazy_peel.md` and the
+    // LP2 AST calibration notes on issue sturm-ea7. Fires on both
+    // initializer shapes `examples/or_circuit.cpp` can take:
+    //   (a) EAGER: `operator|(...) -> qbool`. VarDecl initializer is the
+    //       CXXOperatorCallExpr itself (modulo implicit glue). MVP shape.
+    //   (b) LAZY:  `operator|(...) -> OrExpr<qbool>`, materialized via
+    //       `OrExpr<qbool>::operator qbool()`. LP2 AST chain:
+    //         VarDecl → ExprWithCleanups
+    //                 → ImplicitCastExpr<UserDefinedConversion>
+    //                 → CXXMemberCallExpr (operator qbool())
+    //                 → ImplicitCastExpr<NoOp>
+    //                 → MaterializeTemporaryExpr
+    //                 → CXXOperatorCallExpr '|'
+    //       `ignoringImplicit` peels all of the above (incl. the
+    //       UserDefinedConversion cast and MaterializeTemporaryExpr).
+    //       N.B. no CXXConstructExpr on this chain — PRD sketch was off.
+    // Both branches bind the same `lhs`/`rhs`/`var` names; OrCallback::run
+    // is unchanged. Branches are mutually exclusive by overload resolution
+    // (eager returns qbool; lazy returns OrExpr<qbool>).
+    auto or_call = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("|"),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(declRefExpr().bind("lhs"))),
+        hasArgument(1, ignoringImplicit(declRefExpr().bind("rhs"))));
+
+    auto eager_init = ignoringImplicit(or_call);
+    auto lazy_init  = ignoringImplicit(
+        cxxMemberCallExpr(on(ignoringImplicit(or_call))));
+
     auto pattern = varDecl(
         hasType(cxxRecordDecl(hasName("qbool"))),
-        hasInitializer(cxxOperatorCallExpr(
-            hasOverloadedOperatorName("|"),
-            argumentCountIs(2),
-            hasArgument(0, declRefExpr().bind("lhs")),
-            hasArgument(1, declRefExpr().bind("rhs"))))
+        hasInitializer(anyOf(eager_init, lazy_init))
     ).bind("var");
 
     auto& pool = callback_pool();
