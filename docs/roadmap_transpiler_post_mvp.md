@@ -204,6 +204,8 @@ Each optimization is a separate IR pass, gated by a CLI flag (`--O1`, `--O2`) fo
 
 ## Phase K — Cleanup
 
+> **2026-04-15:** LP1–LP8 landed — lazy OR initializers now rewrite; PRD + plan archived under `docs/archive/`.
+
 Once the transpiler covers every construct the runtime auto-uncompute handled, retire the legacy layer.
 
 1. **Delete** `include/sturm/control/when_capture.hpp` and `when_capture_fwd.hpp`.

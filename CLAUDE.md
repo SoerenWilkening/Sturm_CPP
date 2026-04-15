@@ -6,8 +6,6 @@ This file provides instructions and context for AI coding agents working on this
 
 At the start of every session, read:
 - `docs/01_principles.md` — core design principles
-- `docs/prd_transpiler_matcher_lazy_peel.md` — active PRD: widen matcher to peel through lazy OR expressions so `examples/or_circuit.cpp` is rewritten under `STURM_BACKEND_ENABLED`
-- `docs/implementation_plan_transpiler_matcher_lazy_peel.md` — active implementation plan for the PRD above (LP1–LP9, modular TDD, ≤300 LoC/module)
 - `docs/roadmap_transpiler_post_mvp.md` — phases to execute after the MVP pipeline is green
 
 **When archiving a document** (moving to `docs/archive/`), also remove its entry from this Required Reading list. A document in the archive must not be a session dependency.
