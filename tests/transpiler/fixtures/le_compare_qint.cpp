@@ -1,0 +1,24 @@
+// Phase D / PD-4 input for the sturm-transpile snapshot test.
+//
+// Exercises the qint-qint form of LE on a qint_t: `qbool c = a <= b;` must
+// be paired with `uncompute_le_qint(c, a, b);` injected before the scope's
+// close brace. Both operands are bare DeclRefExprs to qint_t parameters —
+// no converting constructor fires, so the matcher sees a qint-qint
+// CXXOperatorCallExpr returning qbool, anchored under a qbool VarDecl.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+};
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qbool operator<=(const qint_t&) const { return qbool{}; }
+};
+} // namespace sturm
+using sturm::qbool;
+
+void demo(sturm::qint_t<8> a, sturm::qint_t<8> b) { qbool c = a <= b; }
