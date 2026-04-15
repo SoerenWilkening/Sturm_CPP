@@ -69,6 +69,68 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── LP6: idempotency guard tests ────────────────────────────────────────────
+# PRD acceptance criterion #4: running sturm-transpile on a previously-
+# emitted output must produce a byte-identical result. The runtime
+# enforcement lives in main.cpp's skip detection (the AUTO-GENERATED
+# sentinel triggers a verbatim copy), but the invariant is contract
+# surface — these tests regress it end-to-end.
+#
+# Two registrations:
+#   * transpiler_idempotent_or_single_backend — operates on the LP3
+#     fixture's generated output (produced by snapshot_or_single_backend).
+#     We DEPENDS on that test so it is guaranteed to have produced the
+#     generated file before this idempotency check runs.
+#   * transpiler_idempotent_example_or_circuit — operates on
+#     ${CMAKE_BINARY_DIR}/sturm_gen/examples/or_circuit.cpp. That file is
+#     emitted by add_quantum_executable(example_or_circuit ...). CTest
+#     cannot express a direct target-level dependency, so we stage the
+#     build via a SETUP fixture test (`build_example_or_circuit`) that
+#     shells out to `cmake --build` for the example_or_circuit target,
+#     and attach FIXTURES_REQUIRED on the idempotency test.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME transpiler_idempotent_or_single_backend
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/or_single_backend/or_single_backend.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/or_single_backend_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_or_single_backend PROPERTIES
+        LABELS "transpiler"
+        # The snapshot test is the producer of the file this idempotency
+        # check reads. Running it first guarantees the input exists and
+        # has the expected contents.
+        DEPENDS "snapshot_or_single_backend"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    # Stage the example build as a ctest fixture so ctest alone (without
+    # a prior `cmake --build`) can still run the idempotency check. The
+    # setup test calls back into the generator to build just the
+    # example_or_circuit target, which transitively produces
+    # ${CMAKE_BINARY_DIR}/sturm_gen/examples/or_circuit.cpp via
+    # add_quantum_executable().
+    add_test(
+        NAME build_example_or_circuit
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_or_circuit)
+    set_tests_properties(build_example_or_circuit PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_or_circuit_built")
+
+    add_test(
+        NAME transpiler_idempotent_example_or_circuit
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/or_circuit.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_or_circuit_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_or_circuit PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_or_circuit_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
