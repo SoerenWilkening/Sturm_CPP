@@ -169,6 +169,28 @@ struct QValueRef {
 ///                  closing brace, NOT at the enclosing CompoundStmt's
 ///                  close brace. Existing matchers leave it default, so
 ///                  every prior snapshot stays byte-identical.
+/// - `hoist_to_override` : optional per-op uncompute anchor for Phase J
+///                  PJ-3 (uncompute hoisting). Parallel to
+///                  `insert_before_override` but dedicated to the hoisted
+///                  case: when valid, the M8 synthesis pass plants the
+///                  uncompute AFTER the loop end (at this location),
+///                  while the FORWARD computation is moved BEFORE the
+///                  loop begin by a matcher-owned QReplacement /
+///                  raw_insertion pair (see PJ-3d). The PJ-3d matcher
+///                  sets BOTH overrides on a hoisted op:
+///                  `insert_before_override` = loop-begin location (for
+///                  the forward compute anchor, the matcher's concern)
+///                  and `hoist_to_override` = loop-enclosing scope's
+///                  `close_brace` (for the post-loop uncompute anchor,
+///                  `synthesize()`'s concern). `hoist_to_override` takes
+///                  precedence over `insert_before_override` in
+///                  `synthesize()`: if both are valid, the uncompute
+///                  lands at `hoist_to_override` — if only
+///                  `insert_before_override` is valid, the Phase F
+///                  WHEN-lift behaviour is preserved unchanged.
+///                  Default-constructed (invalid) means "not hoisted",
+///                  and every Phase A..I snapshot fixture stays
+///                  byte-identical.
 /// - `skip_uncompute` : Phase H PH-3 flag. When true, the M8 synthesis
 ///                  pass emits NO UncomputeInsertion for this op — the
 ///                  op stays in the QIR (so `dump()` still shows it, and
@@ -191,6 +213,14 @@ struct QOperation {
     std::vector<QValueRef> operands;
     clang::SourceRange stmt_range;
     clang::SourceLocation insert_before_override{};
+    // Phase J PJ-3c: parallel uncompute-anchor override used by the PJ-3d
+    // hoisting matcher. When valid, `synthesize()` plants the uncompute
+    // at this location (AFTER the loop end), overriding both the legacy
+    // `scope.close_brace` and the Phase F `insert_before_override`
+    // (which carries the loop-BEGIN anchor for the matcher-owned forward
+    // QReplacement). Default-constructed (invalid) preserves all prior
+    // snapshots byte-identical — no pre-Phase-J matcher sets this.
+    clang::SourceLocation hoist_to_override{};
     bool skip_uncompute = false;
     // Phase I PI-2: source-level identifier of the callee FunctionDecl when
     // `kind == USER_ROUTINE`. Empty string for every other kind so existing

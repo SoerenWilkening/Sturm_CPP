@@ -304,17 +304,38 @@ QSynthesisResult synthesize(const QUnit& unit) {
                 continue;
             }
             UncomputeInsertion rec;
-            // Phase F PF-1: per-op anchor override. When the matcher set
-            // `insert_before_override` to a valid SourceLocation, honour it
-            // verbatim — that is how the WHEN-lift matcher targets the
-            // post-WHEN-body close brace instead of the enclosing scope's
-            // close brace. Default-constructed (invalid) overrides fall
-            // back to the legacy `scope.close_brace` anchor every Phase
-            // A..E matcher relies on, so existing snapshots stay
-            // byte-identical.
-            rec.insert_before = op.insert_before_override.isValid()
-                                    ? op.insert_before_override
-                                    : scope.close_brace;
+            // Anchor selection for the uncompute insertion, in priority
+            // order:
+            //   1. Phase J PJ-3c: `hoist_to_override` — set by the PJ-3d
+            //      uncompute-hoisting matcher on a decl-producing op whose
+            //      operands are all loop-invariant. When valid, the
+            //      uncompute lands AFTER the loop end (at this location),
+            //      while the forward computation is simultaneously moved
+            //      BEFORE the loop begin by a matcher-owned QReplacement
+            //      and/or raw_insertion pair (not synthesize()'s concern).
+            //      Takes precedence over `insert_before_override` —
+            //      without this precedence the uncompute would land at
+            //      the loop-BEGIN location (where the FORWARD goes), not
+            //      after the loop body, and the optimization's semantic
+            //      would be broken.
+            //   2. Phase F PF-1: `insert_before_override` — set by the
+            //      WHEN-lift matcher to target the post-WHEN-body close
+            //      brace instead of the enclosing scope's close brace.
+            //      Unchanged by PJ-3c.
+            //   3. Legacy `scope.close_brace` — the anchor every Phase
+            //      A..E matcher relies on when no per-op override is set.
+            //
+            // Default-constructed (invalid) overrides at each layer fall
+            // through to the next, so every pre-PJ-3 snapshot fixture
+            // stays byte-identical (no op before PJ-3 sets
+            // `hoist_to_override`).
+            if (op.hoist_to_override.isValid()) {
+                rec.insert_before = op.hoist_to_override;
+            } else if (op.insert_before_override.isValid()) {
+                rec.insert_before = op.insert_before_override;
+            } else {
+                rec.insert_before = scope.close_brace;
+            }
             rec.code = std::move(code);
             out.push_back(std::move(rec));
         }
