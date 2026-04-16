@@ -24,6 +24,9 @@ set(STURM_TEST_SOURCES
     test_qint_owning.cpp
     test_qbool_unified.cpp
     test_qbool_acceptance.cpp
+
+    # Phase I PI-0 (docs/roadmap_transpiler_post_mvp.md, bd sturm-hi66)
+    test_invert.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})

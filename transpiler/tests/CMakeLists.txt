@@ -157,6 +157,16 @@ set_tests_properties(test_transpile_emitter PROPERTIES LABELS "transpiler")
 # against the same LibTooling components as sturm-transpile itself.
 add_executable(test_transpile_matcher
     test_matcher.cpp
+    test_matcher_harness.cpp
+    test_matcher_mvp.cpp
+    test_matcher_qint_const.cpp
+    test_matcher_qint_qint.cpp
+    test_matcher_qint_compare.cpp
+    test_matcher_when_lift.cpp
+    test_matcher_when_nested.cpp
+    test_matcher_ph1_scope.cpp
+    test_matcher_ph2_brace_wrap.cpp
+    test_matcher_ph3_outer_var.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
