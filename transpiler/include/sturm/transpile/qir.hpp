@@ -57,6 +57,7 @@
 
 #include "clang/Basic/SourceLocation.h"
 
+#include <cstdint>
 #include <string>
 #include <vector>
 
@@ -116,6 +117,26 @@ enum class QOpKind {
     LE_QINT,
     GT_QINT,
     GE_QINT,
+    // Phase I — user-defined routine call. Introduced by PI-2 to back the
+    // `matcher_user_routine` module. A QOperation with this kind does NOT
+    // have a single named `result`; instead every argument to the call is
+    // listed in `operands` in source order, and `outputs_mask` flags which
+    // of those operands are writable (i.e. non-const qbool&/qint& in the
+    // callee's parameter list). `routine_name` holds the source-level
+    // identifier of the callee FunctionDecl so the M8 uncompute pass (PI-4)
+    // can look up the registered adjoint and emit
+    // `invert(routine_name)(op0, op1, ...);`.
+    //
+    // Classical scalar arguments (int, double, verbatim expressions) are
+    // still listed in `operands` — their QValueRef's `name` carries the
+    // Lexer-extracted source text and `decl_loc` is invalid. This keeps
+    // the operand list positional so the adjoint dispatch does not have
+    // to reason about which slots were elided.
+    //
+    // Until PI-4 lands there is no render case for USER_ROUTINE in the
+    // uncompute pass; the op is recorded in the IR (so dump() shows it)
+    // but no inverse is emitted. PI-4 is tracked separately.
+    USER_ROUTINE,
     // ... — added per post-MVP phases.
 };
 
@@ -171,6 +192,18 @@ struct QOperation {
     clang::SourceRange stmt_range;
     clang::SourceLocation insert_before_override{};
     bool skip_uncompute = false;
+    // Phase I PI-2: source-level identifier of the callee FunctionDecl when
+    // `kind == USER_ROUTINE`. Empty string for every other kind so existing
+    // snapshot fixtures stay byte-identical (the dump() renderer omits the
+    // suffix unless `kind == USER_ROUTINE`).
+    std::string routine_name{};
+    // Phase I PI-2: bitmask indicating which entries of `operands` are
+    // output parameters (non-const qbool&/qint& in the callee signature).
+    // Bit i corresponds to operands[i]. Zero for every non-USER_ROUTINE
+    // op. Classical scalar and const-reference arguments remain 0 (input).
+    // A 64-bit integer covers every plausible routine arity — a routine
+    // with more than 64 parameters is outside the transpiler's scope.
+    std::uint64_t outputs_mask = 0;
 };
 
 /// One compound statement (curly-brace block) in the user's source.

@@ -62,6 +62,7 @@ add_executable(sturm-transpile
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
     src/routine_registry.cpp
+    src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
     src/emitter.cpp
 )

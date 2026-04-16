@@ -27,6 +27,10 @@
 // own matcher before any PI-2+ routine-call matcher runs. The registry
 // lives alongside QUnit on the TranspileConsumer below.
 #include "routine_registry.hpp"
+// Phase I PI-2: user-defined-routine call matcher. Consumes the registry
+// populated by PI-1 and records one QOperation{kind=USER_ROUTINE} per
+// call to a registered forward routine.
+#include "matcher_user_routine.hpp"
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
@@ -156,6 +160,18 @@ public:
         // call LAST among the mutation matchers is the load-bearing
         // ordering invariant for PH-3.
         sturm::transpile::register_outer_var_guard_matcher(finder_, unit_);
+        // Phase I PI-2: the user-defined-routine call matcher runs LAST
+        // — after the Phase H PH-2 brace-wrap matcher, after the Phase
+        // A/B/C compound-assign matchers, and after PH-3's outer-var
+        // guard. The issue description locks this ordering in so PH-3
+        // gets first crack at any qbool/qint mutation shapes, leaving
+        // PI-2 to pick up only the clean routine-call anchors that
+        // survive. Ordering is not a correctness requirement — PI-2's
+        // AST anchor (`callExpr` on a registered FunctionDecl) is
+        // structurally disjoint from every Phase A..H matcher anchor —
+        // but placing it last keeps diagnostic output grouped by phase.
+        sturm::transpile::register_user_routine_matcher(
+            finder_, unit_, registry_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {

@@ -54,6 +54,13 @@ std::string kind_to_string(QOpKind kind) {
     case QOpKind::MUL_ASSIGN_QINT:  return "MUL_ASSIGN_QINT";
     case QOpKind::DIV_ASSIGN_QINT:  return "DIV_ASSIGN_QINT";
     case QOpKind::MOD_ASSIGN_QINT:  return "MOD_ASSIGN_QINT";
+    case QOpKind::EQ_QINT:          return "EQ_QINT";
+    case QOpKind::NE_QINT:          return "NE_QINT";
+    case QOpKind::LT_QINT:          return "LT_QINT";
+    case QOpKind::LE_QINT:          return "LE_QINT";
+    case QOpKind::GT_QINT:          return "GT_QINT";
+    case QOpKind::GE_QINT:          return "GE_QINT";
+    case QOpKind::USER_ROUTINE:     return "USER_ROUTINE";
     }
     // Unreachable while every enumerator above is listed, but we emit a
     // deterministic placeholder so future additions that forget to update
@@ -90,6 +97,14 @@ void dump_op(std::ostringstream& os, const QOperation& op, std::size_t idx) {
     // fixture stays byte-identical; pre-Phase-H matchers never set it.
     if (op.skip_uncompute) {
         os << " [skip_uncompute]";
+    }
+    // Phase I PI-2: surface the user-routine routine_name and outputs_mask
+    // when (and only when) kind == USER_ROUTINE. The default-empty /
+    // default-zero values are not printed for non-USER_ROUTINE ops so
+    // every Phase A..H snapshot fixture stays byte-identical.
+    if (op.kind == QOpKind::USER_ROUTINE) {
+        os << " routine_name=\"" << op.routine_name
+           << "\" outputs_mask=0x" << std::hex << op.outputs_mask << std::dec;
     }
     os << "\n";
 }

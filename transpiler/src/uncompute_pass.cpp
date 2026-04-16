@@ -196,6 +196,19 @@ std::string render_uncompute(const QOperation& op) {
            << op.operands[0].name << ", " << op.operands[1].name << ");\n";
         break;
     }
+    case QOpKind::USER_ROUTINE: {
+        // Phase I PI-2: the routine-call matcher records the op in the
+        // IR so dump() and downstream analyses (PI-3 liveness) can see
+        // it, but the actual `invert(<fn>)(...)` rendering lands in
+        // PI-4. Until then, emit no inverse — the op stays recognised
+        // in the QIR with no associated UncomputeInsertion. Keeping
+        // the case explicit preserves the "no default" contract so a
+        // later PI-4 patch drops in naturally.
+        // TODO(backend): PI-4 will populate this with an
+        // `invert(<routine_name>)(<operands>);` line once the runtime
+        // `invert()` dispatch is complete.
+        return {};
+    }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on
     // missing enum cases when default is absent.)
