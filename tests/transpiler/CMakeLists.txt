@@ -1095,6 +1095,66 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase G / PG-8: end-to-end injected observability + idempotency for ────
+# the named-named nested-WHEN example.  Same harness pattern as the
+# Phase F PF-6 when_integration block above:
+#   1. build_example_nested_when — SETUP fixture that builds the
+#      example_nested_when target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/nested_when.cpp via
+#      add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_nested_when_injected — reads the generated
+#      file and asserts the Phase G PG-2 / PG-3 rewrite for both
+#      nested-WHEN cases in main():
+#        - Case 1 (`WHEN(a) { WHEN(b) { ... } }`): `qbool
+#          __stu_ctrl0 = a & b;` injected between `WHEN(a)` and the
+#          rewritten `WHEN(__stu_ctrl0)`, `uncompute_and(__stu_ctrl0,
+#          a, b);` planted after the inner body's `}`.
+#        - Case 2 (`WHEN(x) { WHEN(y) { WHEN(z) { ... } } }`):
+#          pairwise cascade `__stu_ctrl1 = x & y;` +
+#          `__stu_ctrl2 = y & z;` with the two `uncompute_and(...)`
+#          calls in LIFO cascade order (inner ctrl2 first, then
+#          outer ctrl1).
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name.
+#   3. transpiler_idempotent_example_nested_when — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_nested_when
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_nested_when)
+    set_tests_properties(build_example_nested_when PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_nested_when_built")
+
+    add_test(
+        NAME transpiler_example_nested_when_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/nested_when.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/nested_when.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_nested_when.cmake)
+    set_tests_properties(transpiler_example_nested_when_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_nested_when_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_nested_when
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/nested_when.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_nested_when_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_nested_when PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_nested_when_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
