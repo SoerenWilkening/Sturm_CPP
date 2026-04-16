@@ -1320,3 +1320,120 @@ if(STURM_TRANSPILE)
         LABELS "transpiler"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase H / PH-2: snapshot fixtures for auto-brace-wrap matcher ──────────
+# Four fixtures — one per braceless control-flow shape — pin down the
+# `{` + `}` raw insertions the PH-2 matcher schedules around a
+# single-statement body that contains a quantum op. Each fixture uses a
+# locally-declared intermediate (`qbool tmp = a | b;`) so PH-3's outer-
+# variable-mutation guard does not flag the op; the M8 uncompute pass
+# therefore plants a companion `uncompute_or(tmp, a, b);` call INSIDE
+# the synthesised body.
+#
+# Shapes:
+#   * for_intermediate_or_braceless      — `for (...) qbool tmp = a | b;`
+#   * while_intermediate_or_braceless    — `while (...) qbool tmp = a | b;`
+#   * if_then_intermediate_or_braceless  — `if (cond) qbool tmp = a | b;`
+#   * if_else_intermediate_or_braceless  — `if (cond) { ... } else qbool tmp = a | b;`
+#
+# The idempotency companion feeds the generated file back through
+# sturm-transpile and asserts byte-identical round-trip via the
+# AUTO-GENERATED sentinel — PH-2 must not re-wrap the braces it already
+# inserted on the first pass.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_for_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_intermediate_or_braceless.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_intermediate_or_braceless.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/for_intermediate_or_braceless
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_for_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_for_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/for_intermediate_or_braceless/for_intermediate_or_braceless.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/for_intermediate_or_braceless_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_for_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_for_intermediate_or_braceless"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_while_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/while_intermediate_or_braceless.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/while_intermediate_or_braceless.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/while_intermediate_or_braceless
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_while_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_while_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/while_intermediate_or_braceless/while_intermediate_or_braceless.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/while_intermediate_or_braceless_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_while_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_while_intermediate_or_braceless"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_if_then_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_then_intermediate_or_braceless.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_then_intermediate_or_braceless.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_then_intermediate_or_braceless
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_if_then_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_if_then_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/if_then_intermediate_or_braceless/if_then_intermediate_or_braceless.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_then_intermediate_or_braceless_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_if_then_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_if_then_intermediate_or_braceless"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_if_else_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_else_intermediate_or_braceless.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_else_intermediate_or_braceless.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_else_intermediate_or_braceless
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_if_else_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_if_else_intermediate_or_braceless
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/if_else_intermediate_or_braceless/if_else_intermediate_or_braceless.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_else_intermediate_or_braceless_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_if_else_intermediate_or_braceless PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_if_else_intermediate_or_braceless"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()

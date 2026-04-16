@@ -119,6 +119,17 @@ public:
         sturm::transpile::register_compound_qbool_matcher(finder_, unit_);
         sturm::transpile::register_when_lift_matcher(finder_, unit_);
         sturm::transpile::register_when_nested_matcher(finder_, unit_);
+        // Phase H PH-2: the brace-wrap matcher appends `{` + `}` raw
+        // insertions for braceless for/while/if/else bodies containing
+        // quantum ops. Order relative to the per-op matchers does NOT
+        // matter: raw insertions are concatenated at the END of the
+        // M8 synthesis pass's insertion vector and the M9 emitter's
+        // reverse-iteration stacks them correctly against co-located
+        // per-op insertions at the same SourceLocation. Registered
+        // here, immediately before PH-3, so the brace-wrap anchors
+        // land alongside the Phase F / G WHEN matchers' raw insertions
+        // for diagnostic clarity.
+        sturm::transpile::register_brace_wrap_matcher(finder_, unit_);
         // Phase H PH-3: the outer-variable-mutation guard must run AFTER
         // the Phase A / B / C compound-assign matchers have populated
         // `unit_.scopes` — the callback looks up the QOperation each

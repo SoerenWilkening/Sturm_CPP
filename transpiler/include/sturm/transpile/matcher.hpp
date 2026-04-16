@@ -246,6 +246,51 @@ void register_when_nested_matcher(
 int when_nested_detection_count_for_test();
 void reset_when_nested_detection_count_for_test();
 
+/// Phase H / PH-2: Register the auto-brace-wrap matcher. Anchors on every
+/// `forStmt` / `whileStmt` / `ifStmt` whose body (or then / else arm) is a
+/// non-compound Stmt at a file (non-macro) spelling AND whose body
+/// transitively contains a recognised quantum op (CXXOperatorCallExpr on
+/// a qbool / qint operand, a qbool / qint VarDecl, or a WHEN macro
+/// expansion). On each match the callback appends two
+/// `UncomputeInsertion` records to `QUnit::raw_insertions`:
+///
+///   - `{` at `body->getBeginLoc()` — the exact loc PH-1's synthetic
+///     BracelessBody QScope keys its `open_brace` on.
+///   - `}` at `Lexer::getLocForEndOfToken(body->getEndLoc(), 0, sm, lang)`
+///     — the loc immediately past the body's terminating token. PH-1's
+///     synthetic QScope uses this same loc as its `close_brace`, so the
+///     M8 uncompute insertion stacks with the PH-2 `}` insertion under
+///     the emitter's reverse-InsertTextBefore ordering and the final
+///     output is well-formed `{ ...; uncompute_*(...); }`.
+///
+/// Macro-expanded inner `if`s (WHEN's three-`if` tower, user-side
+/// helper macros) are rejected by the `!begin.isMacroID()` guard so
+/// PH-2 never fires on compiler-synthesised scopes.
+///
+/// Per-scope dedup on the body's begin-loc raw encoding prevents the
+/// same body from being wrapped twice when multiple AST patterns
+/// (`hasThen` vs `hasElse`, nested if/else) could bind it.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at
+/// most once per QUnit; the QUnit must outlive the MatchFinder's run.
+/// Unlike the Phase F / G WHEN-lift matchers, PH-2 is ORDERING-
+/// INSENSITIVE with respect to the Phase A–G matchers: it only appends
+/// to `QUnit::raw_insertions`, which the M8 pass concatenates at the
+/// end of its insertion vector. The Phase A–G per-op insertions go
+/// into the same vector ahead of the raw insertions, and the emitter's
+/// reverse-iteration over `InsertTextBefore` stacks them correctly at
+/// co-located anchors.
+void register_brace_wrap_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Test-only instrumentation (Phase H / PH-2). Same rationale as the
+/// other matchers' `_for_test()` helpers: PH-2 does not mutate
+/// `QUnit::scopes`, so the unit tests need a separate observable to
+/// pin down "how many braceless bodies did the matcher wrap on this
+/// TU". Production code must not touch either helper.
+int brace_wrap_detection_count_for_test();
+void reset_brace_wrap_detection_count_for_test();
+
 /// Phase H / PH-3: Register the outer-variable-mutation guard matcher.
 /// Scans for compound-assign ops (XOR_ASSIGN, *_ASSIGN_CONST,
 /// *_ASSIGN_QINT) whose target is declared in an outer scope relative to

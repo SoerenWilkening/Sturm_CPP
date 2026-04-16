@@ -1809,6 +1809,236 @@ static void test_ph3_mixed_inner_intermediate_and_outer_mutation() {
     CHECK(skip_count == 1);
 }
 
+// ── Phase H / PH-2: auto-brace-wrap matcher ─────────────────────────────────
+//
+// The PH-2 matcher schedules `{` + `}` raw insertions around every
+// braceless `for` / `while` / `if` / `else` body that transitively
+// contains a recognised quantum op. Tests exercise:
+//
+//   - Positive: braceless for / while / if (then) / if (else) bodies
+//     each produce exactly one pair of raw insertions at the correct
+//     anchor locations.
+//   - Negative: already-braced bodies produce NO raw insertions
+//     (PH-2 leaves CompoundStmt bodies alone so existing snapshots
+//     stay byte-identical).
+//   - Negative: a purely-classical braceless body (no qbool / qint
+//     operand anywhere) produces NO raw insertions — PH-2 must not
+//     gratuitously wrap user code that has no quantum content.
+//   - Regression: a `WHEN(cond) { ... }` invocation does NOT trigger
+//     the matcher on its macro-expanded inner `if`s — the
+//     !body_loc.isMacroID() guard collapses the WHEN tower.
+//
+// Drives the OR matcher + brace-wrap matcher on a shared stub. The OR
+// matcher is incidental (we never check its output here); it is
+// included so the inline `qbool tmp = a | b;` body the fixtures use
+// parses cleanly — PH-2's quantum-op heuristic recognises it whether
+// or not the OR matcher itself fires.
+
+struct PH2Run {
+    QUnit unit;
+    int detections = 0;
+};
+
+// Shared stub + runner for the PH-2 tests. We embed a small qbool with
+// `operator|` so the quantum-op probe's CXXOperatorCallExpr + argument-
+// type check fires on the positive fixtures. The `bool should_run()`
+// method + WHEN macro let one of the tests check the WHEN-body
+// short-circuit. We deliberately do NOT prepend kQBoolWhenStub because
+// a simpler stub keeps the positive tests independent of the Phase F
+// materialize_when fixture shape.
+static constexpr std::string_view kQBoolPH2Stub = R"CPP(
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+};
+
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+
+} // namespace sturm
+using sturm::qbool;
+
+#define WHEN(cond) if (bool _when_val_ = (bool)(cond); _when_val_)
+)CPP";
+
+static PH2Run run_ph2_matcher(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQBoolPH2Stub.size() + user_src.size());
+    code.append(kQBoolPH2Stub);
+    code.append(user_src);
+
+    PH2Run out;
+    reset_brace_wrap_detection_count_for_test();
+
+    clang::ast_matchers::MatchFinder finder;
+    // Register the brace-wrap matcher ALONE — we exercise just PH-2
+    // here, without other matchers contributing ops / insertions that
+    // would muddy the raw_insertions assertions.
+    register_brace_wrap_matcher(finder, out.unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PH-2 brace_wrap)\n");
+    }
+    out.detections = brace_wrap_detection_count_for_test();
+    return out;
+}
+
+static void test_ph2_braceless_for_body_is_wrapped() {
+    // Braceless for-body containing a qbool VarDecl. PH-2 must schedule
+    // two raw insertions: `{` at the body's begin loc and `}` at the
+    // loc immediately past the body's terminating `;`.
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 3; ++i) qbool tmp = a | b;\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    CHECK(r.unit.raw_insertions.size() == 2);
+    if (r.unit.raw_insertions.size() != 2) return;
+    // First insertion is the opening `{`, second is the closing `}`.
+    // Both must carry valid insertion locations so the emitter can
+    // apply them.
+    CHECK(r.unit.raw_insertions[0].insert_before.isValid());
+    CHECK(r.unit.raw_insertions[1].insert_before.isValid());
+    // Text content is whatever the matcher chose, but the two
+    // insertions together must contain exactly one `{` and one `}`.
+    CHECK(r.unit.raw_insertions[0].code.find('{') != std::string::npos);
+    CHECK(r.unit.raw_insertions[1].code.find('}') != std::string::npos);
+}
+
+static void test_ph2_braceless_while_body_is_wrapped() {
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    int i = 0;\n"
+        "    while (i < 3) qbool tmp = a | b;\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    CHECK(r.unit.raw_insertions.size() == 2);
+}
+
+static void test_ph2_braceless_if_then_body_is_wrapped() {
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    if (cond) qbool tmp = a | b;\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    CHECK(r.unit.raw_insertions.size() == 2);
+}
+
+static void test_ph2_braceless_if_else_body_is_wrapped() {
+    // Only the else-arm is braceless + quantum. The then-arm is already
+    // braced, so PH-2 leaves it alone.
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    if (cond) { (void)a; } else qbool tmp = a | b;\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    CHECK(r.unit.raw_insertions.size() == 2);
+}
+
+static void test_ph2_braceless_if_both_arms_wrapped() {
+    // Both arms are braceless + quantum: the matcher wraps both,
+    // producing two pairs (four raw_insertions total).
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    if (cond) qbool x = a | b; else qbool y = a | b;\n"
+        "}\n");
+    CHECK(r.detections == 2);
+    CHECK(r.unit.raw_insertions.size() == 4);
+}
+
+static void test_ph2_braced_for_body_is_not_wrapped() {
+    // Regression: an already-braced for-body must produce zero raw
+    // insertions so existing Phase A-G snapshot fixtures stay
+    // byte-identical to pre-PH-2.
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 3; ++i) {\n"
+        "        qbool tmp = a | b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+static void test_ph2_braced_if_then_body_is_not_wrapped() {
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    if (cond) { qbool tmp = a | b; }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+static void test_ph2_classical_braceless_for_is_not_wrapped() {
+    // A braceless for-body that contains ONLY classical statements
+    // (no qbool / qint operand anywhere) must NOT be wrapped — PH-2
+    // would otherwise churn the output on arbitrary user code.
+    PH2Run r = run_ph2_matcher(
+        "void demo() {\n"
+        "    int counter = 0;\n"
+        "    for (int i = 0; i < 3; ++i) counter += 1;\n"
+        "}\n");
+    CHECK(r.detections == 0);
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+static void test_ph2_when_macro_inner_ifs_not_wrapped() {
+    // Regression guard: WHEN(cond) { body } expands (via the
+    // kQBoolPH2Stub minimal macro) to a nested `if` whose then-arm
+    // IS a CompoundStmt — so the `hasThen(non_compound)` matcher
+    // would not fire anyway. But if the user wrote WHEN(cond) body;
+    // without braces, the then-arm is braceless AND macro-expanded
+    // (its begin loc is inside the macro body). PH-2 must skip it
+    // because the loc is a macro ID. Tested via a WHEN invocation
+    // whose body is a single statement (no user-written braces
+    // around the body). The resulting AST has the WHEN macro's `if`
+    // own the body as its non-compound then-arm; begin loc is
+    // macro-spelled, so `!begin.isMacroID()` rejects it.
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    WHEN(cond) qbool tmp = a | b;\n"
+        "}\n");
+    // The user-spelled statement after `WHEN(cond)` has a non-macro
+    // begin loc, so PH-2 wraps it as a braceless ifStmt then-body
+    // exactly once. The macro-expanded inner `if` is skipped by
+    // `begin.isMacroID()`. Net: exactly one pair of raw insertions.
+    //
+    // Rationale: the user DID write a braceless body — `qbool tmp =
+    // a | b;` — and PH-2 should wrap it. What we are guarding against
+    // is the matcher firing ADDITIONALLY on the macro-expanded inner
+    // `if`'s synthetic then-arm, which would produce two pairs of
+    // brace insertions at overlapping locations and break the output.
+    CHECK(r.detections == 1);
+    CHECK(r.unit.raw_insertions.size() == 2);
+}
+
+static void test_ph2_nested_braceless_fors_both_wrapped() {
+    // Regression: a nested pair of braceless fors, the outer body is
+    // the inner for-stmt, whose body is a quantum op. The OUTER for's
+    // body is the inner ForStmt itself — which IS a Stmt but NOT a
+    // CompoundStmt — so the `unless(compoundStmt())` filter fires on
+    // it. The quantum-op probe walks into the inner for and finds
+    // the qbool VarDecl, so the outer body qualifies as "contains a
+    // quantum op". The inner body is `qbool tmp = a | b;` — also
+    // braceless + quantum. Both bodies get wrapped independently.
+    PH2Run r = run_ph2_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 2; ++i)\n"
+        "        for (int j = 0; j < 2; ++j) qbool tmp = a | b;\n"
+        "}\n");
+    CHECK(r.detections == 2);
+    CHECK(r.unit.raw_insertions.size() == 4);
+}
+
 static void test_stmt_range_round_trip() {
     // Read the recorded stmt_range back as source text via the Clang Lexer.
     // It must equal the original declaration (modulo the trailing
@@ -1876,6 +2106,17 @@ int main() {
     test_ph1_braced_if_then();
     test_ph1_braceless_if_then();
     test_ph1_braced_when_not_misidentified();
+
+    test_ph2_braceless_for_body_is_wrapped();
+    test_ph2_braceless_while_body_is_wrapped();
+    test_ph2_braceless_if_then_body_is_wrapped();
+    test_ph2_braceless_if_else_body_is_wrapped();
+    test_ph2_braceless_if_both_arms_wrapped();
+    test_ph2_braced_for_body_is_not_wrapped();
+    test_ph2_braced_if_then_body_is_not_wrapped();
+    test_ph2_classical_braceless_for_is_not_wrapped();
+    test_ph2_when_macro_inner_ifs_not_wrapped();
+    test_ph2_nested_braceless_fors_both_wrapped();
 
     test_ph3_outer_xor_inside_for_is_flagged();
     test_ph3_outer_xor_inside_while_is_flagged();
