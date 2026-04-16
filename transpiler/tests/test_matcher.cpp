@@ -1189,7 +1189,7 @@ static void test_pf_when_direct_materialize_call_no_match() {
     CHECK(r.detections == 0);
 }
 
-// ── Phase G / PG-1 + PG-2 nested-WHEN matcher ──────────────────────────────
+// ── Phase G / PG-1 + PG-2 + PG-3 nested-WHEN matcher ───────────────────────
 //
 // The Phase G matcher detects adjacent pairs of `WHEN(outer) { WHEN(inner)
 // { ... } }` where BOTH `outer` and `inner` peel to bare `DeclRefExpr`s
@@ -1197,15 +1197,17 @@ static void test_pf_when_direct_materialize_call_no_match() {
 // Phase F tests above (kQBoolWhenStub) so the macro-body / materialize_when
 // shape is identical to what the user writes in real code.
 //
-// PG-1 was detection-only; PG-2 extends the callback to emit two source
-// edits per matched pair — a `qbool __stu_ctrl<M> = <outer> & <inner>;\n`
-// decl injection (staged on `unit.raw_insertions`) and a replacement of
-// the inner `materialize_when` argument with the ctrl name (staged on
-// `unit.replacements`). Detection counts remain valid, but the "QUnit
-// empty" assertions PG-1 originally carried now flip to non-empty checks
-// that pin the exact number of staged edits. PG-3 will later add an AND
-// `QOperation` to the IR (giving rise to a `uncompute_and` insertion);
-// until then `unit.scopes` stays empty for nested WHENs.
+// PG-1 was detection-only; PG-2 added two source edits per matched pair —
+// a `qbool __stu_ctrl<M> = <outer> & <inner>;\n` decl injection (staged on
+// `unit.raw_insertions`) and a replacement of the inner `materialize_when`
+// argument with the ctrl name (staged on `unit.replacements`). PG-3
+// completes the lowering by pushing a synthetic `QOperation{kind=AND,
+// insert_before_override=<post_inner_brace>}` onto the enclosing scope —
+// the existing uncompute pass renders it as `uncompute_and(<ctrl>,
+// <outer>, <inner>);` at that override anchor, immediately past the
+// inner WHEN body's closing brace. Each matched pair therefore bumps
+// `unit.scopes[.].ops` by one AND op in addition to its replacement +
+// raw insertion.
 struct PGOneRun {
     QUnit unit;
     int detections = 0;
@@ -1239,17 +1241,17 @@ static PGOneRun run_pg_when_nested_matcher(std::string_view user_src) {
 static void test_pg_when_nested_named_depth2_detects_once() {
     // WHEN(a) { WHEN(b) { ... } } — the named+named base case. The inner
     // WHEN finds outer `a` as its nearest enclosing WHEN; both args peel
-    // to bare DREs; detection counter reaches 1. Scopes stay empty (no
-    // `QOperation` is scheduled at PG-2 — that is PG-3's job), but the
-    // PG-2 emission stages exactly ONE replacement (the inner arg
-    // rewrite) and ONE raw insertion (the decl block). The staged decl
-    // spells the `__stu_ctrl0` / `a` / `b` operands verbatim.
+    // to bare DREs; detection counter reaches 1. PG-2 stages exactly ONE
+    // replacement (the inner arg rewrite) and ONE raw insertion (the
+    // decl block). PG-3 additionally pushes ONE `QOperation{kind=AND}`
+    // into the enclosing CompoundStmt's QScope with a valid
+    // `insert_before_override` anchored past the inner WHEN body's `}`.
     PGOneRun r = run_pg_when_nested_matcher(
         "void demo(qbool a, qbool b, qbool c) {\n"
         "    WHEN(a) { WHEN(b) { (void)c; } }\n"
         "}\n");
     CHECK(r.detections == 1);
-    CHECK(r.unit.scopes.empty());
+    CHECK(r.unit.scopes.size() == 1);
     CHECK(r.unit.replacements.size() == 1);
     CHECK(r.unit.raw_insertions.size() == 1);
     if (r.unit.replacements.size() == 1) {
@@ -1259,6 +1261,20 @@ static void test_pg_when_nested_named_depth2_detects_once() {
     if (r.unit.raw_insertions.size() == 1) {
         CHECK_EQ_STR(r.unit.raw_insertions[0].code,
                      std::string("qbool __stu_ctrl0 = a & b;\n"));
+    }
+    if (r.unit.scopes.size() == 1) {
+        const auto& ops = r.unit.scopes[0].ops;
+        CHECK(ops.size() == 1);
+        if (ops.size() == 1) {
+            CHECK(ops[0].kind == QOpKind::AND);
+            CHECK_EQ_STR(ops[0].result.name, std::string("__stu_ctrl0"));
+            CHECK(ops[0].operands.size() == 2);
+            if (ops[0].operands.size() == 2) {
+                CHECK_EQ_STR(ops[0].operands[0].name, std::string("a"));
+                CHECK_EQ_STR(ops[0].operands[1].name, std::string("b"));
+            }
+            CHECK(ops[0].insert_before_override.isValid());
+        }
     }
 }
 
@@ -1270,17 +1286,27 @@ static void test_pg_when_nested_named_depth3_detects_twice() {
     // ParentMap walk stops at the nearest enclosing WHEN ancestor.
     //
     // PG-2 stages ONE replacement + ONE raw insertion per pair, giving
-    // two of each. The ctrl names are allocated from a per-callback
-    // persistent `FreshNameAllocator`, so cascaded levels pick up
-    // `__stu_ctrl0` and `__stu_ctrl1` without colliding.
+    // two of each. PG-3 adds ONE `QOperation{kind=AND}` per pair too; the
+    // two ops land in DIFFERENT QScopes because each pair's enclosing
+    // CompoundStmt is the body of a distinct WHEN — (a,b) lives in the
+    // outer function body's scope (via the WHEN(b) if-stmt's enclosing
+    // compound), (b,c) lives in the WHEN(a) body's scope. The ctrl
+    // names are allocated from a per-callback persistent
+    // `FreshNameAllocator`, so cascaded levels pick up `__stu_ctrl0`
+    // and `__stu_ctrl1` without colliding.
     PGOneRun r = run_pg_when_nested_matcher(
         "void demo(qbool a, qbool b, qbool c, qbool d) {\n"
         "    WHEN(a) { WHEN(b) { WHEN(c) { (void)d; } } }\n"
         "}\n");
     CHECK(r.detections == 2);
-    CHECK(r.unit.scopes.empty());
     CHECK(r.unit.replacements.size() == 2);
     CHECK(r.unit.raw_insertions.size() == 2);
+    // Two AND ops across the scopes total. MatchFinder callback order is
+    // NOT guaranteed, so we assert the cumulative op count rather than
+    // per-scope placement.
+    std::size_t total_ops = 0;
+    for (const auto& s : r.unit.scopes) total_ops += s.ops.size();
+    CHECK(total_ops == 2);
 }
 
 static void test_pg_when_nested_compound_inner_rejected() {
@@ -1318,6 +1344,8 @@ static void test_pg_when_nested_siblings_tolerated() {
     // statements before/after the inner WHEN in the outer's body block.
     // We use `(void)foo_stmt;` placeholders instead of calling a
     // separately-declared function to keep the inline stub self-contained.
+    // PG-3 adds one AND op on top of PG-2's one replacement + one raw
+    // insertion.
     PGOneRun r = run_pg_when_nested_matcher(
         "void demo(qbool a, qbool b, qbool c, qbool d) {\n"
         "    WHEN(a) {\n"
@@ -1329,6 +1357,9 @@ static void test_pg_when_nested_siblings_tolerated() {
     CHECK(r.detections == 1);
     CHECK(r.unit.replacements.size() == 1);
     CHECK(r.unit.raw_insertions.size() == 1);
+    std::size_t total_ops = 0;
+    for (const auto& s : r.unit.scopes) total_ops += s.ops.size();
+    CHECK(total_ops == 1);
 }
 
 static void test_pd_six_ops_same_scope_hit_all_kinds() {

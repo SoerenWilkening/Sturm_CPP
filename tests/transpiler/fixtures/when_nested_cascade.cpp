@@ -1,0 +1,79 @@
+// Phase G / PG-3 input for the sturm-transpile snapshot test.
+//
+// Exercises the depth-3 pairwise cascade:
+//
+//     WHEN(a) {                  // outer-outer: bare DRE to qbool
+//         WHEN(b) {              // middle:     bare DRE to qbool
+//             WHEN(c) {          // inner:      bare DRE to qbool
+//                 (void)d;
+//             }
+//         }
+//     }
+//
+// The Phase G matcher fires twice — once per adjacent pair — never
+// transitively:
+//
+//   - Pair 1 (outer, middle) = (a, b):
+//       * decl inserted before `WHEN(b)`  : `qbool __stu_ctrl0 = a & b;\n`
+//       * middle arg rewrite              : `WHEN(b)` → `WHEN(__stu_ctrl0)`
+//       * AND op scheduled at post-middle brace anchor yields
+//         `uncompute_and(__stu_ctrl0, a, b);` immediately after the
+//         middle WHEN body's `}`.
+//
+//   - Pair 2 (middle, inner) = (b, c):
+//       * decl inserted before `WHEN(c)`  : `qbool __stu_ctrl1 = b & c;\n`
+//       * inner arg rewrite               : `WHEN(c)` → `WHEN(__stu_ctrl1)`
+//       * AND op scheduled at post-inner brace anchor yields
+//         `uncompute_and(__stu_ctrl1, b, c);` immediately after the
+//         innermost WHEN body's `}`.
+//
+// The ctrl numbering follows MatchFinder's callback-firing order. Clang's
+// ASTMatchers drive a pre-order traversal, so the (a, b) pair fires
+// first and gets `__stu_ctrl0`; the nested (b, c) pair fires after and
+// picks up `__stu_ctrl1`. The two allocations come from a single
+// persistent `FreshNameAllocator` owned by the callback, so the two
+// levels never collide.
+//
+// Pairwise cascade semantic check: inner `c` pairs ONLY with the nearest
+// enclosing WHEN `b`. It does NOT also pair with the deeper-outside
+// `a`. The AST-parent walk (`find_nearest_enclosing_when_if`) stops at
+// the first WHEN-shaped IfStmt ancestor, so a three-deep cascade yields
+// exactly two AND temps — not three.
+//
+// The stub inlined below is byte-identical to `when_nested_named.cpp` so
+// the matcher sees the same macro / materialize_when shape.
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    bool should_run() const { return true; }
+};
+
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+
+namespace detail {
+
+inline qbool& materialize_when(qbool& q) { return q; }
+inline qbool  materialize_when(qbool&& q) { return static_cast<qbool&&>(q); }
+
+struct WhenCapture { WhenCapture() = default; };
+inline qbool& make_when_guard(qbool& q) { return q; }
+
+} // namespace detail
+} // namespace sturm
+
+using sturm::qbool;
+
+#define WHEN(expr) \
+    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
+    if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
+    if (auto& _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
+        _when_guard_.should_run())
+
+void demo(qbool a, qbool b, qbool c, qbool d) {
+    WHEN(a) { WHEN(b) { WHEN(c) { (void)d; } } }
+}

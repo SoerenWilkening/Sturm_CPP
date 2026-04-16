@@ -602,32 +602,26 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
-# ── Phase G / PG-2: snapshot fixture for nested-WHEN AND-fold (decl + arg) ──
+# ── Phase G / PG-3: snapshot fixture for nested-WHEN AND-fold base case ────
 # Single fixture covering the named+named nested-WHEN base case:
 #
 #     WHEN(a) { WHEN(b) { (void)c; } }
 #
-# The Phase G PG-2 matcher (transpiler/src/matcher_when_nested.cpp) fires
-# on the (outer=a, inner=b) pair and performs two source edits:
+# The Phase G matcher (transpiler/src/matcher_when_nested.cpp) fires
+# on the (outer=a, inner=b) pair and performs three staged effects:
 #   - Inject `qbool __stu_ctrl0 = a & b;\n` on `raw_insertions` anchored
 #     at the inner WHEN's expansion loc.
 #   - Replace the inner `materialize_when` arg (source range normalised
 #     via `Lexer::makeFileCharRange`) with `__stu_ctrl0`.
+#   - Push `QOperation{kind=AND, result=__stu_ctrl0, operands=[a,b],
+#     insert_before_override=<post_inner_brace>}` onto the enclosing
+#     QScope; the uncompute pass renders it as
+#     `uncompute_and(__stu_ctrl0, a, b);` at the override anchor.
 #
-# PG-3 will later layer the `uncompute_and(__stu_ctrl0, a, b);` call after
-# the inner body's close brace — that slice is intentionally NOT exercised
-# here, so the PG-2 golden contains the decl + arg-rewrite but no
-# uncompute_and invocation. This test pins the exact shape of those two
-# edits, byte-for-byte.
-#
-# No idempotency companion is registered for PG-2. The generated file is
-# not a fixed-point under re-transpile: feeding it back through
-# sturm-transpile would trigger Phase F's compound lift on the now-
-# synthetic `qbool __stu_ctrl0 = a & b;` decl (a `&` qbool compound).
-# PG-3 will resolve the round-trip story end-to-end once the AND op
-# lands as a proper `QOperation{kind=AND}` and the emitter recognises
-# the AUTO-GENERATED sentinel uniformly; the slice-level correctness
-# signal for PG-2 is the snapshot test alone.
+# The idempotency companion is registered here because PG-3 closes the
+# loop PG-2 left open: the generated output now has the AUTO-GENERATED
+# sentinel in its header, so a re-transpile hits the skip path in
+# main.cpp and returns a byte-identical copy.
 if(STURM_TRANSPILE)
     add_test(
         NAME snapshot_when_nested_named
@@ -639,6 +633,100 @@ if(STURM_TRANSPILE)
                 -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
     set_tests_properties(snapshot_when_nested_named PROPERTIES
         LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    # Idempotency companion: PG-3 closes the loop that PG-2 left open —
+    # the generated output now contains a full `uncompute_and(...)` call
+    # AND the AUTO-GENERATED sentinel in the header, so a re-transpile
+    # hits the skip path in main.cpp and returns a byte-identical copy.
+    # Locked down here so a regression in the sentinel / skip recognition
+    # surfaces as a dedicated failure rather than blending into the
+    # snapshot byte-compare.
+    add_test(
+        NAME transpiler_idempotent_when_nested_named
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_named/when_nested_named.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_named_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_nested_named PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_nested_named"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
+# ── Phase G / PG-3: snapshot fixture for depth-3 pairwise cascade ───────────
+# Depth-3 nested named+named WHEN:
+#
+#     WHEN(a) { WHEN(b) { WHEN(c) { (void)d; } } }
+#
+# The Phase G matcher fires on BOTH adjacent pairs independently and
+# allocates `__stu_ctrl0` / `__stu_ctrl1` from a single persistent
+# `FreshNameAllocator` owned by the callback. The expected output has:
+#   - two `qbool __stu_ctrl<M> = ...;` decls (one per pair);
+#   - two inner-arg rewrites (the middle and innermost WHENs now
+#     reference their respective ctrl temps);
+#   - two `uncompute_and(...)` calls, each anchored immediately past its
+#     pair's inner-body closing brace.
+# The `(a, c)` transitive pair is deliberately NOT emitted — the parent-
+# chain walk stops at the nearest enclosing WHEN, so the cascade
+# produces pairwise lowerings only.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_when_nested_cascade
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_cascade.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_cascade.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_cascade
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_nested_cascade PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_nested_cascade
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_cascade/when_nested_cascade.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_cascade_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_nested_cascade PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_nested_cascade"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
+# ── Phase G / PG-3: snapshot fixture for siblings-around-inner WHEN ─────────
+# Pins Phase G decision #3: always lower regardless of siblings. The
+# outer WHEN body contains `(void)c;` placeholders both before and
+# after the inner WHEN; the matcher still fires on the (a, b) pair and
+# the generated output preserves both sibling statements verbatim. Only
+# the inner WHEN is rewritten and only its post-body brace carries the
+# `uncompute_and` insertion.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_when_nested_siblings
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_siblings.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_siblings.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_siblings
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_nested_siblings PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_when_nested_siblings
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_siblings/when_nested_siblings.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_siblings_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_when_nested_siblings PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_when_nested_siblings"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 

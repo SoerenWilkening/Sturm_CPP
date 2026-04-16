@@ -1,4 +1,4 @@
-// Phase G / PG-2 input for the sturm-transpile snapshot test.
+// Phase G / PG-3 input for the sturm-transpile snapshot test.
 //
 // Exercises the named+named nested-WHEN lift:
 //
@@ -8,8 +8,8 @@
 //         }
 //     }
 //
-// The Phase G PG-2 matcher fires on the `(outer=a, inner=b)` pair and
-// performs two source-level edits:
+// The Phase G matcher fires on the `(outer=a, inner=b)` pair and
+// performs three staged effects:
 //
 //   (1) Inject `qbool __stu_ctrl0 = a & b;\n` immediately before the
 //       inner `WHEN(b)` spelling — staged as a `UncomputeInsertion` on
@@ -18,13 +18,11 @@
 //   (2) Rewrite the inner `materialize_when` argument from `b` to
 //       `__stu_ctrl0` — staged as a `QReplacement` over the arg's spelling
 //       range, normalised via `Lexer::makeFileCharRange`.
-//
-// PG-3 will layer the companion `uncompute_and(__stu_ctrl0, a, b);` call
-// on top via a synthetic `QOperation{kind=AND}`. This PG-2 slice stops
-// short of that, which means the generated fixture below has:
-//   - the decl block before the inner `WHEN`;
-//   - the inner WHEN arg replaced with `__stu_ctrl0`;
-//   - NO `uncompute_and(...)` call — that is PG-3's job.
+//   (3) Push a `QOperation{kind=AND, result=__stu_ctrl0, operands=[a,b],
+//       insert_before_override=<post_inner_brace>}` into the enclosing
+//       QScope. The M8 uncompute pass renders this as
+//       `uncompute_and(__stu_ctrl0, a, b);` at the override anchor —
+//       immediately past the inner WHEN body's closing brace.
 //
 // The outer WHEN is NOT rewritten: Phase G emission only touches the
 // INNER side of each matched pair (the outer's arg remains spelled
