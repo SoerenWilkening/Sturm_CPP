@@ -92,6 +92,31 @@ void uncompute_or(qbool& r, const qbool& a, const qbool& b);
 // docs/implementation_plan_transpiler_phase_e.md.
 void uncompute_and(qbool& r, const qbool& a, const qbool& b);
 
+// ── Phase J PJ-1b — ccnot_inplace forward helper (sturm-8cxd) ────────────────
+//
+// Zero-ancilla fusion entry point emitted by the Phase J PJ-1d peephole
+// matcher in place of the adjacent pair
+//     qbool __t = a & b;   x ^= __t;
+// when `__t` has exactly one reader. The rewrite collapses the forward
+// CCX + uncompute CCX into a single CCX acting on `(a, b, x)` with no
+// intermediate qubit. Delegates to primitive_AND (include/sturm/backend/
+// primitives.hpp:34-36), which is already CCX-to-target, so the emitted
+// gate stream is precisely one STURM_GATE_CCX record with qubit
+// arguments (a, b, x).
+//
+// Self-adjoint: CCX is its own inverse, so the same symbol serves as
+// both forward emission and uncompute. The PJ-1c render case in
+// transpiler/src/uncompute_pass.cpp emits `ccnot_inplace(x, a, b);`
+// verbatim at the uncompute point — running this helper a second time
+// on the live state undoes the forward flip.
+//
+// Preconditions: all three qbools hold valid qubit indices (quantum).
+// The fusion peephole rejects mixed or classical operands so the helper
+// ships as a thin single-gate wrapper; extending to classical operand
+// mixes would require the quadrant logic in materialize_and / uncompute_and
+// and is explicitly out of scope for PJ-1.
+void ccnot_inplace(qbool& x, const qbool& a, const qbool& b);
+
 // ── Phase C — qint-qint arithmetic inverses ──────────────────────────────────
 //
 // Emitted verbatim by sturm-transpile as the inverse of each qint-qint
