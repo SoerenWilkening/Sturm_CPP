@@ -424,6 +424,34 @@ set_source_files_properties(
 add_test(NAME test_uncompute_and COMMAND test_uncompute_and)
 set_tests_properties(test_uncompute_and PROPERTIES LABELS "backend")
 
+# ── Phase J PJ-1b (sturm-8cxd): ccnot_inplace forward helper ─────────────────
+add_executable(test_ccnot_inplace
+    test_ccnot_inplace.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_ccnot_inplace PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_ccnot_inplace PRIVATE cxx_std_20)
+target_compile_definitions(test_ccnot_inplace PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_ccnot_inplace PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_ccnot_inplace COMMAND test_ccnot_inplace)
+set_tests_properties(test_ccnot_inplace PROPERTIES LABELS "backend")
+
 # ── sturm-999i Phase D: uncompute_*_qint (comparison) free-function API ──────
 add_executable(test_uncompute_qint_compare
     test_uncompute_qint_compare.cpp

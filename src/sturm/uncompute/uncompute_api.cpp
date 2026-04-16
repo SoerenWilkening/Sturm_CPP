@@ -18,6 +18,7 @@
 
 #include "sturm/uncompute/uncompute_api.hpp"
 #include "sturm/qtypes/qbool.hpp"
+#include "sturm/backend/primitives.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/gate_kind.h"
@@ -257,6 +258,33 @@ void uncompute_and(qbool& r, const qbool& a, const qbool& b) {
         emit_x(qr);
     }
     // (0,0), (0,1), (1,0): nothing to do.
+}
+
+// ── ccnot_inplace ────────────────────────────────────────────────────────────
+// Phase J PJ-1b zero-ancilla fusion helper (sturm-8cxd).  See the header
+// for the full contract.  Delegates to primitive_AND (CCX-to-target) so
+// the emitted gate stream is exactly one STURM_GATE_CCX record with
+// qubit arguments (a, b, x) — matching the fusion pattern
+// `qbool __t = a & b; x ^= __t;` collapsed into a single CCX with no
+// intermediate ancilla.
+//
+// Self-adjoint: CCX is its own inverse, so invoking this helper a
+// second time on the live state cancels the first call exactly.  The
+// PJ-1c render case in uncompute_pass.cpp emits the same `ccnot_inplace`
+// symbol at the uncompute point — one matcher, one symbol, forward +
+// inverse identical textually.
+void ccnot_inplace(qbool& x, const qbool& a, const qbool& b) {
+    assert(a.qubits[0] >= 0 && "ccnot_inplace: a must hold a qubit");
+    assert(b.qubits[0] >= 0 && "ccnot_inplace: b must hold a qubit");
+    assert(x.qubits[0] >= 0 && "ccnot_inplace: x must hold a qubit");
+
+    sturm_backend_context_t* raw = sturm_get_thread_context();
+    assert(raw && "ccnot_inplace: no BackendContext installed");
+
+    primitive_AND(*raw,
+                   static_cast<uint32_t>(a.qubits[0]),
+                   static_cast<uint32_t>(b.qubits[0]),
+                   static_cast<uint32_t>(x.qubits[0]));
 }
 
 } // namespace sturm
