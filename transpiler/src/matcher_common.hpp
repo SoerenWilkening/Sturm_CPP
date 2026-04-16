@@ -492,6 +492,207 @@ inline int count_readers_in_scope(llvm::StringRef name,
     return walker.count();
 }
 
+// ── Phase J PJ-3b: loop-invariance probe ────────────────────────────────────
+//
+// The Phase J PJ-3d uncompute-hoisting matcher needs to decide whether a
+// candidate op's operands can be hoisted out of a surrounding loop. An
+// operand is loop-invariant iff BOTH of the following hold:
+//
+//   1. Its declaration location (`operand_ref.decl_loc`) lives OUTSIDE
+//      the loop body's source range. A decl introduced per-iteration
+//      (e.g. `for (...) { qbool tmp = a; ... }` with `tmp` as the
+//      operand) is trivially non-invariant — it does not even exist
+//      before the loop begins.
+//   2. No write to the same decl (keyed on decl_loc + name) is
+//      reachable inside the loop body. A "write" is any assignment-shape
+//      expression — compound-assign (`^=`, `+=`, `-=`, `*=`, `/=`, `%=`)
+//      or plain copy-assign (`=`) — targeting the referenced decl. Any
+//      single write disqualifies invariance; the operand's value would
+//      differ between iterations.
+//
+// Shapes of write the probe recognises:
+//
+//   - `CXXOperatorCallExpr` on an assignment operator (`=`, `^=`, `+=`,
+//     `-=`, `*=`, `/=`, `%=`). This is the C++-overloaded form that
+//     qbool and qint_t produce for compound-assign. The LHS is the
+//     first argument of the call; if it peels to a DeclRefExpr whose
+//     referenced decl matches our target, it counts as a write.
+//   - `BinaryOperator` with an assignment opcode (builtin int/bool
+//     `=`, `+=`, ...). Included for completeness — the PH-3 guard
+//     already flags these shapes for outer mutation, but the
+//     invariance probe is agnostic of the LHS type; a builtin write
+//     to a same-named target still disqualifies.
+//
+// A write to a DIFFERENT decl (e.g. a shadowing inner local with the
+// same spelled name but a different `getLocation()`) does NOT
+// disqualify: the `decl_loc` comparison is the primary discriminator,
+// matching the PJ-1a reader-count helper's semantics on shadowed
+// locals.
+//
+// Defensive early exits:
+//
+//   - `loop_body_anchor == nullptr` → return false. Without a loop
+//     body there is nothing to hoist out of.
+//   - `operand_ref.decl_loc.isInvalid()` → return false. An invalid
+//     decl_loc has no meaningful "outside the loop body" semantics.
+//   - If any location in the comparison is a macro-expansion ID we
+//     convert it to the file-expansion loc via
+//     `SourceManager::getFileLoc` before comparing, keeping the
+//     "outside the loop body" check robust against macro-generated
+//     shapes (e.g. a decl produced from a user-defined macro).
+//
+// Complexity: O(loop_body_nodes). Called at most once per candidate
+// op's operand in the PJ-3d matcher.
+//
+// The helper lives in `matcher_common.hpp` per the same reasoning as
+// PJ-3a / PJ-1a — the PJ-3d matcher already includes this header.
+namespace loop_invariant_detail {
+
+// RecursiveASTVisitor-based walker. Stops as soon as it finds a write to
+// the target decl (keyed on decl_loc + name); the visitor short-circuits
+// via the `TraverseStmt`/`VisitStmt` return-false convention.
+class WriteFinder
+    : public clang::RecursiveASTVisitor<WriteFinder> {
+public:
+    WriteFinder(llvm::StringRef target_name,
+                clang::SourceLocation target_loc)
+        : target_name_(target_name), target_loc_(target_loc) {}
+
+    bool VisitCXXOperatorCallExpr(clang::CXXOperatorCallExpr* call) {
+        if (!call) return true;
+        if (found_) return false;
+        // Only assignment-shape operators write to their LHS. The set
+        // covers both plain copy-assign (`=`) and every compound-assign
+        // we recognise elsewhere in the transpiler (Phase A–C + PH-3).
+        const auto op = call->getOperator();
+        const bool is_assign_shape =
+            (op == clang::OO_Equal)        ||
+            (op == clang::OO_CaretEqual)   ||
+            (op == clang::OO_PlusEqual)    ||
+            (op == clang::OO_MinusEqual)   ||
+            (op == clang::OO_StarEqual)    ||
+            (op == clang::OO_SlashEqual)   ||
+            (op == clang::OO_PercentEqual) ||
+            (op == clang::OO_PipeEqual)    ||
+            (op == clang::OO_AmpEqual);
+        if (!is_assign_shape) return true;
+        if (call->getNumArgs() < 1) return true;
+        check_lhs_expr(call->getArg(0));
+        return !found_;
+    }
+
+    bool VisitBinaryOperator(clang::BinaryOperator* bop) {
+        if (!bop) return true;
+        if (found_) return false;
+        // Builtin assignment-shape opcodes. Includes plain `=`, compound
+        // `+=`, `-=`, `*=`, `/=`, `%=`, and the bitwise `^=`/`|=`/`&=`
+        // that lower to BinaryOperator for int/bool operands.
+        if (!bop->isAssignmentOp() && !bop->isCompoundAssignmentOp()) {
+            return true;
+        }
+        check_lhs_expr(bop->getLHS());
+        return !found_;
+    }
+
+    bool found() const { return found_; }
+
+private:
+    // Check whether `lhs_expr` peels to a DeclRefExpr whose target decl
+    // matches `target_loc_` + `target_name_`. Writes are assignment LHS;
+    // nothing else needs to be considered.
+    void check_lhs_expr(const clang::Expr* lhs_expr) {
+        if (!lhs_expr) return;
+        // Strip implicit casts / parens / temporaries so `a ^= b` where
+        // `a` is an lvalue still peels down to the raw DeclRefExpr on
+        // `a`. `IgnoreParenImpCasts` is sufficient for every assignment
+        // LHS shape we care about — we are NOT chasing MaterializeTemp /
+        // CXXBindTemporary since assignment LHS cannot be a temporary.
+        const clang::Expr* inner = lhs_expr->IgnoreParenImpCasts();
+        const auto* dre = clang::dyn_cast_or_null<clang::DeclRefExpr>(inner);
+        if (!dre) return;
+        const clang::NamedDecl* nd = dre->getDecl();
+        if (!nd) return;
+        // decl_loc is the primary discriminator — catches shadowed
+        // locals whose same-named outer decl lives at a different
+        // source location.
+        if (nd->getLocation() != target_loc_) return;
+        // Belt-and-braces name check (cheap, costs nothing).
+        if (nd->getName() != target_name_) return;
+        found_ = true;
+    }
+
+    llvm::StringRef       target_name_;
+    clang::SourceLocation target_loc_;
+    bool                  found_ = false;
+};
+
+// Return true iff `loc` lies inside the source range of `body` (inclusive
+// both endpoints). Uses the file-expansion loc of `loc` and the body's
+// begin/end locs so macro-generated decls / bodies still compare
+// consistently. Returns false on any invalid input.
+inline bool loc_is_inside_body(clang::SourceLocation loc,
+                               const clang::Stmt* body,
+                               clang::ASTContext& ctx) {
+    if (!body) return false;
+    if (loc.isInvalid()) return false;
+    const clang::SourceManager& sm = ctx.getSourceManager();
+    const clang::SourceLocation body_begin = body->getBeginLoc();
+    const clang::SourceLocation body_end   = body->getEndLoc();
+    if (body_begin.isInvalid() || body_end.isInvalid()) return false;
+
+    // Normalise macro-expansion IDs to their file-expansion location
+    // so the comparison happens in a single source space. Every
+    // transpiler fixture today uses file locs directly; this is belt-
+    // and-braces for future PH-1 macro-touching shapes.
+    const clang::SourceLocation file_loc   = sm.getFileLoc(loc);
+    const clang::SourceLocation file_begin = sm.getFileLoc(body_begin);
+    const clang::SourceLocation file_end   = sm.getFileLoc(body_end);
+    if (file_loc.isInvalid() || file_begin.isInvalid() || file_end.isInvalid())
+        return false;
+
+    // `isBeforeInTranslationUnit` gives strict ordering; [begin, end]
+    // is the body's closed range, so we negate-and-or to express the
+    // inclusive membership check.
+    const bool before_begin =
+        sm.isBeforeInTranslationUnit(file_loc, file_begin);
+    const bool after_end =
+        sm.isBeforeInTranslationUnit(file_end, file_loc);
+    return !before_begin && !after_end;
+}
+
+} // namespace loop_invariant_detail
+
+inline bool expr_is_loop_invariant(const QValueRef& operand_ref,
+                                   const clang::Stmt* loop_body_anchor,
+                                   clang::ASTContext& ctx) {
+    // Defensive: no loop body → nothing to hoist out of, definitively
+    // non-invariant from the caller's point of view. Mirrors the null-
+    // guard discipline in `classify_scope_kind` / `count_readers_in_scope`.
+    if (!loop_body_anchor) return false;
+    // Invalid decl_loc: no meaningful "outside the loop body" check is
+    // possible. Conservative default — reject.
+    if (operand_ref.decl_loc.isInvalid()) return false;
+
+    // (1) The decl MUST live outside the loop body's source range. A
+    // per-iteration local declared inside the body is trivially
+    // non-invariant — it does not exist before the loop runs.
+    if (loop_invariant_detail::loc_is_inside_body(
+            operand_ref.decl_loc, loop_body_anchor, ctx)) {
+        return false;
+    }
+
+    // (2) No write to the same decl (keyed on decl_loc + name) may be
+    // reachable inside the loop body.
+    loop_invariant_detail::WriteFinder finder(
+        llvm::StringRef(operand_ref.name), operand_ref.decl_loc);
+    // Same const_cast pattern as `count_readers_in_scope`: the visitor
+    // does not mutate the tree.
+    finder.TraverseStmt(const_cast<clang::Stmt*>(loop_body_anchor));
+    if (finder.found()) return false;
+
+    return true;
+}
+
 // Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
 // invocation. The WHEN macro expands to three nested `if`s:
 //

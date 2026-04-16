@@ -24,6 +24,7 @@ int main() {
     run_output_class_tests();
     run_scope_kind_tests();
     run_reader_count_tests();
+    run_loop_invariant_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
