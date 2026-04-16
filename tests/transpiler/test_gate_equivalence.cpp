@@ -146,6 +146,26 @@ namespace m12_for_loop_reference {
 void demo(const sturm::qbool& a, const sturm::qbool& b);
 } // namespace m12_for_loop_reference
 
+// PI-7: Phase I user-routine gate-equivalence pair.  The transpiler
+// matches the registered forward call `ur_rotate_fwd_runtime(tmp, in,
+// 3);` (Case 1 = local-intermediate output, per PI-3) and injects
+// `invert(ur_rotate_fwd_runtime)(tmp, in, 3);` before the enclosing
+// scope's close brace — which dispatches to the registered adjoint
+// `ur_rotate_adj_runtime` via the PI-0 trait table.  The reference
+// fixture spells both the forward and the adjoint by hand in LIFO
+// order (forward, then adjoint).  Because `tmp` is created as a fresh
+// local qbool in both fixtures against a harness-reset QubitPool, the
+// allocated ancilla index matches across the two captures.  The demo
+// takes `const qbool&` by reference so the caller-supplied quantum
+// input index is preserved intact on both sides.
+namespace m12_user_routine_transpiled {
+void demo(const sturm::qbool& in);
+} // namespace m12_user_routine_transpiled
+
+namespace m12_user_routine_reference {
+void demo(const sturm::qbool& in);
+} // namespace m12_user_routine_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -296,6 +316,30 @@ run_and_capture_if_branches(void (*demo)(const sturm::qbool&,
 
     sturm::QubitPool::instance().release(qa);
     sturm::QubitPool::instance().release(qb);
+    return stream;
+}
+
+// PI-7: capture helper for the Phase I user-routine fixture pair.  The
+// demo takes a single `const qbool& in` quantum input; one fresh qubit
+// is allocated via `make_non_owning` so the harness retains ownership
+// (the demo's own `qbool tmp; tmp.ensure_qubit();` allocates ITS ancilla
+// through the same QubitPool, whose reset happens in `ScopedAppendContext`
+// before each capture — so both the runtime and reference captures see
+// identical qubit indices for `in` and `tmp`).  No multi-invocation
+// loop: the demo is called exactly once per capture.
+std::vector<sturm::GateRecord>
+run_and_capture_user_routine(void (*demo)(const sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int qin = sturm::QubitPool::instance().allocate();
+    sturm::qbool in = sturm::qbool::make_non_owning(qin);
+    in.super_mask = 1ULL;
+
+    demo(in);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(qin);
     return stream;
 }
 
@@ -487,11 +531,44 @@ int main() {
     }
     std::printf("  for_loop streams match (%zu gates).\n", ref_for.size());
 
+    // PI-7: Phase I user-routine gate-equivalence pair.  Proves the
+    // transpiler's PI-2/PI-3/PI-4 rewrite — which injects an
+    // `invert(<routine>)(...)` call at scope exit for a registered
+    // forward routine with a local-intermediate output slot — emits
+    // the same gate stream as a hand-written reference that spells
+    // the forward + adjoint calls verbatim in LIFO order.  The
+    // routine performs three `tmp.flip()` calls (three X gates),
+    // followed by the adjoint (three more X gates), against a freshly
+    // allocated `tmp` ancilla — expected stream length is six gates.
+    std::printf("PI-7 gate-stream equivalence test (user_routine pattern):\n");
+    const auto ref_ur = run_and_capture_user_routine(&m12_user_routine_reference::demo);
+    const auto got_ur = run_and_capture_user_routine(&m12_user_routine_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_ur.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_ur[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_ur.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_ur[i]).c_str());
+    }
+    if (ref_ur.empty()) {
+        std::fprintf(stderr,
+                     "user_routine reference produced 0 gates — fixture not "
+                     "exercising the Phase I invert() injection.\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_ur, ref_ur); rc != 0) {
+        std::fprintf(stderr, "user_routine gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  user_routine streams match (%zu gates).\n", ref_ur.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
     std::printf("pair 4: %zu gates match\n", ref_if.size());
     std::printf("pair 5: %zu gates match\n", ref_for.size());
+    std::printf("pair 6: %zu gates match\n", ref_ur.size());
     std::printf("PASS\n");
     return 0;
 }
