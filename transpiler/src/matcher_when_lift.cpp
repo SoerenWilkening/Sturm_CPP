@@ -113,69 +113,11 @@ static int g_when_lift_detection_count = 0;
 using namespace clang;
 using namespace clang::ast_matchers;
 
-// Walk up the macro-expansion chain from `loc` and look for an immediate
-// caller whose spelled macro name is `needle` (e.g. "WHEN"). Returns true
-// if any step on the caller chain spells that macro. A pure textual
-// comparison against `Lexer::getImmediateMacroName` is intentional: the
-// `WHEN` macro is defined in a specific header today, but we do not want
-// to pin the lookup to a particular FileID / expansion depth — a user
-// wrapper `#define MY_WHEN(x) WHEN(x)` should still be recognized at the
-// one-level-up step where `WHEN` is spelled.
-static bool is_expansion_of_macro(SourceLocation loc,
-                                  const SourceManager& sm,
-                                  const LangOptions& lang,
-                                  llvm::StringRef needle) {
-    // Only valid for locations inside some macro body expansion.
-    if (!loc.isMacroID()) return false;
-    // Cap the walk — pathological circular expansions are impossible in
-    // well-formed source but a belt-and-braces bound costs nothing.
-    SourceLocation cur = loc;
-    for (int hops = 0; hops < 64 && cur.isMacroID(); ++hops) {
-        llvm::StringRef name = Lexer::getImmediateMacroName(cur, sm, lang);
-        if (name == needle) return true;
-        SourceLocation next = sm.getImmediateMacroCallerLoc(cur);
-        if (next == cur) break; // fixed point — no more caller info.
-        cur = next;
-    }
-    return false;
-}
-
-// Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
-// invocation. The WHEN macro expands to three nested `if`s:
-//
-//   if (WhenCapture _when_capture_{}; true)       // outer
-//       if (decltype(auto) _when_val_ = ...; true) // middle (bound as when_if)
-//           if (auto _when_guard_ = ...; ...)      // inner
-//               { body }                           // CompoundStmt
-//
-// Starting from the middle `if` (our match anchor), descend `getThen()`
-// twice to reach the user's body CompoundStmt. The first descent lands
-// on the innermost `if` (the `_when_guard_` gate); the second descent
-// lands on the CompoundStmt body. We then return the location immediately
-// past the closing `}` so insertions anchored here land after the user's
-// body, outside the WHEN's scope.
-//
-// Returns an invalid SourceLocation on any structural mismatch (e.g.
-// WHEN macro wrapped in an unexpected statement shape) — the caller
-// treats that as a hard bail and skips the whole lift.
-static SourceLocation compute_post_body_brace(const IfStmt* when_if,
-                                              const SourceManager& sm,
-                                              const LangOptions& lang) {
-    if (!when_if) return {};
-    const Stmt* first = when_if->getThen();
-    const auto* inner_if = dyn_cast_or_null<IfStmt>(first);
-    if (!inner_if) return {};
-    const Stmt* second = inner_if->getThen();
-    const auto* body = dyn_cast_or_null<CompoundStmt>(second);
-    if (!body) return {};
-    const SourceLocation rbrac = body->getRBracLoc();
-    if (rbrac.isInvalid()) return {};
-    // `getLocForEndOfToken` on the `}` token returns the location
-    // immediately past the closing brace. Passing 0 for the `Offset`
-    // parameter is the standard convention (we want end-of-token, not
-    // end-of-token+N).
-    return Lexer::getLocForEndOfToken(rbrac, /*Offset=*/0, sm, lang);
-}
+// Phase G PG-1 promoted `is_expansion_of_macro` and `compute_post_body_brace`
+// into `matcher_common.hpp` so the new `matcher_when_nested.cpp` TU can reuse
+// them verbatim. The implementations now live under
+// `sturm::transpile::detail::` — this TU calls them qualified at each use
+// site.
 
 // Materialize the full decl block (newline-terminated). Each entry in
 // `flat_lines` is a single `qbool __stu_tN = ... ;` statement (with
@@ -350,7 +292,7 @@ public:
         // This rejects users calling `sturm::detail::materialize_when(x)`
         // from inside some *other* macro (e.g. a test harness) that
         // happens to emit an `if (auto _when_val_ = ...)` init-stmt.
-        if (!is_expansion_of_macro(if_loc, sm, lang, "WHEN")) return;
+        if (!detail::is_expansion_of_macro(if_loc, sm, lang, "WHEN")) return;
 
         // PF-2 guard #3: the materialize call must have exactly one
         // argument (the user's WHEN expression). Any other arity is a
@@ -382,7 +324,7 @@ public:
         // Resolve the post-body close-brace anchor — fails fast if the
         // WHEN macro body shape is not the three-`if` tower we expect.
         const SourceLocation post_body_brace =
-            compute_post_body_brace(when_if, sm, lang);
+            detail::compute_post_body_brace(when_if, sm, lang);
         if (post_body_brace.isInvalid()) return;
 
         // Step (1): flatten the peeled payload against a scratch scope

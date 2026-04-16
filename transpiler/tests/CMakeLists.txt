@@ -163,6 +163,7 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_lift.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
 )
 target_include_directories(test_transpile_matcher PRIVATE

@@ -34,8 +34,12 @@
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/ParentMapContext.h"
 #include "clang/AST/Stmt.h"
+#include "clang/Basic/LangOptions.h"
 #include "clang/Basic/OperatorKinds.h"
 #include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/SourceManager.h"
+#include "clang/Lex/Lexer.h"
+#include "llvm/ADT/StringRef.h"
 
 #include <optional>
 #include <sstream>
@@ -85,6 +89,82 @@ inline QScope& find_or_create_scope(QUnit& unit, const clang::CompoundStmt& cs) 
     fresh.close_brace = cs.getRBracLoc();
     unit.scopes.push_back(std::move(fresh));
     return unit.scopes.back();
+}
+
+// Walk up the macro-expansion chain from `loc` and look for an immediate
+// caller whose spelled macro name is `needle` (e.g. "WHEN"). Returns true
+// if any step on the caller chain spells that macro. A pure textual
+// comparison against `Lexer::getImmediateMacroName` is intentional: the
+// `WHEN` macro is defined in a specific header today, but we do not want
+// to pin the lookup to a particular FileID / expansion depth — a user
+// wrapper `#define MY_WHEN(x) WHEN(x)` should still be recognized at the
+// one-level-up step where `WHEN` is spelled.
+//
+// Promoted from `matcher_when_lift.cpp` into `matcher_common.hpp` by Phase G
+// PG-1 so the new `matcher_when_nested.cpp` TU can reuse it verbatim. Body
+// is byte-identical to the original; only the surrounding namespace + the
+// `inline` keyword change (header-only linkage).
+inline bool is_expansion_of_macro(clang::SourceLocation loc,
+                                  const clang::SourceManager& sm,
+                                  const clang::LangOptions& lang,
+                                  llvm::StringRef needle) {
+    // Only valid for locations inside some macro body expansion.
+    if (!loc.isMacroID()) return false;
+    // Cap the walk — pathological circular expansions are impossible in
+    // well-formed source but a belt-and-braces bound costs nothing.
+    clang::SourceLocation cur = loc;
+    for (int hops = 0; hops < 64 && cur.isMacroID(); ++hops) {
+        llvm::StringRef name =
+            clang::Lexer::getImmediateMacroName(cur, sm, lang);
+        if (name == needle) return true;
+        clang::SourceLocation next = sm.getImmediateMacroCallerLoc(cur);
+        if (next == cur) break; // fixed point — no more caller info.
+        cur = next;
+    }
+    return false;
+}
+
+// Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
+// invocation. The WHEN macro expands to three nested `if`s:
+//
+//   if (WhenCapture _when_capture_{}; true)       // outer
+//       if (decltype(auto) _when_val_ = ...; true) // middle (bound as when_if)
+//           if (auto _when_guard_ = ...; ...)      // inner
+//               { body }                           // CompoundStmt
+//
+// Starting from the middle `if` (our match anchor), descend `getThen()`
+// twice to reach the user's body CompoundStmt. The first descent lands
+// on the innermost `if` (the `_when_guard_` gate); the second descent
+// lands on the CompoundStmt body. We then return the location immediately
+// past the closing `}` so insertions anchored here land after the user's
+// body, outside the WHEN's scope.
+//
+// Returns an invalid SourceLocation on any structural mismatch (e.g.
+// WHEN macro wrapped in an unexpected statement shape) — the caller
+// treats that as a hard bail and skips the whole lift.
+//
+// Promoted from `matcher_when_lift.cpp` into `matcher_common.hpp` by Phase G
+// PG-1 so the new `matcher_when_nested.cpp` TU can reuse it verbatim. Body
+// is byte-identical to the original; only the surrounding namespace + the
+// `inline` keyword change (header-only linkage).
+inline clang::SourceLocation
+compute_post_body_brace(const clang::IfStmt* when_if,
+                        const clang::SourceManager& sm,
+                        const clang::LangOptions& lang) {
+    if (!when_if) return {};
+    const clang::Stmt* first = when_if->getThen();
+    const auto* inner_if = clang::dyn_cast_or_null<clang::IfStmt>(first);
+    if (!inner_if) return {};
+    const clang::Stmt* second = inner_if->getThen();
+    const auto* body = clang::dyn_cast_or_null<clang::CompoundStmt>(second);
+    if (!body) return {};
+    const clang::SourceLocation rbrac = body->getRBracLoc();
+    if (rbrac.isInvalid()) return {};
+    // `getLocForEndOfToken` on the `}` token returns the location
+    // immediately past the closing brace. Passing 0 for the `Offset`
+    // parameter is the standard convention (we want end-of-token, not
+    // end-of-token+N).
+    return clang::Lexer::getLocForEndOfToken(rbrac, /*Offset=*/0, sm, lang);
 }
 
 // Extract a QValueRef from a DeclRefExpr. The decl_loc is the referenced
