@@ -85,6 +85,12 @@ void dump_op(std::ostringstream& os, const QOperation& op, std::size_t idx) {
     if (op.insert_before_override.isValid()) {
         os << " insert_before_override=" << loc_to_string(op.insert_before_override);
     }
+    // Phase H PH-3: surface the skip_uncompute flag when it is set. The
+    // default-false value prints nothing so every Phase A..G snapshot
+    // fixture stays byte-identical; pre-Phase-H matchers never set it.
+    if (op.skip_uncompute) {
+        os << " [skip_uncompute]";
+    }
     os << "\n";
 }
 

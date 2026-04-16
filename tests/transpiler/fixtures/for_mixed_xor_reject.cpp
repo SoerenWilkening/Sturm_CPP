@@ -1,0 +1,39 @@
+// Phase H / PH-3 mixed-fixture input.
+//
+// Exercises the "per-op flag granularity" acceptance criterion: one
+// scope contains BOTH an inner intermediate that should be uncomputed
+// normally AND an outer mutation that must be skipped. The PH-3 matcher
+// flags only the outer mutation (skip_uncompute=true) while leaving the
+// inner intermediate unflagged. The M8 pass therefore injects an
+// uncompute for the inner op and NOTHING for the outer mutation.
+//
+// Shape:
+//   - Inside the for body, declare a fresh local qbool `r` and XOR-assign
+//     it with `a` — this is the "inner intermediate, uncompute normally"
+//     part.
+//   - On the next line, mutate the outer-scoped `a` via `a ^= b;` — this
+//     is the "outer mutation, skipped" part.
+//
+// Expected transpiler output:
+//   - `r ^= a;` is paired with a matching `r ^= a;` injected before the
+//     for-body's close brace (PA-3 self-inverse).
+//   - `a ^= b;` is NOT paired with any inverse — the PH-3 guard sets
+//     skip_uncompute on that op, and the M8 pass skips it.
+//   - stderr carries the PH-3 diagnostic for the `a ^= b;` line.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator^=(const qbool&) { return *this; }
+};
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b) {
+    for (int i = 0; i < 3; ++i) {
+        qbool r;
+        r ^= a;
+        a ^= b;
+    }
+}

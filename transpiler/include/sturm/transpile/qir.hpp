@@ -148,12 +148,29 @@ struct QValueRef {
 ///                  closing brace, NOT at the enclosing CompoundStmt's
 ///                  close brace. Existing matchers leave it default, so
 ///                  every prior snapshot stays byte-identical.
+/// - `skip_uncompute` : Phase H PH-3 flag. When true, the M8 synthesis
+///                  pass emits NO UncomputeInsertion for this op — the
+///                  op stays in the QIR (so `dump()` still shows it, and
+///                  downstream consumers remain aware it was recognised),
+///                  but no inverse is planted. The PH-3 matcher
+///                  (`matcher_outer_var_guard.cpp`) sets this to true on
+///                  compound-assign ops that mutate an outer-scoped
+///                  qbool / qint from inside a for/while/if/WHEN body,
+///                  where automatic uncomputation would require reverse-
+///                  loop synthesis (contradicts P9). The matcher also
+///                  emits a stderr diagnostic so the user knows a manual
+///                  adjoint is required. Per-op flag, not per-scope — a
+///                  scope can contain both "intermediate, uncompute
+///                  normally" and "outer mutation, skipped" ops. Pre-
+///                  Phase-H matchers leave the flag false, so every prior
+///                  snapshot stays byte-identical.
 struct QOperation {
     QOpKind kind;
     QValueRef result;
     std::vector<QValueRef> operands;
     clang::SourceRange stmt_range;
     clang::SourceLocation insert_before_override{};
+    bool skip_uncompute = false;
 };
 
 /// One compound statement (curly-brace block) in the user's source.

@@ -592,6 +592,65 @@ static void test_qunit_raw_insertions_round_trip() {
     CHECK(unit.raw_insertions[0].insert_before.getRawEncoding() == 123u);
 }
 
+// ── Phase H / PH-3: skip_uncompute dump suffix ──────────────────────────────
+//
+// PH-3 introduces `QOperation::skip_uncompute`. When false (the default),
+// dump() must emit NOTHING extra — byte-identical to pre-PH-3 output.
+// When true, dump() appends a `" [skip_uncompute]"` token to the op line
+// so humans reading the IR can see at a glance which ops the matcher
+// refused to auto-uncompute.
+
+static void test_dump_skip_uncompute_default_unchanged() {
+    // Default-constructed QOperation has `skip_uncompute == false`, so
+    // the dump output must be byte-identical to the legacy format.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::XOR_ASSIGN;
+    op.result = QValueRef{"a", make_loc(30)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] XOR_ASSIGN a@30 = b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_skip_uncompute_true_appends_suffix() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::XOR_ASSIGN;
+    op.result = QValueRef{"a", make_loc(30)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    op.skip_uncompute = true;
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    // The suffix is a single space-prefixed " [skip_uncompute]" token
+    // appended after the range annotation. No interaction with the
+    // insert_before_override annotation (both can coexist on the same
+    // op if a future matcher sets both).
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] XOR_ASSIGN a@30 = b@25  range=[28..40] [skip_uncompute]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -644,6 +703,9 @@ int main() {
     test_dump_op_with_valid_override_surfaces();
     test_qunit_raw_insertions_is_default_empty();
     test_qunit_raw_insertions_round_trip();
+
+    test_dump_skip_uncompute_default_unchanged();
+    test_dump_skip_uncompute_true_appends_suffix();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
