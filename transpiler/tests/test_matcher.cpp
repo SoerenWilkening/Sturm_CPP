@@ -21,6 +21,7 @@ int main() {
     run_ph3_outer_var_tests();
     run_routine_registry_tests();
     run_user_routine_tests();
+    run_output_class_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

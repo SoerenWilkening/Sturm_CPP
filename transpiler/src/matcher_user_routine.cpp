@@ -1,4 +1,5 @@
-// matcher_user_routine.cpp — Phase I PI-2 user-defined-routine call matcher.
+// matcher_user_routine.cpp — Phase I PI-2 + PI-3 user-defined-routine
+// call matcher.
 //
 // Fires on every `callExpr` whose callee FunctionDecl is registered in the
 // PI-1 `RoutineRegistry` (i.e. the user called `STURM_REGISTER_ADJOINT(fn,
@@ -11,9 +12,23 @@
 //   - `outputs_mask` = bit i set iff the callee's i-th parameter is a
 //                      non-const qbool&/qint& reference.
 //
+// PI-3 adds output-param ownership classification: every OUTPUT slot's
+// backing VarDecl is classified via `detail::classify_output` into one
+// of {Intermediate, IntermediateOuter, Final, SkipWithDiagnostic}. The
+// per-slot classifications aggregate into a single op-level policy:
+// any SkipWithDiagnostic or Final → skip the whole uncompute; otherwise
+// if any IntermediateOuter slot exists, set
+// `QOperation::insert_before_override` to the outermost declaring
+// scope's close brace so every output is still in scope when the
+// inverse fires. Pure-Intermediate ops leave the override invalid and
+// use the default M8 anchor.
+//
 // PI-4 extends the uncompute pass to emit `invert(<routine_name>)(...)`
 // from this IR entry; until then the op is a passive record — it appears
-// in `dump()` but no `UncomputeInsertion` is produced.
+// in `dump()` but no `UncomputeInsertion` is produced. The PI-3 flags
+// `skip_uncompute` and `insert_before_override` are still honoured by
+// the M8 synthesis pass for every other kind, so once PI-4 lands the
+// USER_ROUTINE render case will inherit them for free.
 //
 // Registration ordering (main.cpp):
 // ---------------------------------
@@ -58,9 +73,13 @@ namespace {
 
 using namespace clang;
 using namespace clang::ast_matchers;
+using detail::classify_output;
+using detail::declaring_scope_close_brace;
+using detail::emit_outer_mutation_diagnostic;
 using detail::enclosing_scope;
 using detail::find_or_create_scope;
 using detail::make_ref;
+using detail::OutputClass;
 
 // Test-only counter. The transpiler is single-threaded under matchAST, so
 // a plain int is safe. Incremented once per successfully-appended
@@ -174,6 +193,43 @@ public:
         op.stmt_range = call->getSourceRange();
         op.outputs_mask = 0;
 
+        // ── PI-3 per-slot output-ownership classification ───────────────
+        // As we fill the op, we also classify each OUTPUT slot via the
+        // PI-3 helper and aggregate across the slots. The aggregate
+        // drives three downstream effects:
+        //
+        //   - any `SkipWithDiagnostic` slot → `skip_uncompute=true` and
+        //     a stderr diagnostic is emitted (once per Skip slot).
+        //   - any `Final` slot (and no Skip slot) → `skip_uncompute=true`
+        //     with NO diagnostic (escaping value, user's final compute).
+        //   - mixed `Intermediate` + `IntermediateOuter` slots with no
+        //     Skip / Final → leave `skip_uncompute=false` and plant
+        //     `insert_before_override` at the OUTERMOST declaring scope's
+        //     close brace so every output is still in scope when the
+        //     inverse fires.
+        //
+        // The PI-3 classifier consumes the call's enclosing *CompoundStmt*
+        // (not the enclosing PH-1 BracelessBody). For a call sitting in
+        // a braceless for/while/if body, `call_scope` is null — the
+        // helper treats that case as unconditionally inside a control-
+        // flow body, which matches the intended PH-3-equivalent semantics.
+        const CompoundStmt* call_scope =
+            (es.kind == detail::QScopeKind::CompoundStmt) ? es.compound
+                                                          : nullptr;
+
+        bool saw_skip_with_diag = false;
+        bool saw_final          = false;
+        bool saw_outer          = false;
+        SourceLocation outermost_close_brace{};
+        // The outermost declaring scope has the FEWEST CompoundStmt
+        // ancestors (a variable declared at function-body level has
+        // depth 1; a variable declared in a nested block has depth 2,
+        // etc.). We initialise to UINT_MAX so the first valid candidate
+        // wins, and overwrite only on a STRICTLY SMALLER depth — which
+        // is the scope whose close brace encloses every other output's
+        // declaring scope.
+        unsigned outermost_depth = static_cast<unsigned>(-1);
+
         for (unsigned i = 0; i < num_slots; ++i) {
             const ParmVarDecl* param = fd->getParamDecl(i);
             const Expr* arg = call->getArg(i);
@@ -194,14 +250,88 @@ public:
             // identifier directly. Fall back to Lexer-extracted source
             // text for classical scalars / compound expressions.
             const Expr* payload = detail::peel_to_payload(arg);
-            if (const auto* dre =
-                    llvm::dyn_cast_or_null<DeclRefExpr>(payload)) {
+            const DeclRefExpr* dre =
+                llvm::dyn_cast_or_null<DeclRefExpr>(payload);
+            if (dre) {
                 op.operands.push_back(make_ref(*dre));
             } else {
                 QValueRef ref;
                 ref.name = arg_source_text(arg, sm, lang);
                 op.operands.push_back(std::move(ref));
             }
+
+            // Classification is only meaningful for OUTPUT slots — input
+            // arguments don't drive uncompute placement. Inputs that
+            // happen to be file-scope / parameters stay untouched.
+            if (!is_output || !dre) continue;
+            const auto* vd = llvm::dyn_cast_or_null<VarDecl>(dre->getDecl());
+            if (!vd) continue;
+
+            const OutputClass cls =
+                classify_output(vd, call, call_scope, *r.Context, sm, lang);
+            switch (cls) {
+            case OutputClass::SkipWithDiagnostic:
+                saw_skip_with_diag = true;
+                // Emit the stderr diagnostic per-slot so the user can
+                // identify which output argument triggered the skip.
+                // Matches PH-3's text verbatim (shared helper).
+                emit_outer_mutation_diagnostic(sm, vd, call);
+                break;
+            case OutputClass::Final:
+                saw_final = true;
+                break;
+            case OutputClass::IntermediateOuter: {
+                saw_outer = true;
+                const SourceLocation close =
+                    declaring_scope_close_brace(vd, *r.Context);
+                // Track the OUTERMOST (highest-depth) scope so mixed
+                // intermediate / intermediate-outer slots uncompute at
+                // a loc that keeps every output in scope. We key by
+                // parent-hop count from the VD so we do not compare
+                // SourceLocations (which lack a total order across
+                // nested scopes in general).
+                unsigned depth = 0;
+                {
+                    DynTypedNode node = DynTypedNode::create(*vd);
+                    for (int hops = 0; hops < 512; ++hops) {
+                        const auto parents = r.Context->getParents(node);
+                        if (parents.empty()) break;
+                        node = parents[0];
+                        if (node.get<CompoundStmt>()) {
+                            ++depth;
+                        }
+                    }
+                }
+                if (close.isValid() && depth < outermost_depth) {
+                    outermost_depth = depth;
+                    outermost_close_brace = close;
+                }
+                break;
+            }
+            case OutputClass::Intermediate:
+                // Default case — the call scope's close brace is the
+                // right anchor and no flag needs adjusting.
+                break;
+            }
+        }
+
+        // Apply the aggregate rule.
+        if (saw_skip_with_diag) {
+            // Skip dominates every other class — we cannot plant a
+            // reverse-loop adjoint automatically. PH-3-style skip.
+            op.skip_uncompute = true;
+        } else if (saw_final) {
+            // Escape dominates Intermediate / IntermediateOuter. No
+            // diagnostic — the user chose to return this value from
+            // the call, which is a valid pattern.
+            op.skip_uncompute = true;
+        } else if (saw_outer) {
+            // Mixed Intermediate / IntermediateOuter: uncompute at the
+            // outermost declaring scope's close brace. A pure-
+            // Intermediate op leaves `insert_before_override` invalid
+            // so the M8 anchor stays at the call scope's close brace
+            // (the default).
+            op.insert_before_override = outermost_close_brace;
         }
 
         scope.ops.push_back(std::move(op));
