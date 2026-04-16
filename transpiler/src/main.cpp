@@ -23,6 +23,11 @@
 #include "sturm/transpile/skip.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
 
+// Phase I PI-1: context-wide forward/adjoint registry, populated by its
+// own matcher before any PI-2+ routine-call matcher runs. The registry
+// lives alongside QUnit on the TranspileConsumer below.
+#include "routine_registry.hpp"
+
 #include "clang/AST/ASTConsumer.h"
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
@@ -95,6 +100,18 @@ public:
     TranspileConsumer(std::string source_path, std::string output_dir)
         : source_path_(std::move(source_path)),
           output_dir_(std::move(output_dir)) {
+        // Phase I PI-1: the routine registry matcher runs first so the
+        // map is built before any PI-2+ routine-call matcher consults
+        // it. Placing registration at the top of the consumer body
+        // documents the ordering invariant. Registration order among
+        // MatchFinder callbacks affects callback invocation order only
+        // for a single matched node; the routine-registry and Phase
+        // A–H matchers match disjoint AST shapes (the former fires on
+        // ClassTemplateSpecializationDecl, the latter on expressions /
+        // VarDecls), so the registry is naturally populated as soon as
+        // the first `adjoint_of<...>` specialization is visited during
+        // the AST walk.
+        sturm::transpile::register_routine_registry_matcher(finder_, registry_);
         sturm::transpile::register_or_matcher(finder_, unit_);
         sturm::transpile::register_not_matcher(finder_, unit_);
         sturm::transpile::register_xor_matcher(finder_, unit_);
@@ -164,6 +181,13 @@ public:
 
 private:
     sturm::transpile::QUnit unit_;
+    // Phase I PI-1: context-wide forward/adjoint map populated by the
+    // routine-registry matcher. Lives here — alongside `unit_` — so both
+    // are destroyed together with the ASTContext the matcher ran under
+    // (the registry stores raw FunctionDecl pointers with
+    // ASTContext-bound lifetime). Pre-Phase-I consumers leave this
+    // empty; downstream PI-2..PI-7 matchers will consult it.
+    sturm::transpile::RoutineRegistry registry_;
     clang::ast_matchers::MatchFinder finder_;
     std::string source_path_;
     std::string output_dir_;
