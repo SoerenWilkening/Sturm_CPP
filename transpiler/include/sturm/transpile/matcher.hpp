@@ -333,6 +333,42 @@ void register_outer_var_guard_matcher(
 int outer_var_guard_detection_count_for_test();
 void reset_outer_var_guard_detection_count_for_test();
 
+/// Phase J PJ-3d: Register the uncompute-hoisting matcher. Iterates
+/// `unit.scopes` and, for every scope that `detail::classify_scope_kind`
+/// identifies as a `LoopBody` (PJ-3a), scans decl-producing ops (OR, AND,
+/// NOT, XOR, EQ_QINT, NE_QINT, LT_QINT, LE_QINT, GT_QINT, GE_QINT —
+/// NOT compound-assigns on outer vars, which PH-3 already marks with
+/// `skip_uncompute=true`) whose operands are ALL loop-invariant per
+/// `detail::expr_is_loop_invariant` (PJ-3b). Matching ops have both
+/// `hoist_to_override` set to the loop-enclosing scope's close_brace
+/// (where the uncompute lands, AFTER the loop end) AND
+/// `insert_before_override` set to the loop-begin location (where the
+/// forward compute moves, BEFORE the loop begin). A defensive
+/// `if (op.skip_uncompute) continue;` preserves PH-3 disjointness —
+/// PH-3 already suppresses compound-assign uncomputes and the hoist
+/// matcher must never touch those ops.
+///
+/// Registration order (PJ-3e, tracked in sturm-0v9i): this matcher must
+/// run LAST — after every Phase A..I per-op matcher, after the PJ-1f
+/// CCX-fuse peephole, and after the PJ-4b dead-ancilla eliminator.
+/// Running LAST guarantees the per-op matchers have finished populating
+/// `unit.scopes` so this pass can read a fully-formed IR.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at
+/// most once per QUnit; the QUnit must outlive the MatchFinder's run.
+void register_hoist_invariant_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Test-only instrumentation (Phase J / PJ-3d). Counts the number of
+/// ops the matcher has hoisted (i.e. the number of ops whose
+/// `hoist_to_override` / `insert_before_override` were set in the
+/// current run) since the last reset. The unit tests use this
+/// counter to discriminate "matcher correctly skipped this op" from
+/// "matcher correctly hoisted this op". Production code must not
+/// touch either helper.
+int hoist_invariant_detection_count_for_test();
+void reset_hoist_invariant_detection_count_for_test();
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP
