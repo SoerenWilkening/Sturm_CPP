@@ -235,12 +235,12 @@ public:
             const Expr* arg = call->getArg(i);
             const bool is_output = is_output_param(param);
             if (is_output) {
-                // Guard against arities wider than 64 parameters — see
+                // Guard against arities wider than 32 parameters — see
                 // qir.hpp's `outputs_mask` comment. In practice the
-                // registrar would reject callees with >64 params
+                // registrar would reject callees with >32 params
                 // upstream, but we guard here for safety.
-                if (i < 64u) {
-                    op.outputs_mask |= (std::uint64_t{1} << i);
+                if (i < 32u) {
+                    op.outputs_mask |= (std::uint32_t{1} << i);
                 }
             }
 
