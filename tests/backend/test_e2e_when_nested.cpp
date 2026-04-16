@@ -1,5 +1,9 @@
 // test_e2e_when_nested.cpp — M21 (PRD v3): Integration & acceptance.
 //
+// Phase-G note (PG-6): this test pushes directly onto BackendContext.control_stack
+// and does not rely on the WhenGuard AND-fold — stable across Phase G (PG-4 retired
+// the AND-fold; lib_c_n_AND_dsl via emit_CX_lifted is a separate library routine).
+//
 // Tests:
 //   test_e2e_when_nested — deep WHEN nesting (3 levels) drives c_n_AND fold.
 //     Pushes 3 controls manually onto the control stack, then calls qbool ops.
