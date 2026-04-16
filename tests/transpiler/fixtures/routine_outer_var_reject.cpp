@@ -1,0 +1,58 @@
+// Phase I / PI-5 input for the sturm-transpile snapshot test.
+//
+// Exercises PI-3's `SkipWithDiagnostic` path: the user-routine call
+// sits inside a `for (...)` body and mutates an output qbool `a`
+// declared ABOVE the loop. Automatic uncomputation would require
+// reverse-loop synthesis, which contradicts P9 ("routines are
+// invertible by explicit adjoint"). The transpiler MUST refuse to
+// inject an inverse here and instead emit a stderr diagnostic
+// pointing the user at the offending line; the generated file is
+// otherwise byte-identical to the input (modulo the AUTO-GENERATED
+// header the emitter prepends).
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+};
+
+namespace _detail {
+template <typename FnPtr>
+struct adjoint_of;
+} // namespace _detail
+
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return _detail::adjoint_of<R (*)(Args...)>::value;
+}
+} // namespace sturm
+
+#define STURM_REGISTER_ADJOINT(fn, adj)                                        \
+    namespace sturm {                                                          \
+    namespace _detail {                                                        \
+    template <>                                                                \
+    struct adjoint_of<decltype(&::fn)> {                                       \
+        static constexpr auto value = &::adj;                                  \
+    };                                                                         \
+    }                                                                          \
+    }
+
+void my_rotate(sturm::qbool& out, const sturm::qbool& in, int k) {
+    (void)in; (void)k; (void)out;
+}
+
+void my_rotate_adj(sturm::qbool& out, const sturm::qbool& in, int k) {
+    (void)in; (void)k; (void)out;
+}
+
+STURM_REGISTER_ADJOINT(my_rotate, my_rotate_adj)
+
+using sturm::qbool;
+
+void demo(const qbool& in) {
+    qbool a;
+    for (int i = 0; i < 3; ++i) {
+        my_rotate(a, in, i);
+    }
+}
