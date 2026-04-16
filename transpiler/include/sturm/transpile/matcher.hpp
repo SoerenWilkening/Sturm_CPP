@@ -211,6 +211,41 @@ void register_when_lift_matcher(
 int when_lift_detection_count_for_test();
 void reset_when_lift_detection_count_for_test();
 
+/// Phase G / PG-1: Register the nested-`WHEN` detection matcher. Anchors on
+/// an outer `WHEN(outer) { ... }` IfStmt whose body (after descending through
+/// the WHEN macro's three-`if` tower) contains, as a descendant, an inner
+/// `WHEN(inner) { ... }` IfStmt of the same shape. Fires only when BOTH the
+/// outer and inner `materialize_when` arguments peel (via
+/// `detail::peel_to_payload`) to bare `DeclRefExpr`s — the "named + named"
+/// shape the Phase G plan targets. Any compound / comparator / unary shape
+/// on either side keeps that pair on the runtime path for this slice.
+///
+/// PG-1 is **detection only**: on a successful pair match the callback
+/// increments `when_nested_detection_count_for_test()`'s counter and
+/// returns. No `QReplacement`, no `UncomputeInsertion`, and no synthetic
+/// `QOperation` are appended — that rewrite logic lands in PG-2 / PG-3.
+///
+/// Disjointness with `register_when_lift_matcher` (Phase F): the Phase F
+/// matcher's named-passthrough short-circuit already early-returns on a
+/// bare `DeclRefExpr` WHEN argument without staging any rewrites, so a
+/// `WHEN(a) { WHEN(b) { body } }` pair is observed by Phase F but leaves
+/// the QUnit untouched; the Phase G matcher layered on top sees the same
+/// pair and bumps its own counter. Both matchers can coexist without
+/// stepping on each other's output.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at most
+/// once per QUnit; the QUnit must outlive the MatchFinder's run.
+void register_when_nested_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Test-only instrumentation (Phase G / PG-1). Same rationale as the
+/// Phase F helpers above: PG-1 does not mutate the QUnit, so the unit
+/// tests need a separate observable to pin down "how many named+named
+/// nested-WHEN pairs did the matcher detect on this TU". Production code
+/// must not touch either helper.
+int when_nested_detection_count_for_test();
+void reset_when_nested_detection_count_for_test();
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

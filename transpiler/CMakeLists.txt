@@ -58,6 +58,7 @@ add_executable(sturm-transpile
     src/matcher_qint_qint.cpp
     src/matcher_qint_compare.cpp
     src/matcher_when_lift.cpp
+    src/matcher_when_nested.cpp
     src/uncompute_pass.cpp
     src/emitter.cpp
 )

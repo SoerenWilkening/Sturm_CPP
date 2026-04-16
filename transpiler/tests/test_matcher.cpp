@@ -1189,6 +1189,118 @@ static void test_pf_when_direct_materialize_call_no_match() {
     CHECK(r.detections == 0);
 }
 
+// ── Phase G / PG-1 nested-WHEN detection ───────────────────────────────────
+//
+// The Phase G PG-1 matcher detects adjacent pairs of `WHEN(outer) { WHEN(inner)
+// { ... } }` where BOTH `outer` and `inner` peel to bare `DeclRefExpr`s
+// naming non-synthetic qbools. Tests drive it through the same stub as the
+// Phase F tests above (kQBoolWhenStub) so the macro-body / materialize_when
+// shape is identical to what the user writes in real code. PG-1 is
+// detection-only: success is measured via the detection counter, not via
+// any QUnit mutation.
+struct PGOneRun {
+    QUnit unit;
+    int detections = 0;
+};
+
+static PGOneRun run_pg_when_nested_matcher(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQBoolWhenStub.size() + user_src.size());
+    code.append(kQBoolWhenStub);
+    code.append(user_src);
+
+    PGOneRun out;
+    reset_when_nested_detection_count_for_test();
+
+    clang::ast_matchers::MatchFinder finder;
+    register_when_nested_matcher(finder, out.unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PG-1 nested WHEN "
+                     "matcher)\n");
+    }
+    out.detections = when_nested_detection_count_for_test();
+    return out;
+}
+
+static void test_pg_when_nested_named_depth2_detects_once() {
+    // WHEN(a) { WHEN(b) { ... } } — the named+named base case. The inner
+    // WHEN finds outer `a` as its nearest enclosing WHEN; both args peel
+    // to bare DREs; detection counter reaches 1. The QUnit must stay
+    // untouched (PG-1 is detection-only).
+    PGOneRun r = run_pg_when_nested_matcher(
+        "void demo(qbool a, qbool b, qbool c) {\n"
+        "    WHEN(a) { WHEN(b) { (void)c; } }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    CHECK(r.unit.scopes.empty());
+    CHECK(r.unit.replacements.empty());
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+static void test_pg_when_nested_named_depth3_detects_twice() {
+    // WHEN(a) { WHEN(b) { WHEN(c) { ... } } } — the pairwise cascade:
+    //   - inner `c` finds nearest outer `b` → pair 1
+    //   - middle `b` finds nearest outer `a` → pair 2
+    // Crucially, `c` does NOT transitively pair with `a` because the
+    // ParentMap walk stops at the nearest enclosing WHEN ancestor.
+    PGOneRun r = run_pg_when_nested_matcher(
+        "void demo(qbool a, qbool b, qbool c, qbool d) {\n"
+        "    WHEN(a) { WHEN(b) { WHEN(c) { (void)d; } } }\n"
+        "}\n");
+    CHECK(r.detections == 2);
+    CHECK(r.unit.scopes.empty());
+    CHECK(r.unit.replacements.empty());
+    CHECK(r.unit.raw_insertions.empty());
+}
+
+static void test_pg_when_nested_compound_inner_rejected() {
+    // WHEN(a) { WHEN(b | c) { ... } } — compound inner. The inner WHEN's
+    // materialize arg peels to a CXXOperatorCallExpr (not a bare DRE) so
+    // the named-only guard rejects the pair. Phase F handles this inner
+    // WHEN's compound lift separately; Phase G stays out.
+    PGOneRun r = run_pg_when_nested_matcher(
+        "void demo(qbool a, qbool b, qbool c, qbool d) {\n"
+        "    WHEN(a) { WHEN(b | c) { (void)d; } }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+}
+
+static void test_pg_when_nested_compound_outer_rejected() {
+    // WHEN((b | c)) { WHEN(d) { ... } } — compound outer. From the inner
+    // WHEN we walk up to the outer WHEN IfStmt; the outer's materialize
+    // arg peels to a CXXOperatorCallExpr; named-only guard rejects the
+    // pair. Inner `d` by itself remains on the runtime path.
+    PGOneRun r = run_pg_when_nested_matcher(
+        "void demo(qbool b, qbool c, qbool d, qbool e) {\n"
+        "    WHEN((b | c)) { WHEN(d) { (void)e; } }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+}
+
+static void test_pg_when_nested_siblings_tolerated() {
+    // WHEN(a) { foo(); WHEN(b) { body } bar(); } — siblings around the
+    // inner WHEN. The decision in the Phase G plan is "always lower
+    // regardless of siblings"; detection must fire regardless of sibling
+    // statements before/after the inner WHEN in the outer's body block.
+    // We use `(void)foo_stmt;` placeholders instead of calling a
+    // separately-declared function to keep the inline stub self-contained.
+    PGOneRun r = run_pg_when_nested_matcher(
+        "void demo(qbool a, qbool b, qbool c, qbool d) {\n"
+        "    WHEN(a) {\n"
+        "        (void)c;\n"
+        "        WHEN(b) { (void)d; }\n"
+        "        (void)c;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+}
+
 static void test_pd_six_ops_same_scope_hit_all_kinds() {
     // A single block containing one of each comparison. All six ops
     // should land in the same QScope (same enclosing CompoundStmt),
@@ -1275,6 +1387,12 @@ int main() {
     test_pf_when_not_lifts_once();
     test_pf_when_bare_if_no_match();
     test_pf_when_direct_materialize_call_no_match();
+
+    test_pg_when_nested_named_depth2_detects_once();
+    test_pg_when_nested_named_depth3_detects_twice();
+    test_pg_when_nested_compound_inner_rejected();
+    test_pg_when_nested_compound_outer_rejected();
+    test_pg_when_nested_siblings_tolerated();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
