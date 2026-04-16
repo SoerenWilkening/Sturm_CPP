@@ -32,6 +32,12 @@
 
 #include "sturm/transpile/qir.hpp"
 #include "fresh_names.hpp"
+// Phase I PI-3: the output-param liveness / ownership classifier lives in
+// its own header to keep this file from growing past its already-large
+// surface; it is re-exported through `matcher_common.hpp` so every
+// existing matcher TU that `#include`s this file also picks up
+// `detail::classify_output` without needing a second include line.
+#include "matcher_output_class.hpp"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
