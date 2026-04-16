@@ -1,52 +1,39 @@
-// matcher_when_nested.cpp — Phase G / PG-1 nested-WHEN detection matcher.
+// matcher_when_nested.cpp — Phase G / PG-2 nested-WHEN rewrite matcher.
 //
-// Purpose
-// -------
-// Detects `WHEN(outer) { WHEN(inner) { body } }` pairs in user source where
-// BOTH `outer` and `inner` peel (via `detail::peel_to_payload`) to a bare
-// `DeclRefExpr` that names a non-synthetic qbool local / parameter. This is
-// the "named + named" shape the Phase G plan targets — any compound,
-// comparator, or unary shape on either side keeps the pair on the runtime
-// path (and the Phase F matcher handles a compound inner separately).
+// Detects `WHEN(outer) { WHEN(inner) { body } }` pairs where BOTH `outer`
+// and `inner` peel (via `detail::peel_to_payload`) to a bare `DeclRefExpr`
+// naming a non-synthetic qbool. Compound / comparator / unary shapes on
+// either side stay on the runtime path (Phase F handles a compound inner
+// separately).
 //
-// PG-1 is a **detection-only** slice: the callback validates every guard
-// and, on a full hit, increments a module-local counter exposed via
-// `when_nested_detection_count_for_test()`. No `QReplacement`,
-// `UncomputeInsertion`, or `QOperation` is appended to the QUnit. The
-// rewrite logic (pre-WHEN `qbool __stu_ctrl<M> = outer & inner;` decl
-// injection, inner-WHEN argument replacement, and `uncompute_and` scheduling
-// via a synthetic `QOperation{kind=AND}`) lands in PG-2 / PG-3. This split
-// mirrors the PF-2 → PF-3 pattern Phase F used.
+// PG-1 introduced detection-only behaviour; PG-2 extends the callback to
+// emit the two source-level edits every matched pair needs:
 //
-// Pairwise cascade semantics
-// --------------------------
-// For `WHEN(a) { WHEN(b) { WHEN(c) { body } } }` the detection counter must
-// reach 2 — one increment per adjacent (outer, inner) pair: (a, b) and
-// (b, c). Crucially, (a, c) must NOT be counted because the PG-2 / PG-3
-// emission steps schedule ONE `__stu_ctrl<M>` temp per pair and would emit
-// the wrong AND shape for a transitive (a, c) match.
+//   (a) `qbool __stu_ctrl<M> = <outer_name> & <inner_name>;\n` injected
+//       immediately before the inner WHEN macro's spelling;
+//   (b) a `QReplacement` over the inner `materialize_when` argument's
+//       file char range (spelling locs normalised via
+//       `Lexer::makeFileCharRange`) rewriting `WHEN(<inner>)` to
+//       `WHEN(__stu_ctrl<M>)`.
 //
-// The matcher achieves this by anchoring on the INNER WHEN `IfStmt` and,
-// inside the callback, walking up the AST parent chain to find the NEAREST
-// enclosing `IfStmt` whose init-stmt declares `_when_val_`. If such an
-// ancestor exists and both args are bare DREs, we record one pair. For the
-// depth-3 case, the inner-most WHEN finds its immediate parent (`b`),
-// incrementing once; the middle WHEN finds its immediate parent (`a`),
-// incrementing a second time. No transitive (a, c) pair can form because
-// the search stops at the nearest ancestor.
+// `uncompute_and` scheduling is deferred to PG-3: no `QOperation` is
+// scheduled here. The detection counter bumps on every successful match,
+// so the PG-1 matcher tests continue to observe firing.
 //
-// Disjointness with Phase F
-// -------------------------
-// Phase F's `register_when_lift_matcher` fires on every `_when_val_`
-// IfStmt but its named-passthrough short-circuit early-returns when the
-// WHEN arg peels to a bare DeclRefExpr — no rewrites are staged for the
-// shapes Phase G cares about. Conversely, Phase G ignores any pair where
-// EITHER side is not a bare DRE. A given inner WHEN thus gets rewritten
-// by at most one of the two matchers (PG-2 / PG-3 will later claim the
-// inner arg's replacement exclusively for the named+named shape).
+// Pairwise cascade: `WHEN(a) { WHEN(b) { WHEN(c) { ... } } }` produces
+// two pairs (a,b) and (b,c) — never the transitive (a,c) — because the
+// callback walks up the AST parent chain and stops at the NEAREST
+// enclosing WHEN IfStmt. Each pair gets its own `__stu_ctrl<M>` temp
+// from a persistent per-callback `FreshNameAllocator`.
+//
+// Disjointness with Phase F: Phase F's `register_when_lift_matcher`
+// short-circuits on bare DRE args (named-passthrough), so a given inner
+// WHEN is rewritten by at most one matcher — Phase G on the named+named
+// shape, Phase F on anything else.
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
+#include "fresh_names.hpp"
 #include "matcher_common.hpp"
 
 #include "clang/AST/ASTContext.h"
@@ -59,10 +46,12 @@
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
+#include "clang/Lex/Lexer.h"
 
 #include <memory>
 #include <string>
 #include <string_view>
+#include <utility>
 #include <vector>
 
 namespace sturm::transpile {
@@ -174,6 +163,28 @@ static bool peeled_is_named_qbool(const Expr* arg, std::string& leaf_name) {
     return true;
 }
 
+// Render the Phase G AND-temp decl line. Shape:
+//     qbool <ctrl_name> = <outer_name> & <inner_name>;\n
+// The trailing newline matches the Phase F `render_decl_block` convention
+// so the inserted text lands on its own line immediately above the inner
+// WHEN invocation. Kept as a free helper so the callback body stays lean;
+// any future change to the decl spelling (e.g. a qualified type name) is
+// a one-line edit here.
+static std::string render_ctrl_decl(const std::string& ctrl_name,
+                                    const std::string& outer_name,
+                                    const std::string& inner_name) {
+    std::string out;
+    out.reserve(8 + ctrl_name.size() + outer_name.size() + inner_name.size() + 8);
+    out += "qbool ";
+    out += ctrl_name;
+    out += " = ";
+    out += outer_name;
+    out += " & ";
+    out += inner_name;
+    out += ";\n";
+    return out;
+}
+
 class WhenNestedCallback : public MatchFinder::MatchCallback {
 public:
     explicit WhenNestedCallback(QUnit* unit) : unit_(unit) {}
@@ -221,26 +232,96 @@ public:
 
         // Named+named guard: both args must peel to bare DeclRefExpr
         // naming a non-synthetic qbool. `peeled_is_named_qbool` captures
-        // the leaf identifier as a by-product — PG-2 / PG-3 will consume
-        // it to build the `qbool __stu_ctrl<M> = <outer> & <inner>;` decl
-        // text. For PG-1 we only need the booleans.
+        // the leaf identifier as a by-product for use in the decl line.
         std::string outer_name;
         std::string inner_name;
         if (!peeled_is_named_qbool(outer_call->getArg(0), outer_name)) return;
         if (!peeled_is_named_qbool(inner_call->getArg(0), inner_name)) return;
 
-        // All guards passed. PG-1 is detection-only: bump the counter and
-        // return without mutating the QUnit. PG-2 / PG-3 will expand this
-        // block to schedule the decl injection, arg replacement, and
-        // `uncompute_and` call.
+        // ── PG-2 emission ─────────────────────────────────────────────────
+        //
+        // Normalise the inner materialize_when arg's source range to a
+        // pure-file char range so the M9 emitter's `Rewriter::ReplaceText`
+        // call can operate on it. The arg was reached through the WHEN
+        // macro's materialize_when(expr) call, so its begin/end locations
+        // carry macro-body encodings; `SourceManager::getSpellingLoc` peels
+        // those to the underlying file locations. The `Lexer::makeFileCharRange`
+        // round-trip then validates the result — if the spelling locs sit
+        // in a non-representable region (scratch buffer / macro expansion
+        // without a spelling) we bail without scheduling any edit. This is
+        // identical to the pattern `matcher_when_lift.cpp:433-444` uses for
+        // Phase F compound-arg replacement.
+        const Expr* inner_arg = inner_call->getArg(0);
+        if (!inner_arg) return;
+        const SourceLocation spelling_begin =
+            sm.getSpellingLoc(inner_arg->getBeginLoc());
+        const SourceLocation spelling_end =
+            sm.getSpellingLoc(inner_arg->getEndLoc());
+        const CharSourceRange file_char_range =
+            Lexer::makeFileCharRange(
+                CharSourceRange::getTokenRange(spelling_begin, spelling_end),
+                sm, lang);
+        if (file_char_range.isInvalid()) return;
+
+        // Resolve the decl-injection anchor: the file loc where the inner
+        // WHEN macro is spelled. `sm.getExpansionLoc(inner_loc)` maps the
+        // macro-body `if` location to the outermost spelling of `WHEN(` in
+        // user source — the exact character where `InsertTextBefore` needs
+        // to plant the decl so the new line sits immediately above the
+        // inner WHEN invocation. Bail on any invalid result.
+        const SourceLocation decl_anchor = sm.getExpansionLoc(inner_loc);
+        if (decl_anchor.isInvalid()) return;
+
+        // Allocate the control-temp name from the PERSISTENT per-callback
+        // allocator (PG-0's `FreshNameAllocator::next_ctrl()`). A single
+        // allocator instance spans every invocation of this callback across
+        // the translation unit, so a three-deep `WHEN(a) { WHEN(b) { WHEN(c)
+        // { ... } } }` gets `__stu_ctrl0` for one pair and `__stu_ctrl1`
+        // for the other — no collisions, monotone numbering in source
+        // order. Re-running the matcher on a single TU a second time (e.g.
+        // inside a unit test) does not reset the counter; the test harness
+        // constructs a fresh callback per run so each invocation starts
+        // from zero naturally.
+        const std::string ctrl_name = ctrl_alloc_.next_ctrl();
+
+        // Stage the replacement: inner materialize_when arg → ctrl_name.
+        // The `QReplacement::range` uses the SourceRange form (Rewriter's
+        // ReplaceText(SourceRange, text) extends through the last token
+        // via `Lexer::MeasureTokenLength`). We already validated the
+        // equivalent char range above, so this range is guaranteed to be
+        // rewritable by the emitter.
+        QReplacement rep;
+        rep.range = SourceRange(spelling_begin, spelling_end);
+        rep.replacement = ctrl_name;
+        unit_->replacements.push_back(std::move(rep));
+
+        // Stage the decl-block insertion: `qbool __stu_ctrl<M> = <outer>
+        // & <inner>;\n` immediately before the inner WHEN spelling. The
+        // M9 emitter walks `raw_insertions` after applying every
+        // replacement, so the two edits compose without overlap: the
+        // replacement sits inside the `WHEN(...)` arg list, the insertion
+        // sits just before the `W`. Nothing in this slice schedules an
+        // `uncompute_and` op — that lands in PG-3.
+        UncomputeInsertion decl_block;
+        decl_block.insert_before = decl_anchor;
+        decl_block.code = render_ctrl_decl(ctrl_name, outer_name, inner_name);
+        unit_->raw_insertions.push_back(std::move(decl_block));
+
+        // All guards passed and both edits staged. Detection counter bump
+        // remains intact so PG-1's tests stay green.
         ++g_when_nested_detection_count;
-        (void)unit_;
-        (void)outer_name;
-        (void)inner_name;
     }
 
 private:
     QUnit* unit_;
+
+    // Persistent allocator — lives for the callback's lifetime, which ties
+    // to the MatchFinder's run. A single TU with multiple matched pairs
+    // (e.g. the depth-3 cascade) consumes multiple `next_ctrl()` calls in
+    // source order, producing monotonically-numbered `__stu_ctrl<M>` names
+    // with no cross-match collisions. The M24/PG-0 plan required this
+    // behaviour explicitly.
+    FreshNameAllocator ctrl_alloc_;
 };
 
 // Callback pool — same pattern as the other matcher_*.cpp TUs. The
