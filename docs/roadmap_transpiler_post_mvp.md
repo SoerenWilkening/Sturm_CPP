@@ -341,6 +341,54 @@ For `if` / `else`, each branch is a separate scope; uncomputation lives per-bran
 
 ## Phase I — User-defined routines and `invert()`
 
+> **2026-04-16:** Complete. The `invert()` free-function template plus
+> the `STURM_REGISTER_ADJOINT(fn, adj)` macro now ship from
+> `include/sturm/routines/invert.hpp` (PI-0): a trait-based,
+> compile-time specialization of `sturm::_detail::adjoint_of<FnPtr>`
+> yields zero runtime overhead, and unregistered `invert(bar)` surfaces
+> a readable missing-specialization diagnostic. Transpiler-side, PI-1
+> added `transpiler/src/routine_registry.hpp/.cpp` owning a
+> TU-wide `std::unordered_map<const clang::FunctionDecl*, std::string>`
+> populated by an AST matcher on the `adjoint_of<...>`
+> `ClassTemplateSpecializationDecl` shape; `transpiler/src/main.cpp`
+> wires the registry-build hook before the Phase I routine-call
+> matcher runs. PI-2 added `transpiler/src/matcher_user_routine.cpp`,
+> which fires on any `callExpr` of a registered routine, classifies
+> each argument by its parameter's declared type (non-const
+> `qbool&`/`qint&` -> output, `const qbool&`/`qint&` -> input,
+> classical scalar -> input), and builds a `QOperation{kind =
+> USER_ROUTINE, routine_name, operands, outputs_mask}` rooted at the
+> enclosing scope via `detail::enclosing_scope()`. PI-3 introduced the
+> shared `classify_output(vd, call, call_scope, ctx, sm, lang) ->
+> OutputClass` helper in `transpiler/src/matcher_common.hpp`, giving
+> four verdicts — `Intermediate` / `IntermediateOuter` / `Final` /
+> `SkipWithDiagnostic` — with the multi-output conservative-skip rule
+> (any `Final` or `SkipWithDiagnostic` disables uncompute for the
+> whole call); PH-3's `matcher_outer_var_guard.cpp` was refactored
+> onto the same helper with its existing snapshots staying
+> byte-identical. PI-4 extended the IR: `QOpKind::USER_ROUTINE` sits
+> after the Phase D comparator kinds, `QOperation` grew
+> `std::string routine_name` + `uint32_t outputs_mask`, `qir.cpp`
+> `dump()` renders the new kind, and `uncompute_pass.cpp` emits
+> `invert(<routine_name>)(<comma-joined operands>);` (with a
+> defensive empty-name guard). PI-5 pinned seven snapshot fixtures in
+> `tests/transpiler/fixtures/`: `routine_single_out_local`,
+> `routine_single_out_escapes`, `routine_inside_when`,
+> `routine_inside_loop`, `routine_outer_var_reject`,
+> `routine_self_adjoint`, `routine_multiple_lifo`. PI-6 added
+> `examples/user_routine.cpp` plus
+> `tests/transpiler/check_example_user_routine.cmake` and its
+> `transpiler_example_user_routine_injected` +
+> `transpiler_idempotent_example_user_routine` CTests. PI-7 closed
+> the loop with `user_routine_runtime` / `user_routine_reference`
+> pair in `test_gate_equivalence.cpp`, proving the transpiler-injected
+> `invert(...)` produces a byte-identical `GateRecord` stream to a
+> hand-written LIFO adjoint. Tracked as bd issues sturm-hi66 (PI-0),
+> sturm-mmsa (PI-1), sturm-11wh (PI-2), sturm-jisy (PI-3),
+> sturm-kdg8 (PI-4), sturm-7mle (PI-5), sturm-lkov (PI-6),
+> sturm-90fq (PI-7), sturm-6s7l (PI-8). Next up: Phase J (IR-level
+> optimizations).
+
 A user-written quantum routine:
 ```cpp
 void my_routine(qint& a, const qint& b) { /* ... */ }
