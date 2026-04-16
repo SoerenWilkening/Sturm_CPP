@@ -369,6 +369,37 @@ void register_hoist_invariant_matcher(
 int hoist_invariant_detection_count_for_test();
 void reset_hoist_invariant_detection_count_for_test();
 
+/// Phase J PJ-1d: Register the zero-ancilla fusion peephole matcher.
+/// Anchors on a `qbool __t = a & b;` VarDecl whose initializer is a
+/// bare `operator&` call with two DeclRefExpr operands (nested init is
+/// rejected — those are handled by the Phase E compound-flatten matcher).
+/// On a successful anchor the callback consults the adjacent next
+/// statement inside the enclosing CompoundStmt; it fuses the pair iff
+/// that stmt is `x ^= __t;` on a qbool target AND the PJ-1a reader-count
+/// helper (`detail::count_readers_in_scope`) reports exactly one reader
+/// of `__t` within the enclosing scope (namely, the XOR RHS itself).
+///
+/// On a successful fuse the matcher appends:
+///   - one `QReplacement` whose range spans BOTH statements (the
+///     VarDecl plus the `^=` statement) with replacement text
+///     `ccnot_inplace(x, a, b);` — the forward emission.
+///   - one `QOperation{kind=CCNOT_INPLACE, result=x, operands=[a, b]}`
+///     to the enclosing QScope so the M8 uncompute pass emits a second
+///     `ccnot_inplace(x, a, b);` at scope close (the PJ-1c render case
+///     exploits CCX self-adjointness — running the helper twice on the
+///     live state returns to identity).
+///
+/// Fusion-rejected shapes stay on the runtime path: the unmodified
+/// `qbool __t = a & b;` VarDecl flows through the Phase E compound
+/// matcher, which is registered AFTER this one in `main.cpp` per
+/// PJ-1f. The `fused_stmt_ranges` downstream early-return (PJ-1e,
+/// tracked separately) prevents double-emission on fused pairs.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at
+/// most once per QUnit; the QUnit must outlive the MatchFinder's run.
+void register_ccnot_fuse_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP
