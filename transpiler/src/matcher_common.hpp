@@ -276,6 +276,116 @@ inline bool is_expansion_of_macro(clang::SourceLocation loc,
     return false;
 }
 
+// ── Phase J PJ-3a: scope-kind classifier ────────────────────────────────────
+//
+// The Phase J PJ-3 uncompute-hoisting matcher needs to know what *kind* of
+// scope a given QScope represents so it can limit hoisting to loop bodies
+// (where the cost of re-running compute+uncompute N times is paid per
+// iteration) and skip branch / WHEN / function-top scopes (where hoisting
+// is either semantically wrong or has no payoff). Per plan decision #7 we
+// deliberately do NOT carry a `kind` field on `QScope` — every existing
+// golden / snapshot fixture stays byte-identical — and instead re-walk the
+// parent chain per op via this helper.
+//
+// The five classes:
+//
+//   - Function   : anchor is the top-level function body (parent is a
+//                  FunctionDecl, CXXMethodDecl, etc.). Hoisting out of the
+//                  function has no loop to hoist over and is a no-op.
+//   - LoopBody   : anchor is the body of a for / while loop (parent is a
+//                  ForStmt or WhileStmt, and anchor == parent->getBody()).
+//                  This is the hoist target.
+//   - BranchBody : anchor is the then/else branch of a user-written `if`
+//                  (parent is an IfStmt, anchor == is->getThen() or
+//                  is->getElse(), and the IfStmt is NOT macro-expanded
+//                  from WHEN).
+//   - WhenBody   : anchor is the then branch of a WHEN-expanded IfStmt.
+//                  The IfStmt's IfLoc is inside a `WHEN` macro expansion,
+//                  detected via `is_expansion_of_macro`. Kept separate
+//                  from BranchBody so hoisting logic can treat WHEN's
+//                  invariance guard (the WHEN gate itself) as a barrier.
+//   - Other      : any other shape — nested braced blocks that are not
+//                  the body of a for/while/if, unreachable / invalid
+//                  parents, etc. Conservative default — hoisting skips.
+//
+// Input contract: `scope_anchor` is a pointer to the Stmt that identifies
+// the scope. For a braced scope this is the CompoundStmt (same pointer
+// that backs `QScope::open_brace` via `cs.getLBracLoc()`); for a PH-1
+// braceless body it is the body Stmt itself (the non-compound stmt that
+// `enclosing_scope` returns in `braceless_body`). A null pointer returns
+// `Other` defensively. The classifier only inspects the immediate parent
+// — it does not walk further up than one hop — because each hop away
+// from the anchor is not meaningful for "what shape wraps this scope".
+enum class ScopeKind {
+    Function,
+    LoopBody,
+    BranchBody,
+    WhenBody,
+    Other,
+};
+
+inline ScopeKind classify_scope_kind(const clang::Stmt* scope_anchor,
+                                     clang::ASTContext& ctx) {
+    if (!scope_anchor) return ScopeKind::Other;
+
+    // Walk up the parent chain ONE hop. The scope anchor is the body Stmt
+    // (CompoundStmt for braced, raw Stmt for braceless); its immediate
+    // parent tells us what wraps this scope (function / loop / if /
+    // something else).
+    const auto parents =
+        ctx.getParents(clang::DynTypedNode::create(*scope_anchor));
+    if (parents.empty()) return ScopeKind::Other;
+
+    // A multi-parent AST node only arises inside template instantiations,
+    // which the Phase J matchers do not enter. Follow the first parent.
+    const clang::DynTypedNode parent = parents[0];
+
+    // Function body: parent is a FunctionDecl (covers plain functions,
+    // member functions, and lambdas' operator() — all are FunctionDecls
+    // under the hood). The CompoundStmt that is the function body is
+    // the direct child of its FunctionDecl.
+    if (parent.get<clang::FunctionDecl>() != nullptr) {
+        return ScopeKind::Function;
+    }
+
+    // Loop body: for / while. We check both that the parent is the
+    // loop stmt AND that `parent->getBody() == scope_anchor`. The
+    // second check rules out scopes that are the loop's init-stmt /
+    // increment / condition (those are not the loop body — loop
+    // invariance semantics would not apply there).
+    if (const auto* fs = parent.get<clang::ForStmt>()) {
+        if (fs->getBody() == scope_anchor) return ScopeKind::LoopBody;
+        return ScopeKind::Other;
+    }
+    if (const auto* ws = parent.get<clang::WhileStmt>()) {
+        if (ws->getBody() == scope_anchor) return ScopeKind::LoopBody;
+        return ScopeKind::Other;
+    }
+
+    // If body: either a user-written `if (cond) { ... }` branch, or
+    // the macro-expanded body of a `WHEN(expr) { ... }` gate. The WHEN
+    // macro expands to nested `if`s whose innermost then-arm holds the
+    // user body; the innermost `if`'s IfLoc is still spelled from inside
+    // the WHEN macro, so the same `is_expansion_of_macro` probe PF-2
+    // uses to anchor the WHEN-lift matcher identifies this scope kind.
+    if (const auto* is = parent.get<clang::IfStmt>()) {
+        const bool is_body_branch =
+            (is->getThen() == scope_anchor) ||
+            (is->getElse() == scope_anchor);
+        if (!is_body_branch) return ScopeKind::Other;
+        const clang::SourceLocation if_loc = is->getIfLoc();
+        const clang::SourceManager& sm = ctx.getSourceManager();
+        const clang::LangOptions& lang = ctx.getLangOpts();
+        if (if_loc.isValid() && if_loc.isMacroID() &&
+            is_expansion_of_macro(if_loc, sm, lang, "WHEN")) {
+            return ScopeKind::WhenBody;
+        }
+        return ScopeKind::BranchBody;
+    }
+
+    return ScopeKind::Other;
+}
+
 // Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
 // invocation. The WHEN macro expands to three nested `if`s:
 //

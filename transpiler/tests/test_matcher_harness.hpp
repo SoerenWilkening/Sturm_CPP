@@ -62,3 +62,4 @@ void run_ph3_outer_var_tests();
 void run_routine_registry_tests();
 void run_user_routine_tests();
 void run_output_class_tests();
+void run_scope_kind_tests();
