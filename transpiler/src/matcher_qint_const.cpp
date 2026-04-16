@@ -46,7 +46,7 @@ namespace {
 
 using namespace clang;
 using namespace clang::ast_matchers;
-using detail::enclosing_compound_stmt;
+using detail::enclosing_scope;
 using detail::find_or_create_scope;
 using detail::make_ref;
 
@@ -64,11 +64,14 @@ public:
         const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
         if (!call || !lhs || !rhs || !r.Context) return;
 
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*call, *r.Context);
-        if (!cs) return;
+        // Phase H PH-1: `enclosing_scope` transparently supports braced
+        // CompoundStmt and braceless for/while/if/else body positions.
+        const auto es = enclosing_scope(*call, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_es = r.Context->getSourceManager();
+        const LangOptions& lang_es = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_es, lang_es);
 
         const SourceManager& sm = r.Context->getSourceManager();
         const LangOptions& lo = r.Context->getLangOpts();

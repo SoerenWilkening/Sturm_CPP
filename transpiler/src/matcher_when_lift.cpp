@@ -312,14 +312,16 @@ public:
             return;
         }
 
-        // Enclosing CompoundStmt — required for scope / close_brace
-        // lookup. The enclosing stmt is where the `WHEN(...)` call site
-        // sits (one level up from the outer `if` of the macro body — we
-        // need the lexical scope the *user* wrote in, not the one the
-        // macro synthesized).
-        const CompoundStmt* cs =
-            detail::enclosing_compound_stmt(*when_if, *r.Context);
-        if (!cs) return;
+        // Enclosing scope — required for scope / close_brace lookup.
+        // The enclosing stmt is where the `WHEN(...)` call site sits
+        // (one level up from the outer `if` of the macro body — we need
+        // the lexical scope the *user* wrote in, not the one the macro
+        // synthesized). Phase H PH-1: `enclosing_scope` transparently
+        // supports both braced CompoundStmt and braceless for/while/if/else
+        // body positions; ops stage with `insert_before_override`
+        // regardless of the enclosing scope shape.
+        const auto enc = detail::enclosing_scope(*when_if, *r.Context);
+        if (!enc.valid()) return;
 
         // Resolve the post-body close-brace anchor — fails fast if the
         // WHEN macro body shape is not the three-`if` tower we expect.
@@ -402,7 +404,8 @@ public:
         // after the WHEN body's closing brace — not at the enclosing
         // CompoundStmt's close brace — preserving the user's quantum
         // control scope as the lifetime boundary for the lifted temps.
-        QScope& out_scope = detail::find_or_create_scope(*unit_, *cs);
+        QScope& out_scope =
+            detail::find_or_create_scope(*unit_, enc, sm, lang);
         for (auto& op : scratch.ops) {
             op.insert_before_override = post_body_brace;
             out_scope.ops.push_back(std::move(op));

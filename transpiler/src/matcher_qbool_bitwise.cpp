@@ -35,7 +35,7 @@ namespace {
 
 using namespace clang;
 using namespace clang::ast_matchers;
-using detail::enclosing_compound_stmt;
+using detail::enclosing_scope;
 using detail::find_or_create_scope;
 using detail::make_ref;
 
@@ -51,14 +51,16 @@ public:
         const auto* rhs = r.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if (!var || !lhs || !rhs || !r.Context) return;
 
-        // Locate the enclosing compound statement. A VarDecl that is NOT
-        // inside a CompoundStmt is not something the uncompute pass can
-        // handle (no close-brace anchor point), so we drop it silently.
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*var, *r.Context);
-        if (!cs) return;
+        // Locate the enclosing scope. Phase H PH-1: `enclosing_scope`
+        // returns either a braced CompoundStmt (legacy shape, byte-
+        // identical to the old enclosing_compound_stmt walk) or a
+        // BracelessBody (new: single-statement body of a for/while/if).
+        const auto es = enclosing_scope(*var, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_ = r.Context->getSourceManager();
+        const LangOptions& lang_ = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_, lang_);
 
         // Debug-build guard (Risk R3, LP4 §"Optional hardening"): the widened
         // `anyOf(eager_init, lazy_init)` pattern is mutually exclusive by
@@ -106,11 +108,12 @@ public:
         const auto* operand = r.Nodes.getNodeAs<DeclRefExpr>("operand");
         if (!var || !operand || !r.Context) return;
 
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*var, *r.Context);
-        if (!cs) return;
+        const auto es = enclosing_scope(*var, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_ = r.Context->getSourceManager();
+        const LangOptions& lang_ = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_, lang_);
 
         // Same debug-build guard as OrCallback: the matcher pattern is
         // narrow enough that the same VarDecl cannot legitimately bind
@@ -155,11 +158,12 @@ public:
         const auto* rhs = r.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if (!var || !lhs || !rhs || !r.Context) return;
 
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*var, *r.Context);
-        if (!cs) return;
+        const auto es = enclosing_scope(*var, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_ = r.Context->getSourceManager();
+        const LangOptions& lang_ = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_, lang_);
 
 #ifndef NDEBUG
         const auto var_key = var->getLocation().getRawEncoding();

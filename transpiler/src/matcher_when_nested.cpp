@@ -298,14 +298,15 @@ public:
             detail::compute_post_body_brace(inner_if, sm, lang);
         if (post_inner_brace.isInvalid()) return;
 
-        // Park the op in the CompoundStmt that contains the inner WHEN.
+        // Park the op in the enclosing scope that contains the inner WHEN.
         // The `insert_before_override` forces the post-inner-body anchor
-        // regardless, but we still need a concrete scope so the
-        // uncompute pass's reverse iteration fires.
-        const clang::CompoundStmt* enclosing_cs =
-            detail::enclosing_compound_stmt(*inner_if, *r.Context);
-        if (!enclosing_cs) return;
-        QScope& scope = detail::find_or_create_scope(*unit_, *enclosing_cs);
+        // regardless, but we still need a concrete scope so the uncompute
+        // pass's reverse iteration fires. Phase H PH-1: `enclosing_scope`
+        // transparently supports braced CompoundStmt and braceless
+        // for/while/if/else body positions.
+        const auto enc = detail::enclosing_scope(*inner_if, *r.Context);
+        if (!enc.valid()) return;
+        QScope& scope = detail::find_or_create_scope(*unit_, enc, sm, lang);
 
         QOperation and_op;
         and_op.kind = QOpKind::AND;
