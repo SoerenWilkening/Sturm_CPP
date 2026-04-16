@@ -222,6 +222,32 @@ std::string render_uncompute(const QOperation& op) {
         os << ");\n";
         break;
     }
+    case QOpKind::CCNOT_INPLACE: {
+        // Phase J PJ-1c: zero-ancilla fusion seeded by the PJ-1d peephole
+        // matcher from the adjacent pair
+        //     qbool __t = a & b;
+        //     x ^= __t;
+        // when `__t` has exactly one reader. Operand shape mirrors OR /
+        // AND: one result (the `x` target of the in-place flip) plus two
+        // named operand QValueRefs (the two qbool controls).
+        //
+        // Self-adjoint: `ccnot_inplace(x, a, b)` is a single CCX(a, b, x)
+        // that is its own inverse, so the forward emission (a verbatim
+        // QReplacement text applied by the matcher over the fused pair)
+        // and the uncompute emission (this render case) share a single
+        // identifier — running the helper a second time at the uncompute
+        // point undoes the forward flip. The four-space leading indent
+        // matches every other kind so the emitter injects uniform text.
+        //
+        // Defensive: if the operand count is not exactly 2 — a malformed
+        // hand-built fixture or a future IR consumer seeding a bad op —
+        // emit nothing so we do not inject invalid C++ into the user's
+        // file. Mirrors the identical guard on OR / AND.
+        if (op.operands.size() != 2) return {};
+        os << "    ccnot_inplace(" << op.result.name << ", "
+           << op.operands[0].name << ", " << op.operands[1].name << ");\n";
+        break;
+    }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on
     // missing enum cases when default is absent.)
