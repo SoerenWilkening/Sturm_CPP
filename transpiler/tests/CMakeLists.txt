@@ -168,6 +168,7 @@ add_executable(test_transpile_matcher
     test_matcher_ph2_brace_wrap.cpp
     test_matcher_ph3_outer_var.cpp
     test_routine_registry.cpp
+    test_matcher_user_routine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
@@ -178,6 +179,7 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
 )
 target_include_directories(test_transpile_matcher PRIVATE

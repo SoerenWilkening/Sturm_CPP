@@ -60,3 +60,4 @@ void run_ph1_scope_tests();
 void run_ph2_brace_wrap_tests();
 void run_ph3_outer_var_tests();
 void run_routine_registry_tests();
+void run_user_routine_tests();
