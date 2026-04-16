@@ -846,6 +846,45 @@ static void test_dump_user_routine_zero_operands() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase J / PJ-1c: CCNOT_INPLACE dump surface ─────────────────────────────
+//
+// PJ-1c adds `QOpKind::CCNOT_INPLACE` immediately after USER_ROUTINE in
+// qir.hpp and wires a `kind_to_string()` case rendering the literal
+// "CCNOT_INPLACE". The operand shape is the same as an ordinary binary
+// qbool op: one result QValueRef (the `x` target of the in-place flip)
+// plus two named operand QValueRefs (the two qbool controls `a` and `b`).
+// The op is seeded by the PJ-1d peephole matcher from the adjacent pair
+// `qbool __t = a & b; x ^= __t;` — so dump() must stringify it in the
+// same `OP r = a, b` shape every other binary kind uses.
+//
+// The render is self-adjoint: running CCX(a, b, x) a second time undoes
+// the first, so the forward emission and the uncompute emission share a
+// single call site — the PJ-1c render case in uncompute_pass.cpp emits
+// `ccnot_inplace(x, a, b);` both times.
+
+static void test_dump_ccnot_inplace_op() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::CCNOT_INPLACE;
+    op.result = QValueRef{"x", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] CCNOT_INPLACE x@30 = a@20, b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -909,6 +948,8 @@ int main() {
     test_dump_user_routine_two_outputs();
     test_dump_user_routine_mixed_io_with_scalar();
     test_dump_user_routine_zero_operands();
+
+    test_dump_ccnot_inplace_op();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

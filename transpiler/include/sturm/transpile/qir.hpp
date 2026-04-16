@@ -137,6 +137,21 @@ enum class QOpKind {
     // uncompute pass; the op is recorded in the IR (so dump() shows it)
     // but no inverse is emitted. PI-4 is tracked separately.
     USER_ROUTINE,
+    // Phase J PJ-1c — zero-ancilla fusion. Seeded by the PJ-1d peephole
+    // matcher (`matcher_ccnot_fuse`) from the adjacent pair
+    //     qbool __t = a & b;
+    //     x ^= __t;
+    // when `__t` has exactly one reader. The fusion collapses the forward
+    // CCX + uncompute CCX into a single CCX acting on `(a, b, x)` with no
+    // intermediate qubit. Operand shape matches the existing binary qbool
+    // kinds (OR / AND): one result QValueRef (the `x` target of the
+    // in-place flip) plus two named operand QValueRefs (the two qbool
+    // controls `a`, `b`). Self-adjoint — CCX is its own inverse — so the
+    // M8 render case (PJ-1c) emits `ccnot_inplace(x, a, b);` verbatim at
+    // the uncompute point, the same text the matcher inserts as the
+    // forward QReplacement. The forward helper lives at
+    // `include/sturm/uncompute/uncompute_api.hpp:118` (sturm-8cxd).
+    CCNOT_INPLACE,
     // ... — added per post-MVP phases.
 };
 

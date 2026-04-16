@@ -1636,6 +1636,92 @@ static void test_hoist_to_override_user_routine_kind() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(88)));
 }
 
+// ── Phase J / PJ-1c: CCNOT_INPLACE render case ──────────────────────────────
+//
+// PJ-1c wires the M8 render path for the CCNOT_INPLACE kind that the PJ-1d
+// peephole matcher seeds. The emitted form is
+// `    ccnot_inplace(x, a, b);\n` — self-adjoint, so the forward emission
+// (text replacement on the fused pair) and the uncompute emission (this
+// render case) share a single identifier. Operand shape: one result
+// QValueRef (the `x` target) plus two named operand QValueRefs (the two
+// qbool controls). Defensive: operand count != 2 emits nothing so a
+// malformed hand-built op does not inject invalid C++.
+
+static void test_ccnot_inplace_emits_self_adjoint_call() {
+    // Canonical shape from the PJ-1d peephole:
+    //   qbool __t = a & b;
+    //   x ^= __t;
+    // fuses into CCNOT_INPLACE{result=x, operands=[a, b]}. The render
+    // case emits `    ccnot_inplace(x, a, b);\n` anchored at the
+    // enclosing scope's close_brace exactly like every other kind.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::CCNOT_INPLACE;
+    op.result = QValueRef{"x", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    ccnot_inplace(x, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+}
+
+static void test_ccnot_inplace_wrong_operand_count_emits_nothing() {
+    // Defensive guard — a malformed CCNOT_INPLACE with only one operand
+    // (a peephole-matcher bug, or a hand-built fixture) must NOT render
+    // `ccnot_inplace(x, a);` into the user file. Mirrors the identical
+    // guard on OR / AND / NOT / XOR / XOR_ASSIGN.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::CCNOT_INPLACE;
+    op.result = QValueRef{"x", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});  // only one
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_ccnot_inplace_zero_operands_emits_nothing() {
+    // Zero-operand edge case — same defensive guard as the one-operand
+    // case. The PJ-1d matcher always produces exactly two operands but
+    // a fixture can hand-build a malformed op.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::CCNOT_INPLACE;
+    op.result = QValueRef{"x", make_loc(30)};
+    // no operands
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
 int main() {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
@@ -1691,6 +1777,10 @@ int main() {
     test_user_routine_honours_skip_uncompute();
     test_user_routine_honours_insert_before_override();
     test_user_routine_lifo_with_other_kinds();
+
+    test_ccnot_inplace_emits_self_adjoint_call();
+    test_ccnot_inplace_wrong_operand_count_emits_nothing();
+    test_ccnot_inplace_zero_operands_emits_nothing();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

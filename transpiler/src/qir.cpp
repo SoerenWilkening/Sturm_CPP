@@ -61,6 +61,7 @@ std::string kind_to_string(QOpKind kind) {
     case QOpKind::GT_QINT:          return "GT_QINT";
     case QOpKind::GE_QINT:          return "GE_QINT";
     case QOpKind::USER_ROUTINE:     return "USER_ROUTINE";
+    case QOpKind::CCNOT_INPLACE:    return "CCNOT_INPLACE";
     }
     // Unreachable while every enumerator above is listed, but we emit a
     // deterministic placeholder so future additions that forget to update
