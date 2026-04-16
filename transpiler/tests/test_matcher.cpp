@@ -19,6 +19,7 @@ int main() {
     run_ph1_scope_tests();
     run_ph2_brace_wrap_tests();
     run_ph3_outer_var_tests();
+    run_routine_registry_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
