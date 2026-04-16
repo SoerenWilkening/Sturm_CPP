@@ -258,6 +258,18 @@ QSynthesisResult synthesize(const QUnit& unit) {
 
         for (auto it = sorted_ops.rbegin(); it != sorted_ops.rend(); ++it) {
             const QOperation& op = *it;
+            // Phase H PH-3: honour the per-op skip flag the
+            // outer-var-guard matcher sets on mutations whose automatic
+            // uncomputation would require reverse-loop synthesis. The op
+            // still exists in the IR (so `dump()` shows it and future
+            // tooling remains aware it was recognised), but NO
+            // UncomputeInsertion is emitted for it — the user is expected
+            // to provide a manual adjoint per P9. Pre-Phase-H matchers
+            // leave the flag false, so this branch is a no-op on every
+            // prior fixture.
+            if (op.skip_uncompute) {
+                continue;
+            }
             std::string code = render_uncompute(op);
             if (code.empty()) {
                 // Unsupported / malformed op — skip silently; see the

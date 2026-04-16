@@ -1552,6 +1552,263 @@ static void test_pd_six_ops_same_scope_hit_all_kinds() {
     CHECK_EQ_STR(s.ops[5].result.name, std::string("c5"));
 }
 
+// ── Phase H / PH-3: outer-variable-mutation guard ──────────────────────────
+//
+// The PH-3 matcher flags compound-assign mutations (`a ^= b`, `a += C`,
+// `a += b`, ...) whose target qbool/qint is declared in an outer scope
+// relative to the mutation site AND where the mutation lives inside a
+// `for`, `while`, `if` (then/else), or `WHEN` body. For every such hit
+// the matcher:
+//
+//   (a) flags the matching QOperation with `skip_uncompute=true`, so the
+//       M8 synthesis pass emits no inverse, and
+//   (b) prints a stderr diagnostic pointing the user at the line+col of
+//       the offending mutation.
+//
+// These tests exercise the full pipeline via the production xor_assign
+// (Phase A PA-3/PA-4) and compound-assign matchers (Phase B/C), layered
+// with the PH-3 guard registered LAST — matching the ordering invariant
+// described in `matcher.hpp` and enforced in `main.cpp`.
+
+// Stub: qbool with `operator^=` for Phase A PA-3 matching. Deliberately
+// minimal — the matcher keys off the operator overload name and the
+// LHS declRefExpr; no type guard on the LHS is required for PH-3.
+static constexpr std::string_view kQBoolXorAssignStub = R"CPP(
+namespace sturm {
+
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+    qbool& operator^=(int) { return *this; }
+};
+
+} // namespace sturm
+using sturm::qbool;
+
+#define WHEN(cond) if (bool _when_val_ = (bool)(cond); _when_val_)
+)CPP";
+
+// Run Phase A xor_assign + PH-3 guard on `user_src`. Returns the
+// populated QUnit and the PH-3 detection count after the tool run.
+struct PH3Run {
+    QUnit unit;
+    int detections = 0;
+};
+
+static PH3Run run_ph3_xor_assign_matcher(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQBoolXorAssignStub.size() + user_src.size());
+    code.append(kQBoolXorAssignStub);
+    code.append(user_src);
+
+    PH3Run out;
+    reset_outer_var_guard_detection_count_for_test();
+
+    clang::ast_matchers::MatchFinder finder;
+    // Phase A matchers come first so they push QOperations onto
+    // `unit.scopes` before the PH-3 callback walks to classify each
+    // mutation. Registration order is the load-bearing invariant:
+    // MatchFinder invokes callbacks in registration order for a given
+    // matched node.
+    register_xor_assign_matcher(finder, out.unit);
+    register_xor_assign_classical_matcher(finder, out.unit);
+    register_outer_var_guard_matcher(finder, out.unit);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PH-3 xor_assign)\n");
+    }
+    out.detections = outer_var_guard_detection_count_for_test();
+    return out;
+}
+
+static void test_ph3_outer_xor_inside_for_is_flagged() {
+    // `qbool a` declared in the function body; mutated inside the for
+    // body. PH-3 classifies this as OuterMutation, flags the op, and
+    // emits the diagnostic. Exactly one op with `skip_uncompute == true`.
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 3; ++i) {\n"
+        "        a ^= b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    // One op should exist and have skip_uncompute set.
+    std::size_t skip_count = 0;
+    std::size_t total = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            ++total;
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(total == 1);
+    CHECK(skip_count == 1);
+}
+
+static void test_ph3_outer_xor_inside_while_is_flagged() {
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    while (true) {\n"
+        "        a ^= b;\n"
+        "        break;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    std::size_t skip_count = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(skip_count == 1);
+}
+
+static void test_ph3_outer_xor_inside_if_is_flagged() {
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    if (cond) {\n"
+        "        a ^= b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    std::size_t skip_count = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(skip_count == 1);
+}
+
+static void test_ph3_outer_xor_inside_if_else_is_flagged() {
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    if (cond) { (void)a; } else { a ^= b; }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    std::size_t skip_count = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(skip_count == 1);
+}
+
+static void test_ph3_outer_xor_inside_when_is_flagged() {
+    // WHEN barriers count the same as user-written if barriers. The
+    // test-only stub above defines WHEN as a thin `if` macro whose
+    // expansion loc spells the name WHEN — the PH-3 classifier treats
+    // macro-expanded IfStmts exactly like user ifs for this analysis.
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b, bool cond) {\n"
+        "    WHEN(cond) {\n"
+        "        a ^= b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    std::size_t skip_count = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(skip_count == 1);
+}
+
+static void test_ph3_local_xor_without_control_flow_is_not_flagged() {
+    // Negative: a bare `a ^= b;` statement at the function body level
+    // is LocalMutation — no for/while/if/WHEN barrier between the
+    // declaration and the mutation. PH-3 must NOT flag it.
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    a ^= b;\n"
+        "}\n");
+    CHECK(r.detections == 0);
+    std::size_t skip_count = 0;
+    std::size_t total = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            ++total;
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(total == 1);
+    CHECK(skip_count == 0);
+}
+
+static void test_ph3_local_xor_in_for_of_locally_declared_var_is_not_flagged() {
+    // Negative: `qbool r = a | b;` declared inside the for-body block,
+    // then `r ^= b;` right after — the mutation target lives in the
+    // SAME scope as the mutation (both inside the for-body CompoundStmt).
+    // PH-3 walks up from the `^=` and hits the CompoundStmt (the
+    // declaring scope) BEFORE any control-flow barrier, so it is
+    // LocalMutation — not flagged.
+    //
+    // We use a bare variable (no qbool initializer here — PA-3 only
+    // covers the `^=` statement, so declaring another qbool with `qbool
+    // r;` is enough to give the mutation a local target.)
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 3; ++i) {\n"
+        "        qbool r;\n"
+        "        r ^= a;\n"
+        "        (void)b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 0);
+    std::size_t skip_count = 0;
+    std::size_t total = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            ++total;
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(total == 1);
+    CHECK(skip_count == 0);
+}
+
+static void test_ph3_mixed_inner_intermediate_and_outer_mutation() {
+    // Mixed scope — the key PH-3 acceptance criterion: "per-op flag
+    // granularity". One scope contains:
+    //
+    //   - `r ^= a;` where r is declared inside the for body
+    //     (intermediate, uncompute normally) — skip_uncompute=false
+    //   - `a ^= b;` where a is declared outside the for
+    //     (outer mutation, skipped) — skip_uncompute=true
+    //
+    // After the run exactly ONE op carries the skip flag and the
+    // detection counter bumps once.
+    PH3Run r = run_ph3_xor_assign_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 3; ++i) {\n"
+        "        qbool r;\n"
+        "        r ^= a;\n"
+        "        a ^= b;\n"
+        "    }\n"
+        "}\n");
+    CHECK(r.detections == 1);
+    std::size_t skip_count = 0;
+    std::size_t total = 0;
+    for (const auto& s : r.unit.scopes) {
+        for (const auto& op : s.ops) {
+            ++total;
+            if (op.skip_uncompute) ++skip_count;
+        }
+    }
+    CHECK(total == 2);
+    CHECK(skip_count == 1);
+}
+
 static void test_stmt_range_round_trip() {
     // Read the recorded stmt_range back as source text via the Clang Lexer.
     // It must equal the original declaration (modulo the trailing
@@ -1619,6 +1876,15 @@ int main() {
     test_ph1_braced_if_then();
     test_ph1_braceless_if_then();
     test_ph1_braced_when_not_misidentified();
+
+    test_ph3_outer_xor_inside_for_is_flagged();
+    test_ph3_outer_xor_inside_while_is_flagged();
+    test_ph3_outer_xor_inside_if_is_flagged();
+    test_ph3_outer_xor_inside_if_else_is_flagged();
+    test_ph3_outer_xor_inside_when_is_flagged();
+    test_ph3_local_xor_without_control_flow_is_not_flagged();
+    test_ph3_local_xor_in_for_of_locally_declared_var_is_not_flagged();
+    test_ph3_mixed_inner_intermediate_and_outer_mutation();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

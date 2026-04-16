@@ -246,6 +246,48 @@ void register_when_nested_matcher(
 int when_nested_detection_count_for_test();
 void reset_when_nested_detection_count_for_test();
 
+/// Phase H / PH-3: Register the outer-variable-mutation guard matcher.
+/// Scans for compound-assign ops (XOR_ASSIGN, *_ASSIGN_CONST,
+/// *_ASSIGN_QINT) whose target is declared in an outer scope relative to
+/// the mutation site AND where the mutation lives inside a `for`, `while`,
+/// `if` (then or else), or `WHEN` body. For every such mutation, the
+/// matcher flags the corresponding `QOperation` with `skip_uncompute=true`
+/// (so the M8 synthesis pass emits no inverse) and prints a diagnostic
+/// to stderr. Automatic uncomputation of an outer-scoped mutation inside
+/// a loop/branch/WHEN would require reverse-loop synthesis (contradicts
+/// P9): this matcher makes that boundary explicit rather than silently
+/// producing semantically-wrong output.
+///
+/// The matcher is a POST-processor: it must be registered AFTER the
+/// Phase A–C compound-assign matchers so that the QOperations those
+/// matchers pushed are already in scope by the time this callback runs.
+/// Rather than re-matching the AST, the callback scans `unit.scopes` on
+/// each MatchFinder run and walks parents from each op's `stmt_range`
+/// begin loc to classify it. In practice we anchor on the same AST
+/// shapes (CXXOperatorCallExpr on `^=`, `+=`, `-=`, `*=`, `/=`, `%=`
+/// with a qbool / qint LHS) and perform the parent-chain walk directly
+/// in the callback, which keeps the module self-contained.
+///
+/// Pairs with the Phase H PH-3 QOperation::skip_uncompute flag
+/// introduced in sturm/transpile/qir.hpp — the M8 pass
+/// (uncompute_pass.cpp) skips flagged ops, and dump() renders a
+/// `[skip_uncompute]` suffix so users of the IR can see which ops were
+/// flagged. Contract mirrors the other `register_*_matcher` helpers —
+/// call at most once per QUnit; the QUnit must outlive the MatchFinder's
+/// run.
+void register_outer_var_guard_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Test-only instrumentation (Phase H / PH-3). Counts the number of
+/// outer-variable mutations the guard matcher has flagged (i.e. the
+/// number of `skip_uncompute=true` ops the matcher appended) since the
+/// last reset. The unit tests use this counter to discriminate "matcher
+/// correctly ignored this mutation" from "matcher correctly flagged
+/// this mutation and emitted a diagnostic". Production code must not
+/// touch either helper.
+int outer_var_guard_detection_count_for_test();
+void reset_outer_var_guard_detection_count_for_test();
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

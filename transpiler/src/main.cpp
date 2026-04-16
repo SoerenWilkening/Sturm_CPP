@@ -119,6 +119,15 @@ public:
         sturm::transpile::register_compound_qbool_matcher(finder_, unit_);
         sturm::transpile::register_when_lift_matcher(finder_, unit_);
         sturm::transpile::register_when_nested_matcher(finder_, unit_);
+        // Phase H PH-3: the outer-variable-mutation guard must run AFTER
+        // the Phase A / B / C compound-assign matchers have populated
+        // `unit_.scopes` — the callback looks up the QOperation each
+        // A/B/C matcher pushed by `stmt_range.getBegin()` and flags its
+        // `skip_uncompute` field. MatchFinder invokes callbacks in
+        // registration order on a given node, so placing this register
+        // call LAST among the mutation matchers is the load-bearing
+        // ordering invariant for PH-3.
+        sturm::transpile::register_outer_var_guard_matcher(finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {

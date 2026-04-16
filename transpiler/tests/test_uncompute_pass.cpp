@@ -1082,6 +1082,99 @@ static void test_raw_insertions_appended_verbatim() {
     CHECK_EQ_SIZE(raw(ins[2].insert_before), raw(make_loc(300)));
 }
 
+// ── Phase H / PH-3: skip_uncompute drops the op from the insertion list ─────
+//
+// PH-3 introduces `QOperation::skip_uncompute`. When true, the M8
+// synthesis pass must emit NOTHING for that op — no UncomputeInsertion
+// record, no rendered code. Other ops in the same scope (with
+// `skip_uncompute == false`) are unaffected: the synthesis pass
+// processes them normally, so per-op flag granularity is preserved.
+
+static void test_skip_uncompute_true_emits_no_insertion() {
+    // Single op in a scope with `skip_uncompute=true`. The insertion
+    // vector must end up empty — no inverse was rendered.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::XOR_ASSIGN;
+    op.result = QValueRef{"a", make_loc(30)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    op.skip_uncompute = true;
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_skip_uncompute_false_still_emits_normally() {
+    // Defensive companion: the default `skip_uncompute == false` case
+    // must produce the same insertion as pre-PH-3. Without this
+    // guarantee every prior fixture would silently lose its uncompute.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::XOR_ASSIGN;
+    op.result = QValueRef{"a", make_loc(30)};
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    // skip_uncompute left default (false).
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    a ^= b;\n"));
+}
+
+static void test_skip_uncompute_mixed_per_op_granularity() {
+    // Two ops in the same scope: the first (op0) is flagged skip,
+    // the second (op1) is not. The insertion list must contain
+    // exactly ONE entry (op1's inverse), and op0 must NOT appear.
+    // This is the "per-op flag, not per-scope" acceptance criterion
+    // spelled out in the PH-3 issue description.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op0;
+    op0.kind   = QOpKind::XOR_ASSIGN;
+    op0.result = QValueRef{"a", make_loc(10)};
+    op0.operands.push_back(QValueRef{"b", make_loc(11)});
+    op0.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    op0.skip_uncompute = true;
+
+    QOperation op1;
+    op1.kind   = QOpKind::OR;
+    op1.result = QValueRef{"t", make_loc(30)};
+    op1.operands = { QValueRef{"c", make_loc(31)},
+                     QValueRef{"d", make_loc(32)} };
+    op1.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    // op1.skip_uncompute left default (false).
+
+    scope.ops = { op0, op1 };
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    // op1 is the non-skipped op — its inverse is the only one emitted.
+    CHECK_EQ_STR(ins[0].code, std::string("    uncompute_or(t, c, d);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+}
+
 static void test_raw_insertions_only_no_ops() {
     // QUnit with zero scopes (no QOperations) but one raw insertion. The
     // pass must still emit the raw verbatim — Phase F's WHEN-lift matcher
@@ -1136,6 +1229,10 @@ int main() {
     test_invalid_override_falls_back_to_close_brace();
     test_raw_insertions_appended_verbatim();
     test_raw_insertions_only_no_ops();
+
+    test_skip_uncompute_true_emits_no_insertion();
+    test_skip_uncompute_false_still_emits_normally();
+    test_skip_uncompute_mixed_per_op_granularity();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

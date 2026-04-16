@@ -1278,3 +1278,45 @@ if(STURM_TRANSPILE)
         LABELS "transpiler"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase H / PH-3: snapshot fixtures for outer-variable mutation guard ────
+# Two fixtures:
+#   * for_outer_xor_reject — `a ^= b;` inside a for-loop where `a` is
+#     declared outside the loop. The PH-3 matcher flags the mutation
+#     (`skip_uncompute=true`), the M8 pass injects no inverse, and the
+#     generated file is byte-identical to the input (modulo the
+#     AUTO-GENERATED header the emitter prepends). Stderr MUST carry
+#     the PH-3 diagnostic referring to qbool `a`.
+#   * for_mixed_xor_reject — same scope contains BOTH an inner
+#     intermediate (`r ^= a;` on a fresh local `r`) and an outer
+#     mutation (`a ^= b;`). The PH-3 matcher flags only the outer
+#     mutation: the inner intermediate still gets its inverse
+#     injected as usual (`r ^= a;` before the for-body's close brace).
+#     This proves the per-op flag granularity the PH-3 AC requires.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_for_outer_xor_reject
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_outer_xor_reject.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_outer_xor_reject.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/for_outer_xor_reject
+                "-DREQUIRED_STDERR=STURM: qbool/qint 'a'"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot_with_diagnostic.cmake)
+    set_tests_properties(snapshot_for_outer_xor_reject PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_for_mixed_xor_reject
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_mixed_xor_reject.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_mixed_xor_reject.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/for_mixed_xor_reject
+                "-DREQUIRED_STDERR=STURM: qbool/qint 'a'"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot_with_diagnostic.cmake)
+    set_tests_properties(snapshot_for_mixed_xor_reject PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
