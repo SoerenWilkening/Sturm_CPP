@@ -1562,3 +1562,122 @@ if(STURM_TRANSPILE)
         DEPENDS "snapshot_if_else_intermediate_or_braceless"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase H / PH-4: snapshot fixtures for BRACED control-flow bodies ───────
+# Complements the PH-2 braceless fixtures above: here every for/while/if
+# body is already a CompoundStmt, so PH-2's auto-brace-wrap matcher must
+# NOT fire. The only Phase H moving part still exercised is PH-1's scope
+# finder, which must continue to return the pre-existing CompoundStmt so
+# the M8 uncompute-synthesis pass plants a companion `uncompute_or(...)`
+# call immediately before the body's existing close `}` — per-iteration
+# for loops, once per taken branch for if/else.
+#
+# Shapes:
+#   * for_intermediate_or       — `for (...) { qbool tmp = a | b; }`
+#   * while_intermediate_or     — `while (cond) { qbool tmp = a | b; }`
+#   * if_then_intermediate_or   — `if (cond) { qbool tmp = a | b; }`
+#   * if_else_intermediate_or   — both arms braced, each with a DISTINCT
+#                                  per-branch intermediate (`tmp_then` /
+#                                  `tmp_else`). Pins the per-scope
+#                                  granularity of the uncompute pass.
+#
+# The idempotency companion feeds the generated file back through
+# sturm-transpile and asserts byte-identical round-trip via the
+# AUTO-GENERATED sentinel.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_for_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_intermediate_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_intermediate_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/for_intermediate_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_for_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_for_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/for_intermediate_or/for_intermediate_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/for_intermediate_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_for_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_for_intermediate_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_while_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/while_intermediate_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/while_intermediate_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/while_intermediate_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_while_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_while_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/while_intermediate_or/while_intermediate_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/while_intermediate_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_while_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_while_intermediate_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_if_then_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_then_intermediate_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_then_intermediate_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_then_intermediate_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_if_then_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_if_then_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/if_then_intermediate_or/if_then_intermediate_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_then_intermediate_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_if_then_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_if_then_intermediate_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_if_else_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_else_intermediate_or.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/if_else_intermediate_or.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_else_intermediate_or
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_if_else_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_if_else_intermediate_or
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/if_else_intermediate_or/if_else_intermediate_or.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/if_else_intermediate_or_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_if_else_intermediate_or PROPERTIES
+        LABELS "transpiler"
+        DEPENDS "snapshot_if_else_intermediate_or"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
