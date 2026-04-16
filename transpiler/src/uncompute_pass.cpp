@@ -197,17 +197,30 @@ std::string render_uncompute(const QOperation& op) {
         break;
     }
     case QOpKind::USER_ROUTINE: {
-        // Phase I PI-2: the routine-call matcher records the op in the
-        // IR so dump() and downstream analyses (PI-3 liveness) can see
-        // it, but the actual `invert(<fn>)(...)` rendering lands in
-        // PI-4. Until then, emit no inverse — the op stays recognised
-        // in the QIR with no associated UncomputeInsertion. Keeping
-        // the case explicit preserves the "no default" contract so a
-        // later PI-4 patch drops in naturally.
-        // TODO(backend): PI-4 will populate this with an
-        // `invert(<routine_name>)(<operands>);` line once the runtime
-        // `invert()` dispatch is complete.
-        return {};
+        // Phase I PI-4: render the user-routine's adjoint dispatch.
+        // The emitted form is
+        //   "    invert(<routine_name>)(<op0>, <op1>, ...);\n"
+        // with operands listed in source order. There is NO result-name
+        // prefix — a USER_ROUTINE op mutates through its output
+        // parameters (flagged by `outputs_mask`) and has no single
+        // named result. The four-space leading indent matches every
+        // other kind so the emitter injects uniform text into the
+        // user's source.
+        //
+        // Defensive: if `routine_name` is empty (should never happen
+        // in practice — the PI-2 matcher always populates it, and a
+        // FunctionDecl with no name could not have been registered in
+        // the PI-1 routine registry — but a hand-built fixture or a
+        // future IR consumer could seed an empty one), emit nothing
+        // rather than render `invert()(...);` which would not compile.
+        if (op.routine_name.empty()) return {};
+        os << "    invert(" << op.routine_name << ")(";
+        for (std::size_t i = 0; i < op.operands.size(); ++i) {
+            if (i != 0) os << ", ";
+            os << op.operands[i].name;
+        }
+        os << ");\n";
+        break;
     }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on

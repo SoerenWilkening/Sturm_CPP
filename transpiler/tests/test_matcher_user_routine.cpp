@@ -120,7 +120,7 @@ template <> struct adjoint_of<decltype(&::qint_mix)>   {
 // so assertions can run after the tool's ASTContext is destroyed.
 struct OpSnapshot {
     std::string routine_name;
-    std::uint64_t outputs_mask = 0;
+    std::uint32_t outputs_mask = 0;
     std::vector<std::string> operand_names;
 };
 

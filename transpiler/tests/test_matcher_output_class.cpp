@@ -110,7 +110,7 @@ template <> struct adjoint_of<decltype(&::two_out)> {
 // Snapshot of a matched op. We capture only the PI-3-relevant fields.
 struct OpSnap {
     std::string routine_name;
-    std::uint64_t outputs_mask = 0;
+    std::uint32_t outputs_mask = 0;
     bool skip_uncompute = false;
     bool has_override = false;
     std::vector<std::string> operand_names;

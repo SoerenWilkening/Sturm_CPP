@@ -1175,6 +1175,245 @@ static void test_skip_uncompute_mixed_per_op_granularity() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
 }
 
+// ── Phase I / PI-4: USER_ROUTINE render case ─────────────────────────────────
+//
+// PI-4 finalises the uncompute pass's render path for the USER_ROUTINE kind
+// the PI-2 matcher produces. The emitted form is
+// `    invert(<routine_name>)(<op0>, <op1>, ...);\n` with the operands
+// listed in source order — there is NO result-name prefix (a USER_ROUTINE
+// op mutates through its output parameters, not through a single named
+// result) and the insertion is anchored at the enclosing scope's
+// `close_brace` exactly like every other kind. The four-space leading
+// indent matches the other render cases so the emitter injects uniform
+// text into the user's source.
+//
+// Defensive: an empty `routine_name` renders nothing. The PI-2 matcher
+// never produces a USER_ROUTINE op without a name, but a future IR
+// consumer or a hand-built fixture could; returning an empty code string
+// keeps the synthesis pass from planting `invert()(...);` into the user
+// file.
+
+static void test_user_routine_emits_invert_two_outputs() {
+    // Single-scope USER_ROUTINE op with two output operands, mirroring
+    // the PI-2 `both_out(a, b)` shape. outputs_mask = 0b11, but the
+    // render case does not read the mask — every operand is listed in
+    // source order regardless of input/output classification.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "both_out";
+    op.outputs_mask   = 0x3u;
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(both_out)(a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+}
+
+static void test_user_routine_emits_invert_mixed_io() {
+    // Mixed input/output shape (`mixed_io(out, in)`). The render case
+    // still emits both operands in source order — classical / const-ref
+    // inputs are part of the inverse's call signature.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "mixed_io";
+    op.outputs_mask   = 0x1u;
+    op.operands.push_back(QValueRef{"x", make_loc(20)});
+    op.operands.push_back(QValueRef{"y", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(mixed_io)(x, y);\n"));
+}
+
+static void test_user_routine_emits_invert_with_classical_scalar() {
+    // PI-2 records classical scalar arguments verbatim in operand.name.
+    // The render case emits them as-is — this is the whole point of
+    // the positional operand list.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "scalar_fn";
+    op.outputs_mask   = 0x1u;
+    op.operands.push_back(QValueRef{"out", make_loc(20)});
+    // A classical argument is captured by lexer text and has no decl_loc.
+    op.operands.push_back(QValueRef{"42", clang::SourceLocation()});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(scalar_fn)(out, 42);\n"));
+}
+
+static void test_user_routine_zero_operands_still_emits_call() {
+    // A no-argument routine renders as `invert(name)();` — the inner
+    // parentheses are empty but still present. This case can arise if
+    // a user registers a parameterless compute routine (rare but not
+    // forbidden by the registrar).
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "noop_fn";
+    op.outputs_mask   = 0x0u;
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(noop_fn)();\n"));
+}
+
+static void test_user_routine_empty_name_emits_nothing() {
+    // Defensive case from the issue description: an empty routine_name
+    // must NOT produce an invert call — synthesize skips this op
+    // silently, exactly like a malformed OR with the wrong operand
+    // count.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "";  // empty — e.g. unresolved callee
+    op.outputs_mask   = 0x0u;
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_user_routine_honours_skip_uncompute() {
+    // PI-3 piggybacks on the generic `skip_uncompute` flag — the PI-4
+    // render case inherits the pre-existing PH-3 guard in synthesize()
+    // for free. This pins that no insertion is produced when skip is
+    // set, so a future refactor that moves the guard into the render
+    // case regresses visibly here.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "both_out";
+    op.outputs_mask   = 0x3u;
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    op.skip_uncompute = true;
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_user_routine_honours_insert_before_override() {
+    // PI-3 sets `insert_before_override` on USER_ROUTINE ops with
+    // IntermediateOuter slots so the inverse lands at the outermost
+    // declaring scope's close brace. This pins the override path is
+    // honoured for USER_ROUTINE exactly like every other kind.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "mixed_io";
+    op.outputs_mask   = 0x1u;
+    op.operands.push_back(QValueRef{"x", make_loc(20)});
+    op.operands.push_back(QValueRef{"y", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    op.insert_before_override = make_loc(77);
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(mixed_io)(x, y);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(77)));
+}
+
+static void test_user_routine_lifo_with_other_kinds() {
+    // Two ops in one scope: an OR followed by a USER_ROUTINE. The LIFO
+    // reverse walk must emit the USER_ROUTINE inverse FIRST (it appears
+    // later in source) and the OR inverse SECOND.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op0;
+    op0.kind   = QOpKind::OR;
+    op0.result = QValueRef{"t", make_loc(30)};
+    op0.operands = { QValueRef{"a", make_loc(20)},
+                     QValueRef{"b", make_loc(25)} };
+    op0.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+
+    QOperation op1;
+    op1.kind         = QOpKind::USER_ROUTINE;
+    op1.routine_name = "both_out";
+    op1.outputs_mask = 0x3u;
+    op1.operands = { QValueRef{"x", make_loc(50)},
+                     QValueRef{"y", make_loc(55)} };
+    op1.stmt_range = clang::SourceRange(make_loc(50), make_loc(60));
+
+    scope.ops = { op0, op1 };
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(both_out)(x, y);\n"));
+    CHECK_EQ_STR(ins[1].code, std::string("    uncompute_or(t, a, b);\n"));
+}
+
 static void test_raw_insertions_only_no_ops() {
     // QUnit with zero scopes (no QOperations) but one raw insertion. The
     // pass must still emit the raw verbatim — Phase F's WHEN-lift matcher
@@ -1233,6 +1472,15 @@ int main() {
     test_skip_uncompute_true_emits_no_insertion();
     test_skip_uncompute_false_still_emits_normally();
     test_skip_uncompute_mixed_per_op_granularity();
+
+    test_user_routine_emits_invert_two_outputs();
+    test_user_routine_emits_invert_mixed_io();
+    test_user_routine_emits_invert_with_classical_scalar();
+    test_user_routine_zero_operands_still_emits_call();
+    test_user_routine_empty_name_emits_nothing();
+    test_user_routine_honours_skip_uncompute();
+    test_user_routine_honours_insert_before_override();
+    test_user_routine_lifo_with_other_kinds();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

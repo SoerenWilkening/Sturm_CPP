@@ -201,9 +201,10 @@ struct QOperation {
     // output parameters (non-const qbool&/qint& in the callee signature).
     // Bit i corresponds to operands[i]. Zero for every non-USER_ROUTINE
     // op. Classical scalar and const-reference arguments remain 0 (input).
-    // A 64-bit integer covers every plausible routine arity — a routine
-    // with more than 64 parameters is outside the transpiler's scope.
-    std::uint64_t outputs_mask = 0;
+    // PI-4 pins the width at uint32_t — routines with >32 params are out
+    // of scope. The M8 render case does not read individual bits; it
+    // just iterates operands in source order.
+    std::uint32_t outputs_mask = 0;
 };
 
 /// One compound statement (curly-brace block) in the user's source.

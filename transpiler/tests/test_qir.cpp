@@ -651,6 +651,96 @@ static void test_dump_skip_uncompute_true_appends_suffix() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase I / PI-4: USER_ROUTINE dump surface ───────────────────────────────
+//
+// PI-4 pins dump()'s rendering for the USER_ROUTINE kind the PI-2 matcher
+// produces: the op line carries the trailing `routine_name="<name>"
+// outputs_mask=0x<hex>` annotation, the operand list renders in source
+// order exactly like every other kind, and `result` is default-constructed
+// (no single named result for a user-routine call) so its operand-slot
+// prints as `@<invalid>`. A USER_ROUTINE op with zero operands (rare — a
+// no-argument callee) still renders the empty operand list cleanly.
+
+static void test_dump_user_routine_two_outputs() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "both_out";
+    op.outputs_mask   = 0x3u;
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    // op.result left default (name="", decl_loc invalid).
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] USER_ROUTINE @<invalid> = a@20, b@25  range=[30..40]"
+        " routine_name=\"both_out\" outputs_mask=0x3\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_user_routine_mixed_io_with_scalar() {
+    // PI-2 captures classical scalar arguments via Lexer-extracted source
+    // text in operand.name with an invalid decl_loc. dump() renders those
+    // operands as `<text>@<invalid>` alongside the named qbool/qint
+    // operands.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "scalar_fn";
+    op.outputs_mask   = 0x1u;
+    op.operands.push_back(QValueRef{"out", make_loc(20)});
+    op.operands.push_back(QValueRef{"42",  clang::SourceLocation()});
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] USER_ROUTINE @<invalid> = out@20, 42@<invalid>  range=[30..40]"
+        " routine_name=\"scalar_fn\" outputs_mask=0x1\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_user_routine_zero_operands() {
+    // No-argument routine. The operand list is empty; the trailing
+    // `routine_name=...` / `outputs_mask=0x0` annotation still renders.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "noop_fn";
+    op.outputs_mask   = 0x0u;
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] USER_ROUTINE @<invalid> =   range=[30..40]"
+        " routine_name=\"noop_fn\" outputs_mask=0x0\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── dump() round-trip determinism ─────────────────────────────────────────────
 
 static void test_dump_is_stable_across_calls() {
@@ -706,6 +796,10 @@ int main() {
 
     test_dump_skip_uncompute_default_unchanged();
     test_dump_skip_uncompute_true_appends_suffix();
+
+    test_dump_user_routine_two_outputs();
+    test_dump_user_routine_mixed_io_with_scalar();
+    test_dump_user_routine_zero_operands();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
