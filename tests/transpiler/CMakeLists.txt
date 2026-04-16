@@ -602,6 +602,46 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase G / PG-2: snapshot fixture for nested-WHEN AND-fold (decl + arg) ──
+# Single fixture covering the named+named nested-WHEN base case:
+#
+#     WHEN(a) { WHEN(b) { (void)c; } }
+#
+# The Phase G PG-2 matcher (transpiler/src/matcher_when_nested.cpp) fires
+# on the (outer=a, inner=b) pair and performs two source edits:
+#   - Inject `qbool __stu_ctrl0 = a & b;\n` on `raw_insertions` anchored
+#     at the inner WHEN's expansion loc.
+#   - Replace the inner `materialize_when` arg (source range normalised
+#     via `Lexer::makeFileCharRange`) with `__stu_ctrl0`.
+#
+# PG-3 will later layer the `uncompute_and(__stu_ctrl0, a, b);` call after
+# the inner body's close brace — that slice is intentionally NOT exercised
+# here, so the PG-2 golden contains the decl + arg-rewrite but no
+# uncompute_and invocation. This test pins the exact shape of those two
+# edits, byte-for-byte.
+#
+# No idempotency companion is registered for PG-2. The generated file is
+# not a fixed-point under re-transpile: feeding it back through
+# sturm-transpile would trigger Phase F's compound lift on the now-
+# synthetic `qbool __stu_ctrl0 = a & b;` decl (a `&` qbool compound).
+# PG-3 will resolve the round-trip story end-to-end once the AND op
+# lands as a proper `QOperation{kind=AND}` and the emitter recognises
+# the AUTO-GENERATED sentinel uniformly; the slice-level correctness
+# signal for PG-2 is the snapshot test alone.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_when_nested_named
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_named.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_nested_named.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_nested_named
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_when_nested_named PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER

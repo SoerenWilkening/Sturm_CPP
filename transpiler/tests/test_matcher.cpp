@@ -1189,15 +1189,23 @@ static void test_pf_when_direct_materialize_call_no_match() {
     CHECK(r.detections == 0);
 }
 
-// ── Phase G / PG-1 nested-WHEN detection ───────────────────────────────────
+// ── Phase G / PG-1 + PG-2 nested-WHEN matcher ──────────────────────────────
 //
-// The Phase G PG-1 matcher detects adjacent pairs of `WHEN(outer) { WHEN(inner)
+// The Phase G matcher detects adjacent pairs of `WHEN(outer) { WHEN(inner)
 // { ... } }` where BOTH `outer` and `inner` peel to bare `DeclRefExpr`s
 // naming non-synthetic qbools. Tests drive it through the same stub as the
 // Phase F tests above (kQBoolWhenStub) so the macro-body / materialize_when
-// shape is identical to what the user writes in real code. PG-1 is
-// detection-only: success is measured via the detection counter, not via
-// any QUnit mutation.
+// shape is identical to what the user writes in real code.
+//
+// PG-1 was detection-only; PG-2 extends the callback to emit two source
+// edits per matched pair — a `qbool __stu_ctrl<M> = <outer> & <inner>;\n`
+// decl injection (staged on `unit.raw_insertions`) and a replacement of
+// the inner `materialize_when` argument with the ctrl name (staged on
+// `unit.replacements`). Detection counts remain valid, but the "QUnit
+// empty" assertions PG-1 originally carried now flip to non-empty checks
+// that pin the exact number of staged edits. PG-3 will later add an AND
+// `QOperation` to the IR (giving rise to a `uncompute_and` insertion);
+// until then `unit.scopes` stays empty for nested WHENs.
 struct PGOneRun {
     QUnit unit;
     int detections = 0;
@@ -1231,16 +1239,27 @@ static PGOneRun run_pg_when_nested_matcher(std::string_view user_src) {
 static void test_pg_when_nested_named_depth2_detects_once() {
     // WHEN(a) { WHEN(b) { ... } } — the named+named base case. The inner
     // WHEN finds outer `a` as its nearest enclosing WHEN; both args peel
-    // to bare DREs; detection counter reaches 1. The QUnit must stay
-    // untouched (PG-1 is detection-only).
+    // to bare DREs; detection counter reaches 1. Scopes stay empty (no
+    // `QOperation` is scheduled at PG-2 — that is PG-3's job), but the
+    // PG-2 emission stages exactly ONE replacement (the inner arg
+    // rewrite) and ONE raw insertion (the decl block). The staged decl
+    // spells the `__stu_ctrl0` / `a` / `b` operands verbatim.
     PGOneRun r = run_pg_when_nested_matcher(
         "void demo(qbool a, qbool b, qbool c) {\n"
         "    WHEN(a) { WHEN(b) { (void)c; } }\n"
         "}\n");
     CHECK(r.detections == 1);
     CHECK(r.unit.scopes.empty());
-    CHECK(r.unit.replacements.empty());
-    CHECK(r.unit.raw_insertions.empty());
+    CHECK(r.unit.replacements.size() == 1);
+    CHECK(r.unit.raw_insertions.size() == 1);
+    if (r.unit.replacements.size() == 1) {
+        CHECK_EQ_STR(r.unit.replacements[0].replacement,
+                     std::string("__stu_ctrl0"));
+    }
+    if (r.unit.raw_insertions.size() == 1) {
+        CHECK_EQ_STR(r.unit.raw_insertions[0].code,
+                     std::string("qbool __stu_ctrl0 = a & b;\n"));
+    }
 }
 
 static void test_pg_when_nested_named_depth3_detects_twice() {
@@ -1249,14 +1268,19 @@ static void test_pg_when_nested_named_depth3_detects_twice() {
     //   - middle `b` finds nearest outer `a` → pair 2
     // Crucially, `c` does NOT transitively pair with `a` because the
     // ParentMap walk stops at the nearest enclosing WHEN ancestor.
+    //
+    // PG-2 stages ONE replacement + ONE raw insertion per pair, giving
+    // two of each. The ctrl names are allocated from a per-callback
+    // persistent `FreshNameAllocator`, so cascaded levels pick up
+    // `__stu_ctrl0` and `__stu_ctrl1` without colliding.
     PGOneRun r = run_pg_when_nested_matcher(
         "void demo(qbool a, qbool b, qbool c, qbool d) {\n"
         "    WHEN(a) { WHEN(b) { WHEN(c) { (void)d; } } }\n"
         "}\n");
     CHECK(r.detections == 2);
     CHECK(r.unit.scopes.empty());
-    CHECK(r.unit.replacements.empty());
-    CHECK(r.unit.raw_insertions.empty());
+    CHECK(r.unit.replacements.size() == 2);
+    CHECK(r.unit.raw_insertions.size() == 2);
 }
 
 static void test_pg_when_nested_compound_inner_rejected() {
@@ -1269,6 +1293,8 @@ static void test_pg_when_nested_compound_inner_rejected() {
         "    WHEN(a) { WHEN(b | c) { (void)d; } }\n"
         "}\n");
     CHECK(r.detections == 0);
+    CHECK(r.unit.replacements.empty());
+    CHECK(r.unit.raw_insertions.empty());
 }
 
 static void test_pg_when_nested_compound_outer_rejected() {
@@ -1281,6 +1307,8 @@ static void test_pg_when_nested_compound_outer_rejected() {
         "    WHEN((b | c)) { WHEN(d) { (void)e; } }\n"
         "}\n");
     CHECK(r.detections == 0);
+    CHECK(r.unit.replacements.empty());
+    CHECK(r.unit.raw_insertions.empty());
 }
 
 static void test_pg_when_nested_siblings_tolerated() {
@@ -1299,6 +1327,8 @@ static void test_pg_when_nested_siblings_tolerated() {
         "    }\n"
         "}\n");
     CHECK(r.detections == 1);
+    CHECK(r.unit.replacements.size() == 1);
+    CHECK(r.unit.raw_insertions.size() == 1);
 }
 
 static void test_pd_six_ops_same_scope_hit_all_kinds() {
