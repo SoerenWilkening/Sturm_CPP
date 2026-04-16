@@ -67,10 +67,10 @@ using namespace clang::ast_matchers;
 // The compound-flatten helpers (peel_to_payload, op_kind_for, flatten_arg,
 // flatten_inner_call, render_decl_line) live in `detail` in
 // matcher_common.hpp since Phase F PF-0, alongside the existing
-// enclosing_compound_stmt / find_or_create_scope / make_ref helpers. We
+// enclosing_scope / find_or_create_scope / make_ref helpers. We
 // reach them via fully-qualified names below; no `using` for the flatten
 // helpers, so it stays obvious which calls land in shared code.
-using detail::enclosing_compound_stmt;
+using detail::enclosing_scope;
 using detail::find_or_create_scope;
 using detail::make_ref;
 
@@ -91,12 +91,15 @@ public:
             return;
         }
 
-        // Enclosing CompoundStmt — required for scope / close_brace lookup.
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*var, *r.Context);
-        if (!cs) return;
+        // Enclosing scope — required for scope / close_brace lookup.
+        // Phase H PH-1: transparently supports both braced CompoundStmt
+        // and braceless for/while/if/else body positions.
+        const auto es = enclosing_scope(*var, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_ = r.Context->getSourceManager();
+        const LangOptions& lang_ = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_, lang_);
 
 #ifndef NDEBUG
         // Guard against the same VarDecl binding twice (the matcher pattern

@@ -37,7 +37,7 @@ namespace {
 
 using namespace clang;
 using namespace clang::ast_matchers;
-using detail::enclosing_compound_stmt;
+using detail::enclosing_scope;
 using detail::find_or_create_scope;
 using detail::make_ref;
 
@@ -55,11 +55,16 @@ public:
 
         // XOR-assign is a statement, not an initializer, so we walk
         // up from the call expression rather than from a VarDecl.
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*call, *r.Context);
-        if (!cs) return;
+        // Phase H PH-1: `enclosing_scope` transparently handles both
+        // braced CompoundStmt and braceless for/while/if/else bodies;
+        // for braced fixtures the result is byte-identical to the
+        // old `enclosing_compound_stmt` walk.
+        const auto es = enclosing_scope(*call, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_ = r.Context->getSourceManager();
+        const LangOptions& lang_ = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_, lang_);
 
         // No debug-build dedupe guard here: the same variable can be
         // legitimately `^=`'d multiple times in a scope, so keying off
@@ -98,11 +103,12 @@ public:
         const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
         if (!call || !lhs || !rhs || !r.Context) return;
 
-        const CompoundStmt* cs =
-            enclosing_compound_stmt(*call, *r.Context);
-        if (!cs) return;
+        const auto es = enclosing_scope(*call, *r.Context);
+        if (!es.valid()) return;
 
-        QScope& scope = find_or_create_scope(*unit_, *cs);
+        const SourceManager& sm_es = r.Context->getSourceManager();
+        const LangOptions& lang_es = r.Context->getLangOpts();
+        QScope& scope = find_or_create_scope(*unit_, es, sm_es, lang_es);
 
         // Extract the verbatim source text of the classical RHS. The
         // Lexer token range covers the RHS's own tokens without picking
@@ -150,10 +156,11 @@ void register_xor_assign_matcher(clang::ast_matchers::MatchFinder& finder,
     // RHS is a DeclRefExpr; classical literal RHS (e.g. `a ^= 1;`) is a
     // PA-4 responsibility with its own IR flavor and matcher.
     //
-    // The statement-scope walk uses enclosing_compound_stmt(Stmt, ctx),
+    // The statement-scope walk uses enclosing_scope(Stmt, ctx),
     // not the Decl overload — there is no VarDecl to anchor against
     // because `^=` mutates an existing variable rather than introducing
-    // a new one.
+    // a new one. Phase H PH-1 replaced the old enclosing_compound_stmt
+    // helper; braced fixtures stay byte-identical.
     //
     // Note: the builtin `bool`/`int` `^=` does NOT produce a
     // CXXOperatorCallExpr (it lowers to CompoundAssignOperator), so the

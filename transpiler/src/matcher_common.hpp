@@ -6,10 +6,16 @@
 // matcher.hpp. Only the matcher_*.cpp implementation files include this.
 //
 // Contents:
-//   - `enclosing_compound_stmt` : walk ParentMapContext to the nearest
-//     CompoundStmt ancestor (two overloads: Decl, Stmt).
-//   - `find_or_create_scope`    : look up / allocate a QScope by the
-//     enclosing brace's raw SourceLocation encoding.
+//   - `enclosing_scope`         : walk ParentMapContext to the nearest
+//     enclosing user-visible scope anchor. Returns a {kind, anchor} pair
+//     where kind is CompoundStmt (the legacy shape: an enclosing
+//     CompoundStmt) or BracelessBody (Phase H PH-1: a single-statement
+//     body of a for/while/if/else without braces). Two overloads
+//     (Decl, Stmt) funnel through the same DynTypedNode walk.
+//   - `find_or_create_scope`    : look up / allocate a QScope. Accepts
+//     either the legacy CompoundStmt shape OR the PH-1 EnclosingScope
+//     shape, so Phase H matchers can key synthetic QScopes on braceless
+//     body stmts while Phase A-G matchers keep their familiar call shape.
 //   - `make_ref`                : lift a DeclRefExpr into a QValueRef.
 //   - `peel_to_payload`         : strip implicit/paren/temp wrappers (Phase E).
 //   - `op_kind_for`             : map a CXXOperatorCallExpr to QOpKind.
@@ -44,41 +50,146 @@
 #include <optional>
 #include <sstream>
 #include <string>
+#include <type_traits>
 #include <utility>
 #include <vector>
 
 namespace sturm::transpile::detail {
 
-// Walk up the parent chain of `node` until we find the immediately enclosing
-// CompoundStmt. Returns nullptr if none exists. Two overloads (Decl, Stmt)
-// funnel through the same DynTypedNode walk via ParentMapContext.
+// ── Phase H PH-1: enclosing-scope finder ────────────────────────────────────
+//
+// The scope-finder tells callers which source-text region owns a matched
+// node. Phase A-G only needed the "braced CompoundStmt" shape, since every
+// pre-existing matcher guard was `if (!cs) return;` — a matched op inside
+// a braceless `for (...) qop;` body would silently drop out of the IR.
+// Phase H widens the contract to the two user-visible scope shapes:
+//
+//   - CompoundStmt  : the legacy shape. Same as the old
+//     `enclosing_compound_stmt` — walk up the parent chain until we hit
+//     an enclosing CompoundStmt, then return it.
+//   - BracelessBody : the single-statement body of a `for`, `while`, `if`
+//     (then or else) that has no surrounding `{ }`. The anchor is the
+//     body Stmt itself. The synthetic QScope is keyed on the body Stmt's
+//     begin loc; its `close_brace` is the location immediately past the
+//     body Stmt's terminating token, computed with
+//     `Lexer::getLocForEndOfToken` so insertions there land after the
+//     user's trailing `;`.
+//
+// Macro-expanded body stmts are deliberately NOT treated as BracelessBody:
+// the Phase F/G WHEN macro expands to three nested `if`s whose then-arms
+// look like "braceless bodies" to a naive parent walk, but they are
+// compiler-generated and must not be lifted into user-visible scopes.
+// The check is `body->getBeginLoc().isMacroID()` → skip and keep walking up.
+enum class QScopeKind { CompoundStmt, BracelessBody };
+
+// Scope-finder result. `kind == CompoundStmt`: `compound` is the enclosing
+// CompoundStmt (non-null). `kind == BracelessBody`: `braceless_body` is
+// the body Stmt (non-null). Both fields are populated for the matching
+// kind and left null for the other so callers can branch cleanly.
+// A default-constructed EnclosingScope has `compound == nullptr` and
+// `braceless_body == nullptr` — the "no enclosing scope found" signal.
+struct EnclosingScope {
+    QScopeKind kind = QScopeKind::CompoundStmt;
+    const clang::CompoundStmt* compound = nullptr;
+    const clang::Stmt*         braceless_body = nullptr;
+
+    // True when the finder produced a usable scope anchor.
+    bool valid() const {
+        return compound != nullptr || braceless_body != nullptr;
+    }
+};
+
+// True when `body` is the branch of a ForStmt/WhileStmt/IfStmt that
+// qualifies as a braceless user body — i.e. non-compound, with a
+// non-macro spelling. Shared between the parent-walk (both Decl and Stmt
+// overloads). Invalid / macro-expanded body stmts are rejected here so
+// the walk falls through to the next parent.
+inline bool is_user_braceless_body(const clang::Stmt* body) {
+    if (!body) return false;
+    if (clang::isa<clang::CompoundStmt>(body)) return false;
+    const clang::SourceLocation loc = body->getBeginLoc();
+    if (!loc.isValid()) return false;
+    // WHEN and friends expand through `_when_capture_`/`_when_val_`/
+    // `_when_guard_` nested `if`s; their then-branches superficially
+    // look like braceless bodies. Skip macro-expanded spellings.
+    if (loc.isMacroID()) return false;
+    return true;
+}
+
+// Walk up the parent chain of `node` toward the enclosing scope. Returns
+// {CompoundStmt, cs} if the first enclosing scope is a braced block, or
+// {BracelessBody, body_stmt} if the first enclosing scope is a
+// non-compound for/while/if/else body position. A default-constructed
+// EnclosingScope (`valid() == false`) signals "no enclosing scope"
+// (e.g. the node lives at file scope — not possible for the matched ops
+// the Phase A-G callbacks care about, but we return cleanly for safety).
 template <typename T>
-inline const clang::CompoundStmt*
-enclosing_compound_stmt_impl(const T& n, clang::ASTContext& ctx) {
-    clang::DynTypedNode node = clang::DynTypedNode::create(n);
+inline EnclosingScope enclosing_scope_impl(const T& n, clang::ASTContext& ctx) {
+    clang::DynTypedNode current = clang::DynTypedNode::create(n);
+    // `prev_stmt` tracks the most recent Stmt we walked through. When we
+    // reach a ForStmt/WhileStmt/IfStmt, we check whether prev_stmt is the
+    // body/then/else branch — i.e. whether our original node lives inside
+    // the control-flow body (as opposed to its condition / init / inc).
+    const clang::Stmt* prev_stmt = nullptr;
+    if constexpr (std::is_base_of_v<clang::Stmt, T>) {
+        prev_stmt = &n;
+    }
     while (true) {
-        const auto parents = ctx.getParents(node);
-        if (parents.empty()) return nullptr;
+        const auto parents = ctx.getParents(current);
+        if (parents.empty()) return {};
         // Follow only the first parent — multi-parent shapes only arise in
         // template instantiations, which the MVP matcher does not enter.
-        node = parents[0];
-        if (const auto* cs = node.get<clang::CompoundStmt>()) return cs;
+        current = parents[0];
+        // CompoundStmt branch — the legacy shape.
+        if (const auto* cs = current.get<clang::CompoundStmt>()) {
+            return {QScopeKind::CompoundStmt, cs, nullptr};
+        }
+        // BracelessBody branch — for/while/if with a non-compound body.
+        if (const auto* fs = current.get<clang::ForStmt>()) {
+            if (fs->getBody() == prev_stmt &&
+                is_user_braceless_body(fs->getBody())) {
+                return {QScopeKind::BracelessBody, nullptr, fs->getBody()};
+            }
+        } else if (const auto* ws = current.get<clang::WhileStmt>()) {
+            if (ws->getBody() == prev_stmt &&
+                is_user_braceless_body(ws->getBody())) {
+                return {QScopeKind::BracelessBody, nullptr, ws->getBody()};
+            }
+        } else if (const auto* is = current.get<clang::IfStmt>()) {
+            if ((is->getThen() == prev_stmt &&
+                 is_user_braceless_body(is->getThen())) ||
+                (is->getElse() == prev_stmt &&
+                 is_user_braceless_body(is->getElse()))) {
+                return {QScopeKind::BracelessBody,
+                        nullptr,
+                        (is->getThen() == prev_stmt) ? is->getThen()
+                                                     : is->getElse()};
+            }
+        }
+        // Update prev_stmt for the next iteration.
+        if (const auto* as_stmt = current.get<clang::Stmt>()) {
+            prev_stmt = as_stmt;
+        }
     }
 }
 
-inline const clang::CompoundStmt*
-enclosing_compound_stmt(const clang::Decl& decl, clang::ASTContext& ctx) {
-    return enclosing_compound_stmt_impl(decl, ctx);
+inline EnclosingScope
+enclosing_scope(const clang::Decl& decl, clang::ASTContext& ctx) {
+    return enclosing_scope_impl(decl, ctx);
 }
 
-inline const clang::CompoundStmt*
-enclosing_compound_stmt(const clang::Stmt& stmt, clang::ASTContext& ctx) {
-    return enclosing_compound_stmt_impl(stmt, ctx);
+inline EnclosingScope
+enclosing_scope(const clang::Stmt& stmt, clang::ASTContext& ctx) {
+    return enclosing_scope_impl(stmt, ctx);
 }
 
 // Locate the QScope in `unit` whose open_brace matches `cs`, creating one at
 // the end of `unit.scopes` if none exists. The raw encoding of the opening
 // brace is a stable scope identity within a single translation unit.
+//
+// Legacy Phase A-G overload: called by matchers that have already narrowed
+// to a CompoundStmt (e.g. the WHEN matchers, which inspect macro-generated
+// AST shapes and must remain CompoundStmt-only).
 inline QScope& find_or_create_scope(QUnit& unit, const clang::CompoundStmt& cs) {
     const auto key = cs.getLBracLoc().getRawEncoding();
     for (auto& scope : unit.scopes) {
@@ -87,6 +198,41 @@ inline QScope& find_or_create_scope(QUnit& unit, const clang::CompoundStmt& cs) 
     QScope fresh;
     fresh.open_brace  = cs.getLBracLoc();
     fresh.close_brace = cs.getRBracLoc();
+    unit.scopes.push_back(std::move(fresh));
+    return unit.scopes.back();
+}
+
+// Phase H PH-1 overload: locate-or-create a QScope from an EnclosingScope
+// result. CompoundStmt-kind scopes delegate to the legacy overload above;
+// BracelessBody-kind scopes synthesize a QScope keyed on the body Stmt's
+// begin loc, with `close_brace` set just past the body's terminating
+// token (one-past-the-`;`).
+inline QScope& find_or_create_scope(QUnit& unit,
+                                    const EnclosingScope& es,
+                                    const clang::SourceManager& sm,
+                                    const clang::LangOptions& lang) {
+    if (es.kind == QScopeKind::CompoundStmt) {
+        // Compound branch never touches sm/lang — the braces come straight
+        // off the CompoundStmt node. Delegating keeps identity behaviour
+        // byte-identical to Phase A-G.
+        return find_or_create_scope(unit, *es.compound);
+    }
+    // BracelessBody branch. Key on the body Stmt's begin loc so repeated
+    // matches inside the same braceless body coalesce into one QScope.
+    const clang::Stmt* body = es.braceless_body;
+    const clang::SourceLocation begin = body->getBeginLoc();
+    const auto key = begin.getRawEncoding();
+    for (auto& scope : unit.scopes) {
+        if (scope.open_brace.getRawEncoding() == key) return scope;
+    }
+    QScope fresh;
+    fresh.open_brace = begin;
+    // `Lexer::getLocForEndOfToken` on the body's last token returns the
+    // loc immediately past that token. For a `qop;` body the end token
+    // is the `;`, so `close_brace` lands exactly where a synthesized
+    // `}` would go in the Phase H brace-wrap pass.
+    fresh.close_brace = clang::Lexer::getLocForEndOfToken(
+        body->getEndLoc(), /*Offset=*/0, sm, lang);
     unit.scopes.push_back(std::move(fresh));
     return unit.scopes.back();
 }

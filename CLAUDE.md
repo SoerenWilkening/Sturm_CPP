@@ -7,6 +7,7 @@ This file provides instructions and context for AI coding agents working on this
 At the start of every session, read:
 - `docs/01_principles.md` — core design principles
 - `docs/roadmap_transpiler_post_mvp.md` — phases to execute after the MVP pipeline is green
+- `docs/implementation_plan_transpiler_phase_h.md` — active plan for Phase H (loops + classical control flow)
 
 **When archiving a document** (moving to `docs/archive/`), also remove its entry from this Required Reading list. A document in the archive must not be a session dependency.
 
