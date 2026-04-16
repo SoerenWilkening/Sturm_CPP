@@ -129,6 +129,23 @@ namespace m12_if_branches_reference {
 void demo(const sturm::qbool& a, const sturm::qbool& b, bool cond);
 } // namespace m12_if_branches_reference
 
+// PH-6a: Phase H for-loop fixture pair.  The transpiler rewrites each
+// iteration's `qbool tmp = a | b;` into a decl + `sturm::uncompute_or(
+// tmp, a, b);` pair before the loop body's closing `}`, so every
+// iteration emits six gates (three forward OR + three adjoint) against
+// the SAME recycled ancilla index (the QubitPool free-list is LIFO, so
+// tmp's RAII release at `}` hands the same index back to the next
+// iteration's `allocate()`).  The reference fixture spells the per-
+// iteration lowering by hand.  `const qbool&` arguments preserve the
+// caller's qubit indices across the three iterations.
+namespace m12_for_loop_transpiled {
+void demo(const sturm::qbool& a, const sturm::qbool& b);
+} // namespace m12_for_loop_transpiled
+
+namespace m12_for_loop_reference {
+void demo(const sturm::qbool& a, const sturm::qbool& b);
+} // namespace m12_for_loop_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -437,10 +454,44 @@ int main() {
     }
     std::printf("  if_branches streams match (%zu gates).\n", ref_if.size());
 
+    // PH-6a: Phase H for-loop gate-equivalence pair.  Proves the
+    // transpiler's per-iteration OR-uncompute injection emits the same
+    // gate stream as the hand-written reference.  Each iteration is a
+    // six-gate forward+adjoint sequence; the body has three iterations
+    // so the captured stream covers eighteen gates.  Because the
+    // QubitPool is a LIFO free-list and `tmp`'s RAII destructor releases
+    // the ancilla at the body's `}`, every iteration reuses the same
+    // qubit index — the byte-compare therefore fails hard if the
+    // transpiler ever drifts the injected call out of the per-iteration
+    // scope (e.g. planting it after the loop, or once per function).
+    std::printf("PH-6a gate-stream equivalence test (for_loop pattern):\n");
+    const auto ref_for = run_and_capture(&m12_for_loop_reference::demo);
+    const auto got_for = run_and_capture(&m12_for_loop_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_for.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_for[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_for.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_for[i]).c_str());
+    }
+    if (ref_for.empty()) {
+        std::fprintf(stderr,
+                     "for_loop reference produced 0 gates — fixture not "
+                     "exercising the Phase H for-loop OR lowering.\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_for, ref_for); rc != 0) {
+        std::fprintf(stderr, "for_loop gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  for_loop streams match (%zu gates).\n", ref_for.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
     std::printf("pair 4: %zu gates match\n", ref_if.size());
+    std::printf("pair 5: %zu gates match\n", ref_for.size());
     std::printf("PASS\n");
     return 0;
 }
