@@ -1155,6 +1155,65 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase H / PH-5: end-to-end injected observability + idempotency for ────
+# the classical control-flow example.  Same harness pattern as the
+# Phase G PG-8 nested_when block above:
+#   1. build_example_control_flow — SETUP fixture that builds the
+#      example_control_flow target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/control_flow.cpp via
+#      add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_control_flow_injected — reads the generated
+#      file and asserts the Phase H per-iteration / per-branch
+#      uncompute lowering for both control-flow cases in main():
+#        - Case 1 (`for (int i = 0; i < 3; ++i) { qbool tmp = a | b; }`):
+#          `uncompute_or(tmp, a, b);` planted before the loop body's
+#          `}` — fires once per iteration at run time.
+#        - Case 2 (`if (cond) { qbool x = a | b; } else { qbool y = a | b; }`):
+#          distinct per-branch intermediates, each with its own
+#          `uncompute_or(<var>, a, b);` planted before that branch's
+#          `}` — the then-arm's uncompute precedes the else-arm's in
+#          source order.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name.
+#   3. transpiler_idempotent_example_control_flow — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_control_flow
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_control_flow)
+    set_tests_properties(build_example_control_flow PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_control_flow_built")
+
+    add_test(
+        NAME transpiler_example_control_flow_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/control_flow.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/control_flow.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_control_flow.cmake)
+    set_tests_properties(transpiler_example_control_flow_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_control_flow_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_control_flow
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/control_flow.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_control_flow_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_control_flow PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_control_flow_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
