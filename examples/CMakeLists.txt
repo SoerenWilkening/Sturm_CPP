@@ -149,6 +149,37 @@ target_sources(example_when_integration PRIVATE
 )
 target_link_libraries(example_when_integration PRIVATE orkan_headers)
 
+# ── Example: named-named nested `WHEN` AND-fold (Phase G) ───────────────────
+# Routed through sturm-transpile so each `WHEN(outer) { WHEN(inner) { ... } }`
+# named-named pair is rewritten: a `qbool __stu_ctrl<N> = outer & inner;`
+# decl is injected immediately ABOVE the inner WHEN line, the inner
+# WHEN argument is substituted to `__stu_ctrl<N>`, and a matching
+# `uncompute_and(__stu_ctrl<N>, outer, inner);` call is planted
+# directly after the inner WHEN body's closing brace (still inside
+# the outer scope).  Depth-3 cascades fire twice — once per adjacent
+# pair — with a persistent `FreshNameAllocator::next_ctrl()` counter
+# so the two `__stu_ctrl` temps never collide.  Same helper / bypass
+# pattern as example_when_integration; the Phase G matcher lives in
+# transpiler/src/matcher_when_nested.cpp, and the runtime
+# `uncompute_and` symbol resolves via
+# src/sturm/uncompute/uncompute_api.cpp.
+add_quantum_executable(example_nested_when
+    nested_when.cpp
+)
+target_sources(example_nested_when PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_nested_when PRIVATE orkan_headers)
+
 # ── Example: combined Phase A + B + C demo ──────────────────────────────────
 # Routed through sturm-transpile so every forward pattern from all three
 # phases receives its inverse injection in one file. LIFO rewind runs
