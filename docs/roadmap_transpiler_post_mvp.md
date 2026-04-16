@@ -407,14 +407,32 @@ Distinguishing the two requires **ownership / liveness analysis**: is the result
 
 ## Phase J — IR-Level Optimizations
 
+> **2026-04-16:** Phase J epic scoped. Items 1, 3, 4 below are committed
+> and tracked as bd issues `sturm-2hnb`..`sturm-9bs4` (labels PJ-1a..PJ-1j,
+> PJ-4a..PJ-4f, PJ-3a..PJ-3i). Item 2 (peephole gate reordering) has been
+> **deferred to Phase M** — speculative value on top of PJ-1's
+> two-statement peephole, would require alias analysis for marginal gain.
+> All Phase J optimizations ship **on by default**: the roadmap's
+> speculative `--O1`/`--O2` flag machinery is dropped; future more
+> aggressive passes are free to introduce opt-in flags. The forward
+> helper emitted by PJ-1 is named `sturm::ccnot_inplace(qbool&, const
+> qbool&, const qbool&)`, self-adjoint, living in
+> `include/sturm/uncompute/uncompute_api.hpp` alongside `uncompute_and`.
+> Phase K-3 explicitly depends on PJ-1 ("the zero-ancilla optimization
+> now lives in the IR pass") and must land after Phase J.
+>
+> Sub-phase ordering: PJ-1 first (also ships the shared
+> `count_readers_in_scope` helper), PJ-4 second (reuses the helper),
+> PJ-3 last (largest design surface — new `classify_scope_kind` +
+> `expr_is_loop_invariant` helpers and the `hoist_to_override`
+> field on `QOperation`).
+
 Only after coverage is complete. Deferring these avoids premature optimization and lets us validate correctness before speed.
 
-1. **Zero-ancilla fusion.** The pattern `qbool __t = a & b; x ^= __t; /* __t used once here */` fuses into `x ^= (a & b)` at the IR level, emitting a single CCX with no intermediate qubit. This is the optimization today's `lazy_expr` materialization tries to approximate at runtime — moving it to the IR is cleaner and composes with other rewrites.
-2. **Peephole gate reordering.** Commute commuting gates to expose fusion opportunities and cancellations.
+1. **Zero-ancilla fusion.** The pattern `qbool __t = a & b; x ^= __t; /* __t used once here */` fuses into a single `ccnot_inplace(x, a, b);` call at the IR level, emitting a single CCX with no intermediate qubit. This is the optimization today's `lazy_expr` materialization tries to approximate at runtime — moving it to the IR is cleaner and composes with other rewrites. Implementation lives in the pre-lowering peephole `matcher_ccnot_fuse.cpp`, which fires **before** the Phase E compound-flatten matcher so the `__stu_tN` temporary is never allocated.
+2. **Peephole gate reordering.** *Deferred to Phase M stretch.* Commute commuting gates to expose fusion opportunities and cancellations.
 3. **Uncompute hoisting.** When a `qbool` is produced inside a loop and uncomputed at the end of the loop body, but the forward computation is loop-invariant, the transpiler may hoist both compute and uncompute out of the loop. This is an optimization; correctness is only affected by getting the hoist conditions right.
 4. **Dead-ancilla elimination.** When an intermediate is produced but never consumed (e.g. dead after a classical branch is eliminated), skip the allocation entirely.
-
-Each optimization is a separate IR pass, gated by a CLI flag (`--O1`, `--O2`) for easy bisection.
 
 ---
 
@@ -473,6 +491,7 @@ Lower priority, tracked for visibility.
 - **Diagnostics.** Quantum-specific compile errors ("operand modified inside its own WHEN", "qbool escapes its scope without explicit measurement or uncompute"). Requires the liveness analysis from Phase H to be mature.
 - **Source maps.** Preserve `#line` directives in the generated file so that compiler and debugger diagnostics point at the user's source, not the generated temporary names.
 - **Transpiler pluginization.** User-defined rewrite rules registered with the transpiler, for ecosystem libraries that introduce new quantum operations. Only after the core is stable.
+- **Peephole gate reordering** *(deferred from Phase J PJ-2, 2026-04-16).* Commute commuting gates across unrelated ops to expose fusion opportunities and cancellations beyond what PJ-1's adjacent-statement peephole captures. Requires alias analysis for the value-gain ratio to pay its way; dropped from Phase J on that basis.
 
 ---
 

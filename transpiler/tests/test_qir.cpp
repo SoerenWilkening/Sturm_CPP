@@ -651,6 +651,111 @@ static void test_dump_skip_uncompute_true_appends_suffix() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase J / PJ-3c: hoist_to_override surfaces in dump() ────────────────────
+//
+// PJ-3c introduces `QOperation::hoist_to_override` — a second per-op
+// SourceLocation parallel to `insert_before_override`, used by the PJ-3d
+// uncompute-hoisting matcher to move an invariant forward computation out
+// of a loop body. When set, the M8 synthesis pass uses it as the uncompute
+// insertion anchor (AFTER the loop end) instead of the enclosing scope's
+// `close_brace` or the `insert_before_override` WHEN-lift anchor. dump()
+// must surface the override whenever it is set so the matcher's golden
+// tests (and future Phase J snapshots) can witness which ops carry a hoist
+// anchor — but it must produce byte-identical output for every prior
+// snapshot, which means: invalid (default) overrides must render NOTHING
+// extra. Both directions are covered below.
+
+static void test_dump_op_with_invalid_hoist_override_unchanged() {
+    // Mirror test_dump_single_op exactly: no hoist override set means the
+    // dump line is byte-identical to the pre-PJ-3c format. Every Phase
+    // A..I snapshot fixture depends on this property.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    // hoist_to_override left default (invalid).
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] OR tmp@30 = a@20, b@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_op_with_valid_hoist_override_surfaces() {
+    // When the hoist override is valid, dump() appends a trailing
+    // " hoist_to_override=<raw>" annotation to the op line. This pairs
+    // with the existing insert_before_override annotation — both can
+    // coexist on the same op (the PJ-3d matcher sets BOTH for a hoisted
+    // op: `insert_before_override` = loop-begin location for the forward
+    // compute, `hoist_to_override` = post-loop close brace for the
+    // uncompute).
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    op.hoist_to_override = make_loc(88);
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] OR tmp@30 = a@20, b@25  range=[28..40]"
+        " hoist_to_override=88\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_op_with_both_overrides_surfaces_both() {
+    // The hoisting matcher sets BOTH overrides on a single op. dump()
+    // must surface BOTH annotations in a deterministic order — the
+    // existing insert_before_override annotation first (to keep pre-PJ-3c
+    // goldens stable), then hoist_to_override. This ordering is locked
+    // by the test below so future matchers reading dump() can rely on
+    // it.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::AND;
+    op.result = QValueRef{"r", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    op.insert_before_override = make_loc(77);
+    op.hoist_to_override = make_loc(88);
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] AND r@30 = a@20, b@25  range=[28..40]"
+        " insert_before_override=77 hoist_to_override=88\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── Phase I / PI-4: USER_ROUTINE dump surface ───────────────────────────────
 //
 // PI-4 pins dump()'s rendering for the USER_ROUTINE kind the PI-2 matcher
@@ -796,6 +901,10 @@ int main() {
 
     test_dump_skip_uncompute_default_unchanged();
     test_dump_skip_uncompute_true_appends_suffix();
+
+    test_dump_op_with_invalid_hoist_override_unchanged();
+    test_dump_op_with_valid_hoist_override_surfaces();
+    test_dump_op_with_both_overrides_surfaces_both();
 
     test_dump_user_routine_two_outputs();
     test_dump_user_routine_mixed_io_with_scalar();

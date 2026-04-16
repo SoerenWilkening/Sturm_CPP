@@ -92,6 +92,16 @@ void dump_op(std::ostringstream& os, const QOperation& op, std::size_t idx) {
     if (op.insert_before_override.isValid()) {
         os << " insert_before_override=" << loc_to_string(op.insert_before_override);
     }
+    // Phase J PJ-3c: surface the hoist-uncompute anchor override when (and
+    // only when) the PJ-3d matcher set one. Default (invalid) overrides
+    // print nothing so every Phase A..I snapshot fixture stays
+    // byte-identical; pre-PJ-3 matchers never set this field. Rendered
+    // AFTER insert_before_override so when both are set the dump output
+    // lists them in declaration order (insert_before_override first,
+    // hoist_to_override second) — pinned by the test_qir.cpp fixture.
+    if (op.hoist_to_override.isValid()) {
+        os << " hoist_to_override=" << loc_to_string(op.hoist_to_override);
+    }
     // Phase H PH-3: surface the skip_uncompute flag when it is set. The
     // default-false value prints nothing so every Phase A..G snapshot
     // fixture stays byte-identical; pre-Phase-H matchers never set it.

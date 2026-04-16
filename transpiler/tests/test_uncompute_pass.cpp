@@ -1433,6 +1433,209 @@ static void test_raw_insertions_only_no_ops() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(42)));
 }
 
+// ── Phase J / PJ-3c: hoist_to_override uncompute-anchor routing ─────────────
+//
+// PJ-3c introduces `QOperation::hoist_to_override`. When valid, the M8
+// synthesis pass must use it as the uncompute insertion anchor — the hoisted
+// forward computation lives BEFORE the loop begin (rewritten in place by a
+// matcher-owned QReplacement / raw_insertion) and the uncompute lands AFTER
+// the loop end at the location recorded in `hoist_to_override`. The new
+// field takes precedence over the Phase F `insert_before_override`
+// (the hoisting matcher sets `insert_before_override` to the loop-BEGIN
+// location for the forward compute anchor, and `hoist_to_override` to the
+// loop-enclosing scope's close_brace for the post-loop uncompute anchor;
+// synthesize must pick `hoist_to_override` for the uncompute). When
+// `hoist_to_override` is left default (invalid), the pass falls back to
+// the Phase F / pre-Phase-F behaviour — which is what every prior snapshot
+// fixture relies on.
+
+static void test_hoist_to_override_takes_precedence_over_close_brace() {
+    // Single op in one scope with `hoist_to_override = 88`. No
+    // `insert_before_override` is set. The uncompute insertion's
+    // `insert_before` must be 88 (hoist anchor), NOT the scope's
+    // close_brace (99).
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"t", make_loc(10)};
+    op.operands = { QValueRef{"a", make_loc(2)},
+                    QValueRef{"b", make_loc(3)} };
+    op.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    op.hoist_to_override = make_loc(88);
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(t, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(88)));
+}
+
+static void test_hoist_to_override_takes_precedence_over_insert_before_override() {
+    // The PJ-3d hoisting matcher sets BOTH fields on a hoisted op:
+    //   - insert_before_override = loop-begin location (for the forward
+    //     compute anchor, consumed by the matcher-owned raw_insertion /
+    //     QReplacement pair).
+    //   - hoist_to_override = post-loop close_brace (for the uncompute
+    //     anchor, consumed by synthesize()).
+    // synthesize() must prefer `hoist_to_override` over
+    // `insert_before_override` when placing the uncompute. If the two
+    // were equal-priority the uncompute would land INSIDE the loop body
+    // (at the loop-begin anchor) rather than after it, breaking the
+    // semantic the optimization is built around.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"t", make_loc(10)};
+    op.operands = { QValueRef{"a", make_loc(2)},
+                    QValueRef{"b", make_loc(3)} };
+    op.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    op.insert_before_override = make_loc(77);   // loop-begin (forward)
+    op.hoist_to_override      = make_loc(88);   // post-loop (uncompute)
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(t, a, b);\n"));
+    // hoist_to_override wins; insert_before_override is NOT the uncompute
+    // anchor for a hoisted op.
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(88)));
+}
+
+static void test_invalid_hoist_override_falls_back_to_insert_before_override() {
+    // Defensive companion: a default-constructed (invalid)
+    // `hoist_to_override` must not poison the anchor — when only
+    // `insert_before_override` is set, the pass falls back to it
+    // exactly as it did pre-PJ-3c. Without this guarantee every Phase
+    // F WHEN-lift fixture would silently retarget to <invalid>.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"t", make_loc(10)};
+    op.operands = { QValueRef{"a", make_loc(2)},
+                    QValueRef{"b", make_loc(3)} };
+    op.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    op.insert_before_override = make_loc(77);
+    // hoist_to_override left default (invalid).
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(t, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(77)));
+}
+
+static void test_invalid_hoist_override_falls_back_to_close_brace() {
+    // Defensive companion: neither override set — the pass falls back
+    // to `scope.close_brace`, which is the pre-Phase-F behaviour every
+    // Phase A..E snapshot fixture relies on.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"t", make_loc(10)};
+    op.operands = { QValueRef{"a", make_loc(2)},
+                    QValueRef{"b", make_loc(3)} };
+    op.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    // Both overrides left default (invalid).
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(t, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+}
+
+static void test_hoist_to_override_honours_skip_uncompute() {
+    // Defensive companion: a hoisted op with `skip_uncompute == true`
+    // must still produce NO insertion — the PH-3 skip contract takes
+    // precedence over the PJ-3c routing. The PJ-3d matcher already
+    // skips any op with `skip_uncompute == true` (PH-3 disjointness
+    // guard), but synthesize() must be robust to a hand-built fixture
+    // or a future matcher that sets both flags.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"t", make_loc(10)};
+    op.operands = { QValueRef{"a", make_loc(2)},
+                    QValueRef{"b", make_loc(3)} };
+    op.stmt_range = clang::SourceRange(make_loc(10), make_loc(20));
+    op.hoist_to_override = make_loc(88);
+    op.skip_uncompute = true;
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_hoist_to_override_user_routine_kind() {
+    // PJ-3d's matcher is restricted to decl-producing kinds (OR / AND /
+    // NOT / XOR / compare); USER_ROUTINE is excluded. But synthesize()
+    // must remain agnostic to kind when routing the uncompute anchor —
+    // the hoist override takes precedence over the USER_ROUTINE-specific
+    // insert_before_override path used by PI-3 just as it does for OR
+    // or AND.
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    QOperation op;
+    op.kind           = QOpKind::USER_ROUTINE;
+    op.routine_name   = "mixed_io";
+    op.outputs_mask   = 0x1u;
+    op.operands = { QValueRef{"x", make_loc(20)},
+                    QValueRef{"y", make_loc(25)} };
+    op.stmt_range = clang::SourceRange(make_loc(30), make_loc(40));
+    op.insert_before_override = make_loc(77);
+    op.hoist_to_override      = make_loc(88);
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+    CHECK_EQ_STR(ins[0].code, std::string("    invert(mixed_io)(x, y);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(88)));
+}
+
 int main() {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
@@ -1468,6 +1671,13 @@ int main() {
     test_invalid_override_falls_back_to_close_brace();
     test_raw_insertions_appended_verbatim();
     test_raw_insertions_only_no_ops();
+
+    test_hoist_to_override_takes_precedence_over_close_brace();
+    test_hoist_to_override_takes_precedence_over_insert_before_override();
+    test_invalid_hoist_override_falls_back_to_insert_before_override();
+    test_invalid_hoist_override_falls_back_to_close_brace();
+    test_hoist_to_override_honours_skip_uncompute();
+    test_hoist_to_override_user_routine_kind();
 
     test_skip_uncompute_true_emits_no_insertion();
     test_skip_uncompute_false_still_emits_normally();
