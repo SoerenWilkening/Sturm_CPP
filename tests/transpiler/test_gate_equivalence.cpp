@@ -114,6 +114,21 @@ void demo(sturm::qbool& outer,
           sturm::qbool& target);
 } // namespace m12_nested_reference
 
+// PH-6b: Phase H if/else fixture pair.  The transpiler rewrites each
+// branch's `qbool <var> = a | b;` into a decl + `sturm::uncompute_or(
+// <var>, a, b);` pair before that branch's closing `}`, so the captured
+// gate stream covers both branch lowerings when `demo` is invoked
+// twice (cond=true, cond=false).  The reference fixture spells the two
+// lowerings by hand.  `const qbool&` arguments preserve the caller's
+// qubit indices across the classical `cond` selector.
+namespace m12_if_branches_transpiled {
+void demo(const sturm::qbool& a, const sturm::qbool& b, bool cond);
+} // namespace m12_if_branches_transpiled
+
+namespace m12_if_branches_reference {
+void demo(const sturm::qbool& a, const sturm::qbool& b, bool cond);
+} // namespace m12_if_branches_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -232,6 +247,38 @@ run_and_capture_nested(void (*demo)(sturm::qbool&,
     sturm::QubitPool::instance().release(qo);
     sturm::QubitPool::instance().release(qi);
     sturm::QubitPool::instance().release(qt);
+    return stream;
+}
+
+// PH-6b: capture helper for the Phase H if/else fixture pair.  Two
+// qubits (`a`, `b`) are allocated once per capture and passed by
+// `make_non_owning` qbool views — ownership stays with the harness so
+// the qbool destructors inside `demo` do not release them.  Each
+// capture invokes `demo` TWICE — once with `cond=true`, once with
+// `cond=false` — so both branches' lowerings show up in the stream.
+// Pool indices reset after the capture so the transpiled and
+// reference captures see identical qubit indices for `a`, `b`, and
+// the per-branch intermediates.
+std::vector<sturm::GateRecord>
+run_and_capture_if_branches(void (*demo)(const sturm::qbool&,
+                                         const sturm::qbool&,
+                                         bool)) {
+    ScopedAppendContext sc;
+
+    const int qa = sturm::QubitPool::instance().allocate();
+    const int qb = sturm::QubitPool::instance().allocate();
+    sturm::qbool a = sturm::qbool::make_non_owning(qa);
+    a.super_mask = 1ULL;
+    sturm::qbool b = sturm::qbool::make_non_owning(qb);
+    b.super_mask = 1ULL;
+
+    demo(a, b, true);
+    demo(a, b, false);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(qa);
+    sturm::QubitPool::instance().release(qb);
     return stream;
 }
 
@@ -360,9 +407,40 @@ int main() {
     }
     std::printf("  nested_when streams match (%zu gates).\n", ref_n.size());
 
+    // PH-6b: Phase H if/else gate-equivalence pair.  Proves the
+    // transpiler's per-branch OR-uncompute injection emits the same
+    // gate stream as the hand-written reference.  Each branch is a
+    // six-gate forward+adjoint sequence; the harness invokes `demo`
+    // twice per capture (cond=true then cond=false) so BOTH branch
+    // lowerings are exercised in a single stream — expected length is
+    // twelve gates.
+    std::printf("PH-6b gate-stream equivalence test (if_branches pattern):\n");
+    const auto ref_if = run_and_capture_if_branches(&m12_if_branches_reference::demo);
+    const auto got_if = run_and_capture_if_branches(&m12_if_branches_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_if.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_if[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_if.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_if[i]).c_str());
+    }
+    if (ref_if.empty()) {
+        std::fprintf(stderr,
+                     "if_branches reference produced 0 gates — fixture not "
+                     "exercising the Phase H if/else OR lowering.\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_if, ref_if); rc != 0) {
+        std::fprintf(stderr, "if_branches gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  if_branches streams match (%zu gates).\n", ref_if.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
+    std::printf("pair 4: %zu gates match\n", ref_if.size());
     std::printf("PASS\n");
     return 0;
 }
