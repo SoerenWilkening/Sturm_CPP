@@ -170,6 +170,7 @@ add_executable(test_transpile_matcher
     test_routine_registry.cpp
     test_matcher_user_routine.cpp
     test_matcher_output_class.cpp
+    test_matcher_scope_kind.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp

@@ -22,6 +22,7 @@ int main() {
     run_routine_registry_tests();
     run_user_routine_tests();
     run_output_class_tests();
+    run_scope_kind_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
