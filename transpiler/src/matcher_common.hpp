@@ -45,6 +45,7 @@
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/OperationKinds.h"
 #include "clang/AST/ParentMapContext.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/OperatorKinds.h"
@@ -384,6 +385,111 @@ inline ScopeKind classify_scope_kind(const clang::Stmt* scope_anchor,
     }
 
     return ScopeKind::Other;
+}
+
+// ── Phase J PJ-1a: reader-count helper ──────────────────────────────────────
+//
+// Count DeclRefExpr occurrences inside `scope_anchor`'s subtree that
+// refer to the decl at `decl_loc` (spelled `name`). Shared by:
+//
+//   - PJ-1d (zero-ancilla fusion gate) — reader-count == 1 is the
+//     prerequisite for fusing `qbool __t = a & b; x ^= __t;` into a
+//     single `ccnot_inplace(x, a, b);` call. If `__t` has 0 or ≥2
+//     readers the fusion is rejected (0 ⇒ the temp is dead, fire
+//     PJ-4 instead; ≥2 ⇒ the temp escapes the pair and fusion would
+//     lose the other reader).
+//   - PJ-4a (dead-ancilla elimination) — reader-count == 0 inside
+//     the enclosing scope means the decl can be deleted verbatim.
+//
+// Semantics:
+//   - Walks every DeclRefExpr in the subtree rooted at `scope_anchor`.
+//   - Bumps the count when `dre->getDecl()->getLocation() == decl_loc`
+//     AND the spelled name matches `name`. The decl_loc comparison
+//     is the primary discriminator (catches shadowed locals whose
+//     same-named outer decl lives at a different source location);
+//     the name check is belt-and-braces and costs nothing.
+//   - Descends into nested CompoundStmts (braced blocks) AND into
+//     PH-1 braceless body stmts (single-stmt for/while/if bodies
+//     without braces). The descent is automatic: `RecursiveASTVisitor`
+//     visits every Stmt child regardless of shape, so both nested
+//     braced blocks and braceless body stmts are traversed uniformly.
+//     This mirrors PH-1's `is_user_braceless_body` treatment —
+//     braceless bodies are first-class user scopes, not to be skipped.
+//   - The VarDecl being counted is NOT itself a reader: DeclRefExprs
+//     are expression-level uses, not declarations. The visitor only
+//     visits Expr nodes, so the VarDecl's name-bound location is
+//     structurally excluded.
+//   - A null `scope_anchor` returns 0 defensively.
+//
+// Complexity: O(scope_nodes). Called at most once per candidate op in
+// the PJ-1d / PJ-4a matchers, so there is no N² blowup even on large
+// scopes.
+//
+// The helper lives in `matcher_common.hpp` per plan decision #8: both
+// PJ-1d and PJ-4a already include this header, avoiding a new TU.
+namespace reader_count_detail {
+
+// RecursiveASTVisitor-based walker. Counts DeclRefExprs whose referenced
+// decl location matches `target_loc` and whose name matches `target_name`.
+// The visitor does not stop early — readers anywhere in the subtree
+// contribute, so the first match is not the last.
+class ReaderCountWalker
+    : public clang::RecursiveASTVisitor<ReaderCountWalker> {
+public:
+    ReaderCountWalker(llvm::StringRef target_name,
+                      clang::SourceLocation target_loc)
+        : target_name_(target_name), target_loc_(target_loc) {}
+
+    bool VisitDeclRefExpr(clang::DeclRefExpr* dre) {
+        if (!dre) return true;
+        const clang::NamedDecl* nd = dre->getDecl();
+        if (!nd) return true;
+        // Primary discriminator: the referenced decl's source location.
+        // Two locals with the same spelled name but different decls
+        // (shadowed outer vs inner) have different locations, so this
+        // alone already disambiguates.
+        if (nd->getLocation() != target_loc_) return true;
+        // Belt-and-braces: spelled name matches. The two checks agree
+        // by construction in well-formed source, but a mismatch would
+        // indicate an unexpected AST shape (e.g. an instantiation
+        // substitution) — rejecting keeps the count conservative.
+        if (nd->getName() != target_name_) return true;
+        ++count_;
+        return true;
+    }
+
+    int count() const { return count_; }
+
+private:
+    llvm::StringRef       target_name_;
+    clang::SourceLocation target_loc_;
+    int                   count_ = 0;
+};
+
+} // namespace reader_count_detail
+
+inline int count_readers_in_scope(llvm::StringRef name,
+                                  clang::SourceLocation decl_loc,
+                                  const clang::Stmt* scope_anchor,
+                                  clang::ASTContext& ctx) {
+    // Defensive null-guard: callers always pass a valid anchor from
+    // `enclosing_scope`, but the helper must not crash on nullptr.
+    if (!scope_anchor) return 0;
+    // An invalid decl_loc would match every decl whose location is
+    // also invalid (e.g. builtin decls), which is never what a caller
+    // wants — bail early.
+    if (decl_loc.isInvalid()) return 0;
+
+    reader_count_detail::ReaderCountWalker walker(name, decl_loc);
+    // `TraverseStmt` accepts a non-const Stmt*; the visitor does not
+    // mutate the tree, so the const_cast is safe. Same pattern the
+    // PH-2 brace-wrap probe uses (see matcher_brace_wrap.cpp:274).
+    walker.TraverseStmt(const_cast<clang::Stmt*>(scope_anchor));
+    (void)ctx; // ctx reserved for future lookups (e.g. parent-chain
+               // traversal if a stricter scope-membership test is
+               // needed); today the RecursiveASTVisitor subtree walk
+               // is sufficient.
+    return walker.count();
 }
 
 // Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`

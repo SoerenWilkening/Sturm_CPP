@@ -23,6 +23,7 @@ int main() {
     run_user_routine_tests();
     run_output_class_tests();
     run_scope_kind_tests();
+    run_reader_count_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
