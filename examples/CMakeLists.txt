@@ -180,6 +180,40 @@ target_sources(example_nested_when PRIVATE
 )
 target_link_libraries(example_nested_when PRIVATE orkan_headers)
 
+# ── Example: classical control flow around quantum ops (Phase H) ───────────
+# Routed through sturm-transpile so each `qbool <var> = a | b;` inside a
+# for-loop body or if/else branch gets a `uncompute_or(<var>, a, b);` call
+# planted before that body's closing `}` — once per iteration for the
+# for-loop, and one distinct per-branch intermediate for the if/else.
+# Phase H fills three gaps: PH-1 (scope-finder refactor keying QScopes on
+# either CompoundStmt or BracelessBody anchors), PH-2
+# (matcher_brace_wrap.cpp auto-synthesising `{ }` around braceless bodies
+# that contain a quantum op), and PH-3 (matcher_outer_var_guard.cpp
+# diagnostic rejecting outer-scoped qbool/qint mutations inside a
+# loop/branch/WHEN body).  This example exercises the happy path for both
+# control-flow kinds; the PH-3 diagnostic path is covered by the hermetic
+# `for_outer_xor_reject` fixture.  Same helper / bypass pattern as
+# example_nested_when; the Phase H matchers live in
+# transpiler/src/matcher_brace_wrap.cpp and
+# transpiler/src/matcher_outer_var_guard.cpp, and the runtime
+# `uncompute_or` symbol resolves via src/sturm/uncompute/uncompute_api.cpp.
+add_quantum_executable(example_control_flow
+    control_flow.cpp
+)
+target_sources(example_control_flow PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_control_flow PRIVATE orkan_headers)
+
 # ── Example: combined Phase A + B + C demo ──────────────────────────────────
 # Routed through sturm-transpile so every forward pattern from all three
 # phases receives its inverse injection in one file. LIFO rewind runs
