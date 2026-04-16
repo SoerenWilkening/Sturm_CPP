@@ -205,9 +205,8 @@ Requires:
 > changes were required — the existing `WhenGuard` / `WhenCapture` /
 > `make_when_guard` machinery in `include/sturm/control/when.hpp`
 > accepts the named temp unchanged; Phase F's entire contribution
-> lives in the transpiler + emitter. Next up: Phase G (nested-WHEN
-> AND-fold lowering in the transpiler, retiring the `WhenGuard`
-> AND-fold code path).
+> lives in the transpiler + emitter. Next up: Phase H (loops and
+> classical control flow around quantum ops).
 
 The `WHEN(expr) { ... }` macro stays in user source. The transpiler's responsibility:
 
@@ -235,6 +234,30 @@ The runtime's existing `WhenGuard` continues to handle push/pop of the active co
 ---
 
 ## Phase G — Nested `WHEN` (AND-fold in the transpiler)
+
+> **2026-04-16:** Complete. The new matcher
+> `transpiler/src/matcher_when_nested.cpp` fires on named-named nested
+> `WHEN`s and lowers them to `qbool __stu_ctrl<N> = outer & inner;` +
+> `WHEN(__stu_ctrl<N>) { body; }` + a trailing
+> `uncompute_and(__stu_ctrl<N>, outer, inner);` planted inside the
+> outer body. Depth ≥ 3 uses a pairwise cascade: one
+> `__stu_ctrl<N>` temp and one `uncompute_and` per nesting level,
+> LIFO. The runtime AND-fold was retired from
+> `include/sturm/control/when.hpp` (~68 LOC removed; members
+> `and_folded_` / `ancilla_` / `inner_expr_qubit_` gone), with the
+> depth-1 invariant preserved by a `control_stack` swap instead of a
+> CCX. Three snapshot fixtures in `tests/transpiler/fixtures/` pin
+> the rewrite: `when_nested_named`, `when_nested_cascade`,
+> `when_nested_siblings`. The M12 harness grew a
+> `nested_when_runtime` / `nested_when_reference` pair, and
+> `examples/nested_when.cpp` plus its
+> `transpiler_example_nested_when_injected` +
+> `transpiler_idempotent_example_nested_when` CTests pin end-to-end
+> builds. Tracked as bd issues sturm-d2sl (PG-0), sturm-s73p (PG-1),
+> sturm-295e (PG-2), sturm-j0un (PG-3), sturm-ewto (PG-4), sturm-yqr4
+> (PG-5), sturm-5t9i (PG-6), sturm-bvbd (PG-7), sturm-b3oi (PG-8),
+> sturm-oizk (PG-9). Next up: Phase H (loops and classical control
+> flow around quantum ops).
 
 Today, the runtime's `WhenGuard` AND-fold allocates an ancilla and emits `CCX(outer, inner, anc)` at construction (`include/sturm/control/when.hpp:83-204`). This is the single biggest source of runtime complexity.
 
