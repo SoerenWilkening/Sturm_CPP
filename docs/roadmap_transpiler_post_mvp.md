@@ -285,6 +285,39 @@ The inner `WhenGuard` now sees a single ordinary `qbool`, not a magic nested con
 
 ## Phase H — Loops and classical control flow around quantum ops
 
+> **2026-04-16:** Complete. PH-1 refactored the scope-finder in
+> `transpiler/src/matcher_common.hpp` from
+> `enclosing_compound_stmt(...)` to `enclosing_scope(node, ctx)`
+> returning `{scope_anchor_stmt, kind ∈ {CompoundStmt,
+> BracelessBody}}`; every Phase A–G matcher switched to the new API
+> with all pre-existing braced fixtures staying byte-identical. Two
+> new matcher modules landed: `transpiler/src/matcher_brace_wrap.cpp`
+> (PH-2) auto-wraps braceless `for` / `while` / `if` / `else` bodies
+> containing quantum ops by scheduling `{` / `}` insertions through
+> `raw_insertions`, and `transpiler/src/matcher_outer_var_guard.cpp`
+> (PH-3) walks the parent chain to detect outer-scoped `qbool` /
+> `qint` mutations inside loop/branch/WHEN bodies, emits a
+> `STURM: qbool/qint '<name>' ... reverse-loop synthesis`
+> diagnostic on stderr, and flags the `QOperation` with a new
+> `skip_uncompute=true` bit that `uncompute_pass.cpp` honors per-op.
+> PH-4 added nine snapshot fixtures in `tests/transpiler/fixtures/`:
+> `for_intermediate_or`, `for_intermediate_or_braceless`,
+> `while_intermediate_or`, `while_intermediate_or_braceless`,
+> `if_then_intermediate_or`, `if_then_intermediate_or_braceless`,
+> `if_else_intermediate_or`, `if_else_intermediate_or_braceless`,
+> `for_outer_xor_reject` (plus `for_mixed_xor_reject` exercising
+> per-op flag granularity). PH-5 pinned `examples/control_flow.cpp`
+> with `transpiler_example_control_flow_injected` +
+> `transpiler_idempotent_example_control_flow` CTests via
+> `tests/transpiler/check_example_control_flow.cmake`. PH-6a wired
+> `for_loop_runtime` / `for_loop_reference` and PH-6b wired
+> `if_branches_runtime` / `if_branches_reference` into
+> `test_gate_equivalence.cpp` for byte-identical `GateRecord`
+> streams. Tracked as bd issues sturm-kc2d (PH-1), sturm-ygmu (PH-2),
+> sturm-ebcv (PH-3), sturm-2fwn (PH-4), sturm-oxok (PH-5), sturm-tf3g
+> (PH-6a), sturm-9d2y (PH-6b), sturm-uwa1 (PH-7). Next up: Phase I
+> (user-defined routines and `invert()`).
+
 Classical `for` / `while` / `if` containing quantum operations. The transpiler leaves the classical control flow alone but must place uncomputation **inside** the loop body (so each iteration is balanced), not after the loop.
 
 ```cpp
