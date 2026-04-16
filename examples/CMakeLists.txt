@@ -214,6 +214,37 @@ target_sources(example_control_flow PRIVATE
 )
 target_link_libraries(example_control_flow PRIVATE orkan_headers)
 
+# ── Example: user-defined routine + STURM_REGISTER_ADJOINT demo (Phase I) ───
+# Routed through sturm-transpile so every `callExpr` to a forward routine
+# paired with a hand-written adjoint via `STURM_REGISTER_ADJOINT(fwd, adj)`
+# gets an `invert(<name>)(<args...>);` injected before the enclosing
+# scope's close brace — UNLESS PI-3's output-ownership classifier tells
+# PI-4 to skip.  This example exercises the two canonical cases: a
+# call whose output backs a local-intermediate qbool (Intermediate
+# class → injection fires) and a call inside a helper function whose
+# output backs a ParmVarDecl (Final class → no injection).  Same
+# helper / bypass pattern as example_control_flow; the Phase I
+# matchers live in transpiler/src/matcher_user_routine.cpp and
+# transpiler/src/routine_registry.cpp, and the runtime `invert(...)`
+# template resolves via include/sturm/routines/invert.hpp (re-exported
+# by include/sturm/sturm.hpp).
+add_quantum_executable(example_user_routine
+    user_routine.cpp
+)
+target_sources(example_user_routine PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_user_routine PRIVATE orkan_headers)
+
 # ── Example: combined Phase A + B + C demo ──────────────────────────────────
 # Routed through sturm-transpile so every forward pattern from all three
 # phases receives its inverse injection in one file. LIFO rewind runs
