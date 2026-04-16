@@ -7,7 +7,7 @@
 //   3. After WHEN exits: depth == 0 (restored).
 //   4. Classical-true WHEN: depth remains 0 (no push).
 //   5. Classical-false WHEN: depth remains 0 (no push).
-//   6. Nested WHEN (AND-fold): inside inner body depth == 1 (outer replaced by ancilla).
+//   6. Nested WHEN (swap): inside inner body depth == 1 (outer popped, inner pushed).
 //   7. After inner WHEN exits: depth == 1 (outer control restored).
 //   8. After outer WHEN exits: depth == 0.
 //   9. SIMULATE: q.phi() += delta outside WHEN → RZ gate, verify statevector.
@@ -135,9 +135,13 @@ static void test_classical_false_when_no_push() {
     std::printf("PASS test_classical_false_when_no_push\n");
 }
 
-// ── Tests 6-8: nested WHEN AND-fold — invariant: depth always in {0, 1} ──────
+// ── Tests 6-8: nested WHEN swap ──────────────────────────────────────────────
+// Invariant: depth always in {0, 1}; inner WHEN top is inner qubit.
+// (Phase G / sturm-ewto: nested WHEN AND-fold moved to the transpiler, so the
+// runtime guard just pop/pushes to preserve depth 1 — the inner expr qubit goes
+// on the stack directly.)
 
-static void test_nested_when_depth_invariant() {
+static void test_nested_when_swap_invariant() {
     sturm::QubitPool::instance().reset_for_testing();
     ScopedAppendCtx sc;
 
@@ -159,16 +163,17 @@ static void test_nested_when_depth_invariant() {
         top_outer   = sc.bc().control_stack.top();
 
         WHEN(inner_flag) {
-            // 6 (inner): AND-fold replaces outer with ancilla.
-            // Depth must still be 1 (outer popped, ancilla pushed).
+            // 6 (inner): swap — outer is popped, inner is pushed in its place.
+            // Depth must still be 1 (depth-1 invariant preserved).
             depth_inner = sc.bc().control_stack.depth();
             top_inner   = sc.bc().control_stack.top();
 
-            // Ancilla qubit is neither outer_flag's qubit nor inner_flag's qubit.
+            // After the swap, the top-of-stack is the inner expr qubit directly
+            // (no ancilla — Phase G moved AND-fold to the transpiler).
             assert(top_inner != static_cast<uint32_t>(outer_flag.qubits[0]) &&
-                   "AND-fold: control_stack top must NOT be outer qubit");
-            assert(top_inner != static_cast<uint32_t>(inner_flag.qubits[0]) &&
-                   "AND-fold: control_stack top must NOT be inner qubit");
+                   "swap: inner WHEN top must NOT be outer qubit (outer popped)");
+            assert(top_inner == static_cast<uint32_t>(inner_flag.qubits[0]) &&
+                   "swap: inner WHEN top must be inner qubit (no fold)");
         }
 
         // 7 (after inner): outer control restored → depth == 1, top == outer qubit.
@@ -186,14 +191,14 @@ static void test_nested_when_depth_invariant() {
            "inside outer WHEN: top must be outer qubit");
 
     assert(depth_inner == 1u &&
-           "inside inner WHEN (AND-fold): depth must be 1 (not 2)");
+           "inside inner WHEN: depth must be 1");
 
     assert(depth_after_inner == 1u &&
            "after inner WHEN exits: depth must be 1 (outer restored)");
     assert(top_after_inner == static_cast<uint32_t>(outer_flag.qubits[0]) &&
            "after inner WHEN exits: top must be outer qubit (restored)");
 
-    std::printf("PASS test_nested_when_depth_invariant "
+    std::printf("PASS test_nested_when_swap_invariant "
                 "(outer_depth=%u, inner_depth=%u, after_inner_depth=%u)\n",
                 depth_outer, depth_inner, depth_after_inner);
 }
@@ -406,7 +411,7 @@ int main() {
     test_single_superposed_when_pushes_stack();
     test_classical_true_when_no_push();
     test_classical_false_when_no_push();
-    test_nested_when_depth_invariant();
+    test_nested_when_swap_invariant();
 
     // Tests 9-12: e2e SIMULATE for phi/theta uncontrolled and via WHEN (sturm-e5k)
     test_simulate_phi_uncontrolled();
