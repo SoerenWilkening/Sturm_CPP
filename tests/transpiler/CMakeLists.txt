@@ -1771,3 +1771,118 @@ if(STURM_TRANSPILE)
         DEPENDS "snapshot_if_else_intermediate_or"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase I / PI-5: snapshot fixtures for user-routine rewrite ─────────────
+# Seven fixtures pin the Phase I PI-2 / PI-3 / PI-4 rewrite behavior:
+#   * routine_single_out_local     — local-intermediate output; `invert(fn)(...)`
+#                                    lands before the enclosing scope's close brace.
+#   * routine_single_out_escapes   — output is a function parameter (Final); no
+#                                    inverse is injected and no diagnostic fires.
+#                                    The generated file is byte-identical to the
+#                                    input (modulo the AUTO-GENERATED header).
+#   * routine_inside_when          — call inside WHEN(c) { ... } body with local
+#                                    out; the inverse lands INSIDE the WHEN body
+#                                    (Phase F-style `insert_before_override`).
+#   * routine_inside_loop          — call inside a for-body with an output
+#                                    declared in the same body; Phase H-style
+#                                    per-iteration placement inside the loop.
+#   * routine_outer_var_reject     — PI-3 SkipWithDiagnostic: call inside a
+#                                    for-body mutating a qbool declared above
+#                                    the loop. The transpiler emits a stderr
+#                                    diagnostic (REQUIRED_STDERR) and injects
+#                                    NO inverse — PH-3-style skip.
+#   * routine_self_adjoint         — STURM_REGISTER_ADJOINT(my_swap, my_swap);
+#                                    the PI-4 emission is `invert(my_swap)(...)`
+#                                    which at runtime resolves through the PI-0
+#                                    trait table to `&::my_swap` — semantically
+#                                    a second call to the same function.
+#   * routine_multiple_lifo        — two distinct routine calls in one scope;
+#                                    inverses are emitted in reverse source order
+#                                    (LIFO) — the second call's adjoint fires
+#                                    first, then the first call's adjoint.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_routine_single_out_local
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_single_out_local.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_single_out_local.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_single_out_local
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_routine_single_out_local PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_routine_single_out_escapes
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_single_out_escapes.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_single_out_escapes.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_single_out_escapes
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_routine_single_out_escapes PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_routine_inside_when
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_inside_when.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_inside_when.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_inside_when
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_routine_inside_when PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_routine_inside_loop
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_inside_loop.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_inside_loop.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_inside_loop
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_routine_inside_loop PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_routine_outer_var_reject
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_outer_var_reject.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_outer_var_reject.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_outer_var_reject
+                "-DREQUIRED_STDERR=STURM: qbool/qint 'a'"
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot_with_diagnostic.cmake)
+    set_tests_properties(snapshot_routine_outer_var_reject PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_routine_self_adjoint
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_self_adjoint.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_self_adjoint.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_self_adjoint
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_routine_self_adjoint PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_routine_multiple_lifo
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_multiple_lifo.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/routine_multiple_lifo.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/routine_multiple_lifo
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_routine_multiple_lifo PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()

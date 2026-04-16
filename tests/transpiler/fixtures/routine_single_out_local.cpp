@@ -1,0 +1,53 @@
+// Phase I / PI-5 input for the sturm-transpile snapshot test.
+//
+// Exercises the simplest user-routine rewrite shape: the output qbool
+// `tmp` is declared in the SAME CompoundStmt as the forward call, so
+// PI-3's classifier returns `Intermediate` and the M8 pass plants the
+// injected `invert(my_rotate)(tmp, in, 3);` immediately before the
+// demo's closing `}`. The golden pins the four-space indent and the
+// exact `invert(...)` spelling emitted by the PI-4 uncompute pass.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+};
+
+namespace _detail {
+template <typename FnPtr>
+struct adjoint_of;
+} // namespace _detail
+
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return _detail::adjoint_of<R (*)(Args...)>::value;
+}
+} // namespace sturm
+
+#define STURM_REGISTER_ADJOINT(fn, adj)                                        \
+    namespace sturm {                                                          \
+    namespace _detail {                                                        \
+    template <>                                                                \
+    struct adjoint_of<decltype(&::fn)> {                                       \
+        static constexpr auto value = &::adj;                                  \
+    };                                                                         \
+    }                                                                          \
+    }
+
+void my_rotate(sturm::qbool& out, const sturm::qbool& in, int k) {
+    (void)in; (void)k; (void)out;
+}
+
+void my_rotate_adj(sturm::qbool& out, const sturm::qbool& in, int k) {
+    (void)in; (void)k; (void)out;
+}
+
+STURM_REGISTER_ADJOINT(my_rotate, my_rotate_adj)
+
+using sturm::qbool;
+
+void demo(const qbool& in) {
+    qbool tmp;
+    my_rotate(tmp, in, 3);
+}
