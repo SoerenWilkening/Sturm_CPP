@@ -1140,10 +1140,42 @@ if(STURM_TRANSPILE)
     set_source_files_properties("${_m12_generated}" PROPERTIES
         GENERATED TRUE)
 
+    # ── PG-7: second transpile step for the Phase G nested-WHEN ────────────
+    # fixture pair.  Same driver invocation pattern as the or_single
+    # block above — routes `fixtures/nested_when_runtime.cpp` through
+    # sturm-transpile so the Phase G nested-WHEN lowering is applied
+    # before the generated TU is compiled into the single
+    # test_gate_equivalence_or_single harness binary.  One binary,
+    # three pairs: or_single, or_circuit, nested_when.
+    set(_m12_nested_runtime_src
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/nested_when_runtime.cpp")
+    file(RELATIVE_PATH _m12_nested_rel_src
+        "${CMAKE_SOURCE_DIR}" "${_m12_nested_runtime_src}")
+    set(_m12_nested_generated
+        "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_nested_rel_src}")
+    get_filename_component(_m12_nested_gen_dir
+        "${_m12_nested_generated}" DIRECTORY)
+
+    add_custom_command(
+        OUTPUT "${_m12_nested_generated}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_m12_nested_gen_dir}"
+        COMMAND $<TARGET_FILE:sturm-transpile>
+                "${_m12_nested_rel_src}"
+                --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS "${_m12_nested_runtime_src}" sturm-transpile
+        COMMENT "sturm-transpile ${_m12_nested_rel_src} (PG-7)"
+        VERBATIM)
+    set_source_files_properties("${_m12_nested_generated}" PROPERTIES
+        GENERATED TRUE)
+
     add_executable(test_gate_equivalence_or_single
         test_gate_equivalence.cpp
         "${_m12_generated}"
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/or_single_reference.cpp
+        # PG-7: Phase G nested-WHEN transpiled + hand-written reference.
+        "${_m12_nested_generated}"
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/nested_when_reference.cpp
         # Real sturm implementation sources — the harness needs
         # uncompute_or, execute_gate and the BackendContext C ABI to
         # actually fire.  The header-only `sturm` interface target does

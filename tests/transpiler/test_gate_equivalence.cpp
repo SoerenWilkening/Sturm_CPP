@@ -90,6 +90,30 @@ void demo(const sturm::qbool& a, const sturm::qbool& b);
 void demo_or_circuit(const sturm::qbool& a, const sturm::qbool& b);
 } // namespace m12_reference
 
+// PG-7: Phase G nested-WHEN fixture pair.  The transpiler rewrites
+// `WHEN(outer) { WHEN(inner) { target.flip(); } }` into an explicit
+// `qbool __stu_ctrl0 = outer & inner;` decl + `WHEN(__stu_ctrl0)` +
+// trailing `sturm::uncompute_and(__stu_ctrl0, outer, inner);` call.
+// The reference fixture spells the lowering by hand.  Both demos
+// take three qbools so the helper can stage outer + inner as the
+// superposed controls and `target` as a separately-allocated classical-
+// owning qbool with super_mask=1.
+namespace m12_nested_transpiled {
+// outer/inner/target are taken by non-const reference: WHEN(expr)
+// requires a non-const lvalue at the materialize_when call site, so
+// the transpiled variant must take the controls as non-const refs.
+// See fixture TU comments for the full rationale.
+void demo(sturm::qbool& outer,
+          sturm::qbool& inner,
+          sturm::qbool& target);
+} // namespace m12_nested_transpiled
+
+namespace m12_nested_reference {
+void demo(sturm::qbool& outer,
+          sturm::qbool& inner,
+          sturm::qbool& target);
+} // namespace m12_nested_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -172,6 +196,42 @@ run_and_capture(void (*demo)(const sturm::qbool&, const sturm::qbool&)) {
 
     sturm::QubitPool::instance().release(qa);
     sturm::QubitPool::instance().release(qb);
+    return stream;
+}
+
+// PG-7: widened capture helper for the Phase G nested-WHEN fixture
+// pair.  Three qubits: outer + inner are staged as superposed controls
+// (super_mask=1) and target is staged as a classical-owning qbool
+// (super_mask=1) so the inner WHEN body's lifted `target.flip()`
+// emits CX(__stu_ctrl, target) against the active control stack.
+// Ownership stays with the harness: `make_non_owning` builds qbool
+// views that reference the allocated indices without taking
+// ownership, so the qbool destructors inside `demo` do not attempt
+// to release them.  The harness releases all three allocated qubits
+// after each capture so pool indices reset cleanly across calls.
+std::vector<sturm::GateRecord>
+run_and_capture_nested(void (*demo)(sturm::qbool&,
+                                    sturm::qbool&,
+                                    sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int qo = sturm::QubitPool::instance().allocate();
+    const int qi = sturm::QubitPool::instance().allocate();
+    const int qt = sturm::QubitPool::instance().allocate();
+    sturm::qbool outer = sturm::qbool::make_non_owning(qo);
+    outer.super_mask = 1ULL;
+    sturm::qbool inner = sturm::qbool::make_non_owning(qi);
+    inner.super_mask = 1ULL;
+    sturm::qbool target = sturm::qbool::make_non_owning(qt);
+    target.super_mask = 1ULL;
+
+    demo(outer, inner, target);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(qo);
+    sturm::QubitPool::instance().release(qi);
+    sturm::QubitPool::instance().release(qt);
     return stream;
 }
 
@@ -270,7 +330,39 @@ int main() {
     }
     std::printf("  or_circuit streams match (%zu gates).\n", ref_c.size());
 
-    std::printf("  streams match (%zu gates).\n", ref_stream.size());
+    // PG-7: Phase G nested-WHEN gate-equivalence pair.  Proves the
+    // transpiler's nested-WHEN lowering (outer & inner → __stu_ctrl +
+    // WHEN + uncompute_and) emits the same gate stream as the hand-
+    // written reference.  Expected stream is three gates:
+    //   CCX(outer, inner, __stu_ctrl)   // from `qbool __stu_ctrl = outer & inner;`
+    //   CX (__stu_ctrl, target)         // from WHEN(__stu_ctrl) { target.flip(); }
+    //   CCX(outer, inner, __stu_ctrl)   // from sturm::uncompute_and(...)
+    std::printf("PG-7 gate-stream equivalence test (nested_when pattern):\n");
+    const auto ref_n = run_and_capture_nested(&m12_nested_reference::demo);
+    const auto got_n = run_and_capture_nested(&m12_nested_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_n.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_n[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_n.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_n[i]).c_str());
+    }
+    if (ref_n.empty()) {
+        std::fprintf(stderr,
+                     "nested_when reference produced 0 gates — fixture not "
+                     "exercising the Phase G nested-WHEN lowering.\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_n, ref_n); rc != 0) {
+        std::fprintf(stderr, "nested_when gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  nested_when streams match (%zu gates).\n", ref_n.size());
+
+    std::printf("pair 1: %zu gates match\n", ref_stream.size());
+    std::printf("pair 2: %zu gates match\n", ref_c.size());
+    std::printf("pair 3: %zu gates match\n", ref_n.size());
     std::printf("PASS\n");
     return 0;
 }
