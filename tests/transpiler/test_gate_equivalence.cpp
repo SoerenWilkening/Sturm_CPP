@@ -195,6 +195,35 @@ void demo(const sturm::qbool& a,
           sturm::qbool& x);
 } // namespace m12_fused_reference
 
+// PJ-4e: Phase J dead-ancilla elimination gate-equivalence pair.  The
+// transpiler's PJ-4a peephole matcher fires on `qbool dead = a | b;`
+// when `dead` has zero readers in the enclosing scope, emits one
+// empty-text `QReplacement` over the decl's full stmt range, and pushes
+// the same range into `QUnit::eliminated_stmt_ranges` so the downstream
+// MVP OR matcher early-returns on the covered range.  Net effect on
+// the transpiled path: the decl vanishes, no `uncompute_or(dead, a, b);`
+// is planted at scope close, and the `a | b` RHS never allocates an
+// ancilla — ZERO gates emitted for the dead slice.  The reference
+// fixture omits the dead decl entirely so both fixtures emit the same
+// sentinel `target.flip()` call (one X(target) record) and nothing
+// else.  Expected stream: ONE X gate.  `target` is taken by non-const
+// reference because `flip()` mutates the qbool's state via
+// emit_X_lifted; `a` / `b` are `const qbool&` to preserve the caller's
+// qubit indices across the demo boundary (even though the reference
+// never touches them — the signature match lets the harness dispatch
+// both fixtures through a single function-pointer shape).
+namespace m12_dead_ancilla_transpiled {
+void demo(const sturm::qbool& a,
+          const sturm::qbool& b,
+          sturm::qbool& target);
+} // namespace m12_dead_ancilla_transpiled
+
+namespace m12_dead_ancilla_reference {
+void demo(const sturm::qbool& a,
+          const sturm::qbool& b,
+          sturm::qbool& target);
+} // namespace m12_dead_ancilla_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -409,6 +438,49 @@ run_and_capture_fused(void (*demo)(const sturm::qbool&,
     sturm::QubitPool::instance().release(qa);
     sturm::QubitPool::instance().release(qb);
     sturm::QubitPool::instance().release(qx);
+    return stream;
+}
+
+// PJ-4e: capture helper for the Phase J dead-ancilla elimination pair.
+// The demo takes `(const qbool& a, const qbool& b, qbool& target)`;
+// three fresh qubits are allocated via `make_non_owning` so the
+// harness retains ownership across the demo boundary.  `a` and `b`
+// are passed through to preserve the runtime fixture's signature (the
+// PJ-4a matcher fires on `qbool dead = a | b;` whose RHS references
+// both argument DeclRefExprs — if `a` or `b` did not appear in the
+// signature, the fixture would fail to parse).  `target` is allocated
+// via `make_non_owning` and passed by non-const reference because
+// `target.flip()` is a non-const member invocation that mutates the
+// qbool's state via emit_X_lifted.  Both the runtime and reference
+// captures therefore observe the SAME three caller-supplied indices,
+// which is the precondition for the byte-identical X(target) record
+// pair.  The runtime demo's `qbool dead = a | b;` is REPLACED in-place
+// by empty text by the PJ-4a QReplacement — NO ancilla allocation
+// survives the elimination; the reference demo similarly never
+// allocates an ancilla because it simply does not carry the dead decl.
+std::vector<sturm::GateRecord>
+run_and_capture_dead_ancilla(void (*demo)(const sturm::qbool&,
+                                          const sturm::qbool&,
+                                          sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int qa = sturm::QubitPool::instance().allocate();
+    const int qb = sturm::QubitPool::instance().allocate();
+    const int qt = sturm::QubitPool::instance().allocate();
+    sturm::qbool a = sturm::qbool::make_non_owning(qa);
+    a.super_mask = 1ULL;
+    sturm::qbool b = sturm::qbool::make_non_owning(qb);
+    b.super_mask = 1ULL;
+    sturm::qbool target = sturm::qbool::make_non_owning(qt);
+    target.super_mask = 1ULL;
+
+    demo(a, b, target);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(qa);
+    sturm::QubitPool::instance().release(qb);
+    sturm::QubitPool::instance().release(qt);
     return stream;
 }
 
@@ -667,6 +739,45 @@ int main() {
     }
     std::printf("  fuse_xor_and streams match (%zu gates).\n", ref_fu.size());
 
+    // PJ-4e: Phase J dead-ancilla elimination gate-equivalence pair.
+    // Proves the transpiler's PJ-4a peephole matcher + empty-text
+    // `QReplacement` + `eliminated_stmt_ranges` backstop — which strips
+    // `qbool dead = a | b;` (zero-reader condition) from the rewritten
+    // source AND suppresses the downstream MVP OR matcher's per-decl
+    // `uncompute_or(...)` injection — emits the same one-X gate stream
+    // as a hand-written reference that simply OMITS the dead decl.
+    // The reference's `target.flip()` sentinel emits exactly one X
+    // record via emit_X_lifted; the transpiled demo's `target.flip()`
+    // emits the same record, and the dead decl contributes ZERO gates
+    // because PJ-4a strips it before the MVP OR matcher can anchor on
+    // it.  Expected stream length is ONE X record on the caller-
+    // supplied `target` qubit index — no ancilla allocation on either
+    // side, which is the defining invariant of the PJ-4 elimination
+    // (no ancilla allocated → no stray gates).
+    std::printf("PJ-4e gate-stream equivalence test (dead_ancilla pattern):\n");
+    const auto ref_da = run_and_capture_dead_ancilla(&m12_dead_ancilla_reference::demo);
+    const auto got_da = run_and_capture_dead_ancilla(&m12_dead_ancilla_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_da.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_da[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_da.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_da[i]).c_str());
+    }
+    if (ref_da.empty()) {
+        std::fprintf(stderr,
+                     "dead_ancilla reference produced 0 gates — fixture not "
+                     "exercising the Phase J PJ-4 dead-ancilla elimination "
+                     "(the sentinel target.flip() call is missing).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_da, ref_da); rc != 0) {
+        std::fprintf(stderr, "dead_ancilla gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  dead_ancilla streams match (%zu gates).\n", ref_da.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
@@ -674,6 +785,7 @@ int main() {
     std::printf("pair 5: %zu gates match\n", ref_for.size());
     std::printf("pair 6: %zu gates match\n", ref_ur.size());
     std::printf("pair 7: %zu gates match\n", ref_fu.size());
+    std::printf("pair 8: %zu gates match\n", ref_da.size());
     std::printf("PASS\n");
     return 0;
 }

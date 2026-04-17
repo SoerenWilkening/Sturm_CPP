@@ -1654,6 +1654,40 @@ if(STURM_TRANSPILE)
     set_source_files_properties("${_m12_fused_generated}" PROPERTIES
         GENERATED TRUE)
 
+    # ── PJ-4e: seventh transpile step for the Phase J dead-ancilla ─────────
+    # elimination gate-equivalence pair.  Same driver invocation pattern
+    # as the blocks above — routes `fixtures/dead_ancilla_runtime.cpp`
+    # through sturm-transpile so the PJ-4a peephole matcher eliminates
+    # the `qbool dead = a | b;` decl (zero-reader condition) and the
+    # downstream MVP OR matcher's per-decl `uncompute_or(...)` injection
+    # is suppressed via `eliminated_stmt_ranges`.  The sentinel
+    # `target.flip()` call survives the rewrite unchanged and emits one
+    # X(target) record at run time.  The resulting TU is compiled into
+    # the single test_gate_equivalence_or_single harness binary.  One
+    # binary, eight pairs: or_single, or_circuit, nested_when,
+    # if_branches, for_loop, user_routine, fuse_xor_and, dead_ancilla.
+    set(_m12_dead_ancilla_runtime_src
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_runtime.cpp")
+    file(RELATIVE_PATH _m12_dead_ancilla_rel_src
+        "${CMAKE_SOURCE_DIR}" "${_m12_dead_ancilla_runtime_src}")
+    set(_m12_dead_ancilla_generated
+        "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_dead_ancilla_rel_src}")
+    get_filename_component(_m12_dead_ancilla_gen_dir
+        "${_m12_dead_ancilla_generated}" DIRECTORY)
+
+    add_custom_command(
+        OUTPUT "${_m12_dead_ancilla_generated}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_m12_dead_ancilla_gen_dir}"
+        COMMAND $<TARGET_FILE:sturm-transpile>
+                "${_m12_dead_ancilla_rel_src}"
+                --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS "${_m12_dead_ancilla_runtime_src}" sturm-transpile
+        COMMENT "sturm-transpile ${_m12_dead_ancilla_rel_src} (PJ-4e)"
+        VERBATIM)
+    set_source_files_properties("${_m12_dead_ancilla_generated}" PROPERTIES
+        GENERATED TRUE)
+
     add_executable(test_gate_equivalence_or_single
         test_gate_equivalence.cpp
         "${_m12_generated}"
@@ -1674,6 +1708,10 @@ if(STURM_TRANSPILE)
         # reference.
         "${_m12_fused_generated}"
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reference.cpp
+        # PJ-4e: Phase J dead-ancilla elimination transpiled + hand-
+        # written reference.
+        "${_m12_dead_ancilla_generated}"
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_reference.cpp
         # Real sturm implementation sources — the harness needs
         # uncompute_or, execute_gate and the BackendContext C ABI to
         # actually fire.  The header-only `sturm` interface target does
