@@ -2045,3 +2045,86 @@ if(STURM_TRANSPILE)
         LABELS "transpiler"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase J / PJ-4c: snapshot fixtures for dead-ancilla elimination ─────────
+# Four fixtures pin the Phase J PJ-4a dead-ancilla matcher's decision tree
+# end-to-end through the real sturm-transpile binary. Each exercises one
+# branch of the `register_dead_ancilla_matcher` callback:
+#
+#   * dead_ancilla_single           — happy path: `qbool t = a | b;` with
+#       zero readers is silently eliminated. One empty-text QReplacement
+#       over the decl stmt range + one `eliminated_stmt_ranges` entry;
+#       the downstream MVP OR matcher early-returns on the covered range
+#       via `apply_eliminated_stmt_guards`, so no `uncompute_or(t, a, b);`
+#       is emitted at scope close.
+#   * dead_ancilla_keep_read        — reject: `qbool t = a | b;` followed
+#       by `x ^= t;` (one reader). PJ-4a bails on the reader-count guard,
+#       leaving `eliminated_stmt_ranges` untouched. MVP OR picks up the
+#       decl and schedules `uncompute_or(t, a, b);`; Phase A PA-3 picks
+#       up `x ^= t;` and schedules its self-adjoint LIFO inverse.
+#   * dead_ancilla_keep_chain       — reject + cascade: `qbool t = a | b;`
+#       followed by `qbool r = t & d;`. `t` has one reader (inside `r`'s
+#       init) so PJ-4a rejects elimination of `t` — MVP OR emits
+#       `uncompute_or(t, a, b);`. `r` has no readers, so PJ-4a DOES
+#       eliminate `r` independently. Per-decl independence, not a
+#       cascade.
+#   * dead_ancilla_inside_when      — elimination inside a `WHEN(ctrl)
+#       { ... }` body. The reader-count probe anchors on the WHEN body's
+#       CompoundStmt, not the outer function; with zero readers inside
+#       the body, PJ-4a fires and eliminates the decl. The WHEN macro
+#       itself is not rewritten (`WHEN(ctrl)` is a bare DeclRefExpr —
+#       PF-3 short-circuits).
+#
+# Driver and harness are identical to the Phase A..I and PJ-1g snapshot
+# tests (run_snapshot.cmake + byte-level compare_files). No new CMake
+# infrastructure is needed for PJ-4c — the fixtures land on the existing
+# wiring unchanged.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_dead_ancilla_single
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_single.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_single.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dead_ancilla_single
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_dead_ancilla_single PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_dead_ancilla_keep_read
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_keep_read.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_keep_read.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dead_ancilla_keep_read
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_dead_ancilla_keep_read PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_dead_ancilla_keep_chain
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_keep_chain.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_keep_chain.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dead_ancilla_keep_chain
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_dead_ancilla_keep_chain PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_dead_ancilla_inside_when
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_inside_when.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dead_ancilla_inside_when.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dead_ancilla_inside_when
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_dead_ancilla_inside_when PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
