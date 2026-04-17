@@ -549,6 +549,125 @@ Distinguishing the two requires **ownership / liveness analysis**: is the result
 > sturm-br65 (PJ-4c), sturm-66a8 (PJ-4d), sturm-347u (PJ-4e),
 > sturm-436e (PJ-4f). Next up: PJ-3 (uncompute hoisting).
 
+> **2026-04-17:** PJ-3 (uncompute hoisting) complete. A `qbool`
+> whose forward computation is loop-invariant and whose decl sits
+> inside a `for` / `while` / `do` body now has its compute hoisted
+> above the loop and its uncompute placed after the loop's closing
+> brace — emitting one forward + one uncompute per loop, not N.
+> PJ-3a added `detail::classify_scope_kind(scope_anchor, ctx)` to
+> `transpiler/src/matcher_common.hpp`, walking the parent chain and
+> returning `{Function, LoopBody, BranchBody, WhenBody, Other}`
+> (WhenBody reuses `is_expansion_of_macro(..., "WHEN")`); no
+> `QScope::kind` field was added (per plan decision #7 the walk is
+> invoked only from PJ-3 callbacks, keeping every prior snapshot
+> byte-identical). PJ-3b added
+> `detail::expr_is_loop_invariant(operand_ref, loop_body_anchor,
+> ctx)` to the same header: returns true iff `operand_ref.decl_loc`
+> sits outside the loop body AND no assignment-shape
+> `CXXOperatorCallExpr` / `DeclRefExpr` write to the same name is
+> reachable inside the loop body. PJ-3c added
+> `clang::SourceLocation hoist_to_override{}` to `QOperation` in
+> `transpiler/include/sturm/transpile/qir.hpp` (parallel to
+> `insert_before_override`); when valid, `synthesize()` in
+> `transpiler/src/uncompute_pass.cpp` moves the forward
+> `QReplacement` anchor to BEFORE the loop begin and the uncompute's
+> `insert_before` to AFTER the loop end (default-invalid path
+> preserves prior snapshots byte-identical). PJ-3d added the new
+> module `transpiler/src/matcher_hoist_invariant.cpp` exporting
+> `register_hoist_invariant_matcher(finder, unit)`; it iterates
+> `unit.scopes`, selects every scope whose
+> `detail::classify_scope_kind` is `LoopBody`, scans the decl-
+> producing ops (OR / AND / NOT / XOR / compare kinds — *not*
+> compound-assign-on-outer-var, which PH-3 already skips) whose
+> operands are all loop-invariant (PJ-3b), and rewrites
+> `hoist_to_override` to the loop-enclosing scope's close_brace
+> with `insert_before_override` set to the loop begin location; a
+> defensive `if (op.skip_uncompute) continue;` preserves PH-3
+> disjointness. PJ-3e wired `register_hoist_invariant_matcher` into
+> `transpiler/src/main.cpp` **after** every Phase A–I matcher,
+> after `register_ccnot_fuse_matcher` (PJ-1f), and after
+> `register_dead_ancilla_matcher` (PJ-4b), with an ordering-
+> invariant comment block documenting why hoisting must run last
+> (the scope iteration depends on every other matcher having
+> already populated `unit.scopes`). PJ-3f pinned six snapshot
+> fixtures in `tests/transpiler/fixtures/`: `hoist_or_out_of_for`
+> (happy path, `for` loop), `hoist_and_out_of_while` (happy path,
+> `while` loop), `hoist_reject_operand_written_in_loop` (reject —
+> loop body writes one of the operands),
+> `hoist_reject_branch_not_loop` (reject — `if`-body, not a loop),
+> `hoist_nested_loops_inner_only` (only the innermost loop hoists
+> to between the two loops), and `hoist_multi_op_same_loop` (pins
+> LIFO ordering for multiple hoistable ops — forwards in source
+> order pre-loop, uncomputes in reverse source order post-loop).
+> PJ-3g added `examples/uncompute_hoisting.cpp` plus
+> `tests/transpiler/check_example_uncompute_hoisting.cmake` and its
+> `transpiler_example_uncompute_hoisting_injected` +
+> `transpiler_idempotent_example_uncompute_hoisting` CTests (wired
+> via `examples/CMakeLists.txt`). PJ-3h closed the loop with the
+> `m12_hoist_transpiled` / `m12_hoist_reference` namespace pair in
+> `tests/transpiler/test_gate_equivalence.cpp` plus
+> `tests/transpiler/fixtures/hoist_runtime.cpp` and
+> `tests/transpiler/fixtures/hoist_reference.cpp`; the reference
+> spells out the hoisted compute + post-loop uncompute manually and
+> the transpiled path goes through the matcher — byte-identical
+> `GateRecord` stream verified across N loop iterations (both
+> emitting ONE forward + ONE uncompute in total, not N). Tracked
+> as bd issues sturm-tlx3 (PJ-3a), sturm-grhy (PJ-3b), sturm-9cmt
+> (PJ-3c), sturm-5a4a (PJ-3d), sturm-0v9i (PJ-3e), sturm-8cwe
+> (PJ-3f), sturm-zso9 (PJ-3g), sturm-djqg (PJ-3h), sturm-9bs4
+> (PJ-3i). Next up: Phase K (cleanup — retire legacy runtime
+> auto-uncompute now that the transpiler owns every construct).
+
+> **2026-04-17:** Phase J complete. Three IR-level optimizations
+> ship on by default: PJ-1 (zero-ancilla fusion — adjacent
+> `qbool __t = a & b; x ^= __t;` with a single reader becomes one
+> self-adjoint `ccnot_inplace(x, a, b);`, no ancilla), PJ-4
+> (dead-ancilla elimination — a qbool-valued decl with zero
+> readers is deleted verbatim, no forward gate and no uncompute),
+> and PJ-3 (uncompute hoisting — a loop-invariant forward
+> computation hoists above the loop with its uncompute placed
+> after the loop close, converting N forward/N uncompute into
+> 1/1). PJ-2 (peephole gate reordering) was deferred to Phase M on
+> the value-gain analysis — it would require alias analysis to
+> pay for itself, and PJ-1's adjacent-statement peephole already
+> captures the motivating fusion case. Three new shared helpers
+> ship in `transpiler/src/matcher_common.hpp`:
+> `detail::count_readers_in_scope` (PJ-1a, also consumed by
+> PJ-4a), `detail::classify_scope_kind` (PJ-3a), and
+> `detail::expr_is_loop_invariant` (PJ-3b). QIR grew two new
+> fields on `QOperation` (`hoist_to_override` from PJ-3c, parallel
+> to PH-3's `insert_before_override`) and two new
+> `std::vector<clang::SourceRange>` members on `QUnit`
+> (`fused_stmt_ranges` from PJ-1e, `eliminated_stmt_ranges` from
+> PJ-4a) — both probed via PJ-1e's `is_range_covered_by_fused`
+> helper so downstream Phase A/E callbacks bail on covered
+> ranges. Three new matcher modules ship (registered in the
+> documented ordering in `transpiler/src/main.cpp`):
+> `matcher_dead_ancilla.cpp` and `matcher_ccnot_fuse.cpp` run
+> **before** the Phase A/E bitwise/assign/compound matchers, and
+> `matcher_hoist_invariant.cpp` runs **last**, after every Phase
+> A–I + PJ-1/PJ-4 matcher. One runtime entry-point added:
+> `sturm::ccnot_inplace(qbool&, const qbool&, const qbool&)` in
+> `include/sturm/uncompute/uncompute_api.hpp` (impl delegates to
+> `primitive_AND` with the carry in-place). Fifteen new snapshot
+> fixtures land under `tests/transpiler/fixtures/` (five for
+> PJ-1, four for PJ-4, six for PJ-3 covering hoist accept +
+> reject + nested + LIFO), three new `examples/*.cpp` with paired
+> `check_example_*.cmake` + `_injected` / `_idempotent` CTests,
+> and three new `m12_*_transpiled` / `m12_*_reference` namespace
+> pairs in `tests/transpiler/test_gate_equivalence.cpp`. One
+> regression filed for follow-up: sturm-3dpf (PJ-4a fires on the
+> legacy MVP `or_single_runtime.cpp` gate-equivalence fixture —
+> the canonical fix is a `(void)tmp;` reader, matching the
+> pattern PJ-3f / PJ-4c fixtures already use). Tracked as bd
+> issues sturm-2hnb..sturm-s29b (PJ-1a..PJ-1j), sturm-ubfr..
+> sturm-436e (PJ-4a..PJ-4f), sturm-tlx3..sturm-9bs4 (PJ-3a..
+> PJ-3i). Phase K-3's explicit dependency ("the zero-ancilla
+> optimization now lives in the IR pass") is now satisfied —
+> the cleanup phase can retire `lazy_expr`'s runtime
+> materialization and collapse the destructor gate paths. Next
+> up: Phase K (cleanup).
+
 Only after coverage is complete. Deferring these avoids premature optimization and lets us validate correctness before speed.
 
 1. **Zero-ancilla fusion.** The pattern `qbool __t = a & b; x ^= __t; /* __t used once here */` fuses into a single `ccnot_inplace(x, a, b);` call at the IR level, emitting a single CCX with no intermediate qubit. This is the optimization today's `lazy_expr` materialization tries to approximate at runtime — moving it to the IR is cleaner and composes with other rewrites. Implementation lives in the pre-lowering peephole `matcher_ccnot_fuse.cpp`, which fires **before** the Phase E compound-flatten matcher so the `__stu_tN` temporary is never allocated.
