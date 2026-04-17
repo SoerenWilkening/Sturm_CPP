@@ -37,7 +37,7 @@ target_compile_features(sturm INTERFACE cxx_std_20)
 #   via add_quantum_executable() through it. OFF is the documented default
 #   so a vanilla STURM build never depends on LLVM/Clang being installed.
 option(STURM_AUTO_UNCOMPUTE
-       "Enable RAII auto-uncompute in ~qint_t / ~qbool destructors" ON)
+       "Enable RAII auto-uncompute in ~qint_t / ~qbool destructors" OFF)
 if(STURM_AUTO_UNCOMPUTE)
     add_compile_definitions(STURM_AUTO_UNCOMPUTE=1)
 endif()
