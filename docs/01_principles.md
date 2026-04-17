@@ -44,7 +44,7 @@ Named gates (H, CNOT, Toffoli, X, Y, Z) do not exist in user code. If a DSL prog
 - *Circuit mode (test)*: primitives are appended to a circuit object for inspection.
 - *Direct mode*: primitives are executed immediately against a simulator backend.
 
-**B1b. Inversion is by explicit adjoint.** No source-level or runtime auto-inversion in the default path. Primitives ship with adjoint forms. Library routines ship with hand-written adjoints. `invert(foo)` performs a registered lookup. Macro-based or AST-based auto-generation may be added later as opt-in mechanisms.
+**B1b. Inversion is by explicit adjoint.** No source-level or runtime auto-inversion in the default path. Primitives ship with adjoint forms. Library routines ship with hand-written adjoints. `invert(foo)` performs a registered lookup. Macro-based or AST-based auto-generation is the default: the transpiler pass at compile time registers inverse operations for every construct. Runtime auto-inversion has been retired.
 
 **B2. Minimal state.**
 - Per `qint`: an `int64_t` value and a `uint64_t` classicality mask (1 = bit is in superposition).
@@ -65,4 +65,6 @@ No entanglement graphs, no global state analysis, no per-call caching.
 
 **B8. Mask transfer is per-operation and local.** Each arithmetic and logical operation defines a mask transfer function: how the output classicality mask derives from the input classicality masks. Carry propagation widens masks across bit positions. No global mask analysis is performed.
 
-**B9. Two optimization layers, no global pass.** The C++ compiler optimizes the dispatch logic (inlined operator overloads, constant-folded branches, eliminated dead paths when masks are statically known). Classicality specialization optimizes the emitted primitive stream at dispatch time. No global circuit-optimization pass is required or provided. Cross-primitive optimization (constant folding of successive `+=` on superposed values, peephole rewrites) is deferred to a future stage.
+**B9. Two optimization layers in the default runtime path (inlined dispatch, classicality specialization) and one global optimization pass at transpile time.** The C++ compiler inlines dispatch logic and constant-folds branches; classicality specialization optimizes the primitive stream at dispatch time; the transpiler performs whole-function rewrites (PJ-1 fusion, PJ-3 hoisting, PJ-4 dead-ancilla elimination).
+
+**B10. Uncomputation is a compile-time concern, not a runtime concern.** Inverses are emitted by the transpiler as explicit uncompute_* / ccnot_inplace / invert(routine)(...) calls in the generated source file. Destructors release qubit indices to the pool; they do not emit gates. Ancilla scope (B6) still uses C++ RAII, but scope exit and uncomputation are now separate concerns.
