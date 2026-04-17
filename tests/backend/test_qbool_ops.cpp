@@ -1,14 +1,30 @@
-// test_qbool_ops.cpp — M13: qbool operators + lazy expressions tests.
+// test_qbool_ops.cpp — M13: qbool forward-operator tests.
 //
-// Tests:
+// Phase K PK-8 (sturm-ignd) retired the runtime lazy-fusion and
+// destructor-uncompute gate-count pins that previously lived here. Under the
+// new contract (principles B1b, B9, B10 — 2026-04-17), the only gate streams
+// the runtime must produce are the direct forward emissions; fusion of the
+// `c ^= (a & b)` / `c ^= (a | b)` patterns and the destructor-emitted inverses
+// for `qbool r = (a & b)` / `qbool r = ~a` are compile-time concerns owned by
+// the transpiler (PJ-1 ccnot_inplace + explicit uncompute_* calls). The
+// gate-equivalence regression pairs in tests/transpiler pin that contract.
+//
+// Surviving tests:
 //   test_qbool_xor_assign      — c ^= a emits 1 CX
-//   test_qbool_and_expr_xor    — c ^= (a & b) emits 1 CCX
-//   test_qbool_or_expr_xor     — c ^= (a | b) emits 2 CX + 1 CCX (3 gates)
-//   test_qbool_and_materialize — qbool r = (a & b) allocates ancilla; destruction uncomputes/frees
+//   test_qbool_xor_assign_ir   — c ^= a appends 1 CX record
 //   test_qbool_flip            — a.flip() emits 1 X
-//   test_qbool_not             — ~a emits 1 X, returns new qbool
+//   test_qbool_flip_ir         — a.flip() appends 1 X record
 //   test_qbool_under_when      — c ^= a under 1 control emits 1 CCX (lifted CX)
-//   test_qbool_non_owning      — non-owning qbool destruction does NOT release the qubit
+//   test_qbool_under_when_ir   — same, verify the CCX record
+//   test_qbool_non_owning      — non-owning qbool destruction does NOT release
+//   Mixed quantum/classical fast-path pass-through tests for operator& / |.
+//
+// Retired in PK-8 (gate-count pins / destructor-emit pins):
+//   test_qbool_and_expr_xor, test_qbool_and_expr_xor_ir
+//   test_qbool_or_expr_xor,  test_qbool_or_expr_xor_ir
+//   test_qbool_and_materialize
+//   test_qbool_not
+//   test_qbool_under_when_and
 //
 // Harness: plain assert + main (no gtest).
 
@@ -81,91 +97,14 @@ static void test_qbool_xor_assign_ir() {
     std::printf("  test_qbool_xor_assign_ir: PASS\n");
 }
 
-// ── test_qbool_and_expr_xor: c ^= (a & b) emits 1 CCX ────────────────────────
-
-static void test_qbool_and_expr_xor() {
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-    sturm::qbool c = make_qubit(2);
-
-    c ^= (a & b);
-
-    assert(sc.ctx->gate_count == 1u);
-    std::printf("  test_qbool_and_expr_xor: PASS\n");
-}
-
-// ── test_qbool_and_expr_xor_ir: CCX record in APPEND mode ────────────────────
-
-static void test_qbool_and_expr_xor_ir() {
-    ScopedCtx sc{STURM_MODE_APPEND};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-    sturm::qbool c = make_qubit(2);
-
-    c ^= (a & b);
-
-    assert(sc.ctx->ir.size() == 1u);
-    const auto& rec = sc.ctx->ir.at(0);
-    assert(rec.kind == STURM_GATE_CCX);
-    assert(rec.qubits[0] == 0u);
-    assert(rec.qubits[1] == 1u);
-    assert(rec.qubits[2] == 2u);
-    std::printf("  test_qbool_and_expr_xor_ir: PASS\n");
-}
-
-// ── test_qbool_or_expr_xor: c ^= (a | b) emits 2 CX + 1 CCX (3 gates) ───────
-
-static void test_qbool_or_expr_xor() {
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-    sturm::qbool c = make_qubit(2);
-
-    c ^= (a | b);
-
-    assert(sc.ctx->gate_count == 3u);
-    std::printf("  test_qbool_or_expr_xor: PASS\n");
-}
-
-// ── test_qbool_or_expr_xor_ir: 2 CX + 1 CCX records in APPEND mode ──────────
-
-static void test_qbool_or_expr_xor_ir() {
-    ScopedCtx sc{STURM_MODE_APPEND};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-    sturm::qbool c = make_qubit(2);
-
-    c ^= (a | b);
-
-    assert(sc.ctx->ir.size() == 3u);
-    assert(sc.ctx->ir.at(0).kind == STURM_GATE_CX);
-    assert(sc.ctx->ir.at(1).kind == STURM_GATE_CX);
-    assert(sc.ctx->ir.at(2).kind == STURM_GATE_CCX);
-    std::printf("  test_qbool_or_expr_xor_ir: PASS\n");
-}
-
-// ── test_qbool_and_materialize: qbool r = (a & b) allocates ancilla ──────────
-// Materialization emits 1 CCX; destruction emits 1 CCX (uncompute). Total: 2.
-
-static void test_qbool_and_materialize() {
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-
-    {
-        // r = (a & b) materializes: acquires ancilla, emits CCX
-        sturm::qbool r = (a & b);
-        assert(sc.ctx->gate_count == 1u);
-        assert(r.qubits[0] >= 0);
-
-        // After scope, destructor runs uncompute CCX and releases ancilla.
-    }
-    // After r is destroyed, ancilla should be freed.
-    assert(sc.ctx->gate_count == 2u);
-
-    std::printf("  test_qbool_and_materialize: PASS\n");
-}
+// ── Phase K PK-8 (sturm-ignd): lazy-fusion / destructor-uncompute pins ───────
+// The former tests that pinned `c ^= (a & b)` to 1 CCX,
+// `c ^= (a | b)` to 3 gates, and `qbool r = (a & b)` /
+// `qbool r = ~a` to a 2-gate materialize+destructor count were retired here.
+// Those contracts now live exclusively in the transpile path
+// (tests/transpiler/test_gate_equivalence.cpp, fixtures fuse_xor_and /
+// or_single / ...) because principle B10 disallows destructor-emitted gates
+// and principle B1b disallows runtime auto-inversion (docs/01_principles.md).
 
 // ── test_qbool_flip: a.flip() emits 1 X ──────────────────────────────────────
 
@@ -191,26 +130,6 @@ static void test_qbool_flip_ir() {
     assert(sc.ctx->ir.at(0).kind == STURM_GATE_X);
     assert(sc.ctx->ir.at(0).qubits[0] == 0u);
     std::printf("  test_qbool_flip_ir: PASS\n");
-}
-
-// ── test_qbool_not: ~a emits 1 X, returns new qbool ──────────────────────────
-// The result qbool is owning (allocates ancilla) and materializes with X.
-// On destruction, it uncomputes with another X. Total: 2 gates.
-
-static void test_qbool_not() {
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool a = make_qubit(0);
-
-    {
-        sturm::qbool r = ~a;
-        // r has an ancilla qubit set and has 1 X gate emitted
-        assert(sc.ctx->gate_count == 1u);
-        assert(r.qubits[0] >= 0);
-    }
-    // r destructs: emits uncompute X = 2 gates total
-    assert(sc.ctx->gate_count == 2u);
-
-    std::printf("  test_qbool_not: PASS\n");
 }
 
 // ── test_qbool_under_when: c ^= a under 1 control emits 1 CCX ────────────────
@@ -256,30 +175,6 @@ static void test_qbool_under_when_ir() {
     assert(sc.ctx->ir.at(0).qubits[2] == 2u);
 
     std::printf("  test_qbool_under_when_ir: PASS\n");
-}
-
-// ── test_qbool_under_when_and: c ^= (a & b) under 1 control uses c_AND fold ──
-// Under 1 control: AND(c0, c1, target) becomes a 4-qubit operation.
-// c_AND fold: borrow ancilla, CCX(ctrl, c0, anc), CCX(ctrl, c1, anc) — actually
-// the simplest safe approach: CCX(ctrl,a,anc) + CCX(anc,b,c) + CCX(ctrl,a,anc)
-// But per spec, with 1 control for an AND: emits more than 1 gate.
-// We just verify gate_count > 1.
-
-static void test_qbool_under_when_and() {
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-
-    sturm::qbool a = make_qubit(1);
-    sturm::qbool b = make_qubit(2);
-    sturm::qbool c = make_qubit(3);
-
-    sc.bc().control_stack.push_control(0u);
-    c ^= (a & b);
-    sc.bc().control_stack.pop_control();
-
-    // Under 1 control, AND(a, b, c) requires c_AND decomposition (>1 gate)
-    assert(sc.ctx->gate_count > 1u);
-
-    std::printf("  test_qbool_under_when_and: PASS\n");
 }
 
 // ── Phase K PK-3 (sturm-pzye): M8 uncompute_op tag inspection tests retired ──
@@ -414,28 +309,25 @@ static void test_qbool_when_mixed_and() {
 // ── Runner ────────────────────────────────────────────────────────────────────
 
 int main() {
-    std::printf("M13 qbool operators + lazy expressions tests:\n");
+    std::printf("M13 qbool forward-operator tests:\n");
     test_qbool_xor_assign();
     test_qbool_xor_assign_ir();
-    test_qbool_and_expr_xor();
-    test_qbool_and_expr_xor_ir();
-    test_qbool_or_expr_xor();
-    test_qbool_or_expr_xor_ir();
-    test_qbool_and_materialize();
     test_qbool_flip();
     test_qbool_flip_ir();
-    test_qbool_not();
     test_qbool_under_when();
     test_qbool_under_when_ir();
-    test_qbool_under_when_and();
     test_qbool_non_owning();
-    // Mixed quantum/classical materialization tests
+    // Mixed quantum/classical classical-fold fast paths (operator& / | / WHEN)
     test_qbool_and_mixed_quantum_classical_true();
     test_qbool_and_mixed_classical_false_quantum();
     test_qbool_or_mixed_quantum_classical_false();
     test_qbool_or_mixed_classical_true_quantum();
     test_qbool_when_mixed_and();
     // Phase K PK-3: M8 uncompute_op tag inspection tests retired.
+    // Phase K PK-8: lazy-fusion and destructor-uncompute gate-count pins
+    //               retired (see file header). The transpile-path pairs in
+    //               tests/transpiler/test_gate_equivalence.cpp pin the new
+    //               contract.
     std::printf("All M13 qbool_ops tests passed.\n");
     return 0;
 }
