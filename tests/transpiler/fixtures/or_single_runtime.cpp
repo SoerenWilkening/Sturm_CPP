@@ -66,12 +66,26 @@ using sturm::qbool;
 // supposed to produce — the M12 test_gate_equivalence harness would
 // then see a length mismatch against the hand-written reference.
 // That is the contract the transpiler must uphold.
-void demo(const qbool& a, const qbool& b) { qbool tmp = a | b; }
+//
+// Why the `(void)tmp;` reader is load-bearing
+// -------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// M7 uncompute-injection matcher: the entire `qbool tmp = a | b;` line
+// is dropped, the function body becomes empty, and the M12 harness
+// sees a zero-length transpiled gate stream vs. the 9-gate reference.
+// The explicit `(void)tmp;` bumps the reader count to 1, shutting off
+// PJ-4a so the M7 matcher runs as intended.  Same rationale — and
+// same textual shape — as the PJ-3f / PJ-4c snapshot fixtures (see
+// hoist_or_out_of_for.cpp and hoist_runtime.cpp).
+void demo(const qbool& a, const qbool& b) { qbool tmp = a | b; (void)tmp; }
 
 // LP7: second demo that mirrors `examples/or_circuit.cpp`'s VarDecl
 // (variable name `c` instead of `tmp`) so the M12 harness can bind
 // PRD acceptance #5 to the real example's pattern. Transpiler is
 // expected to inject `uncompute_or(c, a, b);` before the closing brace.
-void demo_or_circuit(const qbool& a, const qbool& b) { qbool c = a | b; }
+// The `(void)c;` reader is required for the same PJ-4a reason as the
+// `demo(...)` above.
+void demo_or_circuit(const qbool& a, const qbool& b) { qbool c = a | b; (void)c; }
 
 } // namespace m12_transpiled
