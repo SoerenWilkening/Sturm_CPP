@@ -2128,3 +2128,116 @@ if(STURM_TRANSPILE)
         LABELS "transpiler"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase J / PJ-3f: snapshot fixtures for uncompute hoisting ───────────────
+# Six fixtures pin the Phase J PJ-3d uncompute-hoisting matcher's decision
+# tree end-to-end through the real sturm-transpile binary. Each exercises
+# one branch of the `register_hoist_invariant_matcher` callback (or a
+# combination of its gates):
+#
+#   * hoist_or_out_of_for                   — happy path: `qbool t = a | b;`
+#       inside a for-body with outer-scoped operands. PJ-3d sets
+#       `hoist_to_override` to the function-body close brace; uncompute
+#       lands AFTER the loop's `}`, not before it.
+#   * hoist_and_out_of_while                — AND kind + while-loop
+#       coverage. Uses a depth-2 compound `(a & b) & c` to surface an
+#       AND op through the PE-4 compound-flatten matcher (no MVP AND
+#       matcher exists for depth-1 `qbool t = a & b;` shapes). Only the
+#       inner AND is loop-invariant; the outer AND's `__stu_t0`
+#       operand is loop-local, so the outer uncompute stays inside the
+#       while body while the inner uncompute lands after it.
+#   * hoist_reject_operand_written_in_loop  — reject: `a = b;` inside the
+#       loop body makes `a` non-invariant per `expr_is_loop_invariant`'s
+#       WriteFinder probe. Uncompute stays at `scope.close_brace`.
+#   * hoist_reject_branch_not_loop          — reject: enclosing scope is
+#       an `if`-body, not a loop. `classify_scope_kind` returns
+#       `BranchBody`, short-circuiting the matcher before operand
+#       inspection. Uncompute stays inside the branch body.
+#   * hoist_nested_loops_inner_only         — inner loop's body-local op
+#       hoists to the OUTER loop body's close brace, not the function
+#       body's close brace. `compute_loop_enclosing_close_brace` walks
+#       the parent chain from the inner loop stmt one level up.
+#   * hoist_multi_op_same_loop              — two independent OR decls
+#       in the same loop body, both invariant. PJ-3d sets the hoist
+#       fields on BOTH ops; the M8 reverse-iteration LIFO schedule
+#       emits `uncompute_or(r2, c, d);` then `uncompute_or(r1, a, b);`
+#       at the post-loop anchor (reverse source order). Pins the
+#       multi-op LIFO ordering semantic the roadmap calls out.
+#
+# Driver and harness are identical to every other Phase A..I + PJ-1g /
+# PJ-4c snapshot test (run_snapshot.cmake + byte-level compare_files).
+# No new CMake infrastructure is needed for PJ-3f — the fixtures land on
+# the existing wiring unchanged.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_hoist_or_out_of_for
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_or_out_of_for.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_or_out_of_for.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_or_out_of_for
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_hoist_or_out_of_for PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_hoist_and_out_of_while
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_and_out_of_while.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_and_out_of_while.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_and_out_of_while
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_hoist_and_out_of_while PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_hoist_reject_operand_written_in_loop
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_reject_operand_written_in_loop.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_reject_operand_written_in_loop.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_reject_operand_written_in_loop
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_hoist_reject_operand_written_in_loop PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_hoist_reject_branch_not_loop
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_reject_branch_not_loop.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_reject_branch_not_loop.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_reject_branch_not_loop
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_hoist_reject_branch_not_loop PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_hoist_nested_loops_inner_only
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_nested_loops_inner_only.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_nested_loops_inner_only.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_nested_loops_inner_only
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_hoist_nested_loops_inner_only PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_hoist_multi_op_same_loop
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_multi_op_same_loop.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_multi_op_same_loop.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_multi_op_same_loop
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_hoist_multi_op_same_loop PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()

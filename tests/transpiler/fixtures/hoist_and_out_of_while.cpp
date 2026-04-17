@@ -1,0 +1,65 @@
+// Phase J / PJ-3f input for the sturm-transpile snapshot test.
+//
+// Mirror of `hoist_or_out_of_for.cpp` but exercising:
+//   (1) the AND kind instead of OR (forces the PJ-3d kind-guard to
+//       admit `QOpKind::AND` via `is_decl_producing_kind`), and
+//   (2) a `while (...)` loop instead of `for (...)` — `classify_scope_kind`
+//       must return `LoopBody` for WhileStmt bodies just as it does
+//       for ForStmt bodies.
+//
+// There is no MVP AND matcher analogous to `register_or_matcher` in the
+// transpiler (depth-1 `qbool t = a & b;` VarDecls have no backing AST
+// matcher). To surface an AND op through the IR we use a depth-2
+// compound form `(a & b) & c` whose outer binding the Phase E PE-4
+// compound-flatten matcher decomposes into:
+//
+//     qbool __stu_t0 = a & b;       // inner AND — loop-invariant
+//     qbool t = __stu_t0 & c;       // outer AND — NOT loop-invariant
+//                                   //   (operand __stu_t0 is declared
+//                                   //    INSIDE the while body, failing
+//                                   //    `expr_is_loop_invariant`'s
+//                                   //    "decl outside body" probe)
+//
+// Only the INNER AND is a hoist candidate; the outer AND's uncompute
+// stays inside the while body at `scope.close_brace`. This asymmetry
+// is the point of the fixture — it pins the per-op granularity of the
+// PJ-3d pass (one op in a scope hoisted, another in the same scope
+// rejected, depending on each op's own operand invariance).
+//
+// Expected transform (see .expected.cpp for the byte-exact golden):
+//
+//     int i = 0;
+//     while (i < 3) {
+//         qbool __stu_t0 = a & b;
+//         qbool t = __stu_t0 & c;
+//         (void)t;
+//         ++i;
+//         uncompute_and(t, __stu_t0, c);   // outer AND — NOT hoisted
+//     }
+//     uncompute_and(__stu_t0, a, b);       // inner AND — hoisted
+//
+// The `(void)t;` reader keeps the outer `t` decl alive past the
+// PJ-4a dead-ancilla eliminator; `__stu_t0` is referenced by `t`'s
+// initializer, so it also survives elimination.
+//
+// The stub is hermetic; only `operator&` need resolve for the PE-4
+// compound-flatten matcher to fire on the nested bitwise init.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+};
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b, qbool c) {
+    int i = 0;
+    while (i < 3) {
+        qbool t = (a & b) & c;
+        (void)t;
+        ++i;
+    }
+}
