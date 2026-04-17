@@ -67,3 +67,4 @@ void run_reader_count_tests();
 void run_loop_invariant_tests();
 void run_hoist_invariant_tests();
 void run_ccnot_fuse_tests();
+void run_dead_ancilla_tests();

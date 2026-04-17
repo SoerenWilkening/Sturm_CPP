@@ -340,11 +340,31 @@ struct UncomputeInsertion {
 /// entries, preventing double-emission on the fused pair. Pre-Phase-J
 /// (MVP + Phases A..I) this vector is always empty, so every existing
 /// snapshot fixture stays byte-identical.
+///
+/// `eliminated_stmt_ranges` carries source ranges of statements the
+/// Phase J PJ-4a dead-ancilla eliminator has deleted verbatim from the
+/// output. Each entry is the `clang::SourceRange` of the dead `qbool`
+/// VarDecl statement whose reader-count within its enclosing scope is
+/// zero (e.g. `qbool __t = a | b;` with no subsequent `__t` reference
+/// in the same scope). The matcher emits one `QReplacement{range=decl
+/// stmt range, replacement=""}` per elimination AND pushes the same
+/// range here so downstream matchers — the Phase A PA-3/PA-4
+/// xor-assign matchers in `matcher_qbool_assign.cpp` and the Phase E
+/// compound matcher in `matcher_qbool_compound.cpp` — can early-return
+/// on any match whose own `stmt_range` lies inside one of these
+/// entries. The containment probe is the same `is_range_covered_by_*`
+/// helper shape PJ-1e uses; the two vectors are kept separate so the
+/// PJ-1d / PJ-4a matchers can be reasoned about independently and so
+/// `dump()`-adjacent tooling can report which optimization absorbed
+/// which statement. Pre-Phase-J (MVP + Phases A..I) this vector is
+/// always empty, so every existing snapshot fixture stays byte-
+/// identical.
 struct QUnit {
     std::vector<QScope>              scopes;
     std::vector<QReplacement>        replacements;
     std::vector<UncomputeInsertion>  raw_insertions;
     std::vector<clang::SourceRange>  fused_stmt_ranges;
+    std::vector<clang::SourceRange>  eliminated_stmt_ranges;
 };
 
 /// Equality on QValueRef: both the name and the decl_loc must match.
