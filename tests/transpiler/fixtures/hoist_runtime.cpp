@@ -79,18 +79,13 @@
 //
 // Gate-stream witness
 // -------------------
-// With `STURM_AUTO_UNCOMPUTE` ON (the project default — see
-// `CMakeLists.txt` lines 39-43), the inner `qbool t = a | b;` sets
-// `t.uncompute_ = make_bitwise_qbool(...)` on the forward OR (per
-// `include/sturm/qtypes/qbool_ops.hpp` line 226), and the inner `t`'s
-// RAII destructor at the for-body's close brace auto-uncomputes via
-// `uncompute_op::apply` — emitting three adjoint gates
-// (CCX + CX + CX) AGAINST THE SAME ancilla index.  So each iteration
-// emits six gates in total: three forward (CX + CX + CCX) + three
-// adjoint (CCX + CX + CX) = 6.  The QubitPool LIFO free-list hands
-// the same ancilla index back to the next iteration's `allocate()`,
-// so all 3×6 = 18 gates share identical qubit triples
-// `(q_a, q_b, q_ancilla)`.
+// With the transpiler emitting explicit `sturm::uncompute_or(...)` at
+// the inner `t`'s scope exit (Phase K removed RAII auto-uncompute),
+// each iteration emits six gates in total: three forward
+// (CX + CX + CCX) + three adjoint (CCX + CX + CX) = 6.  The QubitPool
+// LIFO free-list hands the same ancilla index back to the next
+// iteration's `allocate()`, so all 3×6 = 18 gates share identical
+// qubit triples `(q_a, q_b, q_ancilla)`.
 //
 // The hoisted `sturm::uncompute_or(t, a, b)` lands after the loop's
 // close brace.  Because the outer t has been `ensure_qubit`'d above
@@ -156,13 +151,12 @@ using sturm::qbool;
 // matcher fires on the loop-body scope and sets `op.hoist_to_override`
 // to the demo's close brace, so the M8 synthesis pass plants
 // `sturm::uncompute_or(t, a, b);` AFTER the for-loop's `}` — resolving
-// to the OUTER predecl `qbool t;`.  The inner `qbool t`'s RAII
-// destructor still fires per-iteration; with `STURM_AUTO_UNCOMPUTE` ON
-// (the project default) the destructor auto-uncomputes via the
-// `uncompute_` field set by the forward OR, so the per-iteration
-// gate budget is six (3 forward + 3 destructor adjoint) × 3 iterations
-// = 18 gates.  The post-loop hoisted call adds three more gates
-// (both-quantum CCX+CX+CX against the outer t's ensure_qubit'd
+// to the OUTER predecl `qbool t;`.  The transpiler also emits a per-
+// iteration `sturm::uncompute_or(...)` at the inner `t`'s scope exit
+// (Phase K removed RAII auto-uncompute), so the per-iteration gate
+// budget is six (3 forward + 3 transpiler-emitted adjoint) × 3
+// iterations = 18 gates.  The post-loop hoisted call adds three more
+// gates (both-quantum CCX+CX+CX against the outer t's ensure_qubit'd
 // index).
 //
 // `const qbool&` arguments preserve the caller's qubit indices across

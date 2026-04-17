@@ -241,8 +241,8 @@ void demo(const sturm::qbool& a,
 // Because the inner `qbool t = a | b;` fires per-iteration (PJ-3d
 // only moves the uncompute anchor — forward text-move is a future-
 // phase concern), the per-iteration gate budget is six (3 forward OR
-// + 3 RAII destructor auto-uncompute under `STURM_AUTO_UNCOMPUTE` ON)
-// × 3 iterations = 18 gates on each side.  The post-loop
+// + 3 transpiler-emitted uncompute calls) × 3 iterations = 18 gates
+// on each side.  The post-loop
 // `sturm::uncompute_or(t, a, b)` adds three more gates (both-quantum
 // CCX+CX+CX against the outer t's ensure_qubit'd index), totalling
 // twenty-one gates per capture.  `const qbool&` arguments preserve
@@ -825,10 +825,9 @@ int main() {
     // Because PJ-3d only relocates the UNCOMPUTE anchor — the forward
     // `qbool t = a | b;` stays INSIDE the loop body, firing per-
     // iteration — the captured stream covers eighteen in-loop gates
-    // (three forward OR per iter + three RAII destructor auto-
-    // uncompute per iter under `STURM_AUTO_UNCOMPUTE` ON, for three
-    // iterations) PLUS three post-loop hoisted gates = 21 gates per
-    // capture.  The QubitPool LIFO free-list hands the same ancilla
+    // (three forward OR per iter + three transpiler-emitted uncompute
+    // calls per iter, for three iterations) PLUS three post-loop
+    // hoisted gates = 21 gates per capture.  The QubitPool LIFO free-list hands the same ancilla
     // index back across iterations, so all in-loop gates share the
     // same qubit triples — a byte-compare that fails hard if the
     // transpiler ever drifts the hoist anchor INSIDE the loop body

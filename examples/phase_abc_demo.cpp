@@ -51,13 +51,8 @@
 // ----------
 //     ./build/examples/example_phase_abc_demo
 //
-// NOTE on STURM_AUTO_UNCOMPUTE
-// ----------------------------
-// The build defaults to STURM_AUTO_UNCOMPUTE=ON, which layers the qbool /
-// qint destructor's auto-uncompute on top of the transpiler's injected
-// inverses. To see ONLY the transpiler's contribution, configure with:
-//     cmake -B build -DSTURM_AUTO_UNCOMPUTE=OFF
-//     cmake --build build --target example_phase_abc_demo
+// Phase K removed RAII auto-uncompute entirely; the transpiler is now
+// the sole source of uncompute gate emission.
 
 int main() {
     constexpr uint32_t kNumQubits = 32;

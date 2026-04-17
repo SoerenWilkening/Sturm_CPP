@@ -101,18 +101,8 @@ using sturm::qbool;
 // scope, by contrast, emits the full forward OR three-gate sequence
 // (CX + CX + CCX) + a PA-3 forward X on `x` + a PA-3 self-adjoint X
 // on `x` + an MVP OR three-gate uncompute (CCX + CX + CX), for a net
-// delta of `N2 - N1 == 8` (assuming the destructor auto-uncompute
-// layer contributes no extra gates for the scope's qbool locals).
-//
-// NOTE on STURM_AUTO_UNCOMPUTE: same caveat as every Phase A–J
-// example — the build defaults to ON, which layers destructor-driven
-// auto-uncompute on top of the transpiler's injection.  The `live`
-// scope's `qbool live` destructor would double-uncompute the OR
-// result if left unguarded — the transpiler's injected
-// `uncompute_or(live, a, b);` runs first and zeros the qubit, so the
-// destructor pass is a no-op in practice.  To see ONLY the
-// transpiler's contribution, configure with
-// `-DSTURM_AUTO_UNCOMPUTE=OFF`.
+// delta of `N2 - N1 == 8` (Phase K removed RAII auto-uncompute, so
+// the transpiler's injection is the sole source of uncompute gates).
 
 int main() {
     constexpr uint32_t kNumQubits = 32;
@@ -190,11 +180,9 @@ int main() {
     //     ------------------------------------------ ------------
     //     total delta `gates_after_live - gates_after_dead`  = 8 gates
     //
-    // assuming STURM_AUTO_UNCOMPUTE=ON's destructor pass is a no-op
-    // for the live scope's qbools (they're classical after the
-    // transpiler's injected inverse fires) and for the dead scope's
-    // qbools (their qubits were allocated but never touched — the
-    // destructor sees a zeroed state and emits nothing).
+    // Phase K removed RAII auto-uncompute; the transpiler's injected
+    // inverse is the sole source of uncompute gates, so the totals
+    // above are exactly what gets emitted.
     std::fprintf(stdout, "gates_after_dead = %zu\n",
                  gates_after_dead);
     std::fprintf(stdout, "gates_after_live = %zu\n",

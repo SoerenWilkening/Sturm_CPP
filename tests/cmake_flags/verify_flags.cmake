@@ -1,12 +1,8 @@
 # verify_flags.cmake — validates the M1 CMake flag contract.
 #
 # Invoked via ctest (see tests/cmake_flags/CMakeLists.txt). Runs a fresh
-# out-of-source `cmake` configure three times and checks:
-#   1. Default (Phase K PK-1: STURM_AUTO_UNCOMPUTE now defaults OFF):
-#      STURM_AUTO_UNCOMPUTE=1 is absent from the exported compile
-#      definitions (compile_commands.json).
-#   2. -DSTURM_AUTO_UNCOMPUTE=ON: the define is present.
-#   3. -DSTURM_TRANSPILE=ON: the transpiler subdirectory is entered (the
+# out-of-source `cmake` configure and checks:
+#   1. -DSTURM_TRANSPILE=ON: the transpiler subdirectory is entered (the
 #      configure message emitted by transpiler/CMakeLists.txt appears in
 #      stdout). This check is skipped gracefully if LLVM/Clang are not
 #      installed on the host.
@@ -53,60 +49,8 @@ function(_sturm_fresh_configure tag extra_args output_var success_var)
     endif()
 endfunction()
 
-# Greps compile_commands.json (if present) for the STURM_AUTO_UNCOMPUTE=1 token.
-function(_sturm_probe_define tag present_var)
-    set(_ccj "${BUILD_ROOT}/${tag}/compile_commands.json")
-    set(${present_var} FALSE PARENT_SCOPE)
-    if(EXISTS "${_ccj}")
-        file(READ "${_ccj}" _blob)
-        if(_blob MATCHES "STURM_AUTO_UNCOMPUTE=1")
-            set(${present_var} TRUE PARENT_SCOPE)
-        endif()
-    endif()
-endfunction()
-
 # ──────────────────────────────────────────────────────────────────────────────
-# Check 1: default configure → STURM_AUTO_UNCOMPUTE=1 is absent
-# (Phase K PK-1 flipped the default from ON to OFF).
-# ──────────────────────────────────────────────────────────────────────────────
-_sturm_fresh_configure("default" "" _out_default _ok_default)
-if(NOT _ok_default)
-    message(FATAL_ERROR
-        "verify_flags: default configure FAILED.\nOutput:\n${_out_default}")
-endif()
-_sturm_probe_define("default" _has_default)
-if(_has_default)
-    message(FATAL_ERROR
-        "verify_flags: default configure still leaks "
-        "STURM_AUTO_UNCOMPUTE=1 into compile_commands.json.\n"
-        "Under Phase K PK-1 the default value of STURM_AUTO_UNCOMPUTE is OFF; "
-        "the option block must gate add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) "
-        "behind if(STURM_AUTO_UNCOMPUTE).\nConfigure output:\n${_out_default}")
-endif()
-message(STATUS "verify_flags: [PASS] default  → STURM_AUTO_UNCOMPUTE=1 absent")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Check 2: -DSTURM_AUTO_UNCOMPUTE=ON → define is present.
-# ──────────────────────────────────────────────────────────────────────────────
-_sturm_fresh_configure("auto_on" "-DSTURM_AUTO_UNCOMPUTE=ON"
-                       _out_on _ok_on)
-if(NOT _ok_on)
-    message(FATAL_ERROR
-        "verify_flags: -DSTURM_AUTO_UNCOMPUTE=ON configure FAILED.\n"
-        "Output:\n${_out_on}")
-endif()
-_sturm_probe_define("auto_on" _has_on)
-if(NOT _has_on)
-    message(FATAL_ERROR
-        "verify_flags: -DSTURM_AUTO_UNCOMPUTE=ON did not emit "
-        "STURM_AUTO_UNCOMPUTE=1 into compile_commands.json.\n"
-        "The option block must call add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) "
-        "when ON.\nConfigure output:\n${_out_on}")
-endif()
-message(STATUS "verify_flags: [PASS] AUTO=ON  → STURM_AUTO_UNCOMPUTE=1 present")
-
-# ──────────────────────────────────────────────────────────────────────────────
-# Check 3: -DSTURM_TRANSPILE=ON → transpiler/CMakeLists.txt is entered.
+# Check: -DSTURM_TRANSPILE=ON → transpiler/CMakeLists.txt is entered.
 # This check is best-effort: if LLVM/Clang development packages are not
 # installed on the host, the configure will fail inside transpiler/, which
 # is the documented expected behavior ("expected configure error until M4"

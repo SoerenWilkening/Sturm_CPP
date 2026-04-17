@@ -78,10 +78,8 @@ using sturm::qbool;
 // ----------
 //     ./build/examples/example_nested_when
 //
-// NOTE on STURM_AUTO_UNCOMPUTE: same caveat as the earlier Phase A–F
-// examples — the build defaults to ON, which layers the destructor's
-// auto-uncompute on top of the transpiler's injection.  To see ONLY the
-// transpiler's contribution, configure with `-DSTURM_AUTO_UNCOMPUTE=OFF`.
+// Phase K removed RAII auto-uncompute entirely; the transpiler is now
+// the sole source of uncompute gate emission.
 
 int main() {
     constexpr uint32_t kNumQubits = 32;

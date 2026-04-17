@@ -7,10 +7,10 @@
 // operator& / operator| / operator^ / operator~ each acquire a fresh qubit
 // from `QubitPool::instance()`, emit the forward gate(s) via the active
 // BackendContext, and return an owning qbool by value.  Non-transpiled callers
-// therefore leak one qubit per operation (no RAII uncompute under the default
-// STURM_AUTO_UNCOMPUTE=OFF); the transpile path is the contract — the
-// transpiler injects explicit `uncompute_and` / `uncompute_or` calls at scope
-// exit (see include/sturm/uncompute/uncompute_api.hpp).
+// therefore leak one qubit per operation (there is no RAII uncompute after
+// Phase K); the transpile path is the contract — the transpiler injects
+// explicit `uncompute_and` / `uncompute_or` calls at scope exit (see
+// include/sturm/uncompute/uncompute_api.hpp).
 //
 // WHEN lifting: 0 controls→direct, 1→lift×1, 2+→c_AND fold (emit_*_lifted).
 // Target: <300 LoC.
@@ -128,8 +128,7 @@ inline qbool& qbool::flip() {
 // ── qbool::operator~() ───────────────────────────────────────────────────────
 // Phase K PK-2: allocate a fresh qubit via QubitPool::instance().acquire(),
 // emit an X gate into it, and return an owning qbool.  Non-transpiled callers
-// leak the qubit (STURM_AUTO_UNCOMPUTE=OFF default); transpile injects the
-// uncompute.
+// leak the qubit after Phase K; transpile injects the uncompute.
 inline qbool qbool::operator~() const {
     assert(qubits[0] >= 0);
     int anc_idx = QubitPool::instance().acquire();
