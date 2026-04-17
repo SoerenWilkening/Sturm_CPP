@@ -36,7 +36,14 @@ static bool contains(const std::string& haystack, const char* needle) {
     return haystack.find(needle) != std::string::npos;
 }
 
-// ── Required tests: one per module M1–M22, M25–M26 ──────────────────────────
+// ── Required tests: one per surviving backend module ────────────────────────
+//
+// Phase K PK-3 (sturm-pzye) retired test_promotion (M17), test_uncompute_op
+// (M19), test_uncompute_run (M20), test_uncompute_add_const (M21), and
+// test_uncompute_each_op (M22) along with the uncompute_op tagged-union
+// runtime. Those names are intentionally absent from the list below —
+// principle B10 makes destructor-driven inverse emission a non-goal, so no
+// replacement backend test covers them.
 
 static const char* kRequiredTests[] = {
     "test_gate_kind",              // M1
@@ -55,12 +62,7 @@ static const char* kRequiredTests[] = {
     "test_reduction_table",        // M14
     "test_dispatch_all_classical", // M15
     "test_dispatch_mixed",         // M16
-    "test_promotion",              // M17
     "test_qubit_cap",              // M18
-    "test_uncompute_op",           // M19
-    "test_uncompute_run",          // M20
-    "test_uncompute_add_const",    // M21
-    "test_uncompute_each_op",      // M22
     "test_instantiations",         // M25
     "test_end_to_end",             // M26
 };
@@ -132,8 +134,11 @@ static void test_backend_label_run_passes() {
         }
         pos += 1;
     }
-    // M1–M22, M25–M26 = 24 modules, plus M27 itself = ≥ 24.
-    assert(count >= 24 && "ctest -L backend lists fewer than 24 tests");
+    // The backend label lists dozens of tests; post Phase K we no longer
+    // enumerate a per-module lower bound here — the required-modules check
+    // above covers the modules the contract still guarantees. Guard against
+    // a trivially-empty listing (misconfigured build directory) instead.
+    assert(count >= 10 && "ctest -L backend lists an implausibly small number of tests");
 #endif
 }
 

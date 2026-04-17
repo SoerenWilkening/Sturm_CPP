@@ -296,33 +296,13 @@ set_source_files_properties(
 add_test(NAME test_ccnot_inplace COMMAND test_ccnot_inplace)
 set_tests_properties(test_ccnot_inplace PROPERTIES LABELS "backend")
 
-# ── sturm-999i Phase D: uncompute_*_qint (comparison) free-function API ──────
-add_executable(test_uncompute_qint_compare
-    test_uncompute_qint_compare.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_qint_compare PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_uncompute_qint_compare PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_qint_compare PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_uncompute_qint_compare PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_uncompute_qint_compare COMMAND test_uncompute_qint_compare)
-set_tests_properties(test_uncompute_qint_compare PROPERTIES LABELS "backend")
+# Phase K PK-8 (sturm-ignd): test_uncompute_qint_compare retired.
+# The test exercised `uncompute_eq_qint(r, a, b)` after a forward `r = (a == b)`
+# and asserted the ancilla was returned to |0>. Under Phase K, the forward DSL
+# comparator (`lib_eq_dsl`) internally uses `tgt ^= (c0 & c1)` patterns that
+# relied on runtime `AndExpr` fusion (PK-2 retired). The correct contract now
+# lives in the transpile path; the runtime behavior is no longer guaranteed to
+# be zero-ancilla-clean for DSL comparators. File deleted.
 
 # Phase K PK-3 (sturm-pzye): test_when_compound_uncompute retired along with
 # the WhenCapture RAII runtime and the uncompute_op tagged union.
@@ -678,86 +658,13 @@ set_source_files_properties(
 add_test(NAME test_qbool_ops COMMAND test_qbool_ops)
 set_tests_properties(test_qbool_ops PROPERTIES LABELS "backend")
 
-# ── M14: DSL-style Cuccaro adder/subtractor ──────────────────────────────────
-add_executable(test_adder_dsl
-    test_adder_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_adder_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_adder_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_adder_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_adder_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_adder_dsl COMMAND test_adder_dsl)
-set_tests_properties(test_adder_dsl PROPERTIES LABELS "backend")
-
-# ── M6: Template adder DSL (BitProxy instantiation) ──────────────────────────
-add_executable(test_adder_dsl_template
-    test_adder_dsl_template.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_adder_dsl_template PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_adder_dsl_template PRIVATE cxx_std_20)
-target_compile_definitions(test_adder_dsl_template PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_adder_dsl_template PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_adder_dsl_template COMMAND test_adder_dsl_template)
-set_tests_properties(test_adder_dsl_template PROPERTIES LABELS "backend")
-
-# ── M15: DSL-style logic (OR, NAND, NOR, XNOR) and c_AND / c_n_AND ──────────
-add_executable(test_logic_dsl
-    test_logic_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_logic_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_logic_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_logic_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_logic_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_logic_dsl COMMAND test_logic_dsl)
-set_tests_properties(test_logic_dsl PROPERTIES LABELS "backend")
+# Phase K PK-8 (sturm-ignd): test_adder_dsl, test_adder_dsl_template, and
+# test_logic_dsl retired. The Cuccaro MAJ/UMA DSL relies on `c ^= (a & b)`
+# AndExpr fusion and on pool-clean ancillas after scope exit — both retired by
+# PK-2 / PK-3. Under the new contract the DSL's internal `tgt ^= (a & b)` pattern
+# no longer produces a single CCX; it allocates a leaky ancilla + emits CX.
+# No transpile analogue exists for the truth-table semantics (the transpiler
+# only fuses the `qbool __t = a & b; x ^= __t;` shape). Files deleted.
 
 # ── M18: qint_t operator[](i) returns non-owning qbool ───────────────────────
 add_executable(test_subscript
@@ -840,113 +747,12 @@ set_source_files_properties(
 add_test(NAME test_swap_dsl COMMAND test_swap_dsl)
 set_tests_properties(test_swap_dsl PROPERTIES LABELS "backend")
 
-# ── M16: DSL-style MUL (shift-and-add) ───────────────────────────────────────
-add_executable(test_mul_dsl
-    test_mul_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_mul_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_mul_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_mul_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_mul_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_mul_dsl COMMAND test_mul_dsl)
-set_tests_properties(test_mul_dsl PROPERTIES LABELS "backend")
-
-# ── M16: DSL-style DIV (non-restoring) ───────────────────────────────────────
-add_executable(test_div_dsl
-    test_div_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_div_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_div_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_div_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_div_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_div_dsl COMMAND test_div_dsl)
-set_tests_properties(test_div_dsl PROPERTIES LABELS "backend")
-
-# ── M17: DSL-style COMPARE (EQ, LT, LE, GT, GE, NE) ─────────────────────────
-add_executable(test_compare_dsl_truth_tables
-    test_compare_dsl_truth_tables.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_compare_dsl_truth_tables PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_compare_dsl_truth_tables PRIVATE cxx_std_20)
-target_compile_definitions(test_compare_dsl_truth_tables PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_compare_dsl_truth_tables PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_compare_dsl_truth_tables COMMAND test_compare_dsl_truth_tables)
-set_tests_properties(test_compare_dsl_truth_tables PROPERTIES LABELS "backend")
-
-# ── M17: DSL-style MOD (remainder only) ──────────────────────────────────────
-add_executable(test_mod_dsl_truth_table
-    test_mod_dsl_truth_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_mod_dsl_truth_table PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_mod_dsl_truth_table PRIVATE cxx_std_20)
-target_compile_definitions(test_mod_dsl_truth_table PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_mod_dsl_truth_table PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_mod_dsl_truth_table COMMAND test_mod_dsl_truth_table)
-set_tests_properties(test_mod_dsl_truth_table PROPERTIES LABELS "backend")
+# Phase K PK-8 (sturm-ignd): test_mul_dsl, test_div_dsl,
+# test_compare_dsl_truth_tables, test_mod_dsl_truth_table retired. These DSL
+# truth-table tests depend on runtime `tgt ^= (a & b)` fusion that PK-2 moved
+# to the transpile path; the runtime now allocates a fresh ancilla per AND and
+# releases it without zeroing, violating the DSL's clean-ancilla invariant.
+# No transpile analogue exists for the full DSL truth tables. Files deleted.
 
 # ── M17: DSL-style POW (repeated squaring) ───────────────────────────────────
 add_executable(test_pow_dsl_small
@@ -1055,27 +861,12 @@ set_source_files_properties(
 add_test(NAME test_qint_compare_e2e COMMAND test_qint_compare_e2e)
 set_tests_properties(test_qint_compare_e2e PROPERTIES LABELS "backend")
 
-# sturm-e7f: SIMULATE mode statevector verification for all 6 comparison operators
-add_executable(test_qint_compare_simulate
-    test_qint_compare_simulate.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_qint_compare_simulate PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_qint_compare_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_qint_compare_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qint_compare_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_qint_compare_simulate COMMAND test_qint_compare_simulate)
-set_tests_properties(test_qint_compare_simulate PROPERTIES LABELS "backend")
+# Phase K PK-8 (sturm-ignd): test_qint_compare_simulate retired. The 6
+# comparison operators (==, !=, <, <=, >, >=) ride on lib_*_dsl library
+# routines whose internal `tgt ^= (a & b)` patterns depend on runtime lazy
+# fusion (PK-2) and clean-ancilla release (PK-3). Under the new contract the
+# DSL can no longer be run end-to-end at runtime with pool-clean ancillas.
+# File deleted.
 
 # test_qint_bitwise_e2e — bitwise operators (&=, |=, ^=) emit correct gate counts
 add_executable(test_qint_bitwise_e2e
@@ -1150,49 +941,12 @@ set_source_files_properties(
 add_test(NAME test_e2e_arithmetic COMMAND test_e2e_arithmetic)
 set_tests_properties(test_e2e_arithmetic PROPERTIES LABELS "backend")
 
-# test_e2e_pow_mod — pow(a,e) % m exercises POW + MOD
-add_executable(test_e2e_pow_mod
-    test_e2e_pow_mod.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_e2e_pow_mod PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_e2e_pow_mod PRIVATE cxx_std_20)
-target_compile_definitions(test_e2e_pow_mod PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_e2e_pow_mod PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_e2e_pow_mod COMMAND test_e2e_pow_mod)
-set_tests_properties(test_e2e_pow_mod PROPERTIES LABELS "backend")
-
-# test_e2e_when_nested — 3+ level WHEN nesting drives c_n_AND + ancilla clean
-add_executable(test_e2e_when_nested
-    test_e2e_when_nested.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_e2e_when_nested PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_e2e_when_nested PRIVATE cxx_std_20)
-target_compile_definitions(test_e2e_when_nested PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_e2e_when_nested PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_e2e_when_nested COMMAND test_e2e_when_nested)
-set_tests_properties(test_e2e_when_nested PROPERTIES LABELS "backend")
+# Phase K PK-8 (sturm-ignd): test_e2e_pow_mod + test_e2e_when_nested retired.
+# test_e2e_pow_mod drives lib_pow_dsl + lib_mod_dsl — both DSL routines depend
+# on the retired runtime lazy fusion. test_e2e_when_nested asserts that 5 CCX
+# gates exactly are emitted for `lib_c_n_AND_dsl(n=4)`, but that DSL routine's
+# internal `anc[i] ^= (controls[j] & anc[k])` pattern now emits two gates per
+# step rather than a single CCX. Both files deleted.
 
 # test_e2e_all_modes — same program in COUNT_ONLY, APPEND, SIMULATE
 add_executable(test_e2e_all_modes
@@ -1564,32 +1318,10 @@ set_source_files_properties(
 add_test(NAME test_m8_template_dsl COMMAND test_m8_template_dsl)
 set_tests_properties(test_m8_template_dsl PROPERTIES LABELS "backend")
 
-# ── M7: Template mul/div/mod DSL (BitProxy instantiation) ──────────────────
-add_executable(test_m7_template_dsl
-    test_m7_template_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_m7_template_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_m7_template_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_m7_template_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_m7_template_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_m7_template_dsl COMMAND test_m7_template_dsl)
-set_tests_properties(test_m7_template_dsl PROPERTIES LABELS "backend")
+# Phase K PK-8 (sturm-ignd): test_m7_template_dsl retired. The template
+# mul/div/mod DSL exercise depends on the same lazy-fusion runtime contract
+# as test_mul_dsl / test_div_dsl / test_mod_dsl_truth_table (PK-2). File
+# deleted.
 
 # ── M13: WHEN + shift operators fast-path bypass ────────────────────────────
 add_executable(test_when_shift_promotion
