@@ -224,6 +224,38 @@ void demo(const sturm::qbool& a,
           sturm::qbool& target);
 } // namespace m12_dead_ancilla_reference
 
+// PJ-3h: Phase J uncompute-hoisting gate-equivalence pair.  The
+// transpiler's PJ-3d `register_hoist_invariant_matcher` fires on the
+// loop-body scope of `qbool t = a | b;` inside a `for (...)` body where
+// both operands are loop-invariant function parameters, and sets
+// `op.hoist_to_override` to the enclosing scope's close brace.  The M8
+// synthesis pass consumes that override at uncompute-emission time per
+// the priority ladder in `transpiler/src/uncompute_pass.cpp` and plants
+// `sturm::uncompute_or(t, a, b);` AFTER the for-loop's `}`, not inside
+// the for-body.  The outer predecl `qbool t;` + `t.ensure_qubit();`
+// are load-bearing (see hoist_runtime.cpp's top-of-file prose): the
+// hoisted call resolves to the OUTER `t` which has an allocated qubit
+// so `r_q == true` at the hoisted call site, preventing the
+// `assert(r_q, ...)` in `src/sturm/uncompute/uncompute_api.cpp` that
+// would fire on quantum a/b alongside a classical outer t.  The
+// reference fixture spells this same post-loop uncompute by hand.
+// Because the inner `qbool t = a | b;` fires per-iteration (PJ-3d
+// only moves the uncompute anchor — forward text-move is a future-
+// phase concern), the per-iteration gate budget is six (3 forward OR
+// + 3 RAII destructor auto-uncompute under `STURM_AUTO_UNCOMPUTE` ON)
+// × 3 iterations = 18 gates on each side.  The post-loop
+// `sturm::uncompute_or(t, a, b)` adds three more gates (both-quantum
+// CCX+CX+CX against the outer t's ensure_qubit'd index), totalling
+// twenty-one gates per capture.  `const qbool&` arguments preserve
+// the caller's qubit indices across the demo boundary.
+namespace m12_hoist_transpiled {
+void demo(const sturm::qbool& a, const sturm::qbool& b);
+} // namespace m12_hoist_transpiled
+
+namespace m12_hoist_reference {
+void demo(const sturm::qbool& a, const sturm::qbool& b);
+} // namespace m12_hoist_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -778,6 +810,58 @@ int main() {
     }
     std::printf("  dead_ancilla streams match (%zu gates).\n", ref_da.size());
 
+    // PJ-3h: Phase J uncompute-hoisting gate-equivalence pair.  Proves
+    // the transpiler's PJ-3d `register_hoist_invariant_matcher` +
+    // `op.hoist_to_override` field plumbing + M8 synthesis-pass
+    // priority-ladder consumption — which relocates the
+    // `sturm::uncompute_or(t, a, b);` call from the for-body's close
+    // brace (where the MVP OR matcher would plant it) to the enclosing
+    // scope's close brace (AFTER the for-loop's `}`) — emits the same
+    // gate stream as a hand-written reference that spells that post-
+    // loop uncompute verbatim.  The outer predecl `qbool t;` +
+    // `t.ensure_qubit();` give the hoisted call a quantum `r` operand
+    // so it takes the both-quantum branch in
+    // `src/sturm/uncompute/uncompute_api.cpp` (three gates at the
+    // hoisted site: CCX+CX+CX against (q_a, q_b, q_t_outer)).
+    // Because PJ-3d only relocates the UNCOMPUTE anchor — the forward
+    // `qbool t = a | b;` stays INSIDE the loop body, firing per-
+    // iteration — the captured stream covers eighteen in-loop gates
+    // (three forward OR per iter + three RAII destructor auto-
+    // uncompute per iter under `STURM_AUTO_UNCOMPUTE` ON, for three
+    // iterations) PLUS three post-loop hoisted gates = 21 gates per
+    // capture.  The QubitPool LIFO free-list hands the same ancilla
+    // index back across iterations, so all in-loop gates share the
+    // same qubit triples — a byte-compare that fails hard if the
+    // transpiler ever drifts the hoist anchor INSIDE the loop body
+    // (in which case the stream would contain four extra gates on
+    // the inner `t` that the reference's post-loop outer-t variant
+    // would not).
+    std::printf("PJ-3h gate-stream equivalence test (hoist pattern):\n");
+    const auto ref_ho = run_and_capture(&m12_hoist_reference::demo);
+    const auto got_ho = run_and_capture(&m12_hoist_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_ho.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_ho[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_ho.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_ho[i]).c_str());
+    }
+    if (ref_ho.empty()) {
+        std::fprintf(stderr,
+                     "hoist reference produced 0 gates — fixture not "
+                     "exercising the Phase J PJ-3 uncompute-hoisting "
+                     "rewrite (the inner `qbool t = a | b;` may have "
+                     "been stripped by PJ-4a dead-ancilla "
+                     "elimination — check the `(void)t;` reader).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_ho, ref_ho); rc != 0) {
+        std::fprintf(stderr, "hoist gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  hoist streams match (%zu gates).\n", ref_ho.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
@@ -786,6 +870,7 @@ int main() {
     std::printf("pair 6: %zu gates match\n", ref_ur.size());
     std::printf("pair 7: %zu gates match\n", ref_fu.size());
     std::printf("pair 8: %zu gates match\n", ref_da.size());
+    std::printf("pair 9: %zu gates match\n", ref_ho.size());
     std::printf("PASS\n");
     return 0;
 }
