@@ -427,6 +427,64 @@ Distinguishing the two requires **ownership / liveness analysis**: is the result
 > `expr_is_loop_invariant` helpers and the `hoist_to_override`
 > field on `QOperation`).
 
+> **2026-04-17:** PJ-1 (zero-ancilla fusion) complete. The pattern
+> `qbool __t = a & b; x ^= __t;` with `__t` read exactly once now
+> rewrites as a single self-adjoint `ccnot_inplace(x, a, b);` call,
+> emitting one CCX with no intermediate qubit allocation. PJ-1a added
+> the shared `detail::count_readers_in_scope(name, decl_loc,
+> scope_anchor, ctx)` helper in `transpiler/src/matcher_common.hpp`
+> (also consumed by PJ-4a's dead-ancilla gate). PJ-1b declared
+> `sturm::ccnot_inplace(qbool&, const qbool&, const qbool&)` in
+> `include/sturm/uncompute/uncompute_api.hpp` (impl in
+> `src/sturm/uncompute/uncompute_api.cpp` delegating to
+> `primitive_AND(ctx, a.qubit(), b.qubit(), x.qubit())`). PJ-1c added
+> `QOpKind::CCNOT_INPLACE` after `USER_ROUTINE` in
+> `transpiler/include/sturm/transpile/qir.hpp` and the matching
+> render case in `transpiler/src/uncompute_pass.cpp` (emits
+> `ccnot_inplace(x, a, b);` — same text forward and inverse, guarded
+> against `operands.size() != 2`). PJ-1d added the new module
+> `transpiler/src/matcher_ccnot_fuse.cpp` exporting
+> `register_ccnot_fuse_matcher(finder, unit)`; it anchors on
+> `VarDecl` of `qbool __t = a & b;` with bare `DeclRefExpr` operands
+> (nested RHS rejected), walks the adjacent next statement via
+> `CompoundStmt` iteration, confirms `x ^= __t` with reader-count
+> `== 1`, and emits one `QReplacement` spanning both statements plus
+> one `QOperation{kind=CCNOT_INPLACE}`. PJ-1e added
+> `std::vector<clang::SourceRange> fused_stmt_ranges` to `QUnit` in
+> `transpiler/include/sturm/transpile/qir.hpp`;
+> `transpiler/src/matcher_qbool_assign.cpp` and
+> `transpiler/src/matcher_qbool_compound.cpp` early-return on any
+> match covered by a fused range, preventing double-emission. PJ-1f
+> wired `register_ccnot_fuse_matcher` into
+> `transpiler/src/main.cpp` **before** `register_xor_assign_matcher`,
+> `register_compound_qbool_matcher`, and PH-3's
+> `register_outer_var_guard_matcher`, with an ordering-invariant
+> comment block. PJ-1g pinned five snapshot fixtures in
+> `tests/transpiler/fixtures/`: `fuse_xor_and` (happy path),
+> `fuse_xor_and_reject_extra_reader`,
+> `fuse_xor_and_reject_nested_rhs`,
+> `fuse_xor_and_reject_intervening_stmt`, and
+> `fuse_xor_and_reject_classical_rhs`. PJ-1h added
+> `examples/zero_ancilla_fusion.cpp` plus
+> `tests/transpiler/check_example_zero_ancilla_fusion.cmake` and its
+> `transpiler_example_zero_ancilla_fusion_injected` +
+> `transpiler_idempotent_example_zero_ancilla_fusion` CTests (wired
+> via `examples/CMakeLists.txt`). PJ-1i closed the loop with the
+> `m12_fused_transpiled` / `m12_fused_reference` namespace pair in
+> `tests/transpiler/test_gate_equivalence.cpp` plus
+> `tests/transpiler/fixtures/fuse_xor_and_runtime.cpp` and
+> `tests/transpiler/fixtures/fuse_xor_and_reference.cpp`; the
+> reference path spells out `primitive_AND(ctx, a_idx, b_idx, x_idx)`
+> directly (not via `lazy_expr`, which would be trivially equal) and
+> the transpiled path goes through the matcher — byte-identical
+> `GateRecord` stream verified (2 CCX records on both sides, no
+> ancilla allocation). Tracked as bd issues sturm-2hnb (PJ-1a),
+> sturm-8cxd (PJ-1b), sturm-1bd9 (PJ-1c), sturm-rnsi (PJ-1d),
+> sturm-udui (PJ-1e), sturm-bhby (PJ-1f), sturm-6a2z (PJ-1g),
+> sturm-6et2 (PJ-1h), sturm-wjhc (PJ-1i), sturm-s29b (PJ-1j). Next
+> up: PJ-4 (dead-ancilla elimination), then PJ-3 (uncompute
+> hoisting).
+
 Only after coverage is complete. Deferring these avoids premature optimization and lets us validate correctness before speed.
 
 1. **Zero-ancilla fusion.** The pattern `qbool __t = a & b; x ^= __t; /* __t used once here */` fuses into a single `ccnot_inplace(x, a, b);` call at the IR level, emitting a single CCX with no intermediate qubit. This is the optimization today's `lazy_expr` materialization tries to approximate at runtime — moving it to the IR is cleaner and composes with other rewrites. Implementation lives in the pre-lowering peephole `matcher_ccnot_fuse.cpp`, which fires **before** the Phase E compound-flatten matcher so the `__stu_tN` temporary is never allocated.
