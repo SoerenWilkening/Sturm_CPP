@@ -47,18 +47,8 @@
 // ----------
 //     ./build/examples/example_or_circuit
 //
-// NOTE on STURM_AUTO_UNCOMPUTE
-// ----------------------------
-// The build defaults to STURM_AUTO_UNCOMPUTE=ON, which makes the qbool
-// destructor also emit an adjoint when each local goes out of scope. With
-// BOTH the transpiler's injected inverse AND the destructor's auto-
-// uncompute firing, each forward op is undone twice — a no-op for self-
-// inverse gates, but doubles the gate count in the diagram. To see ONLY
-// the transpiler's contribution:
-//     cmake -B build -DSTURM_AUTO_UNCOMPUTE=OFF
-//     cmake --build build --target example_or_circuit
-// Phase K of the roadmap retires the runtime auto-uncompute layer; once
-// landed, the transpiler is the only inversion path.
+// Phase K retired the runtime auto-uncompute layer entirely; the
+// transpiler is now the only inversion path.
 
 int main() {
     constexpr uint32_t kNumQubits = 32;

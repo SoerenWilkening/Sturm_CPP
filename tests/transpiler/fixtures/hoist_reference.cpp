@@ -23,9 +23,9 @@
 // -------------------
 // Identical to the runtime fixture: three iterations of
 // `qbool t = a | b;` each emit six gates (three forward CX+CX+CCX
-// plus three adjoint CCX+CX+CX via the RAII destructor's auto-
-// uncompute under `STURM_AUTO_UNCOMPUTE` ON), totalling eighteen
-// gates.  The post-loop `sturm::uncompute_or(t, a, b);` references the
+// plus three adjoint CCX+CX+CX via the transpiler-emitted
+// `sturm::uncompute_or(...)` at the inner `t`'s scope exit — Phase K
+// removed RAII auto-uncompute), totalling eighteen gates.  The post-loop `sturm::uncompute_or(t, a, b);` references the
 // OUTER predecl `qbool t;` which has had `ensure_qubit()` called on
 // it (so `r_q == true` at the uncompute_or call site, avoiding the
 // `assert(r_q, ...)` in `src/sturm/uncompute/uncompute_api.cpp` line

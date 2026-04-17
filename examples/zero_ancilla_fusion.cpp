@@ -111,13 +111,8 @@ using sturm::qbool;
 // after PJ-1 the triple collapses to TWO CCX(a, b, x) records on
 // THREE lanes.
 //
-// NOTE on STURM_AUTO_UNCOMPUTE: same caveat as the earlier Phase A–I
-// examples — the build defaults to ON, which layers the destructor's
-// auto-uncompute on top of the transpiler's injection.  `x` is the
-// only qbool of this example whose destructor could double-uncompute,
-// and because CCX is self-inverse, running the adjoint twice is the
-// identity.  To see ONLY the transpiler's contribution, configure
-// with `-DSTURM_AUTO_UNCOMPUTE=OFF`.
+// Phase K removed RAII auto-uncompute entirely; the transpiler is now
+// the sole source of uncompute gate emission.
 
 int main() {
     constexpr uint32_t kNumQubits = 32;

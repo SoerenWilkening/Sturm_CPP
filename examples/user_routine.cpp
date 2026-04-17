@@ -99,16 +99,8 @@ using sturm::qbool;
 // only its forward-side gates to both N1 and N2 (its output escapes;
 // no inverse is injected).
 //
-// NOTE on STURM_AUTO_UNCOMPUTE: the build defaults to ON for this
-// flag, layering destructor-driven auto-uncompute on top of the
-// transpiler's injection for qbool/qint locals that the transpiler
-// touches.  The `qbool tmp` in Case 1 is the only qbool local of
-// this example whose destructor could double-uncompute; with
-// STURM_AUTO_UNCOMPUTE=ON that's harmless because the second
-// application of the adjoint is a no-op by construction (rotate_by_k
-// is a classical X-chain — applying the adjoint twice is identity).
-// To see ONLY the transpiler's contribution, configure with
-// `-DSTURM_AUTO_UNCOMPUTE=OFF`.
+// Phase K removed RAII auto-uncompute entirely; the transpiler is now
+// the sole source of uncompute gate emission.
 
 // ── Forward user routine ─────────────────────────────────────────────────────
 // Rotates `out` by `k` bit-flips controlled classically on `in`'s
