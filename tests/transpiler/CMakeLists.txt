@@ -1396,6 +1396,67 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase J / PJ-3g: end-to-end injected observability + idempotency for ──
+# the uncompute-hoisting example.  Same harness pattern as the PJ-4d
+# dead_ancilla block above and the PJ-1h zero_ancilla_fusion block:
+#   1. build_example_uncompute_hoisting — SETUP fixture that builds the
+#      example_uncompute_hoisting target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/uncompute_hoisting.cpp
+#      via add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_uncompute_hoisting_injected — reads the
+#      generated file and asserts the PJ-3d rewrite inside main()'s
+#      inner scope:
+#        - Forward preserved: `qbool t = a | b;` inside the for-loop
+#          body is NOT moved (PJ-3d only relocates the uncompute
+#          anchor; forward text-move is PJ-3g+).
+#        - Uncompute hoisted: `uncompute_or(t, a, b);` lands AFTER
+#          the for-loop's closing `}` at the ENCLOSING scope's close
+#          brace, rather than immediately before the for-body's `}`.
+#          This pins the load-bearing PJ-3d semantic that
+#          `op.hoist_to_override` takes precedence over
+#          `scope.close_brace` in uncompute_pass.cpp's anchor-
+#          selection ladder.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name.
+#   3. transpiler_idempotent_example_uncompute_hoisting — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_uncompute_hoisting
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_uncompute_hoisting)
+    set_tests_properties(build_example_uncompute_hoisting PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_uncompute_hoisting_built")
+
+    add_test(
+        NAME transpiler_example_uncompute_hoisting_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/uncompute_hoisting.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/uncompute_hoisting.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_uncompute_hoisting.cmake)
+    set_tests_properties(transpiler_example_uncompute_hoisting_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_uncompute_hoisting_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_uncompute_hoisting
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/uncompute_hoisting.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_uncompute_hoisting_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_uncompute_hoisting PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_uncompute_hoisting_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that

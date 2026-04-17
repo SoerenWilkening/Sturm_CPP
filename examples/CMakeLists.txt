@@ -332,3 +332,41 @@ target_sources(example_dead_ancilla PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_dead_ancilla PRIVATE orkan_headers)
+
+# ── Example: uncompute-hoisting demo (Phase J PJ-3) ─────────────────────────
+# Routed through sturm-transpile so a `qbool t = a | b;` VarDecl inside a
+# for-loop body whose operands are loop-invariant gets its uncompute
+# RELOCATED: the PJ-3d matcher (`register_hoist_invariant_matcher` in
+# transpiler/src/matcher_hoist_invariant.cpp) fires on the loop-body
+# scope, verifies `classify_scope_kind == LoopBody`, confirms every
+# operand is loop-invariant per `detail::expr_is_loop_invariant`, and
+# sets `op.hoist_to_override` to the ENCLOSING scope's close brace.
+# The M8 uncompute-synthesis pass then plants
+# `uncompute_or(t, a, b);` AFTER the for-loop's closing `}` rather
+# than inside the for-body — amortizing the inverse cost across the
+# loop's iteration count.  PJ-3d only moves the UNCOMPUTE anchor;
+# the forward compute text-move is a later-phase concern (PJ-3g+),
+# so the forward `qbool t = a | b;` stays per-iteration.  The
+# outer-scope `qbool t;` predecl in the example's main() body is a
+# pragmatic workaround for the PJ-3d limitation: the hoisted
+# uncompute references `t` at a location where the inner-loop
+# `qbool t` decl is no longer in scope.  Same helper / bypass
+# pattern as example_dead_ancilla; the PJ-3d matcher's registration
+# LAST in transpiler/src/main.cpp (after every Phase A–I per-op
+# matcher and after PJ-1f/PJ-4b) is pinned by the PJ-3e ordering.
+add_quantum_executable(example_uncompute_hoisting
+    uncompute_hoisting.cpp
+)
+target_sources(example_uncompute_hoisting PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_uncompute_hoisting PRIVATE orkan_headers)
