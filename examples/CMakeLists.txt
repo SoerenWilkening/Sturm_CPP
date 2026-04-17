@@ -266,3 +266,37 @@ target_sources(example_phase_abc_demo PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_phase_abc_demo PRIVATE orkan_headers)
+
+# ── Example: zero-ancilla fusion peephole demo (Phase J PJ-1) ───────────────
+# Routed through sturm-transpile so the adjacent pair
+#   qbool __t = a & b;
+#   x ^= __t;
+# gets COLLAPSED in-place into a single forward `ccnot_inplace(x, a, b);`
+# call (PJ-1d `QReplacement` spans both stmts), and a matching self-
+# adjoint `ccnot_inplace(x, a, b);` is planted before the enclosing
+# scope's closing brace by the PJ-1c render case in
+# transpiler/src/uncompute_pass.cpp — CCX is its own inverse, so the
+# forward emission and the uncompute emission share one symbol.  The
+# PJ-1 fusion erases the ancilla qubit the unfused path would have
+# allocated for `__t`; the rewrite composes with every Phase A–I
+# matcher upstream (register_ccnot_fuse_matcher wires BEFORE the
+# Phase E compound-flatten matcher and the Phase A `^=` matcher per
+# the PJ-1f ordering rationale).  Same helper / bypass pattern as
+# example_user_routine; the new `ccnot_inplace` runtime symbol
+# resolves via src/sturm/uncompute/uncompute_api.cpp.
+add_quantum_executable(example_zero_ancilla_fusion
+    zero_ancilla_fusion.cpp
+)
+target_sources(example_zero_ancilla_fusion PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_zero_ancilla_fusion PRIVATE orkan_headers)
