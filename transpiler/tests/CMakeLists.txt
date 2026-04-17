@@ -177,6 +177,7 @@ add_executable(test_transpile_matcher
     test_matcher_ccnot_fuse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp

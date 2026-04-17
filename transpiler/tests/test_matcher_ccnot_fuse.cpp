@@ -84,6 +84,82 @@ QUnit run_ccnot_fuse_matcher(std::string_view user_src) {
     return unit;
 }
 
+// PJ-1e integration: run PJ-1d AND the downstream PA-3 / PA-4 / PE-4
+// matchers on the same AST, then apply the post-matcher cleanup pass
+// `apply_fused_stmt_guards`. Mirrors the `main.cpp` pipeline: the
+// in-callback early-return is a best-effort fast path (fires whenever
+// PJ-1d's Decl callback beats the Stmt callbacks), while the cleanup
+// pass is the authoritative backstop that runs unconditionally after
+// `matchAST` completes.
+QUnit run_fuse_and_downstream(std::string_view user_src) {
+    std::string code;
+    code.reserve(kQBoolFuseStub.size() + user_src.size());
+    code.append(kQBoolFuseStub);
+    code.append(user_src);
+
+    QUnit unit;
+    // A custom ASTConsumer so we can invoke `apply_fused_stmt_guards`
+    // at the same point `main.cpp` does — between `matchAST` and any
+    // downstream consumer of the QUnit (M8 synthesize, etc.). Without
+    // the cleanup call, callbacks that fire before PJ-1d's Decl
+    // callback would leave stale ops in `unit.scopes`.
+    class Consumer : public clang::ASTConsumer {
+    public:
+        Consumer(clang::ast_matchers::MatchFinder* finder, QUnit* unit)
+            : finder_(finder), unit_(unit) {}
+        void HandleTranslationUnit(clang::ASTContext& ctx) override {
+            finder_->matchAST(ctx);
+            sturm::transpile::apply_fused_stmt_guards(
+                *unit_, ctx.getSourceManager());
+        }
+    private:
+        clang::ast_matchers::MatchFinder* finder_;
+        QUnit* unit_;
+    };
+    class Action : public clang::ASTFrontendAction {
+    public:
+        Action(clang::ast_matchers::MatchFinder* finder, QUnit* unit)
+            : finder_(finder), unit_(unit) {}
+        std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+            clang::CompilerInstance&, llvm::StringRef) override {
+            return std::make_unique<Consumer>(finder_, unit_);
+        }
+    private:
+        clang::ast_matchers::MatchFinder* finder_;
+        QUnit* unit_;
+    };
+    class Factory : public clang::tooling::FrontendActionFactory {
+    public:
+        Factory(clang::ast_matchers::MatchFinder* finder, QUnit* unit)
+            : finder_(finder), unit_(unit) {}
+        std::unique_ptr<clang::FrontendAction> create() override {
+            return std::make_unique<Action>(finder_, unit_);
+        }
+    private:
+        clang::ast_matchers::MatchFinder* finder_;
+        QUnit* unit_;
+    };
+
+    clang::ast_matchers::MatchFinder finder;
+    // PJ-1d FIRST so its fused_stmt_ranges append fires before the
+    // downstream matchers' range-probe runs. This mirrors the main.cpp
+    // PJ-1f wiring constraint.
+    register_ccnot_fuse_matcher(finder, unit);
+    register_xor_assign_matcher(finder, unit);
+    register_xor_assign_classical_matcher(finder, unit);
+    register_compound_qbool_matcher(finder, unit);
+
+    Factory factory(&finder, &unit);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory.create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr,
+                     "FAIL  tool run returned false (PJ-1e integration)\n");
+    }
+    return unit;
+}
+
 // ── Happy-path: canonical fuse pair ─────────────────────────────────────────
 
 // Canonical PJ-1d shape: `qbool __t = a & b; x ^= __t;` with __t read
@@ -257,6 +333,166 @@ void test_fuse_two_independent_pairs() {
     CHECK(total_ops == 2);
 }
 
+// ── PJ-1e: fused_stmt_ranges bookkeeping ────────────────────────────────────
+
+// A successful fuse must record ONE entry in `QUnit::fused_stmt_ranges`
+// whose source range covers the SECOND statement of the pair (the
+// `x ^= __t;` stmt, terminating-`;` included). The downstream Phase A
+// `^=` and Phase E compound matchers consume this list to early-return
+// on any match whose own stmt-range lies inside this entry, preventing
+// double-emission on the fused pair.
+void test_fuse_records_second_stmt_range() {
+    QUnit unit = run_ccnot_fuse_matcher(
+        "void demo(qbool a, qbool b, qbool x) {\n"
+        "    qbool __t = a & b;\n"
+        "    x ^= __t;\n"
+        "}\n");
+
+    CHECK(unit.fused_stmt_ranges.size() == 1);
+    if (unit.fused_stmt_ranges.empty()) return;
+    CHECK(unit.fused_stmt_ranges.front().isValid());
+}
+
+// Multiple independent fuses: each should contribute its own entry to
+// `fused_stmt_ranges`. The PJ-1d tests already pin the replacement /
+// QOperation count at 2 for the canonical two-pair input; this test
+// pins the same for `fused_stmt_ranges`.
+void test_fuse_records_two_stmt_ranges() {
+    QUnit unit = run_ccnot_fuse_matcher(
+        "void demo(qbool a, qbool b, qbool c, qbool d,\n"
+        "          qbool x, qbool y) {\n"
+        "    qbool __t0 = a & b;\n"
+        "    x ^= __t0;\n"
+        "    qbool __t1 = c & d;\n"
+        "    y ^= __t1;\n"
+        "}\n");
+
+    CHECK(unit.fused_stmt_ranges.size() == 2);
+}
+
+// A rejected fuse (any of the PJ-1d reject cases) must NOT touch
+// `fused_stmt_ranges` — the list stays empty. Exercise the no-next-stmt
+// reject path; the other reject paths share the same bail-before-push
+// discipline.
+void test_reject_leaves_fused_ranges_empty() {
+    QUnit unit = run_ccnot_fuse_matcher(
+        "void demo(qbool a, qbool b) {\n"
+        "    qbool __t = a & b;\n"
+        "}\n");
+
+    CHECK(unit.fused_stmt_ranges.empty());
+}
+
+// ── PJ-1e integration: downstream matchers early-return on fused pair ──────
+
+// Canonical fuse pair + PA-3 xor-assign matcher: the PJ-1d callback
+// populates `fused_stmt_ranges` with the second stmt's range, and
+// the PA-3 XorAssignCallback's `is_range_covered_by_fused` guard
+// causes it to early-return on `x ^= __t;`. Net effect: the QUnit
+// holds exactly ONE QOperation (the PJ-1d CCNOT_INPLACE), NOT two
+// (where the second would be a stale XOR_ASSIGN op that would
+// emit `x ^= __t;` at scope close).
+void test_integration_fuse_suppresses_xor_assign() {
+    QUnit unit = run_fuse_and_downstream(
+        "void demo(qbool a, qbool b, qbool x) {\n"
+        "    qbool __t = a & b;\n"
+        "    x ^= __t;\n"
+        "}\n");
+
+    // Exactly one scope with exactly one op — the CCNOT_INPLACE.
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    CHECK(unit.scopes.front().ops.size() == 1);
+    if (unit.scopes.front().ops.size() != 1) return;
+    CHECK(unit.scopes.front().ops.front().kind == QOpKind::CCNOT_INPLACE);
+
+    // One replacement (the `ccnot_inplace(x, a, b);` fusion). The
+    // PA-3 callback does NOT contribute a QOperation, so there is
+    // no stale `x ^= __t;` queued for scope-close emission.
+    CHECK(unit.replacements.size() == 1);
+    CHECK(unit.fused_stmt_ranges.size() == 1);
+}
+
+// Independent `^=` stmt NOT inside a fuse pair: the PA-3 matcher
+// fires as usual. Verifies the early-return is a guard, not a
+// wholesale disablement of the xor-assign matcher.
+void test_integration_unfused_xor_assign_still_matches() {
+    QUnit unit = run_fuse_and_downstream(
+        "void demo(qbool a, qbool x) {\n"
+        "    x ^= a;\n"
+        "}\n");
+
+    // No fuse candidate — `fused_stmt_ranges` stays empty.
+    CHECK(unit.fused_stmt_ranges.empty());
+    // PA-3 matched the `x ^= a;` stmt and pushed one XOR_ASSIGN op.
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    CHECK(unit.scopes.front().ops.size() == 1);
+    if (unit.scopes.front().ops.size() != 1) return;
+    CHECK(unit.scopes.front().ops.front().kind == QOpKind::XOR_ASSIGN);
+}
+
+// Mixed scope: one fuse pair + one standalone `^=`. The PA-3 matcher
+// must early-return on the fused pair's second stmt but match the
+// standalone `^=`. Net QOperation count: 2 — one CCNOT_INPLACE (from
+// PJ-1d on the fused pair) and one XOR_ASSIGN (from PA-3 on the
+// standalone).
+void test_integration_mixed_fused_and_standalone() {
+    QUnit unit = run_fuse_and_downstream(
+        "void demo(qbool a, qbool b, qbool c, qbool x, qbool y) {\n"
+        "    qbool __t = a & b;\n"
+        "    x ^= __t;\n"
+        "    y ^= c;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    const auto& scope = unit.scopes.front();
+    CHECK(scope.ops.size() == 2);
+    if (scope.ops.size() != 2) return;
+
+    // The CCNOT_INPLACE op lands first (source order for its anchor
+    // is the fused range's begin), XOR_ASSIGN second. The exact
+    // order depends on registration + source order; we just assert
+    // one-of-each is present.
+    bool has_ccnot = false;
+    bool has_xor_assign = false;
+    for (const auto& op : scope.ops) {
+        if (op.kind == QOpKind::CCNOT_INPLACE) has_ccnot = true;
+        if (op.kind == QOpKind::XOR_ASSIGN)    has_xor_assign = true;
+    }
+    CHECK(has_ccnot);
+    CHECK(has_xor_assign);
+    CHECK(unit.fused_stmt_ranges.size() == 1);
+}
+
+// Canonical fuse pair + PE-4 compound matcher: the compound matcher
+// anchors on a VarDecl whose init is a nested bitwise op-call; the
+// fused pair's first stmt (`qbool __t = a & b;`) has BARE DREs as
+// operands — NOT a nested init — so the compound matcher's own
+// pattern guard already rejects it. The PJ-1e guard is defensive
+// (future PJ-1 relaxations), so this test exercises the happy path
+// where the compound matcher's pattern and the PJ-1e guard both
+// agree "not my shape". Expectation: one CCNOT_INPLACE op, zero
+// compound-flatten ops / replacements from the compound matcher.
+void test_integration_compound_matcher_does_not_double_fire() {
+    QUnit unit = run_fuse_and_downstream(
+        "void demo(qbool a, qbool b, qbool x) {\n"
+        "    qbool __t = a & b;\n"
+        "    x ^= __t;\n"
+        "}\n");
+
+    CHECK(unit.scopes.size() == 1);
+    if (unit.scopes.empty()) return;
+    CHECK(unit.scopes.front().ops.size() == 1);
+    if (unit.scopes.front().ops.size() != 1) return;
+    CHECK(unit.scopes.front().ops.front().kind == QOpKind::CCNOT_INPLACE);
+
+    // Only one replacement — the PJ-1d fusion. The compound matcher
+    // contributes zero.
+    CHECK(unit.replacements.size() == 1);
+}
+
 } // namespace
 
 void run_ccnot_fuse_tests() {
@@ -270,4 +506,11 @@ void run_ccnot_fuse_tests() {
     test_reject_or_init();
     test_reject_no_next_stmt();
     test_fuse_two_independent_pairs();
+    test_fuse_records_second_stmt_range();
+    test_fuse_records_two_stmt_ranges();
+    test_reject_leaves_fused_ranges_empty();
+    test_integration_fuse_suppresses_xor_assign();
+    test_integration_unfused_xor_assign_still_matches();
+    test_integration_mixed_fused_and_standalone();
+    test_integration_compound_matcher_does_not_double_fire();
 }

@@ -693,6 +693,73 @@ inline bool expr_is_loop_invariant(const QValueRef& operand_ref,
     return true;
 }
 
+// ── Phase J PJ-1e: fused-stmt-range membership probe ───────────────────────
+//
+// The PJ-1d zero-ancilla fusion peephole
+// (`transpiler/src/matcher_ccnot_fuse.cpp`) absorbs a two-statement pair
+//
+//     qbool __t = a & b;
+//     x ^= __t;
+//
+// into a single `ccnot_inplace(x, a, b);` via a `QReplacement` that spans
+// both statements. The Phase A PA-3/PA-4 `^=` matchers in
+// `matcher_qbool_assign.cpp` and the Phase E compound matcher in
+// `matcher_qbool_compound.cpp` see the SAME original AST, so without an
+// explicit guard they would also fire on the `x ^= __t;` second stmt
+// (PA-3) and push a QOperation whose uncompute text is `x ^= __t;` —
+// which then lands at scope close where `__t` has already been removed
+// from the rewritten source, producing a compile error AND losing the
+// self-adjoint CCX symmetry the fuse relies on.
+//
+// PJ-1e's fix: PJ-1d records the range of the SECOND statement of each
+// fused pair in `QUnit::fused_stmt_ranges`. Downstream matchers call
+// this helper with their own match's stmt-range to check for coverage
+// and early-return on a hit, leaving only the PJ-1d `CCNOT_INPLACE`
+// QOperation + `QReplacement` in the IR.
+//
+// Coverage semantics (inclusive):
+//   A match range [mb, me] is "covered" by a fused entry [fb, fe] iff
+//   mb and me both lie inside [fb, fe]. The match's begin loc is the
+//   primary discriminator — the second statement of a fused pair
+//   starts at `^=`'s LHS DRE and ends at the RHS DRE's last token, so
+//   any matcher anchored on that op-call will have its begin loc inside
+//   [fb, fe].
+//
+// Invariant: a match begin loc that sits AT EITHER endpoint counts as
+// covered. This mirrors `loop_invariant_detail::loc_is_inside_body`.
+//
+// Defensive early exits: invalid match_range, empty fused list, or any
+// invalid fused entry are no-ops — coverage defaults to false. The
+// helper never crashes on malformed input.
+inline bool is_range_covered_by_fused(
+    clang::SourceRange match_range,
+    const std::vector<clang::SourceRange>& fused,
+    const clang::SourceManager& sm) {
+    if (!match_range.isValid()) return false;
+    if (fused.empty()) return false;
+
+    const clang::SourceLocation mb = sm.getFileLoc(match_range.getBegin());
+    const clang::SourceLocation me = sm.getFileLoc(match_range.getEnd());
+    if (mb.isInvalid() || me.isInvalid()) return false;
+
+    for (const auto& fr : fused) {
+        if (!fr.isValid()) continue;
+        const clang::SourceLocation fb = sm.getFileLoc(fr.getBegin());
+        const clang::SourceLocation fe = sm.getFileLoc(fr.getEnd());
+        if (fb.isInvalid() || fe.isInvalid()) continue;
+
+        // Inclusive containment: mb >= fb AND me <= fe.
+        // `isBeforeInTranslationUnit(a, b)` is strict (a < b), so we
+        // express "mb >= fb" as "!isBeforeInTranslationUnit(mb, fb)".
+        const bool mb_before_fb = sm.isBeforeInTranslationUnit(mb, fb);
+        const bool fe_before_me = sm.isBeforeInTranslationUnit(fe, me);
+        if (!mb_before_fb && !fe_before_me) {
+            return true;
+        }
+    }
+    return false;
+}
+
 // Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
 // invocation. The WHEN macro expands to three nested `if`s:
 //

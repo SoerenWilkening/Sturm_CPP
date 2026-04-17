@@ -178,6 +178,19 @@ public:
         // M7: populate the QUnit via the match finder.
         finder_.matchAST(ctx);
 
+        // Phase J PJ-1e: backstop cleanup for the ccnot-fuse peephole.
+        // `MatchFinder::matchAST` does not strictly pre-order callbacks
+        // across Decl and Stmt matcher pools, so the Stmt-anchored PA-3
+        // / PA-4 / PE-4 callbacks can fire BEFORE the Decl-anchored
+        // PJ-1d callback that populates `unit_.fused_stmt_ranges`.
+        // Their in-callback early-return only fires when the fused
+        // entry is already present, so we do one final pass over
+        // `unit_.scopes` here to remove any op whose stmt_range is
+        // covered but whose matcher ran before PJ-1d. No-op when
+        // `fused_stmt_ranges` is empty (pre-Phase-J shapes).
+        sturm::transpile::apply_fused_stmt_guards(
+            unit_, ctx.getSourceManager());
+
         // M8: synthesize uncompute insertions + replacements from the QUnit.
         // PE-2: the return type is QSynthesisResult — a struct of two
         // vectors. Pre-Phase-E the `replacements` field is empty, so this
