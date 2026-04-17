@@ -1,0 +1,41 @@
+// Phase J / PJ-1g reject input for the sturm-transpile snapshot test.
+//
+// Exercises the reader-count != 1 branch of the PJ-1d ccnot-fuse
+// peephole matcher. The `qbool __t = a & b;` VarDecl has two readers
+// in its enclosing scope: the adjacent `x ^= __t;` consumer AND a
+// downstream `y = __t;` assignment. Fusion would discard the second
+// reader, so the matcher bails on the reader-count guard
+// (`count_readers_in_scope(__t, ...) != 1`). With fuse rejected, the
+// VarDecl flows through unchanged (bare-DRE `&` inits are not compound-
+// flatten territory either — the Phase E matcher requires at least one
+// nested op-call argument), and the Phase A PA-3 `^=` matcher picks
+// up `x ^= __t;` and schedules a self-adjoint inverse at scope close.
+// The `y = __t;` assignment is not matched by any phase — plain
+// qbool `operator=` is not an IR op — so it passes through verbatim.
+//
+// Expected output shape (see .expected.cpp for the byte-exact golden):
+//
+//     qbool __t = a & b;        // unchanged
+//     x ^= __t;                 // PA-3 forward
+//     y = __t;                  // unchanged (not matched)
+//     x ^= __t;                 // PA-3 LIFO inverse at scope close
+//
+// The stub is identical to the happy-path fixture (fuse_xor_and.cpp):
+// hermetic, no include paths required.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+};
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b, qbool x, qbool y) {
+    qbool __t = a & b;
+    x ^= __t;
+    y = __t;
+}

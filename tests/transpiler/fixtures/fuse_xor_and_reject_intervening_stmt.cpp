@@ -1,0 +1,44 @@
+// Phase J / PJ-1g reject input for the sturm-transpile snapshot test.
+//
+// Exercises the "next sibling is not `x ^= __t;`" branch of the PJ-1d
+// ccnot-fuse peephole matcher. The `qbool __t = a & b;` VarDecl is
+// immediately followed by `x ^= c;` — a `^=` stmt, but whose RHS is
+// NOT the new temp. The matcher's `match_xor_assign_consumer` helper
+// peels the RHS to a DRE and compares `decl_loc` against `__t`'s
+// decl_loc; the mismatch rejects the pair. The EVENTUAL `x ^= __t;`
+// two statements later cannot be fused — the peephole only inspects
+// the IMMEDIATELY adjacent next sibling.
+//
+// With fuse rejected, the Phase A PA-3 `^=` matcher fires on BOTH
+// compound-assigns (each is self-adjoint) and schedules two LIFO
+// inverses at the scope close. The `qbool __t = a & b;` VarDecl is
+// bare-DRE `&`-init so no Phase E rewrite applies; it passes through
+// unchanged.
+//
+// Expected emission (see .expected.cpp for the byte-exact golden):
+//
+//     qbool __t = a & b;     // unchanged
+//     x ^= c;                // PA-3 forward
+//     x ^= __t;              // PA-3 forward
+//     x ^= __t;              // PA-3 LIFO (closer to source, so latest)
+//     x ^= c;                // PA-3 LIFO (earlier source, so next-to-last)
+//
+// The stub matches the happy-path fixture (fuse_xor_and.cpp) — the
+// `&` / `^=` operator overloads are all that need to resolve.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+};
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b, qbool c, qbool x) {
+    qbool __t = a & b;
+    x ^= c;
+    x ^= __t;
+}

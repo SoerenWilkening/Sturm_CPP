@@ -1886,3 +1886,99 @@ if(STURM_TRANSPILE)
         LABELS "transpiler"
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
+
+# ── Phase J / PJ-1g: snapshot fixtures for the zero-ancilla ccnot-fuse ──────
+# Five fixtures pin the Phase J PJ-1d peephole matcher's decision tree
+# end-to-end through the real sturm-transpile binary. Each exercises one
+# branch of the `register_ccnot_fuse_matcher` callback:
+#
+#   * fuse_xor_and                          — happy path: canonical
+#       `qbool __t = a & b; x ^= __t;` fuses into two
+#       `ccnot_inplace(x, a, b);` lines (forward QReplacement + LIFO
+#       self-adjoint uncompute emission).
+#   * fuse_xor_and_reject_extra_reader      — `__t` has TWO readers in
+#       the enclosing scope (`x ^= __t;` + `y = __t;`); the PJ-1a
+#       reader-count guard rejects the pair. Phase A PA-3 picks up the
+#       `^=` and emits its LIFO self-adjoint inverse; the VarDecl and
+#       the extra `y = __t;` pass through unchanged.
+#   * fuse_xor_and_reject_nested_rhs        — `&` init has a nested
+#       op-call argument (`a & (b & c)`); PJ-1d's pattern matcher
+#       requires BOTH args to be bare DREs, so it rejects. Phase E
+#       PE-4 compound-flatten handles the nested init; Phase A PA-3
+#       schedules the `x ^= __t;` self-adjoint inverse; LIFO closes
+#       the chain with two `uncompute_and(...)` calls.
+#   * fuse_xor_and_reject_intervening_stmt  — next sibling stmt is
+#       `x ^= c;` (a `^=` on a DIFFERENT qbool), not `x ^= __t;`;
+#       the PJ-1d consumer-shape guard rejects the pair. Phase A PA-3
+#       fires on BOTH `^=` stmts and schedules two LIFO inverses.
+#   * fuse_xor_and_reject_classical_rhs     — next sibling is `x ^= 1;`
+#       (classical IntegerLiteral RHS, matches `operator^=(int)`);
+#       PJ-1d's `peel_to_dre(rhs)` helper returns nullptr and the
+#       match bails. Phase A PA-4 picks up the classical `^=` and
+#       schedules its self-adjoint inverse; the VarDecl passes through.
+#
+# Driver and harness are identical to the Phase A..I snapshot tests
+# (run_snapshot.cmake + byte-level compare_files). No new CMake
+# infrastructure is needed for PJ-1g — the fixtures land on the existing
+# wiring unchanged.
+if(STURM_TRANSPILE)
+    add_test(
+        NAME snapshot_fuse_xor_and
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/fuse_xor_and
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_fuse_xor_and PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_fuse_xor_and_reject_extra_reader
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_extra_reader.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_extra_reader.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/fuse_xor_and_reject_extra_reader
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_fuse_xor_and_reject_extra_reader PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_fuse_xor_and_reject_nested_rhs
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_nested_rhs.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_nested_rhs.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/fuse_xor_and_reject_nested_rhs
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_fuse_xor_and_reject_nested_rhs PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_fuse_xor_and_reject_intervening_stmt
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_intervening_stmt.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_intervening_stmt.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/fuse_xor_and_reject_intervening_stmt
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_fuse_xor_and_reject_intervening_stmt PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME snapshot_fuse_xor_and_reject_classical_rhs
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_classical_rhs.cpp
+                -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reject_classical_rhs.expected.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/fuse_xor_and_reject_classical_rhs
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+    set_tests_properties(snapshot_fuse_xor_and_reject_classical_rhs PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()

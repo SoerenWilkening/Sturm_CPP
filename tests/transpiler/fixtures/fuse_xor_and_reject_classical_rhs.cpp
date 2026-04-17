@@ -1,0 +1,41 @@
+// Phase J / PJ-1g reject input for the sturm-transpile snapshot test.
+//
+// Exercises the "next sibling is `x ^= <literal>`, not `x ^= __t`"
+// branch of the PJ-1d ccnot-fuse peephole matcher. The `^=` overload
+// selected here is the classical-RHS form (`operator^=(int)`), so the
+// adjacent next-sibling stmt's RHS (after peel) is an IntegerLiteral,
+// NOT a DeclRefExpr. The matcher's `match_xor_assign_consumer` helper
+// bails on the `peel_to_dre(rhs)` step — an IntegerLiteral peels to
+// `nullptr` — and the pair is not fused.
+//
+// With fuse rejected, the Phase A PA-4 classical `^=` matcher picks
+// up `x ^= 1;` and schedules a self-adjoint `x ^= 1;` at scope close.
+// The `qbool __t = a & b;` VarDecl is unmatched (bare-DRE `&`-init is
+// fuse territory only; compound flatten wants at least one nested
+// op-call argument), so it passes through unchanged.
+//
+// Expected emission (see .expected.cpp for the byte-exact golden):
+//
+//     qbool __t = a & b;   // unchanged
+//     x ^= 1;              // PA-4 forward
+//     x ^= 1;              // PA-4 LIFO inverse at scope close
+//
+// The stub drops `operator^=(const qbool&)` and uses `operator^=(int)`
+// only — that overload is the one the matcher's classical-RHS gate
+// inspects.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(int) { return *this; }
+};
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b, qbool x) {
+    qbool __t = a & b;
+    x ^= 1;
+}
