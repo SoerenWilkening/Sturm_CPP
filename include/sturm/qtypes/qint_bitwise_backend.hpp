@@ -18,7 +18,6 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/uncompute/uncompute_op.hpp"
 

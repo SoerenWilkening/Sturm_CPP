@@ -11,7 +11,6 @@
 #ifdef STURM_BACKEND_ENABLED
 
 #include "sturm/control/when_fwd.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/primitives.hpp"
 #include "sturm/qtypes/qbool.hpp"
@@ -23,6 +22,25 @@
 #include <cstdint>
 
 namespace sturm {
+
+// ── AndExpr / OrExpr (BitProxy-local, PK-2) ──────────────────────────────────
+// Phase K PK-2 retired the qbool-level lazy_expr.hpp wrappers; BitProxy still
+// uses these lightweight reference-holders as tag types for the `a & b` /
+// `a | b` shapes consumed by `result ^= (a & b);` inside qint_bitwise_*.hpp.
+template<typename T>
+struct AndExpr {
+    const T& a; const T& b;
+    AndExpr(const T& a_, const T& b_) noexcept : a(a_), b(b_) {}
+    AndExpr(const AndExpr&) = delete;
+    AndExpr& operator=(const AndExpr&) = delete;
+};
+template<typename T>
+struct OrExpr {
+    const T& a; const T& b;
+    OrExpr(const T& a_, const T& b_) noexcept : a(a_), b(b_) {}
+    OrExpr(const OrExpr&) = delete;
+    OrExpr& operator=(const OrExpr&) = delete;
+};
 
 // ── BitProxy ─────────────────────────────────────────────────────────────────
 
@@ -181,94 +199,58 @@ struct BitProxy {
     }
 };
 
-// ── Lazy expressions ─────────────────────────────────────────────────────────
-
-inline AndExpr<BitProxy> operator&(const BitProxy& a,
-                                   const BitProxy& b) noexcept {
+// ── BitProxy lazy expressions (tag types for operator^= dispatch) ───────────
+inline AndExpr<BitProxy> operator&(const BitProxy& a, const BitProxy& b) noexcept {
     return AndExpr<BitProxy>{a, b};
 }
-
-inline OrExpr<BitProxy> operator|(const BitProxy& a,
-                                  const BitProxy& b) noexcept {
+inline OrExpr<BitProxy> operator|(const BitProxy& a, const BitProxy& b) noexcept {
     return OrExpr<BitProxy>{a, b};
 }
 
-// ── Materialization: AndExpr/OrExpr<BitProxy> -> qbool ───────────────────────
-// Free functions (not template specializations) because AndExpr<T>::operator T()
-// converts to T=BitProxy, not qbool.  Usage: qbool tmp = materialize_and(a, b);
+// ── Materialization: BitProxy pair -> owning qbool ───────────────────────────
+// Free functions (not operator T()) since they return a new owning qbool
+// with its own allocated ancilla.  Usage: qbool tmp = materialize_and(a, b);
 
 inline qbool materialize_and(const BitProxy& a, const BitProxy& b) {
     BackendContext& ctx = get_ctx();
-    int anc_idx = QubitPool::instance().allocate();
+    const int anc_idx = QubitPool::instance().allocate();
     const auto anc = static_cast<uint32_t>(anc_idx);
-
     if (a.is_quantum() && b.is_quantum()) {
-        primitive_AND(ctx,
-                      static_cast<uint32_t>(a.qubit_index()),
-                      static_cast<uint32_t>(b.qubit_index()),
-                      anc);
-    } else if (a.is_quantum() && !b.is_quantum()) {
-        if (b.bit_value()) {
-            primitive_XOR(ctx,
-                          static_cast<uint32_t>(a.qubit_index()),
-                          anc);
-        }
-        // b == 0: ancilla stays |0>.
-    } else if (!a.is_quantum() && b.is_quantum()) {
-        if (a.bit_value()) {
-            primitive_XOR(ctx,
-                          static_cast<uint32_t>(b.qubit_index()),
-                          anc);
-        }
-        // a == 0: ancilla stays |0>.
-    } else {
-        // Both classical.
-        if (a.bit_value() && b.bit_value()) {
-            emit_X_lifted(ctx, anc);
-        }
+        primitive_AND(ctx, static_cast<uint32_t>(a.qubit_index()),
+                      static_cast<uint32_t>(b.qubit_index()), anc);
+    } else if (a.is_quantum() && b.bit_value()) {
+        primitive_XOR(ctx, static_cast<uint32_t>(a.qubit_index()), anc);
+    } else if (b.is_quantum() && a.bit_value()) {
+        primitive_XOR(ctx, static_cast<uint32_t>(b.qubit_index()), anc);
+    } else if (!a.is_quantum() && !b.is_quantum() && a.bit_value() && b.bit_value()) {
+        emit_X_lifted(ctx, anc);
     }
-
     qbool result;
     result.qubits[0]  = anc_idx;
     result.owning_    = true;
     result.super_mask = 1ULL;
     result.uncompute_ = uncompute_op::make_bitwise_qbool(
         a.is_quantum() ? static_cast<uint32_t>(a.qubit_index()) : 0u,
-        b.is_quantum() ? static_cast<uint32_t>(b.qubit_index()) : 0u,
-        0u);  // 0 = AND
+        b.is_quantum() ? static_cast<uint32_t>(b.qubit_index()) : 0u, 0u);  // 0 = AND
     return result;
 }
-
-// Overload accepting an AndExpr<BitProxy> directly for convenience.
 inline qbool materialize_and(const AndExpr<BitProxy>& expr) {
     return materialize_and(expr.a, expr.b);
 }
 
 inline qbool materialize_or(const BitProxy& a, const BitProxy& b) {
     BackendContext& ctx = get_ctx();
-    int anc_idx = QubitPool::instance().allocate();
+    const int anc_idx = QubitPool::instance().allocate();
     const auto anc = static_cast<uint32_t>(anc_idx);
-
-    // CX(a, anc) -- if a is quantum.
-    if (a.is_quantum()) {
-        primitive_XOR(ctx, static_cast<uint32_t>(a.qubit_index()), anc);
-    } else if (a.bit_value()) {
-        emit_X_lifted(ctx, anc);
-    }
-
-    // CX(b, anc) -- if b is quantum.
-    if (b.is_quantum()) {
-        primitive_XOR(ctx, static_cast<uint32_t>(b.qubit_index()), anc);
-    } else if (b.bit_value()) {
-        emit_X_lifted(ctx, anc);
-    }
-
+    // CX(a, anc) and CX(b, anc).
+    if (a.is_quantum()) primitive_XOR(ctx, static_cast<uint32_t>(a.qubit_index()), anc);
+    else if (a.bit_value()) emit_X_lifted(ctx, anc);
+    if (b.is_quantum()) primitive_XOR(ctx, static_cast<uint32_t>(b.qubit_index()), anc);
+    else if (b.bit_value()) emit_X_lifted(ctx, anc);
     // CCX(a, b, anc) -- AND term.
     if (a.is_quantum() && b.is_quantum()) {
-        primitive_AND(ctx,
-                      static_cast<uint32_t>(a.qubit_index()),
-                      static_cast<uint32_t>(b.qubit_index()),
-                      anc);
+        primitive_AND(ctx, static_cast<uint32_t>(a.qubit_index()),
+                      static_cast<uint32_t>(b.qubit_index()), anc);
     } else if (a.is_quantum() && b.bit_value()) {
         primitive_XOR(ctx, static_cast<uint32_t>(a.qubit_index()), anc);
     } else if (b.is_quantum() && a.bit_value()) {
@@ -276,19 +258,15 @@ inline qbool materialize_or(const BitProxy& a, const BitProxy& b) {
     } else if (a.bit_value() && b.bit_value()) {
         emit_X_lifted(ctx, anc);
     }
-
     qbool result;
     result.qubits[0]  = anc_idx;
     result.owning_    = true;
     result.super_mask = 1ULL;
     result.uncompute_ = uncompute_op::make_bitwise_qbool(
         a.is_quantum() ? static_cast<uint32_t>(a.qubit_index()) : 0u,
-        b.is_quantum() ? static_cast<uint32_t>(b.qubit_index()) : 0u,
-        1u);  // 1 = OR
+        b.is_quantum() ? static_cast<uint32_t>(b.qubit_index()) : 0u, 1u);  // 1 = OR
     return result;
 }
-
-// Overload accepting an OrExpr<BitProxy> directly for convenience.
 inline qbool materialize_or(const OrExpr<BitProxy>& expr) {
     return materialize_or(expr.a, expr.b);
 }

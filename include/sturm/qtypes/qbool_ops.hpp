@@ -1,8 +1,21 @@
-// qbool_ops.hpp — M13: qbool operator bodies + lazy expression materialization.
-// WHEN lifting: 0 controls→direct, 1→lift×1, 2+→c_AND fold. Target: <200 LoC.
+// qbool_ops.hpp — Phase K PK-2: qbool operators returning owning qbool directly.
+// After PK-2 the lazy `AndExpr<qbool>` / `OrExpr<qbool>` wrappers are gone; the
+// zero-ancilla optimization for `qbool __t = a & b; x ^= __t;` lives in the
+// transpiler IR pass (Phase J PJ-1, see docs/roadmap_transpiler_post_mvp.md
+// and include/sturm/uncompute/uncompute_api.hpp sturm::ccnot_inplace).
+//
+// operator& / operator| / operator^ / operator~ each acquire a fresh qubit
+// from `QubitPool::instance()`, emit the forward gate(s) via the active
+// BackendContext, and return an owning qbool by value.  Non-transpiled callers
+// therefore leak one qubit per operation (no RAII uncompute under the default
+// STURM_AUTO_UNCOMPUTE=OFF); the transpile path is the contract — the
+// transpiler injects explicit `uncompute_and` / `uncompute_or` calls at scope
+// exit (see include/sturm/uncompute/uncompute_api.hpp).
+//
+// WHEN lifting: 0 controls→direct, 1→lift×1, 2+→c_AND fold (emit_*_lifted).
+// Target: <300 LoC.
 #pragma once
 #include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/backend/primitives.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
@@ -105,30 +118,6 @@ inline qbool& qbool::operator^=(const qbool& other) {
     return *this;
 }
 
-// ── qbool::operator^=(const AndExpr<qbool>&) ─────────────────────────────────
-inline qbool& qbool::operator^=(const AndExpr<qbool>& expr) {
-    assert(qubits[0] >= 0 && expr.a.qubits[0] >= 0 && expr.b.qubits[0] >= 0);
-    emit_CCX_lifted(get_ctx(),
-                    static_cast<uint32_t>(expr.a.qubits[0]),
-                    static_cast<uint32_t>(expr.b.qubits[0]),
-                    static_cast<uint32_t>(qubits[0]));
-    return *this;
-}
-
-// ── qbool::operator^=(const OrExpr<qbool>&) ──────────────────────────────────
-// c ^= (a | b)  =  CNOT(a,c) + CNOT(b,c) + CCX(a,b,c)
-inline qbool& qbool::operator^=(const OrExpr<qbool>& expr) {
-    assert(qubits[0] >= 0 && expr.a.qubits[0] >= 0 && expr.b.qubits[0] >= 0);
-    BackendContext& ctx = get_ctx();
-    const uint32_t a   = static_cast<uint32_t>(expr.a.qubits[0]);
-    const uint32_t b   = static_cast<uint32_t>(expr.b.qubits[0]);
-    const uint32_t tgt = static_cast<uint32_t>(qubits[0]);
-    emit_CX_lifted(ctx, a, tgt);
-    emit_CX_lifted(ctx, b, tgt);
-    emit_CCX_lifted(ctx, a, b, tgt);
-    return *this;
-}
-
 // ── qbool::flip() ────────────────────────────────────────────────────────────
 inline qbool& qbool::flip() {
     assert(qubits[0] >= 0);
@@ -137,84 +126,83 @@ inline qbool& qbool::flip() {
 }
 
 // ── qbool::operator~() ───────────────────────────────────────────────────────
-// Allocates ancilla, emits X. Uncompute: ADD_CONST(1) → sub_const(1) → X.
+// Phase K PK-2: allocate a fresh qubit via QubitPool::instance().acquire(),
+// emit an X gate into it, and return an owning qbool.  Non-transpiled callers
+// leak the qubit (STURM_AUTO_UNCOMPUTE=OFF default); transpile injects the
+// uncompute.
 inline qbool qbool::operator~() const {
     assert(qubits[0] >= 0);
-    int anc_idx = QubitPool::instance().allocate();
+    int anc_idx = QubitPool::instance().acquire();
     emit_X_lifted(get_ctx(), static_cast<uint32_t>(anc_idx));
     qbool result;
     result.qubits[0]  = anc_idx;
     result.owning_    = true;
     result.super_mask = 1ULL;
-#ifdef STURM_BACKEND_ENABLED
-    result.uncompute_ = uncompute_op::make_add_const(1);
-#endif
     return result;
 }
 
-// ── AndExpr<qbool>::operator qbool() ─────────────────────────────────────────
-// Allocate ancilla, CCX(a,b,anc). Uncompute: BITWISE_SELF(AND, qa, qb).
-// Handles classical operands (no qubit allocated): classical short-circuit
-// avoids gate emission.  Both-quantum path is the original full circuit.
-template<>
-inline AndExpr<qbool>::operator qbool() const {
+// ── operator& (free) ──────────────────────────────────────────────────────────
+// Phase K PK-2: returns owning qbool directly (no lazy AndExpr wrapper).
+// Quantum-quantum: allocate ancilla, emit CCX(a, b, anc).
+// Mixed / classical cases: classical-fold without allocating a qubit when
+// the result is trivially classical (false & x = false; true & x = x).
+inline qbool operator&(const qbool& a, const qbool& b) {
     const bool a_q = (a.qubits[0] >= 0);
     const bool b_q = (b.qubits[0] >= 0);
 
     // Both purely classical (no qubits): compute eagerly.
-    if (!a_q && !b_q)
+    if (!a_q && !b_q) {
         return qbool(static_cast<bool>((a.value & b.value) & 1));
+    }
 
     // Both have qubits: allocate ancilla and emit AND circuit.
     if (a_q && b_q) {
-        BackendContext& ctx = get_ctx();
-        int anc_idx = QubitPool::instance().allocate();
-        const uint32_t anc = static_cast<uint32_t>(anc_idx);
-        const uint32_t qa  = static_cast<uint32_t>(a.qubits[0]);
-        const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
-        primitive_AND(ctx, qa, qb, anc);
+        int anc_idx = QubitPool::instance().acquire();
+        const auto anc = static_cast<uint32_t>(anc_idx);
+        const auto qa  = static_cast<uint32_t>(a.qubits[0]);
+        const auto qb  = static_cast<uint32_t>(b.qubits[0]);
+        primitive_AND(get_ctx(), qa, qb, anc);
         qbool result;
         result.qubits[0]  = anc_idx;
         result.owning_    = true;
         result.super_mask = 1ULL;
-#ifdef STURM_BACKEND_ENABLED
-        result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 0u); // 0=AND
-#endif
         return result;
     }
 
     // Mixed: one classical (no qubit), one quantum.
     // false & x = false; true & x = x.
-    if (!a_q)
+    if (!a_q) {
         return (a.value & 1)
             ? qbool::make_non_owning(b.qubits[0], b.value, b.super_mask)
             : qbool(false);
+    }
     // !b_q
     return (b.value & 1)
         ? qbool::make_non_owning(a.qubits[0], a.value, a.super_mask)
         : qbool(false);
 }
 
-// ── OrExpr<qbool>::operator qbool() ──────────────────────────────────────────
-// Allocate ancilla, CX+CX+CCX. Uncompute: BITWISE_SELF(OR, qa, qb).
-// Handles classical operands (no qubit allocated): classical short-circuit
-// avoids gate emission.  Both-quantum path is the original full circuit.
-template<>
-inline OrExpr<qbool>::operator qbool() const {
+// ── operator| (free) ──────────────────────────────────────────────────────────
+// Phase K PK-2: returns owning qbool directly (no lazy OrExpr wrapper).
+// Quantum-quantum: allocate ancilla, emit CX(a,r) + CX(b,r) + CCX(a,b,r).
+// Mixed / classical cases: classical-fold without allocating a qubit when
+// the result is trivially classical (true | x = true; false | x = x).
+inline qbool operator|(const qbool& a, const qbool& b) {
     const bool a_q = (a.qubits[0] >= 0);
     const bool b_q = (b.qubits[0] >= 0);
 
     // Both purely classical (no qubits): compute eagerly.
-    if (!a_q && !b_q)
+    if (!a_q && !b_q) {
         return qbool(static_cast<bool>((a.value | b.value) & 1));
+    }
 
     // Both have qubits: allocate ancilla and emit OR circuit.
     if (a_q && b_q) {
+        int anc_idx = QubitPool::instance().acquire();
+        const auto anc = static_cast<uint32_t>(anc_idx);
+        const auto qa  = static_cast<uint32_t>(a.qubits[0]);
+        const auto qb  = static_cast<uint32_t>(b.qubits[0]);
         BackendContext& ctx = get_ctx();
-        int anc_idx = QubitPool::instance().allocate();
-        const uint32_t anc = static_cast<uint32_t>(anc_idx);
-        const uint32_t qa  = static_cast<uint32_t>(a.qubits[0]);
-        const uint32_t qb  = static_cast<uint32_t>(b.qubits[0]);
         primitive_XOR(ctx, qa, anc);
         primitive_XOR(ctx, qb, anc);
         primitive_AND(ctx, qa, qb, anc);
@@ -222,22 +210,72 @@ inline OrExpr<qbool>::operator qbool() const {
         result.qubits[0]  = anc_idx;
         result.owning_    = true;
         result.super_mask = 1ULL;
-#ifdef STURM_BACKEND_ENABLED
-        result.uncompute_ = uncompute_op::make_bitwise_qbool(qa, qb, 1u); // 1=OR
-#endif
         return result;
     }
 
     // Mixed: one classical (no qubit), one quantum.
     // true | x = true; false | x = x.
-    if (!a_q)
+    if (!a_q) {
         return (a.value & 1)
             ? qbool(true)
             : qbool::make_non_owning(b.qubits[0], b.value, b.super_mask);
+    }
     // !b_q
     return (b.value & 1)
         ? qbool(true)
         : qbool::make_non_owning(a.qubits[0], a.value, a.super_mask);
+}
+
+// ── operator^ (free) ──────────────────────────────────────────────────────────
+// Phase K PK-2: returns owning qbool directly (no lazy wrapper).
+// Quantum-quantum: allocate ancilla, emit CX(a,r) + CX(b,r).
+// Mixed / classical: classical-fold or share the quantum operand.
+inline qbool operator^(const qbool& a, const qbool& b) {
+    const bool a_q = (a.qubits[0] >= 0);
+    const bool b_q = (b.qubits[0] >= 0);
+
+    // Both purely classical (no qubits): compute eagerly.
+    if (!a_q && !b_q) {
+        return qbool(static_cast<bool>((a.value ^ b.value) & 1));
+    }
+
+    // Both have qubits: allocate ancilla and emit XOR circuit.
+    if (a_q && b_q) {
+        int anc_idx = QubitPool::instance().acquire();
+        const auto anc = static_cast<uint32_t>(anc_idx);
+        const auto qa  = static_cast<uint32_t>(a.qubits[0]);
+        const auto qb  = static_cast<uint32_t>(b.qubits[0]);
+        BackendContext& ctx = get_ctx();
+        primitive_XOR(ctx, qa, anc);
+        primitive_XOR(ctx, qb, anc);
+        qbool result;
+        result.qubits[0]  = anc_idx;
+        result.owning_    = true;
+        result.super_mask = 1ULL;
+        return result;
+    }
+
+    // Mixed: one classical (no qubit), one quantum.  a^b with classical=1 is
+    // ~quantum; classical=0 is the quantum operand itself.  For classical=1
+    // allocate an ancilla and emit CX + X to avoid mutating the input.
+    const qbool& q_ref = a_q ? a : b;
+    const qbool& c_ref = a_q ? b : a;
+    if (!(c_ref.value & 1)) {
+        // classical=0: result mirrors the quantum operand (non-owning view).
+        return qbool::make_non_owning(q_ref.qubits[0], q_ref.value, q_ref.super_mask);
+    }
+    // classical=1: allocate ancilla, copy the quantum operand in, flip.
+    int anc_idx = QubitPool::instance().acquire();
+    const auto anc = static_cast<uint32_t>(anc_idx);
+    const auto qq  = static_cast<uint32_t>(q_ref.qubits[0]);
+    BackendContext& ctx = get_ctx();
+    primitive_XOR(ctx, qq, anc);
+    primitive_X(ctx, anc);
+    qbool result;
+    result.qubits[0]  = anc_idx;
+    result.owning_    = true;
+    result.super_mask = 1ULL;
+    return result;
 }
 
 } // namespace sturm

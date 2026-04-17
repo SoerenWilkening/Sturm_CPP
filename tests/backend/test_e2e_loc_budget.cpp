@@ -10,8 +10,8 @@
 //   primitives.hpp         < 80  (was primitives_v3.hpp, renamed in M20)
 //   control_stack.hpp      < 120
 //   control_stack.cpp      < 40
-//   qbool_ops.hpp          < 200
-//   lazy_expr.hpp          < 150
+//   qbool_ops.hpp          < 300
+//   (lazy_expr.hpp retired in Phase K PK-2)
 //   adder_dsl.hpp          < 250
 //   logic_dsl.hpp          < 120
 //   c_and_dsl.hpp          < 150
@@ -59,9 +59,9 @@ static const ModuleBudget kBudgets[] = {
     // M12
     { "include/sturm/core/control_stack.hpp",           "control_stack.hpp",     120 },
     { "src/sturm/core/control_stack.cpp",               "control_stack.cpp",     40  },
-    // M13
-    { "include/sturm/qtypes/qbool_ops.hpp",             "qbool_ops.hpp",         250 },
-    { "include/sturm/qtypes/lazy_expr.hpp",             "lazy_expr.hpp",         150 },
+    // M13 (Phase K PK-2: lazy_expr.hpp retired; qbool_ops.hpp budget widened
+    // to cover the operator bodies inlined from the retired header.)
+    { "include/sturm/qtypes/qbool_ops.hpp",             "qbool_ops.hpp",         300 },
     // M14
     { "include/sturm/lib/adder_dsl.hpp",                "adder_dsl.hpp",         250 },
     // M15

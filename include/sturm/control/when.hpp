@@ -35,7 +35,8 @@
 #include "sturm/qtypes/qbool.hpp"
 // Non-backend operator|, operator&, operator~ for qbool (eager, returns qbool).
 // Ensures WHEN(c | d) compiles in frontend builds without extra includes.
-// (Backend builds get lazy-expr versions from lazy_expr.hpp via qint.hpp.)
+// (Backend builds get the owning-qbool versions from qbool_ops.hpp — Phase K
+// PK-2 retired the lazy AndExpr / OrExpr wrappers.)
 #include "sturm/qtypes/qbool_logic.hpp"
 
 #include <type_traits>
@@ -162,16 +163,13 @@ namespace detail {
 // Overload set that lets the WHEN macro accept both lvalue qbool (by reference,
 // zero cost) and rvalue qbool / implicitly-convertible temporaries (by value).
 //
-// In non-backend builds, c | d returns qbool directly (qbool_logic.hpp).
-// In backend builds, c | d returns OrExpr<qbool> which has operator qbool();
-// the implicit conversion fires before the qbool&& overload is selected.
+// Phase K PK-2: `c | d` and `c & d` now return owning qbool directly in both
+// non-backend and backend builds — the lazy OrExpr / AndExpr wrappers are
+// gone, and the zero-ancilla optimization lives in the transpiler IR pass
+// (Phase J PJ-1).  The qbool&& overload therefore matches directly.
 
 inline qbool& materialize_when(qbool& q) noexcept { return q; }
 inline qbool  materialize_when(qbool&& q) noexcept { return std::move(q); }
-
-// In backend builds, c | d returns OrExpr<qbool> and c & d returns AndExpr<qbool>.
-// Their operator qbool() (in qbool_ops.hpp) handles classical/mixed/superposed
-// cases, producing a qbool rvalue that matches materialize_when(qbool&&) above.
 
 // make_when_guard — factory that enforces qbool-only usage at compile time.
 // Passing a non-qbool triggers the static_assert; compile-time rejection.
@@ -201,7 +199,8 @@ WhenGuard make_when_guard(T& expr) {
 //   2. Middle if: materializes expr into _when_val_ via materialize_when().
 //      - lvalue qbool -> reference (zero cost, no copy)
 //      - rvalue qbool (e.g. c | d, ~c) -> owned local via move
-//      - OrExpr/AndExpr (backend) -> implicit conversion to qbool, then move
+//        (Phase K PK-2: c | d / c & d return owning qbool directly now —
+//         the lazy OrExpr / AndExpr wrappers were retired.)
 //   3. Innermost if: creates WhenGuard from the (now lvalue) _when_val_.
 //
 // Destruction order (correct reverse-order uncomputation):

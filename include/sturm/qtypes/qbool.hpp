@@ -24,10 +24,6 @@
 
 namespace sturm {
 
-// Forward declarations for lazy expression types (defined in lazy_expr.hpp).
-template<typename T> struct AndExpr;
-template<typename T> struct OrExpr;
-
 // ── qbool ─────────────────────────────────────────────────────────────────────
 // Represents a boolean that may be in a quantum superposition.
 // Inherits from qint_t<1>:
@@ -169,12 +165,14 @@ public:
         }
     }
 
-    // ── M13 qbool operator declarations ───────────────────────────────────
-    // Bodies are provided in qbool_ops.hpp.  Only declared here.
+    // ── qbool operator declarations ───────────────────────────────────────
+    // Bodies are provided in qbool_ops.hpp (backend) / qbool_logic.hpp
+    // (non-backend).  Only declared here.  Phase K PK-2 retired the
+    // AndExpr / OrExpr overloads — the zero-ancilla fusion for
+    // `qbool __t = a & b; x ^= __t;` now lives in the transpiler IR pass
+    // (see include/sturm/uncompute/uncompute_api.hpp sturm::ccnot_inplace).
 
     qbool& operator^=(const qbool& other);
-    qbool& operator^=(const AndExpr<qbool>& expr);
-    qbool& operator^=(const OrExpr<qbool>& expr);
     qbool& flip();
     qbool  operator~() const;
 };

@@ -21,7 +21,6 @@
 #  include "sturm/backend/primitives.hpp"
 #  include "sturm/core/qubit_pool.hpp"
 #  include "sturm/qtypes/qbool_ops.hpp"
-#  include "sturm/qtypes/lazy_expr.hpp"
 #endif
 
 namespace sturm {

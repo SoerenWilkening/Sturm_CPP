@@ -135,7 +135,6 @@
 // wrapper live in qbool_ops.hpp / lazy_expr.hpp, so include them
 // explicitly here.
 #  include "sturm/qtypes/qbool.hpp"
-#  include "sturm/qtypes/lazy_expr.hpp"
 #  include "sturm/qtypes/qbool_ops.hpp"
 #else
 namespace sturm {

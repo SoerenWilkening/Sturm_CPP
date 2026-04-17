@@ -62,7 +62,6 @@
 #include "sturm/core/gate_kind.h"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 
 #include <cassert>

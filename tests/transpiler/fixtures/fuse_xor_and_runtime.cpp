@@ -87,7 +87,6 @@
 // `x ^= __t` below would hit the classical short-circuit paths (which
 // emit no gates) or fail to compile entirely.
 #  include "sturm/qtypes/qbool.hpp"
-#  include "sturm/qtypes/lazy_expr.hpp"
 #  include "sturm/qtypes/qbool_ops.hpp"
 #else
 namespace sturm {
