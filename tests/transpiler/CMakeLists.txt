@@ -1334,6 +1334,68 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase J / PJ-4d: end-to-end injected observability + idempotency for ──
+# the dead-ancilla elimination example.  Same harness pattern as the
+# PJ-1h zero_ancilla_fusion block above and the PI-6 user_routine block
+# further up:
+#   1. build_example_dead_ancilla — SETUP fixture that builds the
+#      example_dead_ancilla target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/dead_ancilla.cpp via
+#      add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_dead_ancilla_injected — reads the generated
+#      file and asserts both PJ-4a scenarios in main():
+#        - Case 1 (happy path): the `dead` scope's
+#          `qbool dead = a | b;` VarDecl has been REPLACED by empty
+#          text (no survival inside main()'s body), and NO
+#          `uncompute_or(dead, a, b);` is planted at scope close —
+#          PJ-4a's `eliminated_stmt_ranges` entry suppresses the MVP
+#          OR matcher via `apply_eliminated_stmt_guards`.
+#        - Case 2 (reader-reject): the `live` scope's
+#          `qbool live = a | b;` + `x ^= live;` forward pair is
+#          preserved verbatim, a second PA-3 LIFO self-adjoint
+#          `x ^= live;` inverse is planted, and an MVP OR
+#          `uncompute_or(live, a, b);` lands at scope close.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name.
+#   3. transpiler_idempotent_example_dead_ancilla — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_dead_ancilla
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_dead_ancilla)
+    set_tests_properties(build_example_dead_ancilla PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_dead_ancilla_built")
+
+    add_test(
+        NAME transpiler_example_dead_ancilla_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/dead_ancilla.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/dead_ancilla.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_dead_ancilla.cmake)
+    set_tests_properties(transpiler_example_dead_ancilla_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_dead_ancilla_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_dead_ancilla
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/dead_ancilla.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_dead_ancilla_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_dead_ancilla PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_dead_ancilla_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
