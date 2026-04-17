@@ -300,3 +300,35 @@ target_sources(example_zero_ancilla_fusion PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_zero_ancilla_fusion PRIVATE orkan_headers)
+
+# ── Example: dead-ancilla elimination demo (Phase J PJ-4) ───────────────────
+# Routed through sturm-transpile so every `qbool t = <qbool-operand bitwise
+# expr>;` VarDecl with ZERO readers in its enclosing scope gets REPLACED
+# in-place by empty text — and its range is pushed into
+# `QUnit::eliminated_stmt_ranges` so the downstream Phase A/E/MVP OR
+# matchers early-return via `apply_eliminated_stmt_guards`.  Net effect:
+# the dead decl vanishes from the generated sibling, no forward gates
+# emit, and no `uncompute_or(...)` lands at scope close.  The reader-
+# reject path passes through the Phase A PA-3 `^=` matcher and the MVP
+# OR matcher unchanged — the `live` decl keeps its forward pair, gains
+# a PA-3 self-adjoint inverse, and gains an `uncompute_or(live, a, b);`
+# at scope close.  Same helper / bypass pattern as
+# example_zero_ancilla_fusion; the Phase J PJ-4a matcher lives in
+# transpiler/src/matcher_dead_ancilla.cpp and its registration before
+# the Phase A/E matchers is pinned in transpiler/src/main.cpp.
+add_quantum_executable(example_dead_ancilla
+    dead_ancilla.cpp
+)
+target_sources(example_dead_ancilla PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_dead_ancilla PRIVATE orkan_headers)
