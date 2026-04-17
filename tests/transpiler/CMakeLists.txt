@@ -1498,6 +1498,39 @@ if(STURM_TRANSPILE)
     set_source_files_properties("${_m12_user_routine_generated}" PROPERTIES
         GENERATED TRUE)
 
+    # ── PJ-1i: sixth transpile step for the Phase J zero-ancilla ───────────
+    # fusion gate-equivalence pair.  Same driver invocation pattern as
+    # the blocks above — routes `fixtures/fuse_xor_and_runtime.cpp`
+    # through sturm-transpile so the PJ-1d peephole matcher collapses
+    # the adjacent `qbool __t = a & b; x ^= __t;` pair into a single
+    # `ccnot_inplace(x, a, b);` call and the PJ-1c render case plants
+    # the matching self-adjoint `ccnot_inplace(x, a, b);` before the
+    # demo's closing `}`.  The resulting TU is compiled into the
+    # single test_gate_equivalence_or_single harness binary.  One
+    # binary, seven pairs: or_single, or_circuit, nested_when,
+    # if_branches, for_loop, user_routine, fuse_xor_and.
+    set(_m12_fused_runtime_src
+        "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_runtime.cpp")
+    file(RELATIVE_PATH _m12_fused_rel_src
+        "${CMAKE_SOURCE_DIR}" "${_m12_fused_runtime_src}")
+    set(_m12_fused_generated
+        "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_fused_rel_src}")
+    get_filename_component(_m12_fused_gen_dir
+        "${_m12_fused_generated}" DIRECTORY)
+
+    add_custom_command(
+        OUTPUT "${_m12_fused_generated}"
+        COMMAND "${CMAKE_COMMAND}" -E make_directory "${_m12_fused_gen_dir}"
+        COMMAND $<TARGET_FILE:sturm-transpile>
+                "${_m12_fused_rel_src}"
+                --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+        WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+        DEPENDS "${_m12_fused_runtime_src}" sturm-transpile
+        COMMENT "sturm-transpile ${_m12_fused_rel_src} (PJ-1i)"
+        VERBATIM)
+    set_source_files_properties("${_m12_fused_generated}" PROPERTIES
+        GENERATED TRUE)
+
     add_executable(test_gate_equivalence_or_single
         test_gate_equivalence.cpp
         "${_m12_generated}"
@@ -1514,6 +1547,10 @@ if(STURM_TRANSPILE)
         # PI-7: Phase I user-routine transpiled + hand-written reference.
         "${_m12_user_routine_generated}"
         ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/user_routine_reference.cpp
+        # PJ-1i: Phase J zero-ancilla fusion transpiled + hand-written
+        # reference.
+        "${_m12_fused_generated}"
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/fuse_xor_and_reference.cpp
         # Real sturm implementation sources — the harness needs
         # uncompute_or, execute_gate and the BackendContext C ABI to
         # actually fire.  The header-only `sturm` interface target does
