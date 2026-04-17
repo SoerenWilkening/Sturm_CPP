@@ -175,6 +175,7 @@ add_executable(test_transpile_matcher
     test_matcher_loop_invariant.cpp
     test_matcher_hoist_invariant.cpp
     test_matcher_ccnot_fuse.cpp
+    test_matcher_dead_ancilla.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
@@ -187,6 +188,7 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp

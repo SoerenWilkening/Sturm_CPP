@@ -102,6 +102,19 @@ public:
             return;
         }
 
+        // Phase J PJ-4a: same uniform guard against
+        // `eliminated_stmt_ranges`. The dead-ancilla eliminator may
+        // have deleted this very VarDecl (compound decls with a
+        // nested bitwise init ARE eligible for elimination when the
+        // decl has zero readers), so the compound matcher must bail
+        // on a covered VarDecl to avoid re-pushing a stale QOperation
+        // into the scope the M8 pass would then try to uncompute.
+        if (is_range_covered_by_fused(var->getSourceRange(),
+                                      unit_->eliminated_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
+
         // Peel the VarDecl initializer to reach the outermost op-call.
         const Expr* init = var->getInit();
         const Expr* outer = detail::peel_to_payload(init);

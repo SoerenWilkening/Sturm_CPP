@@ -37,6 +37,7 @@ using namespace clang;
 using namespace clang::ast_matchers;
 using detail::enclosing_scope;
 using detail::find_or_create_scope;
+using detail::is_range_covered_by_fused;
 using detail::make_ref;
 
 // ── OrCallback (M7) ──────────────────────────────────────────────────────────
@@ -50,6 +51,18 @@ public:
         const auto* lhs = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
         const auto* rhs = r.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if (!var || !lhs || !rhs || !r.Context) return;
+
+        // Phase J PJ-4a: early-return if the VarDecl has been flagged
+        // for elimination by the dead-ancilla matcher. The elimination
+        // pass deletes the decl verbatim; re-pushing an OR op here
+        // would leave a stale `tmp = a | b;` uncompute at scope close
+        // that the M8 synthesis pass would render against a no-longer-
+        // existent decl.
+        if (is_range_covered_by_fused(var->getSourceRange(),
+                                      unit_->eliminated_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
 
         // Locate the enclosing scope. Phase H PH-1: `enclosing_scope`
         // returns either a braced CompoundStmt (legacy shape, byte-
@@ -108,6 +121,16 @@ public:
         const auto* operand = r.Nodes.getNodeAs<DeclRefExpr>("operand");
         if (!var || !operand || !r.Context) return;
 
+        // Phase J PJ-4a: same eliminated-range guard as OrCallback —
+        // the dead-ancilla matcher may have deleted this NOT decl, and
+        // we must not re-push a QOperation that would render a stale
+        // uncompute.
+        if (is_range_covered_by_fused(var->getSourceRange(),
+                                      unit_->eliminated_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
+
         const auto es = enclosing_scope(*var, *r.Context);
         if (!es.valid()) return;
 
@@ -157,6 +180,15 @@ public:
         const auto* lhs = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
         const auto* rhs = r.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if (!var || !lhs || !rhs || !r.Context) return;
+
+        // Phase J PJ-4a: same eliminated-range guard as OrCallback /
+        // NotCallback — bail if the dead-ancilla matcher deleted this
+        // XOR decl.
+        if (is_range_covered_by_fused(var->getSourceRange(),
+                                      unit_->eliminated_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
 
         const auto es = enclosing_scope(*var, *r.Context);
         if (!es.valid()) return;

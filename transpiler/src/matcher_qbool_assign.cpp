@@ -80,6 +80,25 @@ public:
             return;
         }
 
+        // Phase J PJ-4a: same early-return against
+        // `eliminated_stmt_ranges`. The dead-ancilla eliminator
+        // deletes a qbool VarDecl whose reader count is zero; a
+        // subsequent `^=` targeting the eliminated decl is not the
+        // canonical dead-ancilla shape (the eliminator rejects any
+        // decl with at least one reader), so in practice this guard
+        // is defensive for the case where an outer-var mutation
+        // `x ^= expr;` happens to overlap an eliminated range in the
+        // same lines. Uniform guard shape with the PJ-1e check above
+        // keeps both xor-assign callbacks symmetric and future-
+        // proofs PA-3 against a widened PJ-4 slice. The
+        // `apply_eliminated_stmt_guards` backstop handles the
+        // interleaving case where this callback fires before PJ-4a.
+        if (is_range_covered_by_fused(call->getSourceRange(),
+                                      unit_->eliminated_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
+
         // XOR-assign is a statement, not an initializer, so we walk
         // up from the call expression rather than from a VarDecl.
         // Phase H PH-1: `enclosing_scope` transparently handles both
@@ -141,6 +160,18 @@ public:
         // inherits the skip for free.
         if (is_range_covered_by_fused(call->getSourceRange(),
                                       unit_->fused_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
+
+        // Phase J PJ-4a: uniform guard against `eliminated_stmt_ranges`,
+        // mirrored from the PA-3 callback above. Same defensive
+        // rationale — the dead-ancilla eliminator deletes a qbool
+        // VarDecl whose reader count is zero, and this callback
+        // should never re-push a QOperation on a stmt_range that
+        // lies inside an eliminated entry.
+        if (is_range_covered_by_fused(call->getSourceRange(),
+                                      unit_->eliminated_stmt_ranges,
                                       r.Context->getSourceManager())) {
             return;
         }

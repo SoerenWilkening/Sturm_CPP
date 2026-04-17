@@ -426,6 +426,59 @@ void register_ccnot_fuse_matcher(
 /// byte-identical.
 void apply_fused_stmt_guards(QUnit& unit, const clang::SourceManager& sm);
 
+/// Phase J PJ-4a: Register the dead-ancilla elimination matcher. Anchors
+/// on every qbool VarDecl whose initializer is a qbool-operand bitwise
+/// op-call (`a | b`, `a & b`, `a ^ b`, `~a`, or compound forms —
+/// anything whose post-impl-cast shape is a `CXXOperatorCallExpr` on a
+/// qbool bitwise operator). Reuses the PJ-1a `count_readers_in_scope`
+/// helper; when the reader count is zero within the decl's enclosing
+/// scope, the matcher emits:
+///
+///   - one `QReplacement{range=<full decl stmt range>, replacement=""}`
+///     that deletes the decl verbatim from the rewritten source.
+///   - one entry in `QUnit::eliminated_stmt_ranges` covering the same
+///     range, so downstream matchers (PA-3 / PA-4 / PE-4 / PA-1 / PA-2
+///     / M7 OR) can early-return on any match whose own `stmt_range`
+///     lies inside the eliminated range.
+///
+/// Non-zero reader count (>= 1) is the MVP+PJ-1 path — the decl stays,
+/// flows through the Phase A/E matchers as usual, and PJ-1d's fuse
+/// peephole still fires if the "exactly one reader" gate holds. PJ-4a
+/// is strictly for the reader-count == 0 slice that PJ-1d's gate
+/// excludes.
+///
+/// Registration order (PJ-4b, tracked in sturm-kih8): register BEFORE
+/// the Phase A/E per-op matchers (OR, NOT, XOR, compound_qbool, the
+/// `^=` xor-assign family). MatchFinder's Decl-vs-Stmt visit
+/// interleaving makes the in-callback early-return a best-effort fast
+/// path — the authoritative backstop is the
+/// `apply_eliminated_stmt_guards` cleanup pass invoked after
+/// `matchAST` completes, which removes any op whose `stmt_range` lies
+/// inside a recorded eliminated range.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at
+/// most once per QUnit; the QUnit must outlive the MatchFinder's run.
+void register_dead_ancilla_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Phase J PJ-4a: post-matcher cleanup pass for the dead-ancilla
+/// elimination matcher. Mirrors `apply_fused_stmt_guards` exactly,
+/// substituting `eliminated_stmt_ranges` for `fused_stmt_ranges`.
+/// Walks every `QScope` in `unit` and removes any `QOperation` whose
+/// `stmt_range` lies inside some entry of
+/// `unit.eliminated_stmt_ranges`. Same rationale: MatchFinder's
+/// Decl/Stmt visit-pool interleaving means a Stmt-anchored downstream
+/// callback can fire before the Decl-anchored PJ-4a callback that
+/// populates `eliminated_stmt_ranges`; this cleanup restores the
+/// invariant after `matchAST` completes.
+///
+/// Called from `main.cpp` between `finder.matchAST(ctx)` and
+/// `synthesize(unit)`. When `unit.eliminated_stmt_ranges` is empty
+/// (every pre-Phase-J snapshot), the pass is a no-op — existing
+/// fixtures stay byte-identical.
+void apply_eliminated_stmt_guards(QUnit& unit,
+                                  const clang::SourceManager& sm);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_MATCHER_HPP

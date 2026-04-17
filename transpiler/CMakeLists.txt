@@ -63,6 +63,7 @@ add_executable(sturm-transpile
     src/matcher_outer_var_guard.cpp
     src/matcher_hoist_invariant.cpp
     src/matcher_ccnot_fuse.cpp
+    src/matcher_dead_ancilla.cpp
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
