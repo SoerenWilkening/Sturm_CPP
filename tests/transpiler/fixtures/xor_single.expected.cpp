@@ -12,6 +12,17 @@
 // carries no include paths, so we inline a minimal qbool stub whose
 // `operator^` overload is sufficient for the matcher to resolve the
 // binary XOR call.
+//
+// Why the `(void)tmp;` reader is load-bearing
+// -------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// M7 uncompute-injection matcher: the entire `qbool tmp = a ^ b;` line
+// is dropped, the function body collapses to empty, and this snapshot
+// byte-mismatches against the pre-PJ-4a golden.  The explicit
+// `(void)tmp;` bumps the reader count to 1, shutting off PJ-4a so the
+// M7 matcher runs as intended.  Same rationale — and same textual
+// shape — as or_single_runtime.cpp / hoist_or_out_of_for.cpp.
 namespace sturm {
 class qbool {
 public:
@@ -22,6 +33,6 @@ inline qbool operator^(const qbool&, const qbool&) { return qbool{}; }
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a, qbool b) { qbool tmp = a ^ b;     tmp ^= a;
+void demo(qbool a, qbool b) { qbool tmp = a ^ b; (void)tmp;     tmp ^= a;
     tmp ^= b;
 }

@@ -15,6 +15,18 @@
 //
 // The stub is identical to compound_or_and.cpp's — hermetic, no include
 // paths required for the sturm-transpile binary to resolve the overloads.
+//
+// Why the `(void)r;` reader is load-bearing
+// -----------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// Phase E compound flatten matcher: the entire `qbool r = (b & c) | d;`
+// line (and its downstream `__stu_t0` intermediate) would be dropped,
+// the function body would collapse, and this snapshot would byte-
+// mismatch against the pre-PJ-4a golden.  The explicit `(void)r;` bumps
+// the reader count to 1, shutting off PJ-4a so the compound matcher
+// runs as intended.  Same rationale — and same textual shape — as
+// or_single_runtime.cpp / hoist_or_out_of_for.cpp.
 namespace sturm {
 class qbool {
 public:
@@ -26,4 +38,4 @@ inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool b, qbool c, qbool d) { qbool r = (b & c) | d; }
+void demo(qbool b, qbool c, qbool d) { qbool r = (b & c) | d; (void)r; }

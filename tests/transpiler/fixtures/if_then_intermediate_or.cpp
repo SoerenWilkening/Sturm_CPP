@@ -24,6 +24,17 @@
 // The sturm-transpile binary runs with a FixedCompilationDatabase that
 // carries no include paths, so we inline a minimal qbool stub whose
 // `operator|` overload is enough for the OR matcher to resolve.
+//
+// Why the `(void)tmp;` reader is load-bearing
+// -------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// M7 OR matcher: the entire `qbool tmp = a | b;` line is dropped, the
+// then-arm collapses to empty, and the snapshot byte-mismatches the
+// pre-PJ-4a golden.  The explicit `(void)tmp;` bumps the reader count
+// to 1, shutting off PJ-4a so the M7 matcher runs as intended.  Same
+// rationale — and same textual shape — as or_single_runtime.cpp /
+// hoist_or_out_of_for.cpp.
 namespace sturm {
 class qbool {
 public:
@@ -37,5 +48,6 @@ using sturm::qbool;
 void demo(qbool a, qbool b, bool cond) {
     if (cond) {
         qbool tmp = a | b;
+        (void)tmp;
     }
 }
