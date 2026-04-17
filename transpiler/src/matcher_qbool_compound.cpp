@@ -72,6 +72,7 @@ using namespace clang::ast_matchers;
 // helpers, so it stays obvious which calls land in shared code.
 using detail::enclosing_scope;
 using detail::find_or_create_scope;
+using detail::is_range_covered_by_fused;
 using detail::make_ref;
 
 class CompoundQBoolCallback : public MatchFinder::MatchCallback {
@@ -81,6 +82,25 @@ public:
     void run(const MatchFinder::MatchResult& r) override {
         const auto* var = r.Nodes.getNodeAs<VarDecl>("var");
         if (!var || !r.Context) return;
+
+        // Phase J PJ-1e: the PJ-1d ccnot-fuse peephole records the
+        // second-stmt range of each fused `qbool __t = a & b; x ^= __t;`
+        // pair in `unit_->fused_stmt_ranges`. The compound matcher's
+        // own anchor shape — a VarDecl whose initializer is a nested
+        // bitwise op-call — is structurally disjoint from PJ-1d's
+        // bare-DRE operand requirement, so in practice a VarDecl
+        // match never overlaps a fused second-stmt range. The guard
+        // is still applied to keep the matcher family uniform and to
+        // be defensive against future PJ-1 relaxations that widen the
+        // fuse pattern (e.g. a hypothetical three-stmt fuse whose
+        // first stmt is a compound VarDecl). The check is constant-
+        // time when `fused_stmt_ranges` is empty — every
+        // pre-Phase-J snapshot stays byte-identical.
+        if (is_range_covered_by_fused(var->getSourceRange(),
+                                      unit_->fused_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
 
         // Peel the VarDecl initializer to reach the outermost op-call.
         const Expr* init = var->getInit();

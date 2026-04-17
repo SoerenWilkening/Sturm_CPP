@@ -59,6 +59,7 @@
 #include "clang/Lex/Lexer.h"
 #include "llvm/Support/Casting.h"
 
+#include <algorithm>
 #include <memory>
 #include <string>
 #include <utility>
@@ -284,6 +285,21 @@ public:
         // source position the original `^=` stmt occupied.
         op.stmt_range = fused_range;
         scope.ops.push_back(std::move(op));
+
+        // PJ-1e: record the SECOND stmt's range (the `x ^= __t;` op-call,
+        // terminating-`;` included) so the downstream Phase A `^=` and
+        // Phase E compound matchers can early-return on any match whose
+        // own stmt-range lies inside this entry. `next->getSourceRange()`
+        // stops at the RHS DRE (Clang does not include the trailing `;`
+        // in a CXXOperatorCallExpr range), so we extend the end to the
+        // `;` location already computed above. The Phase A xor-assign
+        // matcher records its QOperation's stmt_range as
+        // `call->getSourceRange()` — which is exactly the same opening
+        // span `next->getBeginLoc()` covers — so the containment probe
+        // catches it.
+        clang::SourceRange second_range(next->getBeginLoc(),
+                                        semi->getLocation());
+        unit_->fused_stmt_ranges.push_back(second_range);
     }
 
 private:
@@ -324,6 +340,41 @@ void register_ccnot_fuse_matcher(clang::ast_matchers::MatchFinder& finder,
     auto& pool = ccnot_fuse_callback_pool();
     pool.push_back(std::make_unique<CCNotFuseCallback>(&unit));
     finder.addMatcher(pattern, pool.back().get());
+}
+
+// Phase J PJ-1e: post-matcher cleanup pass — removes every QOperation
+// whose stmt_range lies inside some entry of `unit.fused_stmt_ranges`.
+// See `matcher.hpp`'s `apply_fused_stmt_guards` docstring for the full
+// rationale (MatchFinder's Decl/Stmt visit-pool interleaving means a
+// Stmt-anchored PA-3 callback can fire before the Decl-anchored PJ-1d
+// callback that populates `fused_stmt_ranges`; this pass restores the
+// invariant after `matchAST` completes).
+//
+// The pass also scans `raw_insertions` entries, but none of the current
+// matchers stage raw insertions whose anchor is inside a fused range, so
+// that branch is a belt-and-braces guard only.
+void apply_fused_stmt_guards(QUnit& unit, const clang::SourceManager& sm) {
+    if (unit.fused_stmt_ranges.empty()) return;  // fast path
+
+    for (auto& scope : unit.scopes) {
+        auto& ops = scope.ops;
+        // Walk in-place; erase any op whose stmt_range is covered AND
+        // whose kind is NOT itself a fuse product (CCNOT_INPLACE's
+        // own stmt_range is the fused pair's begin-to-`;` range, which
+        // WOULD satisfy the containment check — but removing that op
+        // is exactly the opposite of what PJ-1e wants). Keep
+        // CCNOT_INPLACE; remove anything else that the fuse replacement
+        // would shadow.
+        ops.erase(
+            std::remove_if(
+                ops.begin(), ops.end(),
+                [&](const QOperation& op) {
+                    if (op.kind == QOpKind::CCNOT_INPLACE) return false;
+                    return detail::is_range_covered_by_fused(
+                        op.stmt_range, unit.fused_stmt_ranges, sm);
+                }),
+            ops.end());
+    }
 }
 
 } // namespace sturm::transpile

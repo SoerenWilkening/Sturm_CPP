@@ -327,10 +327,24 @@ struct UncomputeInsertion {
 /// per-op renderings produced from QOperation entries. Pre-Phase-F
 /// (MVP + Phases A..E) this vector is always empty, so existing snapshot
 /// fixtures stay byte-identical.
+///
+/// `fused_stmt_ranges` carries source ranges of statements the Phase J
+/// PJ-1d ccnot-fuse peephole has absorbed into a single `ccnot_inplace`
+/// call. Each entry is the `clang::SourceRange` of the SECOND statement
+/// of a fused pair (the `x ^= __t;` stmt in the canonical
+/// `qbool __t = a & b; x ^= __t;` shape). Downstream matchers — the
+/// Phase A PA-3/PA-4 xor-assign matchers in
+/// `matcher_qbool_assign.cpp` and the Phase E compound matcher in
+/// `matcher_qbool_compound.cpp` — consult this list and early-return
+/// on any match whose own `stmt_range` lies inside one of these
+/// entries, preventing double-emission on the fused pair. Pre-Phase-J
+/// (MVP + Phases A..I) this vector is always empty, so every existing
+/// snapshot fixture stays byte-identical.
 struct QUnit {
     std::vector<QScope>              scopes;
     std::vector<QReplacement>        replacements;
     std::vector<UncomputeInsertion>  raw_insertions;
+    std::vector<clang::SourceRange>  fused_stmt_ranges;
 };
 
 /// Equality on QValueRef: both the name and the decl_loc must match.

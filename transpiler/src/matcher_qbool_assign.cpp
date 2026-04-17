@@ -39,6 +39,7 @@ using namespace clang;
 using namespace clang::ast_matchers;
 using detail::enclosing_scope;
 using detail::find_or_create_scope;
+using detail::is_range_covered_by_fused;
 using detail::make_ref;
 
 // ── XorAssignCallback (PA-3) ─────────────────────────────────────────────────
@@ -52,6 +53,32 @@ public:
         const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
         const auto* rhs  = r.Nodes.getNodeAs<DeclRefExpr>("rhs");
         if (!call || !lhs || !rhs || !r.Context) return;
+
+        // Phase J PJ-1e: the PJ-1d ccnot-fuse peephole absorbs a
+        // `qbool __t = a & b; x ^= __t;` pair into a single
+        // `ccnot_inplace(x, a, b);`. Without this guard, the PA-3
+        // matcher would also fire on the second stmt and inject a
+        // stale `x ^= __t;` uncompute at scope close — `__t` no
+        // longer exists in the rewritten source. Bail before pushing
+        // a QOperation so the fused pair is the sole producer of
+        // the `ccnot_inplace(...)` emission.
+        //
+        // Note: MatchFinder's `matchAST` traversal order across
+        // matcher pools (Decl matchers vs Stmt matchers) is not
+        // strictly pre-order by visited node — the Decl and Stmt
+        // visitor passes can interleave in ways that sometimes
+        // invoke this PA-3 Stmt callback BEFORE PJ-1d's Decl
+        // callback within the same translation unit. The early-
+        // return here covers the "PJ-1d already ran" fast path; a
+        // second, AST-independent cleanup pass
+        // (`apply_fused_stmt_guards`) runs after `matchAST` and
+        // removes any ops the matchers pushed before the guard
+        // could consult `fused_stmt_ranges`.
+        if (is_range_covered_by_fused(call->getSourceRange(),
+                                      unit_->fused_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
 
         // XOR-assign is a statement, not an initializer, so we walk
         // up from the call expression rather than from a VarDecl.
@@ -102,6 +129,21 @@ public:
         const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
         const auto* rhs  = r.Nodes.getNodeAs<Expr>("rhs_expr");
         if (!call || !lhs || !rhs || !r.Context) return;
+
+        // Phase J PJ-1e: same rationale as the PA-3 XorAssignCallback —
+        // the PJ-1d fuse peephole targets `^=` CXXOperatorCallExprs
+        // whose RHS is a DeclRefExpr, so the PA-4 classical-RHS callback
+        // never collides with a fused pair in practice (classical RHS
+        // is structurally disjoint from the `^=__t` RHS shape PJ-1d
+        // anchors on). The guard is still applied to keep both xor-
+        // assign callbacks uniform: if a future PJ-1 relaxation adds a
+        // classical-RHS fuse form, the downstream PA-4 callback
+        // inherits the skip for free.
+        if (is_range_covered_by_fused(call->getSourceRange(),
+                                      unit_->fused_stmt_ranges,
+                                      r.Context->getSourceManager())) {
+            return;
+        }
 
         const auto es = enclosing_scope(*call, *r.Context);
         if (!es.valid()) return;

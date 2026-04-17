@@ -43,6 +43,10 @@
 
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
+namespace clang {
+class SourceManager;
+} // namespace clang
+
 namespace sturm::transpile {
 
 /// Register the MVP `qbool tmp = a | b;` matcher against `finder`, directing
@@ -399,6 +403,28 @@ void reset_hoist_invariant_detection_count_for_test();
 /// most once per QUnit; the QUnit must outlive the MatchFinder's run.
 void register_ccnot_fuse_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Phase J PJ-1e: post-matcher cleanup pass for the zero-ancilla fusion
+/// peephole. Walks every `QScope` in `unit` and removes any `QOperation`
+/// whose `stmt_range` lies inside some entry of `unit.fused_stmt_ranges`.
+///
+/// This is a backstop for the early-return guards in
+/// `matcher_qbool_assign.cpp` and `matcher_qbool_compound.cpp`: those
+/// guards suppress a PA-3 / PA-4 / PE-4 push at the moment the matcher
+/// fires ONLY IF `fused_stmt_ranges` was already populated (i.e. the
+/// PJ-1d callback ran first). `clang::ast_matchers::MatchFinder::matchAST`
+/// does NOT strictly pre-order callbacks across Decl and Stmt matcher
+/// pools, so the Stmt-anchored PA-3/PA-4 callbacks sometimes fire BEFORE
+/// the Decl-anchored PJ-1d callback within the same translation unit.
+/// This cleanup pass restores the invariant by filtering the scope op
+/// lists after `matchAST` has completed — at that point every PJ-1d
+/// push has landed in `fused_stmt_ranges`, so membership is final.
+///
+/// Called from `main.cpp` between `finder.matchAST(ctx)` and
+/// `synthesize(unit)`. When `unit.fused_stmt_ranges` is empty (every
+/// pre-Phase-J snapshot), the pass is a no-op — existing fixtures stay
+/// byte-identical.
+void apply_fused_stmt_guards(QUnit& unit, const clang::SourceManager& sm);
 
 } // namespace sturm::transpile
 
