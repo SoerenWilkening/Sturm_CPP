@@ -272,8 +272,8 @@ public:
         // call LAST among the mutation matchers is the load-bearing
         // ordering invariant for PH-3.
         sturm::transpile::register_outer_var_guard_matcher(finder_, unit_);
-        // Phase I PI-2: the user-defined-routine call matcher runs LAST
-        // — after the Phase H PH-2 brace-wrap matcher, after the Phase
+        // Phase I PI-2: the user-defined-routine call matcher runs
+        // after the Phase H PH-2 brace-wrap matcher, after the Phase
         // A/B/C compound-assign matchers, and after PH-3's outer-var
         // guard. The issue description locks this ordering in so PH-3
         // gets first crack at any qbool/qint mutation shapes, leaving
@@ -281,9 +281,59 @@ public:
         // survive. Ordering is not a correctness requirement — PI-2's
         // AST anchor (`callExpr` on a registered FunctionDecl) is
         // structurally disjoint from every Phase A..H matcher anchor —
-        // but placing it last keeps diagnostic output grouped by phase.
+        // but placing it here keeps diagnostic output grouped by phase.
         sturm::transpile::register_user_routine_matcher(
             finder_, unit_, registry_);
+        // Phase J PJ-3e: the uncompute-hoisting matcher runs LAST —
+        // after every Phase A..I per-op matcher (MVP OR, PA-1/PA-2
+        // bitwise, PA-3/PA-4 xor-assign, PB/PC qint compound-assigns,
+        // PD qint compares, PE-4 compound-qbool, PF WHEN-lift, PG
+        // WHEN-nested, PH-2 brace-wrap, PH-3 outer-var guard, PI-2
+        // user-routine), after the PJ-1f zero-ancilla fuse peephole
+        // (registered above), and after the PJ-4b dead-ancilla
+        // eliminator (registered above). The ordering invariant has
+        // two load-bearing edges:
+        //
+        //   1. AFTER every per-op matcher. The PJ-3d callback is
+        //      anchored on `translationUnitDecl()` and does its real
+        //      work in `onEndOfTranslationUnit()` — after MatchFinder
+        //      has finished the entire AST walk. That timing makes
+        //      registration order among per-node callbacks irrelevant
+        //      for correctness (the hoist callback runs once, after
+        //      every per-node callback has fired). Registering LAST
+        //      is therefore a diagnostic-grouping convention that
+        //      keeps the per-phase matcher callback pool contiguous
+        //      above the post-processor, but it is also a forward-
+        //      looking guard: if a future PJ-3e+ relaxation swaps the
+        //      post-processing idiom for a per-node anchor, the LAST
+        //      registration keeps the invariant that the hoist
+        //      callback sees fully-populated `unit_.scopes` without
+        //      requiring main.cpp to be re-ordered.
+        //
+        //   2. AFTER register_ccnot_fuse_matcher (PJ-1f) and AFTER
+        //      register_dead_ancilla_matcher (PJ-4b). Both of those
+        //      peepholes can mutate `unit_.scopes` — PJ-1f REPLACES
+        //      a pair of `qbool __t = a & b; x ^= __t;` ops with a
+        //      single CCNOT_INPLACE op (not a decl-producing kind,
+        //      so `is_decl_producing_kind` rejects it on the hoist
+        //      path), and PJ-4b ERASES ops whose VarDecl has zero
+        //      readers. Running PJ-3d after both eliminators means
+        //      the hoist matcher observes the FINAL op list — it
+        //      never tries to hoist a CCNOT_INPLACE fused pair (it
+        //      can't — the kind guard filters it) and never tries
+        //      to hoist an op that is about to be deleted (it
+        //      can't — the `apply_eliminated_stmt_guards` backstop
+        //      above has already dropped the op from
+        //      `unit_.scopes`). The backstop order discipline in
+        //      `HandleTranslationUnit` below (fused guards before
+        //      eliminated guards before `synthesize`) is what
+        //      actually enforces this sequencing at runtime; the
+        //      registration order here is documentation of the
+        //      happy-path schedule.
+        //
+        // Downstream blocks (sturm-8cwe PJ-3f snapshot fixtures) rely
+        // on this ordering staying stable.
+        sturm::transpile::register_hoist_invariant_matcher(finder_, unit_);
     }
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {

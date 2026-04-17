@@ -378,6 +378,97 @@ static void test_pj4b_wires_dead_ancilla_matcher() {
     CHECK(got.find("uncompute_or(") == std::string::npos);
 }
 
+static void test_pj3e_wires_hoist_invariant_matcher() {
+    // Phase J PJ-3e: the uncompute-hoisting matcher must be wired into
+    // main.cpp's TranspileConsumer LAST — after every Phase A..I per-op
+    // matcher, after the PJ-1f CCX-fuse peephole, and after the PJ-4b
+    // dead-ancilla eliminator. This driver-level test verifies the
+    // wiring end-to-end: feed a canonical loop-invariant fixture
+    // (`qbool t = a | b;` inside a for-loop body over outer parameters
+    // `a`, `b` that are never written in the body) through the real
+    // binary and assert:
+    //
+    //   1. The output contains the `uncompute_or(t, a, b);` call — the
+    //      MVP OR matcher fires on the VarDecl AND the op survives the
+    //      M8 pass.
+    //   2. The `uncompute_or(...)` line lands AFTER the loop's closing
+    //      brace, NOT inside the loop body. This is the load-bearing
+    //      semantic: `hoist_to_override` (set by the PJ-3d callback
+    //      only if wired in) takes precedence over `scope.close_brace`
+    //      inside uncompute_pass.cpp's anchor-selection ladder, moving
+    //      the uncompute out of the loop body to the loop-enclosing
+    //      scope's close brace.
+    //
+    // If the matcher is NOT wired in, the PJ-3d callback never fires,
+    // `hoist_to_override` stays invalid, and the uncompute lands at
+    // `scope.close_brace` — i.e. INSIDE the loop body, just before its
+    // `}`. The ordering assertion below catches that regression loudly.
+    fs::path dir = make_scratch_dir("pj3e_hoist_invariant");
+    fs::path input  = dir / "hoist_or.cpp";
+    fs::path outdir = dir / "gen";
+    fs::create_directories(outdir);
+
+    // Minimal in-file qbool stub — mirrors the PJ-1f / PJ-4b fixtures so
+    // the MVP FixedCompilationDatabase (no external includes) can still
+    // parse and type-check. We add a trailing `(void)t;` reader so PJ-4a
+    // does not eliminate the decl (zero-reader would trigger elimination
+    // BEFORE the hoist matcher runs, suppressing the op entirely).
+    const std::string payload =
+        "namespace sturm {\n"
+        "class qbool {\n"
+        "public:\n"
+        "    qbool() {}\n"
+        "    qbool(const qbool&) {}\n"
+        "    qbool& operator=(const qbool&) { return *this; }\n"
+        "};\n"
+        "inline qbool operator|(const qbool&, const qbool&) "
+        "{ return qbool{}; }\n"
+        "} // namespace sturm\n"
+        "using sturm::qbool;\n"
+        "\n"
+        "void demo(qbool a, qbool b) {\n"
+        "    for (int i = 0; i < 3; ++i) {\n"
+        "        qbool t = a | b;\n"
+        "        (void)t;\n"
+        "    }\n"
+        "}\n";
+    {
+        std::ofstream o(input, std::ios::binary);
+        o << payload;
+    }
+
+    std::string cmd = std::string(STURM_TRANSPILE_BIN) +
+        " " + quote(input).string() +
+        " --output-dir " + quote(outdir).string();
+    auto [rc, out] = run_cmd(cmd);
+    if (rc != 0) std::fprintf(stderr, "driver stderr:\n%s\n", out.c_str());
+    CHECK(rc == 0);
+
+    fs::path expected = outdir / "hoist_or.cpp";
+    CHECK(fs::exists(expected));
+    std::string got = read_file_contents(expected);
+
+    // (1) The MVP OR matcher fires; the M8 pass renders an uncompute.
+    const std::string uncompute_call = "uncompute_or(t, a, b);";
+    const std::size_t uncompute_pos = got.find(uncompute_call);
+    CHECK(uncompute_pos != std::string::npos);
+
+    // (2) The uncompute lands OUTSIDE the for-loop body. The loop body
+    // `(void)t;` is the last statement inside the `{ ... }`; the
+    // closing `}` is where the scope-level uncompute would be emitted
+    // absent PJ-3d. With PJ-3d wired in, `hoist_to_override` points at
+    // the FUNCTION-BODY close brace (one level up), so the uncompute
+    // sits AFTER the loop's `}` not before it.
+    //
+    // A robust probe: locate the loop body close brace — the first `}`
+    // after `(void)t;` — and assert the uncompute call comes AFTER it.
+    const std::size_t void_pos = got.find("(void)t;");
+    CHECK(void_pos != std::string::npos);
+    const std::size_t loop_close_brace_pos = got.find('}', void_pos);
+    CHECK(loop_close_brace_pos != std::string::npos);
+    CHECK(uncompute_pos > loop_close_brace_pos);
+}
+
 int main() {
     test_version_flag_exits_zero();
     test_plain_source_gets_header();
@@ -387,6 +478,7 @@ int main() {
     test_nested_relative_input_mirrors_tree();
     test_pj1f_wires_ccnot_fuse_matcher();
     test_pj4b_wires_dead_ancilla_matcher();
+    test_pj3e_wires_hoist_invariant_matcher();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
