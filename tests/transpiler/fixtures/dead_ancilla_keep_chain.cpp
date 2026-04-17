@@ -1,0 +1,51 @@
+// Phase J / PJ-4c reject input for the sturm-transpile snapshot test.
+//
+// Exercises the reader-count != 0 branch of the PJ-4a dead-ancilla
+// matcher for the chain shape called out in the roadmap:
+//
+//     qbool t = a | b;
+//     qbool r = t & d;
+//
+// `t` has one reader in its enclosing scope (the `r = t & d;` decl's
+// initializer), so `detail::count_readers_in_scope(t, ...) == 0`
+// returns false and PJ-4a bails on `t`. The MVP OR matcher then picks
+// up `qbool t = a | b;` and schedules an `uncompute_or(t, a, b);` at
+// scope close.
+//
+// `r`, by contrast, has ZERO readers — nothing else in the scope
+// reads it — so PJ-4a DOES eliminate it. Its VarDecl range is empty-
+// replaced and the range is pushed into `QUnit::eliminated_stmt_ranges`,
+// which the `apply_eliminated_stmt_guards` cleanup pass uses to drop
+// any QOperation the Phase E compound-flatten matcher would have
+// anchored on `r`. Net effect: `r`'s decl vanishes, no
+// `uncompute_and(r, t, d);` is emitted.
+//
+// Expected transform (see .expected.cpp for the byte-exact golden):
+//
+//     qbool t = a | b;        // unchanged — `r`'s init reads `t`
+//     qbool r = t & d;        // eliminated — `r` has no readers
+//     uncompute_or(t, a, b);  // MVP OR uncompute at scope close
+//
+// This fixture pins the asymmetric behaviour: one decl in a chain
+// rejected (because its successor reads it), the other decl eliminated
+// (because it has no further reader of its own). PJ-4a acts
+// independently per decl, not as a cascade.
+//
+// The stub is hermetic; `operator|` and `operator&` must resolve for
+// both bitwise-init guards to fire.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+};
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+} // namespace sturm
+using sturm::qbool;
+
+void demo(qbool a, qbool b, qbool d) {
+    qbool t = a | b;
+    qbool r = t & d;
+}
