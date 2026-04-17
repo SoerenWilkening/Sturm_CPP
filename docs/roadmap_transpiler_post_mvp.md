@@ -738,12 +738,13 @@ Lower priority, tracked for visibility.
 
 ## Principle Check
 
-The current principles in `docs/01_principles.md` align with this plan with one required revision:
+The predicted Phase K principle revisions have landed in `docs/01_principles.md` (PK-7, 2026-04-17). Numbering is stable — existing B1..B9 citations remain valid:
 
-- **B1b** already anticipates the transpiler ("*AST-based auto-generation may be added later as opt-in mechanisms*"). After Phase K, "opt-in" becomes "default."
+- **B1b** has landed — the "may be added later as opt-in mechanisms" clause has been replaced. The principle now reads: "Macro-based or AST-based auto-generation is the default: the transpiler pass at compile time registers inverse operations for every construct. Runtime auto-inversion has been retired."
 - **P9** ("Routines are invertible by explicit adjoint") remains load-bearing. The transpiler is a **consumer** of manual adjoints, not a replacement for them.
-- **B9** is the one that needs rewording. "No global pass" becomes "the transpiler *is* a global pass, by design."
+- **B9** has landed — the "no global pass" clause has been replaced. The principle now reads: "Two optimization layers in the default runtime path (inlined dispatch, classicality specialization) and one global optimization pass at transpile time." The body enumerates the three Phase J rewrites (PJ-1 fusion, PJ-3 hoisting, PJ-4 dead-ancilla elimination).
 - **B6** ("Ancillas and control temporaries are scope-bound via C++ RAII") stays true — RAII still owns qubit lifetime; it just no longer owns *uncomputation*.
+- **B10** is new — added after B9 to codify that uncomputation is a compile-time concern: "Inverses are emitted by the transpiler as explicit uncompute_* / ccnot_inplace / invert(routine)(...) calls in the generated source file. Destructors release qubit indices to the pool; they do not emit gates. Ancilla scope (B6) still uses C++ RAII, but scope exit and uncomputation are now separate concerns."
 
 ---
 
