@@ -485,6 +485,70 @@ Distinguishing the two requires **ownership / liveness analysis**: is the result
 > up: PJ-4 (dead-ancilla elimination), then PJ-3 (uncompute
 > hoisting).
 
+> **2026-04-17:** PJ-4 (dead-ancilla elimination) complete. A `qbool`
+> VarDecl whose initializer is a qbool-valued expression (`a | b`,
+> `~a`, `a ^ b`, or a nested bitwise combination) and whose reader
+> count inside the enclosing scope is zero is now deleted verbatim
+> from the output — no decl, no forward gate, no uncompute. PJ-4a
+> added `QUnit::eliminated_stmt_ranges` (same
+> `std::vector<clang::SourceRange>` shape as PJ-1e's
+> `fused_stmt_ranges`) in `transpiler/include/sturm/transpile/qir.hpp`
+> and the new matcher module `transpiler/src/matcher_dead_ancilla.cpp`
+> exporting `register_dead_ancilla_matcher(finder, unit)`; it anchors
+> on `VarDecl` of a `qbool` with a qbool-operand initializer, reuses
+> PJ-1a's `detail::count_readers_in_scope(name, decl_loc,
+> scope_anchor, ctx)` helper, and on zero readers emits one
+> `QReplacement{range=<full decl stmt>, replacement=""}` covering the
+> whole statement through its trailing `;` plus pushes that same
+> range into `unit_.eliminated_stmt_ranges`. The cleanup pass
+> `apply_eliminated_stmt_guards(unit, sm)` (declared in
+> `transpiler/include/sturm/transpile/matcher.hpp`, implemented in
+> `matcher_dead_ancilla.cpp`) runs after `matchAST` as the
+> authoritative backstop against MatchFinder's Decl/Stmt interleaving:
+> it walks every scope and removes any `QOperation` whose
+> `stmt_range` lies inside an eliminated entry, so the M8 synthesis
+> pass never renders an uncompute for a decl that no longer exists.
+> PJ-4b wired `register_dead_ancilla_matcher` into
+> `transpiler/src/main.cpp` **before** `register_or_matcher`,
+> `register_not_matcher`, `register_xor_matcher`,
+> `register_xor_assign_matcher`, `register_compound_qbool_matcher`,
+> PH-3's `register_outer_var_guard_matcher`, and PJ-1f's
+> `register_ccnot_fuse_matcher`, with an ordering-invariant comment
+> block documenting the rationale; per-callback early-returns against
+> `eliminated_stmt_ranges` (via PJ-1e's `is_range_covered_by_fused`
+> probe) were added in `transpiler/src/matcher_qbool_bitwise.cpp`,
+> `transpiler/src/matcher_qbool_compound.cpp`, and
+> `transpiler/src/matcher_qbool_assign.cpp` so downstream Phase A/E
+> callbacks bail on covered ranges even when the Decl/Stmt visit
+> order lets them fire before the eliminator. PJ-4c pinned four
+> snapshot fixtures in `tests/transpiler/fixtures/`:
+> `dead_ancilla_single` (happy path — `qbool t = a | b;` with zero
+> readers vanishes), `dead_ancilla_keep_read` (reject — reader
+> present), `dead_ancilla_keep_chain` (reject — `qbool r = t & d;`
+> consumes `t`), `dead_ancilla_inside_when` (elimination inside a
+> WHEN body). PJ-4d added `examples/dead_ancilla.cpp` plus
+> `tests/transpiler/check_example_dead_ancilla.cmake` and its
+> `transpiler_example_dead_ancilla_injected` +
+> `transpiler_idempotent_example_dead_ancilla` CTests (wired via
+> `examples/CMakeLists.txt`). PJ-4e closed the loop with the
+> `m12_dead_ancilla_transpiled` / `m12_dead_ancilla_reference`
+> namespace pair in `tests/transpiler/test_gate_equivalence.cpp`
+> plus `tests/transpiler/fixtures/dead_ancilla_runtime.cpp` and
+> `tests/transpiler/fixtures/dead_ancilla_reference.cpp`; the
+> reference spells out the body without the dead decl and the
+> transpiled path goes through the matcher — byte-identical
+> `GateRecord` stream verified (no ancilla allocated on either
+> side, proving the elimination is gate-semantics-preserving). A
+> regression (tracked as sturm-3dpf) that the PJ-4a zero-reader
+> gate fires on the legacy MVP OR gate-equivalence fixtures
+> `or_single_runtime.cpp` / `demo_or_circuit()` — which carry
+> `qbool tmp = a | b;` without a reader — has been filed for
+> follow-up; the canonical fix is to add a `(void)tmp;` reader,
+> matching the pattern PJ-3f / PJ-4c fixtures already use.
+> Tracked as bd issues sturm-ubfr (PJ-4a), sturm-kih8 (PJ-4b),
+> sturm-br65 (PJ-4c), sturm-66a8 (PJ-4d), sturm-347u (PJ-4e),
+> sturm-436e (PJ-4f). Next up: PJ-3 (uncompute hoisting).
+
 Only after coverage is complete. Deferring these avoids premature optimization and lets us validate correctness before speed.
 
 1. **Zero-ancilla fusion.** The pattern `qbool __t = a & b; x ^= __t; /* __t used once here */` fuses into a single `ccnot_inplace(x, a, b);` call at the IR level, emitting a single CCX with no intermediate qubit. This is the optimization today's `lazy_expr` materialization tries to approximate at runtime — moving it to the IR is cleaner and composes with other rewrites. Implementation lives in the pre-lowering peephole `matcher_ccnot_fuse.cpp`, which fires **before** the Phase E compound-flatten matcher so the `__stu_tN` temporary is never allocated.
