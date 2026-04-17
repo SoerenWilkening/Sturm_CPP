@@ -5,7 +5,11 @@
 //   AC2 — qbool(0.5).theta() += 1.0 compiles and emits an RY gate via the sink.
 //   AC6 — WHEN(qbool_var) works: classical true (body runs), classical false
 //          (body skipped), and superposed (quantum control set).
-//   AC8 — operator~ uncomputes: X gate emitted on destruction of the result.
+//
+// Phase K PK-4 (sturm-l6jq): AC8 (operator~ destructor-emitted X gate) has been
+// retired. Principle B10 codifies destructors as release-only; inverse gate
+// emission for `~q` lives in the transpile path, which is exercised by the
+// gate-equivalence regression suite.
 
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qint.hpp"
@@ -173,39 +177,6 @@ static void test_ac6_when_superposed() {
     std::printf("PASS: AC6 WHEN superposed (quantum control)\n");
 }
 
-// ── AC8: operator~ uncomputes — X gate emitted on destruction ─────────────────
-//
-// ~q: allocates ancilla, emits X on ancilla (forward), stamps ADD_CONST(1) as
-// the uncompute tag.  On destruction of the result, the destructor applies
-// ADD_CONST(1) inverse which emits another X.
-// Verify: IR shows 2 gates, both STURM_GATE_X.
-static void test_ac8_operator_not_uncomputes() {
-    ScopedAppendCtx sc;
-
-    // Use a non-owning qbool at fixed qubit 0 to avoid pool interactions.
-    qbool q = qbool::make_non_owning(0);
-    q.super_mask = 1ULL;  // mark as quantum so ~q emits a gate
-
-    {
-        // ~q: forward X emitted, ADD_CONST(1) stamped for uncompute.
-        qbool r = ~q;
-        CHECK(r.qubits[0] >= 0);
-        CHECK(sc.ir().size() == 1u);
-        if (sc.ir().size() == 1u) {
-            CHECK(sc.ir().at(0).kind == STURM_GATE_X);
-        }
-        // Destructor of r fires here: emits uncompute X (ADD_CONST(1) apply).
-    }
-
-    // After destruction: 2 total gates (forward X + uncompute X).
-    CHECK(sc.ir().size() == 2u);
-    if (sc.ir().size() >= 2u) {
-        CHECK(sc.ir().at(1).kind == STURM_GATE_X);
-    }
-
-    std::printf("PASS: AC8 operator~ uncomputes (X gate emitted on destruction)\n");
-}
-
 // ── main ──────────────────────────────────────────────────────────────────────
 int main() {
     test_ac1_phi_on_qbool_emits_rz();
@@ -213,7 +184,6 @@ int main() {
     test_ac6_when_classical_true();
     test_ac6_when_classical_false();
     test_ac6_when_superposed();
-    test_ac8_operator_not_uncomputes();
 
     std::printf("%s  (%d/%d passed)\n",
                 tests_pass == tests_run ? "PASS" : "FAIL",
