@@ -1271,6 +1271,69 @@ if(STURM_TRANSPILE)
         REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 endif()
 
+# ── Phase J / PJ-1h: end-to-end injected observability + idempotency for ──
+# the zero-ancilla fusion example.  Same harness pattern as the
+# Phase I PI-6 user_routine block above:
+#   1. build_example_zero_ancilla_fusion — SETUP fixture that builds
+#      the example_zero_ancilla_fusion target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/zero_ancilla_fusion.cpp
+#      via add_quantum_executable() (under STURM_TRANSPILE=ON).
+#   2. transpiler_example_zero_ancilla_fusion_injected — reads the
+#      generated file and asserts the PJ-1d two-point fusion rewrite
+#      for the happy-path pair inside main()'s inner scope:
+#        - Forward fused call: PJ-1d collapses the source pair
+#          `qbool __t = a & b;` + `x ^= __t;` into a single
+#          `ccnot_inplace(x, a, b);` via a QReplacement whose source
+#          range spans both stmts.
+#        - Self-adjoint uncompute: the PJ-1c render case in
+#          transpiler/src/uncompute_pass.cpp plants a SECOND
+#          `ccnot_inplace(x, a, b);` before the enclosing scope's
+#          closing `}`.  CCX is its own inverse, so forward +
+#          uncompute share one symbol.
+#        - Neither the original `qbool __t` decl nor the `x ^= __t`
+#          stmt survives inside main()'s body — the QReplacement
+#          strip over the fused source range must be complete.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name.
+#   3. transpiler_idempotent_example_zero_ancilla_fusion — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+if(STURM_TRANSPILE)
+    add_test(
+        NAME build_example_zero_ancilla_fusion
+        COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+                --target example_zero_ancilla_fusion)
+    set_tests_properties(build_example_zero_ancilla_fusion PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_SETUP "example_zero_ancilla_fusion_built")
+
+    add_test(
+        NAME transpiler_example_zero_ancilla_fusion_injected
+        COMMAND "${CMAKE_COMMAND}"
+                -DSOURCE=${CMAKE_SOURCE_DIR}/examples/zero_ancilla_fusion.cpp
+                -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/zero_ancilla_fusion.cpp
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_zero_ancilla_fusion.cmake)
+    set_tests_properties(transpiler_example_zero_ancilla_fusion_injected PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_zero_ancilla_fusion_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+    add_test(
+        NAME transpiler_idempotent_example_zero_ancilla_fusion
+        COMMAND "${CMAKE_COMMAND}"
+                -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+                -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/zero_ancilla_fusion.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_zero_ancilla_fusion_idem
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+    set_tests_properties(transpiler_idempotent_example_zero_ancilla_fusion PROPERTIES
+        LABELS "transpiler"
+        FIXTURES_REQUIRED "example_zero_ancilla_fusion_built"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+endif()
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that

@@ -332,9 +332,37 @@ void register_ccnot_fuse_matcher(clang::ast_matchers::MatchFinder& finder,
         hasArgument(0, ignoringImplicit(declRefExpr().bind("and_lhs"))),
         hasArgument(1, ignoringImplicit(declRefExpr().bind("and_rhs"))));
 
+    // Two initializer shapes reach a `qbool __t = a & b;` VarDecl depending
+    // on the build profile:
+    //   (a) eager / hermetic — `operator&` returns `qbool` directly (e.g.
+    //       the snapshot fixtures under tests/transpiler/fixtures/fuse_xor_and*.cpp
+    //       and any non-backend build profile where qbool_logic.hpp's
+    //       classical `operator&` is active). The VarDecl's init is the
+    //       CXXOperatorCallExpr itself modulo implicit glue.
+    //   (b) lazy / backend — under STURM_BACKEND_ENABLED `operator&` on
+    //       qbool returns `AndExpr<qbool>` (lazy_expr.hpp:81), which is
+    //       materialized into the VarDecl's qbool slot via the
+    //       user-defined conversion `AndExpr<qbool>::operator qbool()`
+    //       (qbool_ops.hpp:160). The init AST chain is:
+    //         VarDecl → ExprWithCleanups
+    //                 → ImplicitCastExpr<UserDefinedConversion>
+    //                 → CXXMemberCallExpr (operator qbool())
+    //                 → ImplicitCastExpr<NoOp>
+    //                 → MaterializeTemporaryExpr
+    //                 → CXXOperatorCallExpr '&'
+    //       — same shape the MVP OR matcher peels in
+    //       matcher_qbool_bitwise.cpp:258-264. Without this second branch
+    //       the PJ-1d peephole silently misses every end-to-end backend
+    //       build (e.g. examples/zero_ancilla_fusion.cpp under
+    //       STURM_BACKEND_ENABLED=1), even though the hermetic snapshot
+    //       fixtures would still pass.
+    auto eager_init = ignoringImplicit(and_call);
+    auto lazy_init  = ignoringImplicit(
+        cxxMemberCallExpr(on(ignoringImplicit(and_call))));
+
     auto pattern = varDecl(
         hasType(cxxRecordDecl(hasName("qbool"))),
-        hasInitializer(ignoringImplicit(and_call))
+        hasInitializer(anyOf(eager_init, lazy_init))
     ).bind("var");
 
     auto& pool = ccnot_fuse_callback_pool();
