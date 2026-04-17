@@ -25,14 +25,10 @@
 
 namespace sturm {
 
-// ── Bitwise sub-kind constants for uncompute_op::BITWISE_SELF ────────────────
-// Used as the `sub_kind` field so that apply() knows which op to re-run.
-namespace detail {
-    static constexpr uint32_t BITWISE_AND = 1u;
-    static constexpr uint32_t BITWISE_OR  = 2u;
-    static constexpr uint32_t BITWISE_XOR = 3u;
-    static constexpr uint32_t BITWISE_NOT = 4u;
-} // namespace detail
+// Phase K PK-3: the BITWISE_* sub-kind constants were tags for the retired
+// uncompute_op::BITWISE_SELF variant. They are no longer referenced at
+// runtime — transpiler-synthesised uncompute_* free functions are the
+// sole carrier of inverse gate streams. Removed.
 
 // ── operator& ─────────────────────────────────────────────────────────────────
 // Backend-enabled body is in qint_bitwise_backend.hpp (included below).
@@ -95,9 +91,8 @@ qint_t<W> operator^(const qint_t<W>& a, const qint_t<W>& b) {
             (void)ctx;
         }
     }
-    result.uncompute_ = uncompute_op::make_bitwise_self(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        detail::BITWISE_XOR);
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp). Destructor is release-only (principle B10).
     return result;
 }
 
@@ -143,8 +138,8 @@ qint_t<W> operator~(const qint_t<W>& a) {
         }
     }
 
-    // Unary NOT: re-run NOT on the result to get back to original (self-inverse).
-    result.uncompute_ = uncompute_op::make_bitwise_self(nullptr, detail::BITWISE_NOT);
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp). Destructor is release-only (principle B10).
     return result;
 }
 

@@ -1755,7 +1755,6 @@ if(STURM_TRANSPILE)
         # actually fire.  The header-only `sturm` interface target does
         # not provide these symbols, so they are compiled in here.
         ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-        ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
         ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
         ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
         ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c

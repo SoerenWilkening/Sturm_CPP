@@ -229,9 +229,8 @@ inline qbool materialize_and(const BitProxy& a, const BitProxy& b) {
     result.qubits[0]  = anc_idx;
     result.owning_    = true;
     result.super_mask = 1ULL;
-    result.uncompute_ = uncompute_op::make_bitwise_qbool(
-        a.is_quantum() ? static_cast<uint32_t>(a.qubit_index()) : 0u,
-        b.is_quantum() ? static_cast<uint32_t>(b.qubit_index()) : 0u, 0u);  // 0 = AND
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp uncompute_and). Destructor is release-only.
     return result;
 }
 inline qbool materialize_and(const AndExpr<BitProxy>& expr) {
@@ -262,9 +261,8 @@ inline qbool materialize_or(const BitProxy& a, const BitProxy& b) {
     result.qubits[0]  = anc_idx;
     result.owning_    = true;
     result.super_mask = 1ULL;
-    result.uncompute_ = uncompute_op::make_bitwise_qbool(
-        a.is_quantum() ? static_cast<uint32_t>(a.qubit_index()) : 0u,
-        b.is_quantum() ? static_cast<uint32_t>(b.qubit_index()) : 0u, 1u);  // 1 = OR
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp uncompute_or). Destructor is release-only.
     return result;
 }
 inline qbool materialize_or(const OrExpr<BitProxy>& expr) {

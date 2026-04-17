@@ -19,7 +19,6 @@
 #include "sturm/core/context.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/qtypes/bit_proxy.hpp"
-#include "sturm/uncompute/uncompute_op.hpp"
 
 #include <cstddef>
 
@@ -58,10 +57,8 @@ qint_t<W> operator&(const qint_t<W>& a, const qint_t<W>& b) {
         detail_bw::release_temp_qubits(b_mut, b);
     }
 
-    // BITWISE_SELF: AND is self-inverse (AND again with same inputs restores result).
-    result.uncompute_ = uncompute_op::make_bitwise_self(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        detail::BITWISE_AND);
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp). Destructor is release-only (principle B10).
     return result;
 }
 
@@ -99,9 +96,8 @@ qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
         detail_bw::release_temp_qubits(b_mut, b);
     }
 
-    result.uncompute_ = uncompute_op::make_bitwise_self(
-        reinterpret_cast<const qint_base*>(static_cast<const void*>(&b)),
-        detail::BITWISE_OR);
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp). Destructor is release-only (principle B10).
     return result;
 }
 

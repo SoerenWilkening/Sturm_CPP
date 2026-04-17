@@ -15,13 +15,18 @@
 // compound-assign operator.  Compound-assign bodies are defined in
 // qint_arith_v3.hpp, visible at instantiation time.
 //
-// Must be included after qint_core.hpp and uncompute_op.hpp are visible.
+// Must be included after qint_core.hpp is visible.
 // Do not include this header directly — include qint_arith.hpp instead.
+//
+// Phase K PK-3 (sturm-pzye): uncompute_op tagged union retired — forward
+// operators no longer stamp an `uncompute_` field on the result. Inverse
+// gate streams are emitted by transpiler-synthesised `uncompute_*` free
+// functions (see include/sturm/uncompute/uncompute_api.hpp). Destructors
+// are release-only per principle B10.
 
 #ifdef STURM_BACKEND_ENABLED
 
 #include "sturm/qtypes/qint_core.hpp"
-#include "sturm/uncompute/uncompute_op.hpp"
 #include "sturm/core/mask_ops.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/qubit_pool.hpp"
@@ -89,22 +94,33 @@ qint_t<W> operator+(const qint_t<W>& a, int64_t c) {
     result.value      = a.value + c;
     result.super_mask = a.super_mask;
     // Copy qubit indices (result shares the register structure for the stub).
-    // TODO(backend): full Bennett requires allocating a fresh register and
-    //                running the adder circuit into it; for the pilot test the
-    //                stub emits gates on the same qubit set so the gate
-    //                sequence is deterministic and invertible.
-    result.qubits = a.qubits;
+    // Note: owning_ defaults to true on result; we intentionally share qubit
+    // indices with `a` here under the same stub discipline as pre-PK-3 — the
+    // add_const stub emitted gates on the same register rather than a fresh
+    // one. `result.owning_` is set to false so we don't double-release with
+    // `a`.
+    result.qubits  = a.qubits;
+    result.owning_ = false;
 
     if (a.super_mask != 0) {
         // Emit add_const gates via the active BackendContext (if any).
+        // Phase K PK-3: this is the pre-existing stub (one X per quantum
+        // bit with c as param), inlined here since qint_base::add_const has
+        // been retired. TODO(backend): replace with a Draper/ripple-carry
+        // constant-adder circuit when the library-op layer lands (M22+).
         if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
-            qint_base view = result.as_qint_base();
-            view.add_const(c, *ctx);
+            for (std::size_t i = 0; i < W; ++i) {
+                if (((result.super_mask >> i) & 1u) && result.qubits[i] >= 0) {
+                    uint32_t q[1] = { static_cast<uint32_t>(result.qubits[i]) };
+                    double param = static_cast<double>(c);
+                    execute_gate(*ctx, STURM_GATE_H, q, 1u, param);
+                }
+            }
         }
     }
 
-    // Stamp the uncompute op: destroying `result` will emit -= c.
-    result.uncompute_ = uncompute_op::make_add_const(c);
+    // Phase K PK-3: inverse emission is now the transpiler's responsibility
+    // (see uncompute_api.hpp uncompute_add_qint). Destructor is release-only.
     return result;
 }
 
