@@ -2,10 +2,8 @@ cmake_minimum_required(VERSION 3.16)
 enable_language(C)
 
 # ── Example: qint OR + ASCII circuit drawing ────────────────────────────────
-# Routed through sturm-transpile under STURM_TRANSPILE=ON via the
-# add_quantum_executable() helper (see cmake/SturmTranspile.cmake). Under
-# STURM_TRANSPILE=OFF the helper compiles the source directly without any
-# LLVM/Clang dependency.
+# Routed through sturm-transpile via the add_quantum_executable() helper
+# (see cmake/SturmTranspile.cmake).
 add_quantum_executable(example_or_circuit
     or_circuit.cpp
 )

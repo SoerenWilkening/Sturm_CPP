@@ -1,7 +1,7 @@
 // fixture.cpp — M10 CMake glue fixture for add_quantum_executable().
 //
 // Used by tests/transpiler/test_cmake_glue/ to exercise the helper from
-// `cmake/SturmTranspile.cmake` under both STURM_TRANSPILE=OFF and ON.
+// `cmake/SturmTranspile.cmake`.
 //
 // Deliberately minimal: no <sturm/sturm.hpp> include, no quantum ops.
 // The goal is to validate the BUILD-SYSTEM glue, not the transpiler's
@@ -11,9 +11,6 @@
 // returns an empty insertion list, and the emitter writes the file out
 // with an AUTO-GENERATED header prepended. That header is what the
 // add_test greps for to confirm the generated file is the compile unit.
-//
-// Under STURM_TRANSPILE=OFF the source is compiled directly and the
-// binary exits 0 so `add_test` sees a green run.
 //
 // The STURM_GLUE_FIXTURE_MARKER compile definition is threaded through
 // target_compile_definitions so the test can additionally verify the

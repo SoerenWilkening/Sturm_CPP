@@ -17,34 +17,18 @@ add_library(sturm INTERFACE)
 target_include_directories(sturm INTERFACE ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(sturm INTERFACE cxx_std_20)
 
-# ── Transpiler-MVP flag contract (M1) ─────────────────────────────────────────
-# See docs/prd_transpiler_uncompute.md and
-#     docs/implementation_plan_transpiler_uncompute.md (§M1).
-#
-# STURM_TRANSPILE (default OFF during MVP)
-#   When ON, enter transpiler/ to build the Clang LibTooling-based
-#   sturm-transpile binary and — once M10 lands — route sources declared
-#   via add_quantum_executable() through it. OFF is the documented default
-#   so a vanilla STURM build never depends on LLVM/Clang being installed.
-option(STURM_TRANSPILE
-       "Build the Clang LibTooling-based uncomputation transpiler" OFF)
-
 # ── Transpiler glue helper (M10) ──────────────────────────────────────────────
 # Define the add_quantum_executable() function for downstream consumers.
-# The helper degrades gracefully under STURM_TRANSPILE=OFF: it compiles the
-# source directly without reaching for LLVM/Clang. Included unconditionally
-# so that downstream code can reference the function symbol regardless of
-# the flag state (and so that the `cmake_flags_verify` configure probes
-# exercise both branches).
+# Every STURM build routes quantum sources through sturm-transpile; there is
+# no OFF mode. Consumers are expected to have LLVM/Clang >= 17 installed
+# (Phase L will hide this behind Homebrew/apt/prebuilt binaries).
 include(${CMAKE_SOURCE_DIR}/cmake/SturmTranspile.cmake)
 
 # The transpiler subdirectory must be entered BEFORE tests/ so that the
 # sturm-transpile target is defined by the time tests/transpiler/ calls
-# add_quantum_executable() (which under STURM_TRANSPILE=ON wires an
-# add_custom_command DEPENDS on sturm-transpile).
-if(STURM_TRANSPILE)
-    add_subdirectory(transpiler)
-endif()
+# add_quantum_executable() (which wires an add_custom_command DEPENDS on
+# sturm-transpile).
+add_subdirectory(transpiler)
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 enable_testing()

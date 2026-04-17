@@ -43,15 +43,9 @@ endforeach()
 # ── Backend test subdirectory (M1 and later) ──────────────────────────────────
 add_subdirectory(backend)
 
-# ── CMake flag-contract verification (transpiler-MVP M1) ──────────────────────
-# This subdir holds a ctest entry that validates the STURM_TRANSPILE option
-# contract by running fresh out-of-source configures of the STURM source tree.
-# See tests/cmake_flags/verify_flags.cmake.
-add_subdirectory(cmake_flags)
-
 # ── Transpiler-MVP Group C tests (M10+) ───────────────────────────────────────
 # Holds consumer-facing tests that exercise the transpiler toolchain from the
 # outside (add_quantum_executable, snapshot fixtures, gate-stream equivalence).
 # The transpiler binary's own unit tests live under transpiler/tests/ and are
-# added via the top-level if(STURM_TRANSPILE) add_subdirectory(transpiler).
+# added via the top-level add_subdirectory(transpiler).
 add_subdirectory(transpiler)
