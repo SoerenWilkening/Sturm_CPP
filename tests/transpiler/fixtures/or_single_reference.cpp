@@ -34,7 +34,6 @@
 // `qbool_logic.hpp` path (which does not emit gates) or fail to
 // compile entirely.
 #include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 
 namespace m12_reference {

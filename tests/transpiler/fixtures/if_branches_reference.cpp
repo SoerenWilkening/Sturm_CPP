@@ -28,7 +28,6 @@
 
 #include "sturm/sturm.hpp"
 #include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 
 namespace m12_if_branches_reference {

@@ -59,7 +59,6 @@
 // `a | b` below would hit the classical short-circuit path (which
 // emits no gates) or fail to compile entirely.
 #include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 
 namespace m12_hoist_reference {

@@ -15,7 +15,6 @@
 #include "sturm/qtypes/qint_core.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include <cstddef>

@@ -13,7 +13,6 @@
 #pragma once
 
 #include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/lazy_expr.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/lib/logic_dsl.hpp"
