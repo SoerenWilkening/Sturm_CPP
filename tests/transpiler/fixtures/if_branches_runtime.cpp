@@ -86,11 +86,26 @@ using sturm::qbool;
 // the then-arm and one `sturm::uncompute_or(y, a, b);` inside the
 // else-arm.  `a` and `b` cross the branch boundary unchanged — no
 // PH-3 outer-variable-mutation diagnostic.
+//
+// Why the `(void)x;` / `(void)y;` readers are load-bearing
+// --------------------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without readers in each arm, PJ-4a
+// fires before the M7 OR matcher: both `qbool {x,y} = a | b;` lines
+// are dropped, each arm collapses to empty, no uncompute is injected,
+// and the captured gate stream on the transpiled side is zero-length
+// vs. the reference fixture's six-gate pair per branch.  The explicit
+// `(void)x;` / `(void)y;` readers bump each reader count to 1,
+// shutting off PJ-4a so the M7 matcher runs per arm as intended.
+// Same rationale — and same textual shape — as or_single_runtime.cpp /
+// hoist_or_out_of_for.cpp.
 void demo(const qbool& a, const qbool& b, bool cond) {
     if (cond) {
         qbool x = a | b;
+        (void)x;
     } else {
         qbool y = a | b;
+        (void)y;
     }
 }
 

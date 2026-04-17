@@ -18,6 +18,18 @@
 // the matcher and freezes the real golden output. While LP3 is on
 // HEAD and LP4 is not yet landed, `ctest -R snapshot_or_single_backend`
 // MUST fail — that failure is the RED signal LP4 flips to GREEN.
+//
+// Why the `(void)tmp;` reader is load-bearing
+// -------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// LP4 backend-shape uncompute-injection matcher: the entire
+// `qbool tmp = a | b;` line is dropped, the function body collapses to
+// empty, and this snapshot byte-mismatches against the pre-PJ-4a
+// golden.  The explicit `(void)tmp;` bumps the reader count to 1,
+// shutting off PJ-4a so the LP4 matcher runs as intended.  Same
+// rationale — and same textual shape — as or_single_runtime.cpp /
+// hoist_or_out_of_for.cpp.
 namespace sturm {
 class qbool {
 public:
@@ -39,4 +51,4 @@ inline OrExpr<qbool> operator|(const qbool& a, const qbool& b) {
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a, qbool b) { qbool tmp = a | b; }
+void demo(qbool a, qbool b) { qbool tmp = a | b; (void)tmp; }

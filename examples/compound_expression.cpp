@@ -90,7 +90,16 @@ int main() {
         // intermediate) are injected just before the inner-block close
         // brace in LIFO order. The exact emitted text is visible in
         //   build/sturm_gen/examples/compound_expression.cpp.
+        //
+        // The trailing `(void)r;` is load-bearing: Phase J PJ-4a
+        // (dead-ancilla elimination) strips any `qbool` VarDecl whose
+        // value is never read, including the whole compound flatten's
+        // outer `r` and its `__stu_t0` intermediate.  Without a reader,
+        // PJ-4a fires before the Phase E compound matcher and the
+        // generated file would have no flat decls and no uncompute
+        // injections — same as the `or_single_runtime.cpp` rationale.
         sturm::qbool r = (b | c) & d;
+        (void)r;
     }
 
     sturm_set_thread_context(nullptr);

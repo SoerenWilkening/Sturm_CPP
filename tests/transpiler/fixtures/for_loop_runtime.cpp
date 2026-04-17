@@ -89,9 +89,36 @@ using sturm::qbool;
 // PH-3 outer-variable-mutation diagnostic.  The for-body is BRACED,
 // so PH-2 brace-wrap does not fire on this fixture (PH-2 coverage is
 // already exercised by fixtures/for_intermediate_or_braceless.cpp).
+//
+// Why the `(void)tmp;` reader AND the inner-scope wrap are load-bearing
+// ---------------------------------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// M7 OR matcher: the entire `qbool tmp = a | b;` line is dropped, the
+// for-body collapses to empty, no uncompute is injected, and the
+// captured gate stream on the transpiled side is zero-length vs. the
+// reference fixture's twenty-seven gates.  The explicit `(void)tmp;`
+// bumps the reader count to 1, shutting off PJ-4a so the M7 matcher
+// runs as intended.  Same rationale — and same textual shape — as
+// or_single_runtime.cpp / hoist_or_out_of_for.cpp.
+//
+// Additional guard against PJ-3d hoisting: adding `(void)tmp;` alone
+// would let PJ-3d inspect the now-alive OR op's operands (`a`, `b`),
+// find them loop-invariant (outer-scoped params, no writes inside),
+// and hoist the uncompute OUTSIDE the for-loop — producing a 21-gate
+// stream instead of the reference's 27-gate per-iteration stream.  We
+// wrap the decl + reader in an inner `{ ... }` CompoundStmt whose
+// parent is the for-body CompoundStmt (NOT the ForStmt itself) —
+// `classify_scope_kind` returns `Other` for a non-loop-direct-body
+// scope, so PJ-3d skips and the uncompute_or is planted at the
+// inner-scope `}` inside the loop body.  The per-iteration gate
+// sequence is preserved.
 void demo(const qbool& a, const qbool& b) {
     for (int i = 0; i < 3; ++i) {
-        qbool tmp = a | b;
+        {
+            qbool tmp = a | b;
+            (void)tmp;
+        }
     }
 }
 

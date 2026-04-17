@@ -23,6 +23,19 @@
 // The stub drops `operator^=(const qbool&)` and uses `operator^=(int)`
 // only — that overload is the one the matcher's classical-RHS gate
 // inspects.
+//
+// Why the `(void)__t;` reader is load-bearing
+// -------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before
+// every downstream matcher (PJ-1d ccnot-fuse, PA-4 classical `^=`,
+// etc.), deleting the `qbool __t = a & b;` line entirely and the
+// fixture stops exercising PJ-1g's reject branch.  The explicit
+// `(void)__t;` bumps the reader count to 1, shutting off PJ-4a so the
+// fuse matcher runs, inspects the next-sibling `x ^= 1;` shape, and
+// rejects the fuse as intended — the PA-4 classical `^=` matcher then
+// picks up `x ^= 1;` unchanged.  Same rationale — and same textual
+// shape — as or_single_runtime.cpp / hoist_or_out_of_for.cpp.
 namespace sturm {
 class qbool {
 public:
@@ -37,5 +50,6 @@ using sturm::qbool;
 
 void demo(qbool a, qbool b, qbool x) {
     qbool __t = a & b;
+    (void)__t;
     x ^= 1;
 }

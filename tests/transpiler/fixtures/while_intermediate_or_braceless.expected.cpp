@@ -22,6 +22,21 @@
 // The sturm-transpile binary runs with a FixedCompilationDatabase that
 // carries no include paths, so we inline a minimal qbool stub whose
 // `operator|` overload is enough for the OR matcher to resolve.
+//
+// Why the `(void)tmp;` reader is load-bearing
+// ----------------------------------------------------
+// Phase J PJ-4a (dead-ancilla elimination) removes any `qbool` VarDecl
+// whose value is never read.  Without a reader, PJ-4a fires before the
+// PH-2 auto-brace-wrap matcher: the entire `qbool tmp = a | b;` line
+// is dropped, and the braceless body becomes an empty `;` which PH-2
+// rejects (its `body_contains_quantum_op` guard finds nothing to wrap).
+// The explicit `(void)tmp;` bumps the reader count to 1, shutting off
+// PJ-4a so PH-2 runs as intended.  Adding the reader turns the body
+// into a two-statement sequence which MUST be braced at the source
+// level to remain syntactically valid — this trades the original
+// "true braceless" shape for the equivalent "user-already-braced"
+// shape that PH-4 covers (see while_intermediate_or.cpp).  Post-PJ-4a
+// these two fixtures converge.
 namespace sturm {
 class qbool {
 public:
@@ -34,6 +49,6 @@ using sturm::qbool;
 
 void demo(qbool a, qbool b) {
     int i = 0;
-    while (i < 3) { qbool tmp = a | b;    uncompute_or(tmp, a, b);
- }
+    while (i < 3) { qbool tmp = a | b; (void)tmp; }
+    uncompute_or(tmp, a, b);
 }

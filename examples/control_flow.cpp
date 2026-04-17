@@ -133,12 +133,27 @@ int main() {
     // The inner scope ensures the a/b destructors fire AFTER the
     // entire loop completes.  The exact emitted text is visible in
     //   build/sturm_gen/examples/control_flow.cpp.
+    //
+    // The `(void)tmp;` reader is load-bearing: Phase J PJ-4a
+    // (dead-ancilla elimination) strips any `qbool` VarDecl with no
+    // readers, so without it the forward `qbool tmp = a | b;` line
+    // would be removed before the M7 OR matcher runs.  The inner
+    // `{ ... }` wrap around the decl + reader additionally prevents
+    // PJ-3d from hoisting the uncompute OUT of the for-loop — the
+    // inner compound's parent is the for-body CompoundStmt (not the
+    // ForStmt itself), so `classify_scope_kind` returns `Other`
+    // rather than `LoopBody`, and the uncompute lands per-iteration
+    // inside the inner scope (PH-5's PH-5 contract remains: forward
+    // + uncompute together per iteration).
     {
         qbool a(0.5);
         qbool b(0.5);
 
         for (int i = 0; i < 3; ++i) {
-            qbool tmp = a | b;
+            {
+                qbool tmp = a | b;
+                (void)tmp;
+            }
         }
     }
 
@@ -151,6 +166,12 @@ int main() {
     // through the backend.  Two inner scopes around each call so the
     // `a` / `b` pair is re-superposed per case and destructors fire
     // deterministically.
+    //
+    // The `(void)x;` / `(void)y;` readers follow the same PJ-4a
+    // rationale as Case 1 above.  An extra inner scope is NOT needed
+    // per branch: if/else arms are not LoopBody, so PJ-3d does not
+    // hoist out of them (its `classify_scope_kind == LoopBody` guard
+    // rejects BranchBody directly).
     {
         qbool a(0.5);
         qbool b(0.5);
@@ -158,8 +179,10 @@ int main() {
 
         if (cond) {
             qbool x = a | b;
+            (void)x;
         } else {
             qbool y = a | b;
+            (void)y;
         }
     }
 
