@@ -235,6 +235,75 @@ static void test_nested_relative_input_mirrors_tree() {
     CHECK(got.find(payload) != std::string::npos);
 }
 
+static void test_pj1f_wires_ccnot_fuse_matcher() {
+    // Phase J PJ-1f: the zero-ancilla fusion peephole matcher must be
+    // wired into main.cpp's TranspileConsumer BEFORE register_xor_assign
+    // / register_compound_qbool / register_outer_var_guard. This driver-
+    // level test verifies the wiring end-to-end: feed the canonical
+    // fuse pair `qbool __t = a & b; x ^= __t;` through the real binary
+    // and assert the output contains a `ccnot_inplace(x, a, b);` call
+    // — the PJ-1d replacement text the peephole emits in place of the
+    // original VarDecl + `^=` pair. If the matcher is not wired in, the
+    // fixture falls through to the Phase A XOR_ASSIGN matcher, the
+    // output omits the `ccnot_inplace(` identifier, and this test
+    // fails loudly.
+    fs::path dir = make_scratch_dir("pj1f_ccnot_fuse");
+    fs::path input  = dir / "fuse_pair.cpp";
+    fs::path outdir = dir / "gen";
+    fs::create_directories(outdir);
+
+    // Minimal in-file qbool stub — mirrors the or_single fixture shape
+    // so the MVP FixedCompilationDatabase (no external includes) can
+    // still parse and type-check.
+    const std::string payload =
+        "namespace sturm {\n"
+        "class qbool {\n"
+        "public:\n"
+        "    qbool() {}\n"
+        "    qbool(const qbool&) {}\n"
+        "    qbool& operator=(const qbool&) { return *this; }\n"
+        "    qbool& operator^=(const qbool&) { return *this; }\n"
+        "};\n"
+        "inline qbool operator&(const qbool&, const qbool&) "
+        "{ return qbool{}; }\n"
+        "} // namespace sturm\n"
+        "using sturm::qbool;\n"
+        "\n"
+        "void demo(qbool a, qbool b, qbool x) {\n"
+        "    qbool tmp = a & b;\n"
+        "    x ^= tmp;\n"
+        "}\n";
+    {
+        std::ofstream o(input, std::ios::binary);
+        o << payload;
+    }
+
+    std::string cmd = std::string(STURM_TRANSPILE_BIN) +
+        " " + quote(input).string() +
+        " --output-dir " + quote(outdir).string();
+    auto [rc, out] = run_cmd(cmd);
+    if (rc != 0) std::fprintf(stderr, "driver stderr:\n%s\n", out.c_str());
+    CHECK(rc == 0);
+
+    fs::path expected = outdir / "fuse_pair.cpp";
+    CHECK(fs::exists(expected));
+    std::string got = read_file_contents(expected);
+
+    // The PJ-1d matcher's replacement text fires TWICE in the output:
+    // once as the forward emission (QReplacement over the original two
+    // statements) and once as the uncompute emission (CCX is self-
+    // adjoint per PJ-1c). Both share the identifier `ccnot_inplace(`.
+    // Finding at least one occurrence proves the matcher is wired in;
+    // the full two-occurrence contract is pinned by the unit tests in
+    // test_matcher_ccnot_fuse.cpp.
+    CHECK(got.find("ccnot_inplace(x, a, b)") != std::string::npos);
+    // The fused output must NOT still contain the original
+    // `qbool tmp = a & b;` VarDecl — the QReplacement covers it. If
+    // the matcher fails to wire in, the replacement never lands and
+    // the original VarDecl survives in the output.
+    CHECK(got.find("qbool tmp = a & b;") == std::string::npos);
+}
+
 int main() {
     test_version_flag_exits_zero();
     test_plain_source_gets_header();
@@ -242,6 +311,7 @@ int main() {
     test_skip_marker_passes_through_verbatim();
     test_missing_input_exits_nonzero();
     test_nested_relative_input_mirrors_tree();
+    test_pj1f_wires_ccnot_fuse_matcher();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
