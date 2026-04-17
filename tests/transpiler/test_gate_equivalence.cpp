@@ -166,6 +166,35 @@ namespace m12_user_routine_reference {
 void demo(const sturm::qbool& in);
 } // namespace m12_user_routine_reference
 
+// PJ-1i: Phase J zero-ancilla fusion gate-equivalence pair.  The
+// transpiler's PJ-1d peephole matcher fires on `qbool __t = a & b; x
+// ^= __t;` (bare `&` init, adjacent `^=` consumer, exactly one reader
+// of `__t` in scope) and rewrites the pair into a single
+// `ccnot_inplace(x, a, b);` call with a matching self-adjoint
+// `ccnot_inplace(x, a, b);` planted before the demo's closing `}` by
+// the PJ-1c render case.  The reference fixture spells both calls by
+// hand via `primitive_AND(ctx, a_idx, b_idx, x_idx)` directly against
+// the 18-gate sink — NOT via `lazy_expr` / `operator&` on qbool,
+// because the pre-K lazy materialisation allocates an intermediate
+// ancilla which the fusion explicitly collapses away; using it would
+// give a trivially-mismatched comparison.  Expected stream: two CCX
+// records on the three caller-supplied qubit indices.  `x` is taken
+// by non-const reference because the runtime fixture's `x ^= __t;`
+// needs a non-const lvalue and `ccnot_inplace` (the helper the
+// transpiler's fused rewrite calls) takes its target by non-const
+// reference.
+namespace m12_fused_transpiled {
+void demo(const sturm::qbool& a,
+          const sturm::qbool& b,
+          sturm::qbool& x);
+} // namespace m12_fused_transpiled
+
+namespace m12_fused_reference {
+void demo(const sturm::qbool& a,
+          const sturm::qbool& b,
+          sturm::qbool& x);
+} // namespace m12_fused_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -340,6 +369,46 @@ run_and_capture_user_routine(void (*demo)(const sturm::qbool&)) {
     auto stream = capture_ir(sc.ir());
 
     sturm::QubitPool::instance().release(qin);
+    return stream;
+}
+
+// PJ-1i: capture helper for the Phase J zero-ancilla fusion pair.  The
+// demo takes `(const qbool& a, const qbool& b, qbool& x)`; three fresh
+// qubits are allocated via `make_non_owning` so the harness retains
+// ownership (the runtime demo's `qbool __t = a & b; x ^= __t;` is
+// REPLACED in-place by `ccnot_inplace(x, a, b);` by the PJ-1d
+// QReplacement — NO ancilla allocation survives the fusion.  The
+// reference demo similarly calls `primitive_AND(ctx, a, b, x)`
+// directly, never touching the QubitPool).  `x` is allocated via
+// `make_non_owning` and passed by non-const reference because the
+// runtime fixture's `^=` requires a non-const lvalue; ownership stays
+// with the harness so the qbool destructor inside `demo` does not
+// attempt to release the qubit.  Both the runtime and reference
+// captures therefore observe the SAME three caller-supplied indices,
+// which is the precondition for the byte-identical CCX(a, b, x) pair.
+std::vector<sturm::GateRecord>
+run_and_capture_fused(void (*demo)(const sturm::qbool&,
+                                   const sturm::qbool&,
+                                   sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int qa = sturm::QubitPool::instance().allocate();
+    const int qb = sturm::QubitPool::instance().allocate();
+    const int qx = sturm::QubitPool::instance().allocate();
+    sturm::qbool a = sturm::qbool::make_non_owning(qa);
+    a.super_mask = 1ULL;
+    sturm::qbool b = sturm::qbool::make_non_owning(qb);
+    b.super_mask = 1ULL;
+    sturm::qbool x = sturm::qbool::make_non_owning(qx);
+    x.super_mask = 1ULL;
+
+    demo(a, b, x);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(qa);
+    sturm::QubitPool::instance().release(qb);
+    sturm::QubitPool::instance().release(qx);
     return stream;
 }
 
@@ -563,12 +632,48 @@ int main() {
     }
     std::printf("  user_routine streams match (%zu gates).\n", ref_ur.size());
 
+    // PJ-1i: Phase J zero-ancilla fusion gate-equivalence pair.  Proves
+    // the transpiler's PJ-1d peephole matcher + PJ-1c render case —
+    // which collapses `qbool __t = a & b; x ^= __t;` into a single
+    // `ccnot_inplace(x, a, b);` and plants a self-adjoint
+    // `ccnot_inplace(x, a, b);` at scope close — emits the same two-
+    // CCX gate stream as a hand-written reference that calls
+    // `primitive_AND(ctx, a, b, x)` directly against the 18-gate
+    // sink (bypassing the pre-K lazy_expr path, which would allocate
+    // an intermediate ancilla and therefore produce a mismatched
+    // stream).  Expected stream length is TWO CCX records on the
+    // three caller-supplied qubit indices — no ancilla allocation on
+    // either side, which is the defining invariant of the fusion.
+    std::printf("PJ-1i gate-stream equivalence test (fuse_xor_and pattern):\n");
+    const auto ref_fu = run_and_capture_fused(&m12_fused_reference::demo);
+    const auto got_fu = run_and_capture_fused(&m12_fused_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_fu.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_fu[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_fu.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_fu[i]).c_str());
+    }
+    if (ref_fu.empty()) {
+        std::fprintf(stderr,
+                     "fuse_xor_and reference produced 0 gates — fixture not "
+                     "exercising the Phase J PJ-1 zero-ancilla fusion.\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_fu, ref_fu); rc != 0) {
+        std::fprintf(stderr, "fuse_xor_and gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  fuse_xor_and streams match (%zu gates).\n", ref_fu.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
     std::printf("pair 4: %zu gates match\n", ref_if.size());
     std::printf("pair 5: %zu gates match\n", ref_for.size());
     std::printf("pair 6: %zu gates match\n", ref_ur.size());
+    std::printf("pair 7: %zu gates match\n", ref_fu.size());
     std::printf("PASS\n");
     return 0;
 }
