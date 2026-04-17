@@ -3,10 +3,6 @@
 # Requires LLVM >= 17 and Clang >= 17. On systems where the packages are
 # not installed the user will see a "find_package(LLVM) failed" error — we
 # enrich that with an actionable hint below so debugging is a one-liner.
-#
-# This file is included by the root CMakeLists.txt only when the option
-# STURM_TRANSPILE is ON, so a vanilla build of STURM never pays the cost
-# of resolving LLVM.
 
 cmake_minimum_required(VERSION 3.16)
 

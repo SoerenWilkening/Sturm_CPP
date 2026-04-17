@@ -12,12 +12,11 @@
 // `demo(const qbool&, const qbool&)` function:
 //
 //   m12_transpiled::demo  — built via the `add_quantum_executable()`
-//                           helper.  Under STURM_TRANSPILE=ON the source
-//                           file (`fixtures/or_single_runtime.cpp`) is
-//                           routed through `sturm-transpile`; the
-//                           generated TU lives at
-//                           ${CMAKE_BINARY_DIR}/sturm_gen/... and is the
-//                           object file linked into this harness.
+//                           helper.  The source file
+//                           (`fixtures/or_single_runtime.cpp`) is routed
+//                           through `sturm-transpile`; the generated TU
+//                           lives at ${CMAKE_BINARY_DIR}/sturm_gen/... and
+//                           is the object file linked into this harness.
 //
 //   m12_reference::demo   — built from `fixtures/or_single_reference.cpp`
 //                           directly (no transpile step).  The source is
