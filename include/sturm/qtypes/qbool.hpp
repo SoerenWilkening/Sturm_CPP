@@ -1,21 +1,21 @@
 #pragma once
 // qbool.hpp — Quantum boolean type (M5: qbool inherits qint_t<1>).
 // qbool is a subclass of qint_t<1>, inheriting value (int64_t),
-// super_mask (uint64_t), qubits[1], owning_, and uncompute_.
+// super_mask (uint64_t), qubits[1], and owning_.
 // Backward-compatible accessors (get_is_super, get_bool_value) are provided.
+//
+// Phase K PK-3 (sturm-pzye): the uncompute_op tagged union was retired.
+// qbool no longer carries an `uncompute_` member — inverse gate streams
+// are emitted by transpiler-synthesised `uncompute_*` free-function
+// calls from include/sturm/uncompute/uncompute_api.hpp.
 
 #include "sturm/qtypes/qint_core.hpp"   // qint_t<1> base class
 
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/counter_sink.hpp"  // brings in current_sink()
 
-// M22: uncompute_op for comparison results stored in qbool.
-// Only compiled when STURM_BACKEND_ENABLED is defined (backend builds).
 #ifdef STURM_BACKEND_ENABLED
-#  include "sturm/uncompute/uncompute_op.hpp"
-#  include "sturm/uncompute/qint_base.hpp"
-#  include "sturm/core/context.hpp"
-// M13: gate emission helpers for qbool uncompute (AND / OR / X).
+// M13: gate emission helpers for qbool (AND / OR / X).
 #  include "sturm/backend/primitives.hpp"
 #endif
 
@@ -31,7 +31,6 @@ namespace sturm {
 //   uint64_t super_mask — bit 0 set iff qubit is in superposition (was: is_super)
 //   std::array<int,1> qubits — single-element array; qubits[0]==-1 means no qubit
 //   bool owning_        — destructor releases qubit iff true
-//   uncompute_op uncompute_ (ifdef STURM_BACKEND_ENABLED)
 class qbool : public qint_t<1> {
 public:
     // ── Backward-compatible accessors ─────────────────────────────────────
@@ -84,8 +83,8 @@ public:
     }
 
     // ── Destructor ────────────────────────────────────────────────────────
-    // M7: trivial destructor — base class qint_t<1> handles uncompute_op::apply()
-    // and qubit release via its own destructor (RAII Strategy B).
+    // M7: trivial destructor — base class qint_t<1> handles qubit release
+    // (Phase K PK-3: release-only, no inverse gate emission).
     ~qbool() = default;
 
     // ── Copy constructor & assignment ─────────────────────────────────────
@@ -96,9 +95,6 @@ public:
         super_mask = other.super_mask;
         qubits[0]  = -1;
         owning_    = true;
-#ifdef STURM_BACKEND_ENABLED
-        uncompute_ = uncompute_op{};
-#endif
     }
 
     qbool& operator=(const qbool& other) {
@@ -112,9 +108,6 @@ public:
         super_mask = other.super_mask;
         qubits[0]  = -1;
         owning_    = true;
-#ifdef STURM_BACKEND_ENABLED
-        uncompute_ = uncompute_op{};
-#endif
         return *this;
     }
 
@@ -125,15 +118,9 @@ public:
         super_mask = other.super_mask;
         qubits[0]  = other.qubits[0];
         owning_    = other.owning_;
-#ifdef STURM_BACKEND_ENABLED
-        uncompute_ = other.uncompute_;
-#endif
         other.qubits[0]  = -1;
         other.owning_    = false;
         other.super_mask = 0;
-#ifdef STURM_BACKEND_ENABLED
-        other.uncompute_ = uncompute_op{};
-#endif
     }
 
     qbool& operator=(qbool&& other) noexcept {
@@ -148,10 +135,6 @@ public:
         other.qubits[0]  = -1;
         other.owning_    = false;
         other.super_mask = 0;
-#ifdef STURM_BACKEND_ENABLED
-        uncompute_       = other.uncompute_;
-        other.uncompute_ = uncompute_op{};
-#endif
         return *this;
     }
 

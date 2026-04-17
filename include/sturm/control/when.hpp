@@ -29,7 +29,11 @@
 //   qbool.hpp     — included transitively through when_fwd.hpp
 
 #include "sturm/control/when_fwd.hpp"   // current_control TLS
-#include "sturm/control/when_capture.hpp"  // WhenCapture for compound WHEN expressions
+// Phase K PK-3 (sturm-pzye): when_capture.hpp retired — the intermediate
+// uncompute deferral it implemented relied on the retired uncompute_op /
+// qint_base runtime. Compound WHEN expressions' inverse emission is now
+// the transpiler's responsibility (Phase G matcher_when_nested + uncompute
+// free functions). The WHEN macro no longer wraps a WhenCapture scope.
 // M5: when_fwd.hpp no longer includes qbool.hpp (only forward-declares qbool).
 // when.hpp uses qbool members directly, so we include the full definition here.
 #include "sturm/qtypes/qbool.hpp"
@@ -175,17 +179,13 @@ inline qbool  materialize_when(qbool&& q) noexcept { return std::move(q); }
 // Passing a non-qbool triggers the static_assert; compile-time rejection.
 // (PRD §11: "WHEN accepts qbool only; passing bool or int is a compile error")
 //
-// Also deactivates the WhenCapture: by this point the expression has been fully
-// evaluated and materialized into _when_val_, so no more intermediates should be
-// captured.
+// Phase K PK-3: WhenCapture::stop_active() removed — the capture layer was
+// retired with the uncompute_op tagged union. Compound WHEN expressions'
+// intermediate uncomputation is now the transpiler's responsibility.
 template <class T>
 WhenGuard make_when_guard(T& expr) {
     static_assert(std::is_same_v<std::decay_t<T>, qbool>,
                   "WHEN(expr): expr must be of type sturm::qbool");
-    // Stop capturing intermediates now that expr is fully materialized.
-    // WhenCapture::stop_active() restores the previous callback, handling
-    // nesting correctly.
-    WhenCapture::stop_active();
     return WhenGuard(expr);
 }
 
@@ -193,26 +193,29 @@ WhenGuard make_when_guard(T& expr) {
 } // namespace sturm
 
 // ── WHEN macro ────────────────────────────────────────────────────────────────
-// Expands to three nested `if` statements:
-//   1. Outermost if: creates WhenCapture to intercept intermediate temporaries
-//      from compound boolean expressions (e.g. (c | d) & e).
-//   2. Middle if: materializes expr into _when_val_ via materialize_when().
+// Expands to two nested `if` statements:
+//   1. Outer if: materializes expr into _when_val_ via materialize_when().
 //      - lvalue qbool -> reference (zero cost, no copy)
 //      - rvalue qbool (e.g. c | d, ~c) -> owned local via move
 //        (Phase K PK-2: c | d / c & d return owning qbool directly now —
 //         the lazy OrExpr / AndExpr wrappers were retired.)
-//   3. Innermost if: creates WhenGuard from the (now lvalue) _when_val_.
+//   2. Inner if: creates WhenGuard from the (now lvalue) _when_val_.
 //
-// Destruction order (correct reverse-order uncomputation):
+// Destruction order (correct reverse-order scope exit):
 //   1. WhenGuard (innermost)  -- pops control TLS
-//   2. _when_val_ (middle)    -- uncomputes the final materialized qbool
-//   3. WhenCapture (outermost) -- uncomputes captured intermediates in LIFO order
+//   2. _when_val_ (outer)     -- releases the materialized qbool's qubit
+//
+// Phase K PK-3 (sturm-pzye): the outermost WhenCapture scope has been
+// retired. Compound WHEN expressions' intermediate uncomputation is now
+// the transpiler's responsibility — sturm-transpile emits explicit
+// uncompute_* free-function calls before the enclosing scope closes, and
+// destructors are release-only per principle B10.
 //
 // Usage:
 //   qbool flag(0.5);
-//   WHEN(flag) { ... }           // lvalue -- no copy, no capture overhead
+//   WHEN(flag) { ... }           // lvalue -- no copy
 //   WHEN(c | d) { ... }          // rvalue -- materialized, then guarded
-//   WHEN((c | d) & e) { ... }    // compound -- intermediates captured by WhenCapture
+//   WHEN((c | d) & e) { ... }    // compound -- transpiler injects uncompute_*
 //
 // NOTE: Nested WHEN scopes are handled at compile time by sturm-transpile's
 // Phase G lowering (matcher_when_nested): named-named nested WHENs are rewritten
@@ -220,7 +223,6 @@ WhenGuard make_when_guard(T& expr) {
 // sees one control qubit per WHEN.  Compound nested shapes fall back to the
 // control_stack swap path in the guard constructor/destructor.
 #define WHEN(expr) \
-    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
     if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
     if (auto _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
         _when_guard_.should_run())

@@ -220,58 +220,8 @@ set_source_files_properties(
 add_test(NAME test_execute_gate COMMAND test_execute_gate)
 set_tests_properties(test_execute_gate PROPERTIES LABELS "backend")
 
-# ── M19: uncompute_op tagged union ────────────────────────────────────────────
-add_executable(test_uncompute_op
-    test_uncompute_op.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_op PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_uncompute_op PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_op PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-)
-target_link_libraries(test_uncompute_op PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_uncompute_op COMMAND test_uncompute_op)
-set_tests_properties(test_uncompute_op PROPERTIES LABELS "backend")
-
-# ── M20: RAII uncompute runner ────────────────────────────────────────────────
-add_executable(test_uncompute_run
-    test_uncompute_run.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_run.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_run PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_uncompute_run PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_run PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-)
-target_link_libraries(test_uncompute_run PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_uncompute_run COMMAND test_uncompute_run)
-set_tests_properties(test_uncompute_run PROPERTIES LABELS "backend")
+# Phase K PK-3 (sturm-pzye): test_uncompute_op, test_uncompute_run targets
+# retired along with the uncompute_op tagged union and uncompute_run runtime.
 
 # ── M18: 17-qubit cap enforcement on QubitPool ───────────────────────────────
 add_executable(test_qubit_cap
@@ -287,120 +237,15 @@ target_compile_definitions(test_qubit_cap PRIVATE
 add_test(NAME test_qubit_cap COMMAND test_qubit_cap)
 set_tests_properties(test_qubit_cap PROPERTIES LABELS "backend")
 
-# ── M21: Wire operator+=(int) to uncompute (pilot) ────────────────────────────
-add_executable(test_uncompute_add_const
-    test_uncompute_add_const.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_add_const PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_uncompute_add_const PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_add_const PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_uncompute_add_const PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_uncompute_add_const COMMAND test_uncompute_add_const)
-set_tests_properties(test_uncompute_add_const PROPERTIES LABELS "backend")
-
-# ── M22: Wire remaining operators to uncompute ───────────────────────────────
-add_executable(test_uncompute_each_op
-    test_uncompute_each_op.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_each_op PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_uncompute_each_op PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_each_op PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_uncompute_each_op PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_uncompute_each_op COMMAND test_uncompute_each_op)
-set_tests_properties(test_uncompute_each_op PROPERTIES LABELS "backend")
-
-# ── M22: qbool destructor emits comparison inverse (Bennett test) ─────────────
-add_executable(test_qbool_uncompute
-    test_qbool_uncompute.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_qbool_uncompute PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_qbool_uncompute PRIVATE cxx_std_20)
-target_compile_definitions(test_qbool_uncompute PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qbool_uncompute PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_qbool_uncompute COMMAND test_qbool_uncompute)
-set_tests_properties(test_qbool_uncompute PROPERTIES LABELS "backend")
-
-# ── M3 (transpiler-MVP): explicit uncompute_or free-function API ──────────────
-add_executable(test_uncompute_or
-    test_uncompute_or.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_or PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_uncompute_or PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_or PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_uncompute_or PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_uncompute_or COMMAND test_uncompute_or)
-set_tests_properties(test_uncompute_or PROPERTIES LABELS "backend")
+# Phase K PK-3 (sturm-pzye): test_uncompute_add_const, test_uncompute_each_op,
+# test_qbool_uncompute, test_uncompute_or targets retired along with the
+# uncompute_op tagged union and qint_base runtime. Note: test_uncompute_or
+# is explicitly retired in Phase K PK-4.
 
 # ── Phase E PE-0 (sturm-oheo): explicit uncompute_and free-function API ──────
 add_executable(test_uncompute_and
     test_uncompute_and.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -428,7 +273,6 @@ set_tests_properties(test_uncompute_and PROPERTIES LABELS "backend")
 add_executable(test_ccnot_inplace
     test_ccnot_inplace.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -456,7 +300,6 @@ set_tests_properties(test_ccnot_inplace PROPERTIES LABELS "backend")
 add_executable(test_uncompute_qint_compare
     test_uncompute_qint_compare.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
@@ -481,32 +324,8 @@ set_source_files_properties(
 add_test(NAME test_uncompute_qint_compare COMMAND test_uncompute_qint_compare)
 set_tests_properties(test_uncompute_qint_compare PROPERTIES LABELS "backend")
 
-# ── WHEN compound uncompute (WhenCapture RAII) ────────────────────────────────
-add_executable(test_when_compound_uncompute
-    test_when_compound_uncompute.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_when_compound_uncompute PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_compound_uncompute PRIVATE cxx_std_20)
-target_compile_definitions(test_when_compound_uncompute PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_compound_uncompute PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_when_compound_uncompute COMMAND test_when_compound_uncompute)
-set_tests_properties(test_when_compound_uncompute PROPERTIES LABELS "backend")
+# Phase K PK-3 (sturm-pzye): test_when_compound_uncompute retired along with
+# the WhenCapture RAII runtime and the uncompute_op tagged union.
 
 # ── M14: Classical-control reduction table ────────────────────────────────────
 add_executable(test_reduction_table
@@ -628,32 +447,8 @@ set_source_files_properties(
 add_test(NAME test_init COMMAND test_init)
 set_tests_properties(test_init PROPERTIES LABELS "backend")
 
-# ── M17: Operand promotion ────────────────────────────────────────────────────
-add_executable(test_promotion
-    test_promotion.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_promotion PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_promotion PRIVATE cxx_std_20)
-target_compile_definitions(test_promotion PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-)
-target_link_libraries(test_promotion PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_promotion COMMAND test_promotion)
-set_tests_properties(test_promotion PROPERTIES LABELS "backend")
+# Phase K PK-3 (sturm-pzye): test_promotion retired along with the
+# dispatch/promotion helper and the qint_base runtime.
 
 # ── M25: Explicit template instantiation (link-time fixture) ─────────────────
 # This target links instantiations.cpp (the explicit instantiation TU) with
@@ -662,7 +457,6 @@ set_tests_properties(test_promotion PROPERTIES LABELS "backend")
 add_executable(test_instantiations
     test_instantiations.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qtypes/instantiations.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -690,7 +484,6 @@ set_tests_properties(test_instantiations PROPERTIES LABELS "backend")
 # ── M26: End-to-end acceptance — c = (a + 5) >= 0 ────────────────────────────
 add_executable(test_end_to_end
     test_end_to_end.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -861,7 +654,6 @@ set_tests_properties(test_primitives_v3_simulate PROPERTIES LABELS "backend")
 # ── M13: qbool operators + lazy expressions ──────────────────────────────────
 add_executable(test_qbool_ops
     test_qbool_ops.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -889,7 +681,6 @@ set_tests_properties(test_qbool_ops PROPERTIES LABELS "backend")
 # ── M14: DSL-style Cuccaro adder/subtractor ──────────────────────────────────
 add_executable(test_adder_dsl
     test_adder_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -917,7 +708,6 @@ set_tests_properties(test_adder_dsl PROPERTIES LABELS "backend")
 # ── M6: Template adder DSL (BitProxy instantiation) ──────────────────────────
 add_executable(test_adder_dsl_template
     test_adder_dsl_template.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -945,7 +735,6 @@ set_tests_properties(test_adder_dsl_template PROPERTIES LABELS "backend")
 # ── M15: DSL-style logic (OR, NAND, NOR, XNOR) and c_AND / c_n_AND ──────────
 add_executable(test_logic_dsl
     test_logic_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -973,7 +762,6 @@ set_tests_properties(test_logic_dsl PROPERTIES LABELS "backend")
 # ── M18: qint_t operator[](i) returns non-owning qbool ───────────────────────
 add_executable(test_subscript
     test_subscript.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1001,7 +789,6 @@ set_tests_properties(test_subscript PROPERTIES LABELS "backend")
 # ── sturm-qwt: qint operator[] COUNT_ONLY and SIMULATE tests ─────────────────
 add_executable(test_subscript_count_simulate
     test_subscript_count_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1029,7 +816,6 @@ set_tests_properties(test_subscript_count_simulate PROPERTIES LABELS "backend")
 # ── M16: DSL-style SWAP / Fredkin ─────────────────────────────────────────────
 add_executable(test_swap_dsl
     test_swap_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1057,7 +843,6 @@ set_tests_properties(test_swap_dsl PROPERTIES LABELS "backend")
 # ── M16: DSL-style MUL (shift-and-add) ───────────────────────────────────────
 add_executable(test_mul_dsl
     test_mul_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1085,7 +870,6 @@ set_tests_properties(test_mul_dsl PROPERTIES LABELS "backend")
 # ── M16: DSL-style DIV (non-restoring) ───────────────────────────────────────
 add_executable(test_div_dsl
     test_div_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1113,7 +897,6 @@ set_tests_properties(test_div_dsl PROPERTIES LABELS "backend")
 # ── M17: DSL-style COMPARE (EQ, LT, LE, GT, GE, NE) ─────────────────────────
 add_executable(test_compare_dsl_truth_tables
     test_compare_dsl_truth_tables.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1141,7 +924,6 @@ set_tests_properties(test_compare_dsl_truth_tables PROPERTIES LABELS "backend")
 # ── M17: DSL-style MOD (remainder only) ──────────────────────────────────────
 add_executable(test_mod_dsl_truth_table
     test_mod_dsl_truth_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1169,7 +951,6 @@ set_tests_properties(test_mod_dsl_truth_table PROPERTIES LABELS "backend")
 # ── M17: DSL-style POW (repeated squaring) ───────────────────────────────────
 add_executable(test_pow_dsl_small
     test_pow_dsl_small.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1197,8 +978,9 @@ set_tests_properties(test_pow_dsl_small PROPERTIES LABELS "backend")
 # ── M19: Frontend wiring — qint_t compound-assign to DSL library ──────────────
 
 # Shared source list for M19 tests (all need backend + control stack + DSL).
+# Phase K PK-3 (sturm-pzye): src/sturm/uncompute/qint_base.cpp was retired
+# along with the uncompute_op tagged union.
 set(M19_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1619,7 +1401,6 @@ set_tests_properties(test_bitwise_and_or_simulate PROPERTIES LABELS "backend")
 # AC8 (operator~ uncomputes — X gate on destruction).
 add_executable(test_qbool_acceptance_backend
     test_qbool_acceptance_backend.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1650,7 +1431,6 @@ set_tests_properties(test_qbool_acceptance_backend PROPERTIES LABELS "backend")
 # Invariant: depth in {0,1} at all times.
 add_executable(test_when_control_stack_bridge
     test_when_control_stack_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1760,7 +1540,6 @@ set_tests_properties(test_bitproxy_when_promotion PROPERTIES LABELS "backend")
 # ── M8: Template logic/swap/compare/c_and DSL (BitProxy instantiation) ───────
 add_executable(test_m8_template_dsl
     test_m8_template_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -1788,7 +1567,6 @@ set_tests_properties(test_m8_template_dsl PROPERTIES LABELS "backend")
 # ── M7: Template mul/div/mod DSL (BitProxy instantiation) ──────────────────
 add_executable(test_m7_template_dsl
     test_m7_template_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
@@ -2000,77 +1778,7 @@ target_link_libraries(test_when_bool_expr PRIVATE orkan_headers)
 add_test(NAME test_when_bool_expr COMMAND test_when_bool_expr)
 set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")
 
-# ── Transpiler-MVP M2: destructor gating on STURM_AUTO_UNCOMPUTE ─────────────
-# Two targets built from the SAME source tests/test_destructor_gate.cpp so
-# that both branches of the #ifdef STURM_AUTO_UNCOMPUTE contract in
-# include/sturm/qtypes/qint_core.hpp are exercised by ctest on every CI run.
-#
-#   test_destructor_gate_on  : STURM_AUTO_UNCOMPUTE defined → destructor
-#                              emits inverse gates when uncompute_ is set.
-#   test_destructor_gate_off : STURM_AUTO_UNCOMPUTE undefined → destructor
-#                              is release-only; zero gates emitted.
-#
-# Both targets also assert the shared regression that a non-owning register
-# releases nothing in the pool regardless of the flag.
-#
-# Per-target target_compile_definitions are used (not add_compile_definitions)
-# so that the top-level STURM_AUTO_UNCOMPUTE option cannot accidentally leak
-# into the _off build — the off target must NEVER see STURM_AUTO_UNCOMPUTE
-# defined, even when the project-wide option is ON.
-
-# Flag ON build.
-#
-# The ON target only makes sense when the project-wide STURM_AUTO_UNCOMPUTE
-# option is also ON — otherwise we would be locally defining the macro for
-# just this target, which would leak STURM_AUTO_UNCOMPUTE=1 into
-# compile_commands.json even when the option is OFF (breaking the
-# cmake_flags_verify contract at tests/cmake_flags/verify_flags.cmake).
-# Gating the entire target + registration on STURM_AUTO_UNCOMPUTE keeps the
-# OFF configure clean; the OFF branch of the destructor contract is still
-# exercised by test_destructor_gate_off above.
-if(STURM_AUTO_UNCOMPUTE)
-    add_executable(test_destructor_gate_on
-        ${CMAKE_SOURCE_DIR}/tests/test_destructor_gate.cpp
-        ${M19_SOURCES}
-    )
-    target_include_directories(test_destructor_gate_on PRIVATE
-        ${CMAKE_SOURCE_DIR}/include
-    )
-    target_compile_features(test_destructor_gate_on PRIVATE cxx_std_20)
-    target_compile_definitions(test_destructor_gate_on PRIVATE
-        STURM_ANCILLA_CAPACITY=256
-        STURM_BACKEND_ENABLED=1
-        STURM_AUTO_UNCOMPUTE=1
-    )
-    target_link_libraries(test_destructor_gate_on PRIVATE orkan_headers)
-    add_test(NAME test_destructor_gate_on COMMAND test_destructor_gate_on)
-    set_tests_properties(test_destructor_gate_on PROPERTIES LABELS "backend")
-endif()
-
-# Flag OFF build.  Critically, this target must NOT receive the macro —
-# even if the project-wide STURM_AUTO_UNCOMPUTE option is ON.  We achieve
-# that by relying on target_compile_definitions() being additive over the
-# directory-level definitions and by NOT re-adding the macro here.  The
-# directory-level add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) is still
-# visible, so we explicitly undefine the macro for this target via the
-# compiler-level -U flag.
-add_executable(test_destructor_gate_off
-    ${CMAKE_SOURCE_DIR}/tests/test_destructor_gate.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_destructor_gate_off PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_destructor_gate_off PRIVATE cxx_std_20)
-target_compile_definitions(test_destructor_gate_off PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-# Force-undefine the project-wide STURM_AUTO_UNCOMPUTE macro (added at the
-# top-level CMakeLists.txt when the option is ON) for just this target, so
-# the OFF branch of the destructor's #ifdef is exercised even when the
-# project-wide option is ON.
-target_compile_options(test_destructor_gate_off PRIVATE -USTURM_AUTO_UNCOMPUTE)
-target_link_libraries(test_destructor_gate_off PRIVATE orkan_headers)
-add_test(NAME test_destructor_gate_off COMMAND test_destructor_gate_off)
-set_tests_properties(test_destructor_gate_off PROPERTIES LABELS "backend")
+# Phase K PK-3 (sturm-pzye): test_destructor_gate_on / test_destructor_gate_off
+# retired along with tests/test_destructor_gate.cpp. Under B10 the destructor
+# is unconditionally release-only, so the flag-gated branch contract disappears.
+# Note: test_destructor_gate.cpp is explicitly retired in Phase K PK-4.

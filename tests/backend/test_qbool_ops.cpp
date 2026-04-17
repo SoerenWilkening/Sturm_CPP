@@ -282,85 +282,13 @@ static void test_qbool_under_when_and() {
     std::printf("  test_qbool_under_when_and: PASS\n");
 }
 
-// ── M8 tests: uncompute_op tag inspection ────────────────────────────────────
-
-// operator_not_stamps_ADD_CONST_uncompute:
-// ~q allocates an ancilla and stamps uncompute_ with ADD_CONST(1).
-// The inverse of NOT (flip) is modelled as adding constant 1 mod 2.
-static void operator_not_stamps_ADD_CONST_uncompute() {
-#ifdef STURM_BACKEND_ENABLED
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool q = make_qubit(0);
-
-    sturm::qbool r = ~q;
-
-    assert(r.uncompute_.tag == sturm::uncompute_op::kind::ADD_CONST);
-    assert(r.uncompute_.data.const_c == 1);
-
-    std::printf("  operator_not_stamps_ADD_CONST_uncompute: PASS\n");
-#else
-    std::printf("  operator_not_stamps_ADD_CONST_uncompute: SKIP (no backend)\n");
-#endif
-}
-
-// and_expr_stamps_BITWISE_SELF_uncompute:
-// (a & b) materialised into qbool r stamps BITWISE_SELF with sub_kind==0 (AND).
-static void and_expr_stamps_BITWISE_SELF_uncompute() {
-#ifdef STURM_BACKEND_ENABLED
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-
-    sturm::qbool r = (a & b);
-
-    assert(r.uncompute_.tag == sturm::uncompute_op::kind::BITWISE_SELF);
-    assert(r.uncompute_.data.bitwise.sub_kind == 0u); // 0 = AND
-
-    std::printf("  and_expr_stamps_BITWISE_SELF_uncompute: PASS\n");
-#else
-    std::printf("  and_expr_stamps_BITWISE_SELF_uncompute: SKIP (no backend)\n");
-#endif
-}
-
-// or_expr_stamps_BITWISE_SELF_uncompute:
-// (a | b) materialised into qbool r stamps BITWISE_SELF with sub_kind==1 (OR).
-static void or_expr_stamps_BITWISE_SELF_uncompute() {
-#ifdef STURM_BACKEND_ENABLED
-    ScopedCtx sc{STURM_MODE_COUNT_ONLY};
-    sturm::qbool a = make_qubit(0);
-    sturm::qbool b = make_qubit(1);
-
-    sturm::qbool r = (a | b);
-
-    assert(r.uncompute_.tag == sturm::uncompute_op::kind::BITWISE_SELF);
-    assert(r.uncompute_.data.bitwise.sub_kind == 1u); // 1 = OR
-
-    std::printf("  or_expr_stamps_BITWISE_SELF_uncompute: PASS\n");
-#else
-    std::printf("  or_expr_stamps_BITWISE_SELF_uncompute: SKIP (no backend)\n");
-#endif
-}
-
-// no_QboolUncompute_enum_exists:
-// Verify at compile time that the uncompute mechanism uses uncompute_op::kind
-// (the unified enum) rather than a separate QboolUncompute type.
-//
-// Strategy: ensure sturm::uncompute_op::kind is well-formed with the expected
-// BITWISE_SELF and ADD_CONST values, and that no separate QboolUncompute
-// identifier leaks through any header included here.  If QboolUncompute existed
-// and was the intended type, the code below would fail to compile because
-// uncompute_op::kind would lack the expected enumerators.
-static_assert(sturm::uncompute_op::kind::ADD_CONST  != sturm::uncompute_op::kind::NONE,
-              "uncompute_op::kind::ADD_CONST must be defined and != NONE");
-static_assert(sturm::uncompute_op::kind::BITWISE_SELF != sturm::uncompute_op::kind::NONE,
-              "uncompute_op::kind::BITWISE_SELF must be defined and != NONE");
-
-static void no_QboolUncompute_enum_exists() {
-    // Compilation of this translation unit validates the static_asserts above:
-    // the unified uncompute_op::kind enum exists with the required enumerators,
-    // confirming that no separate QboolUncompute type is in use.
-    std::printf("  no_QboolUncompute_enum_exists: PASS (static_asserts passed)\n");
-}
+// ── Phase K PK-3 (sturm-pzye): M8 uncompute_op tag inspection tests retired ──
+// The uncompute_op tagged union was retired in Phase K PK-3. Forward operators
+// no longer stamp a per-object inverse descriptor — inverses are emitted by
+// transpiler-synthesised uncompute_* free functions (uncompute_api.hpp).
+// The former operator_not_stamps_ADD_CONST_uncompute,
+// and_expr_stamps_BITWISE_SELF_uncompute, or_expr_stamps_BITWISE_SELF_uncompute,
+// no_QboolUncompute_enum_exists checks no longer have referents.
 
 // ── test_qbool_non_owning: non-owning qbool does NOT release qubit ────────────
 
@@ -507,11 +435,7 @@ int main() {
     test_qbool_or_mixed_quantum_classical_false();
     test_qbool_or_mixed_classical_true_quantum();
     test_qbool_when_mixed_and();
-    // M8: uncompute_op tag inspection tests
-    operator_not_stamps_ADD_CONST_uncompute();
-    and_expr_stamps_BITWISE_SELF_uncompute();
-    or_expr_stamps_BITWISE_SELF_uncompute();
-    no_QboolUncompute_enum_exists();
+    // Phase K PK-3: M8 uncompute_op tag inspection tests retired.
     std::printf("All M13 qbool_ops tests passed.\n");
     return 0;
 }

@@ -15,11 +15,9 @@ add_quantum_executable(example_or_circuit
 target_sources(example_or_circuit PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -41,11 +39,9 @@ add_quantum_executable(example_constant_arith
 target_sources(example_constant_arith PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -63,11 +59,9 @@ add_quantum_executable(example_qint_arith
 target_sources(example_qint_arith PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -86,11 +80,9 @@ add_quantum_executable(example_comparison
 target_sources(example_comparison PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -111,11 +103,9 @@ add_quantum_executable(example_compound_expression
 target_sources(example_compound_expression PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -138,11 +128,9 @@ add_quantum_executable(example_when_integration
 target_sources(example_when_integration PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -169,11 +157,9 @@ add_quantum_executable(example_nested_when
 target_sources(example_nested_when PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -203,11 +189,9 @@ add_quantum_executable(example_control_flow
 target_sources(example_control_flow PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -234,11 +218,9 @@ add_quantum_executable(example_user_routine
 target_sources(example_user_routine PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -256,11 +238,9 @@ add_quantum_executable(example_phase_abc_demo
 target_sources(example_phase_abc_demo PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -290,11 +270,9 @@ add_quantum_executable(example_zero_ancilla_fusion
 target_sources(example_zero_ancilla_fusion PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -322,11 +300,9 @@ add_quantum_executable(example_dead_ancilla
 target_sources(example_dead_ancilla PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
@@ -360,11 +336,9 @@ add_quantum_executable(example_uncompute_hoisting
 target_sources(example_uncompute_hoisting PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/qint_base.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/promotion.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp

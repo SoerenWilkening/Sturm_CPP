@@ -9,21 +9,22 @@
 // Arithmetic/bitwise/compare operator definitions are in separate headers
 // included via qint.hpp umbrella. The compound-assign member bodies are defined
 // in qint_arith.hpp after the free operator+ etc. are visible.
+//
+// Phase K PK-3 (sturm-pzye): the uncompute_op tagged union and qint_base
+// wrapper were retired — destructor-driven inverse emission no longer
+// exists. Inverse gate streams are now emitted by transpiler-synthesised
+// `uncompute_*` free-function calls (see include/sturm/uncompute/
+// uncompute_api.hpp). The destructor below is a plain pool-release loop
+// per principle B10: "Uncomputation is a compile-time concern, not a
+// runtime concern. Destructors release qubit indices; they do not emit
+// gates."
 
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/counter_sink.hpp"  // current_sink()
 #include "sturm/control/when_fwd.hpp"   // detail::current_control for proxies
-#include "sturm/control/when_capture_fwd.hpp"  // detail::active_when_capture for WHEN capture
 
-// M21: Backend uncompute wiring.
-// These headers pull in execute_gate (via qint_base.hpp/context.hpp), so they
-// are guarded behind STURM_BACKEND_ENABLED.  Backend test targets define this
-// macro; frontend-only test targets omit it and get the stub uncompute_op field
-// replaced by a minimal sentinel below.
 #ifdef STURM_BACKEND_ENABLED
-#  include "sturm/uncompute/uncompute_op.hpp"  // uncompute_op tagged union (M19)
-#  include "sturm/uncompute/qint_base.hpp"     // qint_base + add_const/sub_const
 #  include "sturm/core/context.hpp"            // BackendContext, execute_gate (M3)
 #  include "sturm/ops/lifted_primitives.hpp"   // emit_RZ_lifted / emit_RY_lifted (sturm-b1g)
 #endif
@@ -62,16 +63,6 @@ public:
     int64_t  value      = 0;
     uint64_t super_mask = 0;
     std::array<int, Width> qubits{};
-
-    // ── Uncompute op (M21/Strategy B) ─────────────────────────────────────────
-    // Carries the semantic inverse of the operation that produced this object.
-    // Set by operators that produce an uncomputable result (e.g. operator+(int)).
-    // Cleared (NONE) by default; measurement also clears it.
-    // Only present when the backend uncompute wiring is compiled in
-    // (STURM_BACKEND_ENABLED).  Frontend-only builds omit this field.
-#ifdef STURM_BACKEND_ENABLED
-    uncompute_op uncompute_{};
-#endif
 
     // ── Ownership flag (M1: owning_ on qint_t) ────────────────────────────────
     // When true (default), the destructor releases qubit indices back to the pool.
@@ -122,97 +113,22 @@ public:
     qint_t(qint_t&& other) noexcept
         : value(other.value), super_mask(other.super_mask), qubits(other.qubits),
           owning_(other.owning_)
-#ifdef STURM_BACKEND_ENABLED
-          , uncompute_(other.uncompute_)
-#endif
     {
         other.owning_ = false;   // source no longer owns the qubits
         other.qubits.fill(-1);
         other.super_mask = 0;
-#ifdef STURM_BACKEND_ENABLED
-        other.uncompute_ = uncompute_op{};  // clear so moved-from won't re-emit
-#endif
     }
-
-    // ── as_qint_base ──────────────────────────────────────────────────────────
-    // Builds a qint_base view of this register's current state.
-    // Used by the destructor to pass to uncompute_op::apply and to
-    // add_const / sub_const backend stubs.
-    // Only available when STURM_BACKEND_ENABLED is set.
-#ifdef STURM_BACKEND_ENABLED
-    [[nodiscard]] qint_base as_qint_base() const noexcept {
-        qint_base b;
-        b.value          = value;
-        b.super_mask     = super_mask;
-        b.promotion_mask = 0u;
-        b.width          = static_cast<uint8_t>(Width < QINT_BASE_MAX_WIDTH
-                                                ? Width : QINT_BASE_MAX_WIDTH);
-        for (uint8_t i = 0; i < b.width; ++i) {
-            b.qubits[i] = (qubits[i] >= 0)
-                          ? static_cast<uint32_t>(qubits[i]) : UINT32_MAX;
-        }
-        return b;
-    }
-#endif  // STURM_BACKEND_ENABLED
 
     // ── Destructor ────────────────────────────────────────────────────────────
-    // M21: If there is an active BackendContext and the uncompute_op tag is
-    // not NONE, emit the semantic inverse via the context before releasing.
-    // This is the RAII Strategy B spine for qint_t<W>.
-    // When STURM_BACKEND_ENABLED is not set, falls back to the original
-    // qubit-release-only destructor (frontend-only builds).
+    // Phase K PK-3 (principle B10): destructors release qubit indices back to
+    // the pool. They do not emit gates. Any inverse gate stream required by
+    // the forward operation is emitted by a transpiler-synthesised
+    // `uncompute_*` free-function call from include/sturm/uncompute/
+    // uncompute_api.hpp — placed at the appropriate point in the caller's
+    // scope by sturm-transpile, not at destructor time.
     ~qint_t() {
-#ifdef STURM_BACKEND_ENABLED
-#  ifdef STURM_AUTO_UNCOMPUTE
-        // M2 (transpiler MVP): the WhenCapture deferral and the Strategy-B
-        // inverse-emission steps are only active when STURM_AUTO_UNCOMPUTE is
-        // defined.  With the flag OFF, the destructor becomes release-only so
-        // that the transpiler's explicit uncompute_* calls can be validated
-        // in isolation against the legacy RAII path.
-        //
-        // If a WhenCapture is active and capturing, defer this temporary's
-        // uncompute + release so intermediates in compound WHEN expressions
-        // (e.g. WHEN((c | d) & e)) survive until after the WHEN body.
-        // Captures ALL qubits so multi-bit intermediates (e.g. a + b in
-        // WHEN(((a + b) == 0) & c)) are fully preserved.
-        if (detail::when_capture_defer_fn && owning_) {
-            // Check if this temporary has any allocated qubits worth deferring.
-            bool has_qubits = false;
-            for (std::size_t i = 0; i < Width; ++i) {
-                if (qubits[i] >= 0) { has_qubits = true; break; }
-            }
-            if (has_qubits) {
-                detail::CapturedRegister reg;
-                reg.width      = static_cast<uint8_t>(Width);
-                reg.value      = value;
-                reg.super_mask = super_mask;
-                reg.qubits.fill(-1);
-                for (std::size_t i = 0; i < Width; ++i) {
-                    reg.qubits[i] = qubits[i];
-                }
-                detail::when_capture_defer_fn(uncompute_, reg);
-                // Prevent double-uncompute and double-release.
-                uncompute_ = uncompute_op{};
-                qubits.fill(-1);
-                owning_ = false;
-                return;
-            }
-        }
-
-        // Step 1: emit semantic inverse if an uncompute op is set (Strategy B).
-        if (uncompute_.tag != uncompute_op::kind::NONE) {
-            if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
-                qint_base view = as_qint_base();
-                uncompute_.apply(*ctx, view);
-            }
-        }
-#  endif // STURM_AUTO_UNCOMPUTE
-#endif // STURM_BACKEND_ENABLED
-        // Step 2: release qubit indices back to the global pool.
+        // Release qubit indices back to the global pool.
         // Guard with owning_ so non-owning views don't double-release.
-        // This path is UNCONDITIONAL on STURM_AUTO_UNCOMPUTE: even when
-        // the auto-uncompute gate-emission is disabled, owning registers
-        // must still return their qubits to the pool.
         // TODO(backend): migrate to per-context pool when the full
         //                qubit-lifecycle wiring lands (M-future).
         if (owning_) {
@@ -255,15 +171,9 @@ public:
         super_mask = other.super_mask;
         qubits     = other.qubits;
         owning_    = other.owning_;  // transfer ownership
-#ifdef STURM_BACKEND_ENABLED
-        uncompute_ = other.uncompute_;
-#endif
         other.owning_ = false;       // source no longer owns the qubits
         other.qubits.fill(-1);
         other.super_mask = 0;
-#ifdef STURM_BACKEND_ENABLED
-        other.uncompute_ = uncompute_op{};  // clear so moved-from won't re-emit
-#endif
         return *this;
     }
 
