@@ -119,6 +119,56 @@ public:
         sturm::transpile::register_or_matcher(finder_, unit_);
         sturm::transpile::register_not_matcher(finder_, unit_);
         sturm::transpile::register_xor_matcher(finder_, unit_);
+        // Phase J PJ-1f: the zero-ancilla fusion peephole matcher runs
+        // BEFORE every matcher whose AST anchor could overlap a fused
+        // pair's statements. The ordering invariant has three load-
+        // bearing edges:
+        //
+        //   1. BEFORE register_xor_assign_matcher (PA-3). The PJ-1d
+        //      callback populates `unit_.fused_stmt_ranges` with the
+        //      second statement's range (`x ^= __t;`) when it fuses
+        //      a pair; the PA-3 callback's `is_range_covered_by_fused`
+        //      early-return guard suppresses its own push when that
+        //      range is already listed. Registering PJ-1d first
+        //      maximises the odds MatchFinder invokes its callback
+        //      before PA-3's for the same enclosing node, letting
+        //      the fast-path guard fire. The `apply_fused_stmt_guards`
+        //      post-matcher cleanup pass (called below, between
+        //      `matchAST` and `synthesize`) is the authoritative
+        //      backstop for the cases where MatchFinder interleaves
+        //      Decl and Stmt callbacks in the other order.
+        //
+        //   2. BEFORE register_compound_qbool_matcher (PE-4). The
+        //      PE-4 matcher's own AST pattern already requires AT
+        //      LEAST ONE nested op-call argument — mutually exclusive
+        //      with PJ-1d's bare-DRE-only pattern — so the two
+        //      matchers are structurally disjoint on any single
+        //      VarDecl. Registering PJ-1d first is defensive: if a
+        //      future PJ-1 relaxation admits nested init, PE-4's
+        //      `is_range_covered_by_fused` guard catches the overlap
+        //      without requiring main.cpp to be re-ordered.
+        //
+        //   3. BEFORE register_outer_var_guard_matcher (PH-3). PH-3
+        //      post-processes `unit_.scopes` to flag compound-assign
+        //      ops with `skip_uncompute=true` when their target is
+        //      declared in an outer scope. On a fused pair PJ-1d
+        //      replaces the `x ^= __t;` stmt's contribution with a
+        //      `QOperation{kind=CCNOT_INPLACE}` (NOT an XOR_ASSIGN),
+        //      and `apply_fused_stmt_guards` removes any stale
+        //      XOR_ASSIGN op from the scope. Registering PJ-1d
+        //      before PH-3 ensures the fuse decision is locked in by
+        //      the time PH-3 walks the ops — PH-3 would otherwise see
+        //      the not-yet-suppressed XOR_ASSIGN and potentially flag
+        //      a mutation target that the fused output no longer
+        //      compound-assigns to.
+        //
+        // None of these edges are hard correctness constraints on
+        // their own — the post-matcher cleanup and per-matcher
+        // range guards make the pipeline robust to MatchFinder's
+        // Decl/Stmt interleaving — but the ordering documented here
+        // is the happy-path schedule, and downstream blocks
+        // (sturm-0v9i, sturm-6a2z) rely on it staying stable.
+        sturm::transpile::register_ccnot_fuse_matcher(finder_, unit_);
         sturm::transpile::register_xor_assign_matcher(finder_, unit_);
         sturm::transpile::register_xor_assign_classical_matcher(
             finder_, unit_);
