@@ -116,6 +116,68 @@ public:
         // the first `adjoint_of<...>` specialization is visited during
         // the AST walk.
         sturm::transpile::register_routine_registry_matcher(finder_, registry_);
+        // Phase J PJ-4b: the dead-ancilla elimination matcher runs
+        // BEFORE every matcher whose AST anchor could overlap an
+        // eliminated qbool VarDecl. The ordering invariant has three
+        // load-bearing edges:
+        //
+        //   1. BEFORE register_or_matcher (MVP) and the Phase A
+        //      bitwise VarDecl-init matchers register_not_matcher
+        //      (PA-1) and register_xor_matcher (PA-2). All three
+        //      anchor on the SAME qbool VarDecl shape PJ-4a may
+        //      eliminate — a `qbool t = a | b;` / `~a;` / `a ^ b;`
+        //      decl with zero readers. The PJ-4a callback populates
+        //      `unit_.eliminated_stmt_ranges` with the decl's full
+        //      stmt range; each downstream callback's
+        //      `is_range_covered_by_fused` probe against that list
+        //      then early-returns on a covered VarDecl so the M8
+        //      pass does not render an uncompute against a decl
+        //      the Rewriter has already deleted. Registering PJ-4a
+        //      first maximises the odds MatchFinder invokes its
+        //      callback before the downstream Decl-pool callbacks
+        //      for the same VarDecl, letting the fast-path guard
+        //      fire. The `apply_eliminated_stmt_guards` post-matcher
+        //      cleanup pass (called below, between `matchAST` and
+        //      `synthesize`) is the authoritative backstop for the
+        //      cases where MatchFinder interleaves Decl callbacks
+        //      in the other order.
+        //
+        //   2. BEFORE register_compound_qbool_matcher (PE-4). A
+        //      compound init (`qbool t = (a | b) & c;`) is also
+        //      eligible for PJ-4a elimination when `t` has zero
+        //      readers, and PE-4's VarDecl-init anchor overlaps
+        //      PJ-4a's on that shape. PE-4's callback consults
+        //      `eliminated_stmt_ranges` with the same
+        //      `is_range_covered_by_fused` probe and bails on a
+        //      covered decl.
+        //
+        //   3. BEFORE the Phase A `a ^= b;` assign matchers
+        //      register_xor_assign_matcher (PA-3) and
+        //      register_xor_assign_classical_matcher (PA-4). These
+        //      are Stmt-anchored, not Decl-anchored, so they do not
+        //      overlap PJ-4a's VarDecl anchor on the matched node
+        //      itself. The ordering still matters in the
+        //      `apply_eliminated_stmt_guards` backstop's favour —
+        //      if a user ever writes a `t ^= <expr>;` statement
+        //      immediately after an eliminated `qbool t = a | b;`
+        //      decl, the PJ-4a guard on the `^=` op's stmt_range
+        //      (which would lie OUTSIDE the decl's range, so not
+        //      technically covered) is a no-op — but the same
+        //      guards on the PA-3 callback sit alongside the PJ-4a
+        //      VarDecl guards in matcher_qbool_assign.cpp, and
+        //      registering PJ-4a first keeps the two guards
+        //      symmetric in source order.
+        //
+        // None of these edges are hard correctness constraints on
+        // their own — the post-matcher cleanup
+        // (`apply_eliminated_stmt_guards`, called below) and the
+        // per-matcher range guards make the pipeline robust to
+        // MatchFinder's Decl/Stmt interleaving — but the ordering
+        // documented here is the happy-path schedule, and
+        // downstream blocks (sturm-0v9i PJ-3e which stacks the
+        // hoist matcher LAST on top of this chain) rely on it
+        // staying stable.
+        sturm::transpile::register_dead_ancilla_matcher(finder_, unit_);
         sturm::transpile::register_or_matcher(finder_, unit_);
         sturm::transpile::register_not_matcher(finder_, unit_);
         sturm::transpile::register_xor_matcher(finder_, unit_);
@@ -239,6 +301,28 @@ public:
         // covered but whose matcher ran before PJ-1d. No-op when
         // `fused_stmt_ranges` is empty (pre-Phase-J shapes).
         sturm::transpile::apply_fused_stmt_guards(
+            unit_, ctx.getSourceManager());
+
+        // Phase J PJ-4a: backstop cleanup for the dead-ancilla
+        // eliminator. Same rationale as `apply_fused_stmt_guards` —
+        // MatchFinder's Decl/Stmt visit-pool interleaving means a
+        // downstream Decl-anchored callback (MVP OR, PA-1 NOT,
+        // PA-2 XOR, PE-4 compound) can fire BEFORE the PJ-4a
+        // callback populates `eliminated_stmt_ranges`. Their
+        // in-callback early-return only fires when the eliminated
+        // entry is already present, so we do one final pass over
+        // `unit_.scopes` here to remove any op whose stmt_range is
+        // covered by an eliminated range but whose matcher ran
+        // before PJ-4a. No-op when `eliminated_stmt_ranges` is
+        // empty (pre-Phase-J shapes). Called AFTER
+        // `apply_fused_stmt_guards` so the fuse-aware whitelisting
+        // (which retains CCNOT_INPLACE ops inside fused pair
+        // ranges) happens before the unconditional elimination
+        // filter — an op that survives the fuse cleanup is still
+        // subject to the elimination cleanup, which is the
+        // correct ordering when both peepholes target the same
+        // VarDecl.
+        sturm::transpile::apply_eliminated_stmt_guards(
             unit_, ctx.getSourceManager());
 
         // M8: synthesize uncompute insertions + replacements from the QUnit.

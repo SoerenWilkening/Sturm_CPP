@@ -304,6 +304,80 @@ static void test_pj1f_wires_ccnot_fuse_matcher() {
     CHECK(got.find("qbool tmp = a & b;") == std::string::npos);
 }
 
+static void test_pj4b_wires_dead_ancilla_matcher() {
+    // Phase J PJ-4b: the dead-ancilla elimination matcher must be wired
+    // into main.cpp's TranspileConsumer BEFORE the MVP OR matcher,
+    // BEFORE the Phase A bitwise matchers (NOT / XOR / XOR_ASSIGN), and
+    // BEFORE the Phase E compound_qbool matcher. This driver-level test
+    // verifies the wiring end-to-end: feed a canonical zero-reader
+    // `qbool t = a | b;` fixture through the real binary and assert
+    // that
+    //
+    //   - the output does NOT retain the original
+    //     `qbool t = a | b;` VarDecl (PJ-4a's QReplacement deletes it).
+    //   - the output does NOT emit any `uncompute_or(t, a, b);` line
+    //     (the OR matcher would have pushed a QOperation had PJ-4a not
+    //     been wired in ahead of it, resulting in a stale uncompute
+    //     against the deleted decl).
+    //
+    // If the matcher is not wired in, PJ-4a never fires, the original
+    // VarDecl survives AND the OR matcher emits an `uncompute_or(...)`
+    // line referencing the deleted `t`. Either mismatch fails the test.
+    fs::path dir = make_scratch_dir("pj4b_dead_ancilla");
+    fs::path input  = dir / "dead_or.cpp";
+    fs::path outdir = dir / "gen";
+    fs::create_directories(outdir);
+
+    // Minimal in-file qbool stub — mirrors the PJ-1f fuse_pair fixture
+    // so the MVP FixedCompilationDatabase (no external includes) can
+    // still parse and type-check.
+    const std::string payload =
+        "namespace sturm {\n"
+        "class qbool {\n"
+        "public:\n"
+        "    qbool() {}\n"
+        "    qbool(const qbool&) {}\n"
+        "    qbool& operator=(const qbool&) { return *this; }\n"
+        "};\n"
+        "inline qbool operator|(const qbool&, const qbool&) "
+        "{ return qbool{}; }\n"
+        "} // namespace sturm\n"
+        "using sturm::qbool;\n"
+        "\n"
+        "void demo(qbool a, qbool b) {\n"
+        "    qbool t = a | b;\n"
+        "}\n";
+    {
+        std::ofstream o(input, std::ios::binary);
+        o << payload;
+    }
+
+    std::string cmd = std::string(STURM_TRANSPILE_BIN) +
+        " " + quote(input).string() +
+        " --output-dir " + quote(outdir).string();
+    auto [rc, out] = run_cmd(cmd);
+    if (rc != 0) std::fprintf(stderr, "driver stderr:\n%s\n", out.c_str());
+    CHECK(rc == 0);
+
+    fs::path expected = outdir / "dead_or.cpp";
+    CHECK(fs::exists(expected));
+    std::string got = read_file_contents(expected);
+
+    // The dead-ancilla eliminator's empty-text QReplacement drops the
+    // original VarDecl verbatim — the output must not retain it. If
+    // the matcher is not wired in, the VarDecl survives and this
+    // assertion fails loudly.
+    CHECK(got.find("qbool t = a | b;") == std::string::npos);
+    // No `uncompute_or(` must appear in the output. If PJ-4a was NOT
+    // registered before the MVP OR matcher, the OR matcher's
+    // QOperation would survive the pipeline AND the M8 pass would
+    // render an `uncompute_or(t, a, b);` line — against a `t` the
+    // eliminator has already deleted. The pipeline guards against
+    // this via `eliminated_stmt_ranges` + `apply_eliminated_stmt_guards`
+    // which the wiring must invoke post-matchAST.
+    CHECK(got.find("uncompute_or(") == std::string::npos);
+}
+
 int main() {
     test_version_flag_exits_zero();
     test_plain_source_gets_header();
@@ -312,6 +386,7 @@ int main() {
     test_missing_input_exits_nonzero();
     test_nested_relative_input_mirrors_tree();
     test_pj1f_wires_ccnot_fuse_matcher();
+    test_pj4b_wires_dead_ancilla_matcher();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
