@@ -2,9 +2,10 @@
 #
 # Invoked via ctest (see tests/cmake_flags/CMakeLists.txt). Runs a fresh
 # out-of-source `cmake` configure three times and checks:
-#   1. Default: STURM_AUTO_UNCOMPUTE=1 is present in the exported compile
+#   1. Default (Phase K PK-1: STURM_AUTO_UNCOMPUTE now defaults OFF):
+#      STURM_AUTO_UNCOMPUTE=1 is absent from the exported compile
 #      definitions (compile_commands.json).
-#   2. -DSTURM_AUTO_UNCOMPUTE=OFF: the define is absent.
+#   2. -DSTURM_AUTO_UNCOMPUTE=ON: the define is present.
 #   3. -DSTURM_TRANSPILE=ON: the transpiler subdirectory is entered (the
 #      configure message emitted by transpiler/CMakeLists.txt appears in
 #      stdout). This check is skipped gracefully if LLVM/Clang are not
@@ -65,7 +66,8 @@ function(_sturm_probe_define tag present_var)
 endfunction()
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Check 1: default configure → STURM_AUTO_UNCOMPUTE=1 is present.
+# Check 1: default configure → STURM_AUTO_UNCOMPUTE=1 is absent
+# (Phase K PK-1 flipped the default from ON to OFF).
 # ──────────────────────────────────────────────────────────────────────────────
 _sturm_fresh_configure("default" "" _out_default _ok_default)
 if(NOT _ok_default)
@@ -73,34 +75,35 @@ if(NOT _ok_default)
         "verify_flags: default configure FAILED.\nOutput:\n${_out_default}")
 endif()
 _sturm_probe_define("default" _has_default)
-if(NOT _has_default)
+if(_has_default)
     message(FATAL_ERROR
-        "verify_flags: default configure did not emit "
+        "verify_flags: default configure still leaks "
         "STURM_AUTO_UNCOMPUTE=1 into compile_commands.json.\n"
-        "The default value of STURM_AUTO_UNCOMPUTE must be ON and the "
-        "option block must call add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) "
-        "when ON.\nConfigure output:\n${_out_default}")
+        "Under Phase K PK-1 the default value of STURM_AUTO_UNCOMPUTE is OFF; "
+        "the option block must gate add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) "
+        "behind if(STURM_AUTO_UNCOMPUTE).\nConfigure output:\n${_out_default}")
 endif()
-message(STATUS "verify_flags: [PASS] default  → STURM_AUTO_UNCOMPUTE=1 present")
+message(STATUS "verify_flags: [PASS] default  → STURM_AUTO_UNCOMPUTE=1 absent")
 
 # ──────────────────────────────────────────────────────────────────────────────
-# Check 2: -DSTURM_AUTO_UNCOMPUTE=OFF → define is absent.
+# Check 2: -DSTURM_AUTO_UNCOMPUTE=ON → define is present.
 # ──────────────────────────────────────────────────────────────────────────────
-_sturm_fresh_configure("auto_off" "-DSTURM_AUTO_UNCOMPUTE=OFF"
-                       _out_off _ok_off)
-if(NOT _ok_off)
+_sturm_fresh_configure("auto_on" "-DSTURM_AUTO_UNCOMPUTE=ON"
+                       _out_on _ok_on)
+if(NOT _ok_on)
     message(FATAL_ERROR
-        "verify_flags: -DSTURM_AUTO_UNCOMPUTE=OFF configure FAILED.\n"
-        "Output:\n${_out_off}")
+        "verify_flags: -DSTURM_AUTO_UNCOMPUTE=ON configure FAILED.\n"
+        "Output:\n${_out_on}")
 endif()
-_sturm_probe_define("auto_off" _has_off)
-if(_has_off)
+_sturm_probe_define("auto_on" _has_on)
+if(NOT _has_on)
     message(FATAL_ERROR
-        "verify_flags: -DSTURM_AUTO_UNCOMPUTE=OFF still leaks "
+        "verify_flags: -DSTURM_AUTO_UNCOMPUTE=ON did not emit "
         "STURM_AUTO_UNCOMPUTE=1 into compile_commands.json.\n"
-        "The option block must gate the define behind if(STURM_AUTO_UNCOMPUTE).")
+        "The option block must call add_compile_definitions(STURM_AUTO_UNCOMPUTE=1) "
+        "when ON.\nConfigure output:\n${_out_on}")
 endif()
-message(STATUS "verify_flags: [PASS] AUTO=OFF → STURM_AUTO_UNCOMPUTE=1 absent")
+message(STATUS "verify_flags: [PASS] AUTO=ON  → STURM_AUTO_UNCOMPUTE=1 present")
 
 # ──────────────────────────────────────────────────────────────────────────────
 # Check 3: -DSTURM_TRANSPILE=ON → transpiler/CMakeLists.txt is entered.
