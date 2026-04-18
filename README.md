@@ -24,6 +24,13 @@ tar xzf sturm-transpile-v0.1.0-${TRIPLE}.tar.gz
 sudo cp -r sturm-transpile-v0.1.0-${TRIPLE}/* /usr/local/
 ```
 
+**Docker:**
+
+```
+docker run -v $PWD:/w ghcr.io/soerenwilkening/sturm-transpile:latest /w/src.cpp \
+  --output-dir /w/out --extra-arg=-I/opt/sturm/include --extra-arg=-std=c++20
+```
+
 **Build from source (contributors):**
 
 ```
