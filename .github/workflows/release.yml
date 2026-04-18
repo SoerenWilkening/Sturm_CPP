@@ -1,7 +1,12 @@
 name: release
 
 # Tag-triggered 4-platform build producing relocatable prebuilt tarballs.
-# Matches Phase L PL-2 spec (issue sturm-mzfa).
+# Matches Phase L PL-2 spec (issue sturm-mzfa). PL-3 (sturm-bn4y) adds a
+# 4-platform smoke-test matrix that gates the release-asset upload: if
+# any platform's smoke-test fails, no assets for ANY platform reach the
+# GitHub Release page. This is enforced by putting the asset upload in
+# dedicated `publish-artifacts` / `publish-sha256sums` jobs that
+# `needs: [build, smoke-test]`.
 #
 # Dependency note: this workflow copies LICENSE and README.md into the staging
 # tree root. LICENSE exists (shipped in PL-1). README.md is scheduled to land
@@ -188,7 +193,7 @@ jobs:
           fi
           cat "${TARBALL}.sha256"
 
-      - name: Upload artifact (for PL-3 smoke tests)
+      - name: Upload artifact (consumed by smoke-test + publish-artifacts)
         uses: actions/upload-artifact@v4
         with:
           name: sturm-transpile-${{ matrix.triple }}
@@ -198,7 +203,244 @@ jobs:
           if-no-files-found: error
           retention-days: 14
 
-      - name: Upload to GitHub Release (idempotent)
+  # ───────────────────────────────────────────────────────────────────────
+  # Phase L PL-3 — 4-platform smoke-test matrix (sturm-bn4y).
+  #
+  # Regression guard that the prebuilt tarball from `build` actually runs
+  # on a target platform with NO system LLVM installed — catches RPATH
+  # misconfiguration, missing bundled dylibs, and cl::opt double-
+  # registration regressions (the bug transpiler/CMakeLists.txt:84
+  # already dodges, but which can resurface under different link orders).
+  #
+  # Fresh hosted runner: we deliberately do NOT `apt-get install llvm-17-*`
+  # or `brew install llvm@17` in this job. Instead the first step ASSERTS
+  # the absence of system LLVM-17 and fails loudly if the base image
+  # ever starts shipping it, to keep the "relocatable tarball on a clean
+  # VM" contract testable.
+  # ───────────────────────────────────────────────────────────────────────
+  smoke-test:
+    name: smoke-test ${{ matrix.triple }}
+    needs: build
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - triple: x86_64-linux
+            runner: ubuntu-24.04
+            os: linux
+          - triple: aarch64-linux
+            runner: ubuntu-24.04-arm
+            os: linux
+          - triple: x86_64-macos
+            runner: macos-13
+            os: macos
+          - triple: aarch64-macos
+            runner: macos-14
+            os: macos
+
+    steps:
+      - name: Checkout (for fixture at tests/smoke/minimal_or.cpp)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Derive version + tarball name
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "stage_dir=sturm-transpile-${VERSION}-${{ matrix.triple }}" >> "$GITHUB_OUTPUT"
+          echo "tarball=sturm-transpile-${VERSION}-${{ matrix.triple }}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Assert clean state — no system LLVM-17 (Linux)
+        if: matrix.os == 'linux'
+        shell: bash
+        run: |
+          set -uxo pipefail
+          # 1. `which clang-17` should return non-zero (no clang-17 in PATH).
+          if which clang-17 >/dev/null 2>&1; then
+            echo "::error::Precondition violated: clang-17 is in PATH on the smoke-test runner." >&2
+            echo "::error::This job must run on a clean image with NO system LLVM-17 to prove the tarball is self-contained." >&2
+            which clang-17 >&2
+            exit 1
+          fi
+          # 2. `apt list --installed | grep -c llvm-17-dev` should be 0.
+          INSTALLED_LLVM17_DEV="$(apt list --installed 2>/dev/null | grep -c llvm-17-dev || true)"
+          if [ "${INSTALLED_LLVM17_DEV}" != "0" ]; then
+            echo "::error::Precondition violated: llvm-17-dev is installed (${INSTALLED_LLVM17_DEV} matches) on the smoke-test runner." >&2
+            echo "::error::This job must run on a clean image with NO system LLVM-17 to prove the tarball is self-contained." >&2
+            apt list --installed 2>/dev/null | grep llvm-17 >&2 || true
+            exit 1
+          fi
+          echo "Clean-state assertion passed: no clang-17 in PATH, no llvm-17-dev installed."
+
+      - name: Assert clean state — no brew llvm@17 (macOS)
+        if: matrix.os == 'macos'
+        shell: bash
+        run: |
+          set -uxo pipefail
+          # brew list --versions llvm@17 exits 0 when installed, 1 when not.
+          if brew list --versions llvm@17 >/dev/null 2>&1; then
+            echo "::error::Precondition violated: llvm@17 is installed via Homebrew on the smoke-test runner." >&2
+            echo "::error::This job must run on a clean image with NO system LLVM-17 to prove the tarball is self-contained." >&2
+            brew list --versions llvm@17 >&2 || true
+            exit 1
+          fi
+          echo "Clean-state assertion passed: no brew llvm@17 installed."
+
+      - name: Download build artifact for this triple
+        uses: actions/download-artifact@v4
+        with:
+          name: sturm-transpile-${{ matrix.triple }}
+          path: artifact
+
+      - name: Extract tarball
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TARBALL="artifact/${{ steps.version.outputs.tarball }}"
+          ls -la artifact/
+          tar xzf "${TARBALL}"
+          ls -la "${{ steps.version.outputs.stage_dir }}"
+
+      - name: Assert `bin/sturm-transpile --help` exit 0 + non-empty stdout
+        shell: bash
+        run: |
+          set -uxo pipefail
+          STAGE="${{ steps.version.outputs.stage_dir }}"
+          HELP_OUT="$("${STAGE}/bin/sturm-transpile" --help 2>/dev/null)"
+          RC=$?
+          if [ "${RC}" != "0" ]; then
+            echo "::error::sturm-transpile --help exited with code ${RC} (expected 0)." >&2
+            exit 1
+          fi
+          if [ -z "${HELP_OUT}" ]; then
+            echo "::error::sturm-transpile --help produced empty stdout." >&2
+            exit 1
+          fi
+          echo "--help OK (stdout is $(printf '%s' "${HELP_OUT}" | wc -c) bytes)."
+
+      - name: Run transpile on tests/smoke/minimal_or.cpp
+        id: transpile
+        shell: bash
+        run: |
+          set -uxo pipefail
+          STAGE="${{ steps.version.outputs.stage_dir }}"
+          mkdir -p /tmp/out
+          # Capture stderr to a file so we can grep it below for the
+          # cl::opt double-registration regression signature AND still
+          # show it in the job log.
+          STDERR_LOG=/tmp/sturm-transpile.stderr
+          set +e
+          "${STAGE}/bin/sturm-transpile" tests/smoke/minimal_or.cpp \
+            --output-dir /tmp/out \
+            --extra-arg=-I"${PWD}/${STAGE}/include" \
+            --extra-arg=-std=c++20 \
+            2>"${STDERR_LOG}"
+          RC=$?
+          set -u
+          # Surface stderr in the job log regardless of exit code so a
+          # failing transpile run is easy to debug from the Actions UI.
+          echo "----- sturm-transpile stderr -----" >&2
+          cat "${STDERR_LOG}" >&2 || true
+          echo "----- end stderr -----"             >&2
+          echo "transpile_rc=${RC}" >> "$GITHUB_OUTPUT"
+          echo "stderr_log=${STDERR_LOG}" >> "$GITHUB_OUTPUT"
+          if [ "${RC}" != "0" ]; then
+            echo "::error::sturm-transpile exited with code ${RC}." >&2
+            exit 1
+          fi
+
+      - name: Verify output file exists and contains `uncompute_or(`
+        shell: bash
+        run: |
+          set -uxo pipefail
+          OUT=/tmp/out/minimal_or.cpp
+          if [ ! -f "${OUT}" ]; then
+            echo "::error::Expected transpiled output at ${OUT} but file does not exist." >&2
+            ls -la /tmp/out/ >&2 || true
+            exit 1
+          fi
+          if ! grep -q 'uncompute_or(' "${OUT}"; then
+            echo "::error::Transpiled output ${OUT} does not contain \`uncompute_or(\` marker." >&2
+            echo "::error::This indicates the M7 uncompute-injection matcher failed to fire." >&2
+            echo "----- begin ${OUT} -----" >&2
+            cat "${OUT}" >&2
+            echo "----- end ${OUT} -----"   >&2
+            exit 1
+          fi
+          echo "Output file present and contains \`uncompute_or(\` marker."
+
+      - name: Grep stderr for cl::opt double-registration regression
+        shell: bash
+        run: |
+          set -uxo pipefail
+          STDERR_LOG="${{ steps.transpile.outputs.stderr_log }}"
+          if [ -f "${STDERR_LOG}" ] && grep -q 'registered more than once' "${STDERR_LOG}"; then
+            echo "::error::Detected \`registered more than once\` in sturm-transpile stderr." >&2
+            echo "::error::This is the cl::opt double-registration regression — the workaround at transpiler/CMakeLists.txt:84 has likely broken under a new link order." >&2
+            grep -n 'registered more than once' "${STDERR_LOG}" >&2
+            exit 1
+          fi
+          echo "No cl::opt double-registration signature detected in stderr."
+
+      - name: Optional — compile transpiled output with default system clang
+        shell: bash
+        continue-on-error: true
+        run: |
+          set -uxo pipefail
+          # Deliberately use the default `clang++` from PATH, NOT the
+          # bundled llvm-17 runtime. This proves the TRANSPILED output
+          # has no runtime LLVM-version lock: once transpile is done the
+          # generated .cpp is a plain C++20 source that any modern clang
+          # should compile.
+          STAGE="${{ steps.version.outputs.stage_dir }}"
+          CLANG_BIN="$(command -v clang++ || true)"
+          if [ -z "${CLANG_BIN}" ]; then
+            echo "No default clang++ on PATH — skipping optional compile." >&2
+            exit 0
+          fi
+          "${CLANG_BIN}" --version
+          "${CLANG_BIN}" -std=c++20 -I"${PWD}/${STAGE}/include" \
+            /tmp/out/minimal_or.cpp -c -o /tmp/minimal_or.o
+          ls -la /tmp/minimal_or.o
+
+  # ───────────────────────────────────────────────────────────────────────
+  # Phase L PL-3 — publish-artifacts (option A restructure).
+  #
+  # Release-asset upload lives here (not in `build`) so it is gated on
+  # `smoke-test` passing. If any of the 4 smoke-test matrix legs fails,
+  # `needs: [build, smoke-test]` short-circuits the publish step and
+  # NO tarballs reach the GitHub Release page.
+  # ───────────────────────────────────────────────────────────────────────
+  publish-artifacts:
+    name: publish release tarballs
+    needs: [build, smoke-test]
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Flatten artifacts into a single directory
+        shell: bash
+        run: |
+          set -euxo pipefail
+          mkdir -p release-assets
+          # Each build job uploaded a directory named after its triple.
+          # We only want the .tar.gz files here; the .sha256 sidecars are
+          # consumed by the separate publish-sha256sums job below.
+          for f in artifacts/*/*.tar.gz; do
+            cp -v "${f}" release-assets/
+          done
+          ls -la release-assets/
+
+      - name: Upload tarballs to GitHub Release (idempotent)
         uses: softprops/action-gh-release@v2
         with:
           tag_name: ${{ github.ref_name }}
@@ -206,12 +448,11 @@ jobs:
           draft: false
           prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
           fail_on_unmatched_files: true
-          files: |
-            ${{ steps.version.outputs.tarball }}
+          files: release-assets/*.tar.gz
 
   publish-sha256sums:
     name: publish SHA256SUMS
-    needs: build
+    needs: [build, smoke-test]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
