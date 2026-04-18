@@ -1,0 +1,11 @@
+# Keep the build context small and, crucially, prevent the host's
+# mac-compiled `build/` tree from leaking into the Linux container where
+# `cmake -S . -B build` would otherwise re-use stale CMake cache entries.
+build/
+.git/
+.cache/
+*.o
+*.a
+*.so
+*.dylib
+.DS_Store
