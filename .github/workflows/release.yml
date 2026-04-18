@@ -1,0 +1,248 @@
+name: release
+
+# Tag-triggered 4-platform build producing relocatable prebuilt tarballs.
+# Matches Phase L PL-2 spec (issue sturm-mzfa).
+#
+# Dependency note: this workflow copies LICENSE and README.md into the staging
+# tree root. LICENSE exists (shipped in PL-1). README.md is scheduled to land
+# in PL-5, which is expected to merge before any real v0.1.0 tag is pushed.
+# As a belt-and-braces measure the copy step tolerates a missing README.md
+# (via `|| true`) so that an early rc tag does not fail the entire matrix
+# purely on a not-yet-created doc.
+
+on:
+  push:
+    tags:
+      - 'v[0-9]+.[0-9]+.[0-9]+*'
+
+permissions:
+  contents: write  # needed by softprops/action-gh-release to create/update the release
+
+jobs:
+  build:
+    name: build ${{ matrix.triple }}
+    runs-on: ${{ matrix.runner }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - triple: x86_64-linux
+            runner: ubuntu-24.04
+            os: linux
+          - triple: aarch64-linux
+            runner: ubuntu-24.04-arm
+            os: linux
+          - triple: x86_64-macos
+            runner: macos-13
+            os: macos
+          - triple: aarch64-macos
+            runner: macos-14
+            os: macos
+
+    steps:
+      - name: Checkout at tagged commit
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Derive version from tag
+        id: version
+        shell: bash
+        run: |
+          VERSION="${GITHUB_REF_NAME}"
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "triple=${{ matrix.triple }}" >> "$GITHUB_OUTPUT"
+          echo "stage_dir=sturm-transpile-${VERSION}-${{ matrix.triple }}" >> "$GITHUB_OUTPUT"
+          echo "tarball=sturm-transpile-${VERSION}-${{ matrix.triple }}.tar.gz" >> "$GITHUB_OUTPUT"
+
+      - name: Install LLVM 17 (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            llvm-17-dev \
+            libclang-17-dev \
+            clang-17 \
+            cmake \
+            patchelf
+
+      - name: Install LLVM 17 (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          brew update
+          brew install llvm@17 cmake
+
+      - name: Configure (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${PWD}/staging/${{ steps.version.outputs.stage_dir }}" \
+            -DLLVM_DIR=/usr/lib/llvm-17/lib/cmake/llvm \
+            -DClang_DIR=/usr/lib/llvm-17/lib/cmake/clang
+
+      - name: Configure (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          LLVM_PREFIX="$(brew --prefix llvm@17)"
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_INSTALL_PREFIX="${PWD}/staging/${{ steps.version.outputs.stage_dir }}" \
+            -DLLVM_DIR="${LLVM_PREFIX}/lib/cmake/llvm" \
+            -DClang_DIR="${LLVM_PREFIX}/lib/cmake/clang"
+
+      - name: Build
+        run: cmake --build build -j
+
+      - name: Install
+        run: cmake --install build
+
+      - name: Bundle LLVM shared libs (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          set -euxo pipefail
+          STAGE="staging/${{ steps.version.outputs.stage_dir }}"
+          mkdir -p "${STAGE}/lib"
+          LLVM_LIBDIR="$(dirname "$(readlink -f "$(which clang-17)")")/../lib"
+          # libclang-cpp.so.17 and libLLVM-17.so are the runtime shared libs
+          # sturm-transpile links against.
+          cp -L "${LLVM_LIBDIR}/libclang-cpp.so.17" "${STAGE}/lib/"
+          cp -L "${LLVM_LIBDIR}/libLLVM-17.so"      "${STAGE}/lib/"
+
+      - name: Bundle LLVM shared libs (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          set -euxo pipefail
+          STAGE="staging/${{ steps.version.outputs.stage_dir }}"
+          mkdir -p "${STAGE}/lib"
+          LLVM_PREFIX="$(brew --prefix llvm@17)"
+          cp -L "${LLVM_PREFIX}/lib/libclang-cpp.dylib" "${STAGE}/lib/"
+          cp -L "${LLVM_PREFIX}/lib/libLLVM.dylib"      "${STAGE}/lib/"
+
+      - name: Patch RPATH (Linux)
+        if: matrix.os == 'linux'
+        run: |
+          set -euxo pipefail
+          STAGE="staging/${{ steps.version.outputs.stage_dir }}"
+          patchelf --set-rpath '$ORIGIN/../lib' "${STAGE}/bin/sturm-transpile"
+          # Sanity: libs should also find each other via the same relative path.
+          for lib in "${STAGE}/lib/"*.so*; do
+            patchelf --set-rpath '$ORIGIN' "${lib}" || true
+          done
+
+      - name: Patch RPATH (macOS)
+        if: matrix.os == 'macos'
+        run: |
+          set -euxo pipefail
+          STAGE="staging/${{ steps.version.outputs.stage_dir }}"
+          BIN="${STAGE}/bin/sturm-transpile"
+          install_name_tool -add_rpath '@loader_path/../lib' "${BIN}"
+          # Rewrite absolute install names of each bundled dylib in the
+          # binary's load commands to @rpath/<libname>.
+          for lib in "${STAGE}/lib/"*.dylib; do
+            libname="$(basename "${lib}")"
+            # Detect the current (absolute, Homebrew-prefixed) install name
+            # referenced by the binary and rewrite it to @rpath/<libname>.
+            old_path="$(otool -L "${BIN}" | awk -v n="${libname}" '$1 ~ n {print $1; exit}')"
+            if [ -n "${old_path}" ]; then
+              install_name_tool -change "${old_path}" "@rpath/${libname}" "${BIN}"
+            fi
+            # Normalise the dylib's own install name too, so dependents of
+            # dependents resolve via @rpath.
+            install_name_tool -id "@rpath/${libname}" "${lib}"
+          done
+          # Re-sign after install_name_tool mutations (required on macOS 11+
+          # including both x86_64 and aarch64 runners).
+          codesign --force --sign - "${BIN}"
+          for lib in "${STAGE}/lib/"*.dylib; do
+            codesign --force --sign - "${lib}"
+          done
+
+      - name: Include LICENSE + README.md at staging root
+        run: |
+          set -euxo pipefail
+          STAGE="staging/${{ steps.version.outputs.stage_dir }}"
+          cp LICENSE "${STAGE}/LICENSE"
+          # README.md is created in Phase L PL-5; tolerate absence on rc tags
+          # pushed before PL-5 lands.
+          cp README.md "${STAGE}/README.md" || true
+
+      - name: Create tarball
+        id: tarball
+        run: |
+          set -euxo pipefail
+          tar czf "${{ steps.version.outputs.tarball }}" \
+            -C staging "${{ steps.version.outputs.stage_dir }}"
+          ls -la "${{ steps.version.outputs.tarball }}"
+
+      - name: Compute SHA256
+        shell: bash
+        run: |
+          set -euxo pipefail
+          TARBALL="${{ steps.version.outputs.tarball }}"
+          if command -v sha256sum >/dev/null 2>&1; then
+            sha256sum "${TARBALL}" > "${TARBALL}.sha256"
+          else
+            # macOS runners ship `shasum`, not `sha256sum`.
+            shasum -a 256 "${TARBALL}" > "${TARBALL}.sha256"
+          fi
+          cat "${TARBALL}.sha256"
+
+      - name: Upload artifact (for PL-3 smoke tests)
+        uses: actions/upload-artifact@v4
+        with:
+          name: sturm-transpile-${{ matrix.triple }}
+          path: |
+            ${{ steps.version.outputs.tarball }}
+            ${{ steps.version.outputs.tarball }}.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+      - name: Upload to GitHub Release (idempotent)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          fail_on_unmatched_files: true
+          files: |
+            ${{ steps.version.outputs.tarball }}
+
+  publish-sha256sums:
+    name: publish SHA256SUMS
+    needs: build
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - name: Download all build artifacts
+        uses: actions/download-artifact@v4
+        with:
+          path: artifacts
+
+      - name: Aggregate per-tarball sha256 files into SHA256SUMS
+        run: |
+          set -euxo pipefail
+          : > SHA256SUMS
+          # Each build job uploaded one artifact directory containing both
+          # the tarball and its .sha256 sidecar. Concatenate all sidecars,
+          # stripping any directory prefix that `sha256sum`/`shasum` emits,
+          # into a single canonical SHA256SUMS file.
+          for f in artifacts/*/*.sha256; do
+            # sha256sum format: "<hash>  <path>" -- rewrite <path> to basename
+            # so the file references just "sturm-transpile-<version>-<triple>.tar.gz".
+            awk '{ sub(".*/", "", $2); print $1 "  " $2 }' "${f}" >> SHA256SUMS
+          done
+          sort -k2 -o SHA256SUMS SHA256SUMS
+          cat SHA256SUMS
+
+      - name: Upload SHA256SUMS to GitHub Release (idempotent)
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          draft: false
+          prerelease: ${{ contains(github.ref_name, '-rc') || contains(github.ref_name, '-beta') || contains(github.ref_name, '-alpha') }}
+          fail_on_unmatched_files: true
+          files: SHA256SUMS
