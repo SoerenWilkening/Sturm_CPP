@@ -1,9 +1,16 @@
 cmake_minimum_required(VERSION 3.16)
-project(STURM CXX C)
+project(STURM VERSION 0.1.0 LANGUAGES CXX C)
 
 # ── C++ standard ──────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
+
+# ── Install layout (GNU standard-dirs) ────────────────────────────────────────
+# GNUInstallDirs provides CMAKE_INSTALL_BINDIR / INCLUDEDIR / LIBDIR with the
+# canonical defaults (bin, include, lib) that downstream packagers (Homebrew,
+# Debian) expect. We reference these in both install() rules and in the
+# sturmConfig.cmake.in template (via @PACKAGE_...@ placeholders).
+include(GNUInstallDirs)
 
 # ── Compile-time knobs ────────────────────────────────────────────────────────
 # Ancilla pool capacity; override with -DSTURM_ANCILLA_CAPACITY=N
@@ -43,3 +50,52 @@ add_custom_target(check
     WORKING_DIRECTORY ${CMAKE_BINARY_DIR}
     COMMENT "Running all STURM tests via ctest"
 )
+
+# ── Install rules (Phase L PL-1) ──────────────────────────────────────────────
+# Downstream packagers (Homebrew, prebuilt binaries) and out-of-tree
+# consumers via `find_package(sturm REQUIRED)` need a well-defined install
+# tree. The layout below is:
+#
+#   <prefix>/bin/sturm-transpile                     (set up in transpiler/)
+#   <prefix>/include/sturm/**/*.hpp                  (public headers)
+#   <prefix>/lib/cmake/sturm/SturmTranspile.cmake    (helper incl. add_quantum_executable)
+#   <prefix>/lib/cmake/sturm/sturmConfig.cmake       (find_package entry)
+#   <prefix>/lib/cmake/sturm/sturmConfigVersion.cmake (semver gate)
+#
+# 1. Public headers — ship the full include/sturm/ subtree verbatim so
+#    `#include <sturm/...>` resolves identically for installed consumers.
+install(DIRECTORY include/sturm/
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sturm
+        FILES_MATCHING
+            PATTERN "*.hpp"
+            PATTERN "*.h")
+
+# 2. The add_quantum_executable() helper. This is the public entry point
+#    exposed to consumers via find_package; the sturmConfig.cmake include()s
+#    it from its neighbouring lib/cmake/sturm/ directory.
+install(FILES cmake/SturmTranspile.cmake
+        DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/sturm)
+
+# 3. Package config + version config. configure_package_config_file()
+#    expands the @PACKAGE_...@ placeholders relative to the install prefix
+#    so the consumer-side config keeps working even if the user relocates
+#    the install tree.
+include(CMakePackageConfigHelpers)
+
+set(STURM_CMAKE_CONFIG_DESTINATION "${CMAKE_INSTALL_LIBDIR}/cmake/sturm")
+
+configure_package_config_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sturmConfig.cmake.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/sturmConfig.cmake"
+    INSTALL_DESTINATION "${STURM_CMAKE_CONFIG_DESTINATION}"
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_BINDIR)
+
+write_basic_package_version_file(
+    "${CMAKE_CURRENT_BINARY_DIR}/sturmConfigVersion.cmake"
+    VERSION ${PROJECT_VERSION}
+    COMPATIBILITY SameMajorVersion)
+
+install(FILES
+        "${CMAKE_CURRENT_BINARY_DIR}/sturmConfig.cmake"
+        "${CMAKE_CURRENT_BINARY_DIR}/sturmConfigVersion.cmake"
+        DESTINATION "${STURM_CMAKE_CONFIG_DESTINATION}")
