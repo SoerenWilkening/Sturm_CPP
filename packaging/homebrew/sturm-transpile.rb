@@ -20,11 +20,28 @@ class SturmTranspile < Formula
   end
 
   test do
+    # Self-contained fixture: sturm/sturm.hpp alone does not expose qbool's
+    # operator| (that lives in sturm/qtypes/qbool_ops.hpp and requires
+    # STURM_BACKEND_ENABLED + sturm/control/when.hpp to wire up). The
+    # transpiler silences diagnostics via IgnoringDiagConsumer, so a bad
+    # header chain here silently emits a pass-through file and the
+    # assert_match below fails with no useful stderr. Inlining the stub
+    # — same shape as tests/smoke/minimal_or.cpp — makes the test a
+    # deterministic black-box probe of the M7 matcher.
     (testpath/"src.cpp").write <<~CPP
-      #include <sturm/sturm.hpp>
+      namespace sturm {
+      class qbool {
+      public:
+          qbool() {}
+          qbool(int) {}
+          qbool(const qbool&) {}
+      };
+      inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+      }
+      using sturm::qbool;
       void f() { qbool a{0}, b{0}; qbool tmp = a | b; (void)tmp; }
     CPP
-    system "#{bin}/sturm-transpile", "src.cpp", "--output-dir", testpath/"out",
+    system bin/"sturm-transpile", "src.cpp", "--output-dir", testpath/"out",
            "--extra-arg=-I#{include}", "--extra-arg=-std=c++20"
     assert_match "uncompute_or", (testpath/"out/src.cpp").read
   end
