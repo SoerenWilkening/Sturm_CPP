@@ -1,0 +1,68 @@
+@PACKAGE_INIT@
+
+# sturmConfig.cmake.in — consumed by find_package(sturm)
+#
+# When an installed STURM is located via
+#     find_package(sturm REQUIRED)
+# this file is the entry point CMake executes. Its job is to expose the
+# two pieces a downstream consumer needs:
+#   1. The `add_quantum_executable(target src1 src2 ...)` helper,
+#      defined by SturmTranspile.cmake.
+#   2. A `sturm::sturm` (header-only) IMPORTED target, or at minimum an
+#      include-path that resolves `#include <sturm/sturm.hpp>`.
+#
+# @PACKAGE_INIT@ is expanded by configure_package_config_file() at install
+# time and provides the set_and_check() / check_required_components()
+# helpers plus a _IMPORT_PREFIX anchored at the install root (i.e. the
+# directory containing lib/cmake/sturm/).
+
+# ── 1. Public include directory ───────────────────────────────────────────
+# Resolve the install include dir relative to this config file and expose
+# it via a small IMPORTED INTERFACE target so downstream targets can
+# simply `target_link_libraries(foo PRIVATE sturm::sturm)`.
+set_and_check(STURM_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
+
+# The ancilla-pool capacity is baked at STURM configure time and burned
+# into this file via configure_package_config_file(). Public headers
+# (qubit_pool.hpp) reference STURM_ANCILLA_CAPACITY as a preprocessor
+# symbol, so downstream consumers must see it too.
+set(STURM_ANCILLA_CAPACITY @STURM_ANCILLA_CAPACITY@)
+
+if(NOT TARGET sturm::sturm)
+    add_library(sturm::sturm INTERFACE IMPORTED)
+    set_target_properties(sturm::sturm PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${STURM_INCLUDE_DIR}"
+        INTERFACE_COMPILE_FEATURES cxx_std_20
+        INTERFACE_COMPILE_DEFINITIONS "STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
+endif()
+
+# Back-compat unprefixed alias so in-tree code paths (which link `sturm`
+# by its bare target name) keep working when consumed via find_package().
+if(NOT TARGET sturm)
+    add_library(sturm INTERFACE IMPORTED)
+    set_target_properties(sturm PROPERTIES
+        INTERFACE_INCLUDE_DIRECTORIES "${STURM_INCLUDE_DIR}"
+        INTERFACE_COMPILE_FEATURES cxx_std_20
+        INTERFACE_COMPILE_DEFINITIONS "STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
+endif()
+
+# ── 2. sturm-transpile executable ─────────────────────────────────────────
+# Expose the installed sturm-transpile driver as an IMPORTED executable
+# target with the same name used by the in-tree build
+# (cmake/SturmTranspile.cmake references `sturm-transpile` by bare name),
+# so the helper works identically against installed and in-tree layouts.
+set_and_check(STURM_TRANSPILE_EXECUTABLE "@PACKAGE_CMAKE_INSTALL_BINDIR@/sturm-transpile")
+
+if(NOT TARGET sturm-transpile)
+    add_executable(sturm-transpile IMPORTED)
+    set_target_properties(sturm-transpile PROPERTIES
+        IMPORTED_LOCATION "${STURM_TRANSPILE_EXECUTABLE}")
+endif()
+
+# ── 3. The add_quantum_executable() helper ────────────────────────────────
+# Include the installed copy of SturmTranspile.cmake. Its include-guard
+# makes the include idempotent; a consumer that calls find_package(sturm)
+# twice still sees a single definition of add_quantum_executable.
+include("${CMAKE_CURRENT_LIST_DIR}/SturmTranspile.cmake")
+
+check_required_components(sturm)

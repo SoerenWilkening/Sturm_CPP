@@ -154,6 +154,13 @@ else()
     target_link_libraries(sturm-transpile PRIVATE ${LLVM_LIBS})
 endif()
 
+# ── Install rule (Phase L PL-1) ───────────────────────────────────────────────
+# Ship the transpiler driver into <prefix>/bin so downstream consumers can
+# locate it via the IMPORTED `sturm-transpile` target wired up in
+# sturmConfig.cmake (see top-level CMakeLists.txt install() block).
+install(TARGETS sturm-transpile
+        RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 enable_testing()
 add_subdirectory(tests)
