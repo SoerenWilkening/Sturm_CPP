@@ -115,11 +115,28 @@ function(add_quantum_executable target)
         # cleanly. sturm-transpile runs Clang via libTooling without a
         # compilation database, so forward the include paths and feature
         # defines explicitly.
+        #
+        # STURM_ANCILLA_CAPACITY must match the value baked into the rest of
+        # the build (root CMakeLists.txt add_compile_definitions) and the
+        # value exposed to out-of-tree find_package(sturm) consumers via
+        # sturmConfig.cmake (which sets this variable before include()ing
+        # this file). Referencing ${STURM_ANCILLA_CAPACITY} here keeps the
+        # transpile pass and the compile pass in sync, preventing divergent
+        # macro-driven template instantiations.
+        if(NOT DEFINED STURM_ANCILLA_CAPACITY)
+            message(FATAL_ERROR
+                "add_quantum_executable(${target}): STURM_ANCILLA_CAPACITY "
+                "is not defined. In-tree builds set it in the top-level "
+                "CMakeLists.txt; find_package(sturm) consumers receive it "
+                "from sturmConfig.cmake. If you are including "
+                "SturmTranspile.cmake directly, set STURM_ANCILLA_CAPACITY "
+                "before the include().")
+        endif()
         set(_xa_args
             "--extra-arg=-std=c++20"
             "--extra-arg=-I${CMAKE_SOURCE_DIR}/include"
             "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
-            "--extra-arg=-DSTURM_ANCILLA_CAPACITY=256")
+            "--extra-arg=-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
 
         add_custom_command(
             OUTPUT "${gen_src}"
