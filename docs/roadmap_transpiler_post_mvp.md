@@ -700,6 +700,17 @@ Cleanup lands as one or a few focused commits once every construct has a green s
 
 ## Phase L — Distribution and one-line install
 
+> **2026-04-19:** Complete. PL-1..PL-7 landed end-to-end, tag `v0.1.0` pushed to origin, and the Homebrew tap is populated:
+>
+> - PL-1 (sturm-flli): `install()` rules + AGPL-3.0 LICENSE + `sturmConfig.cmake` — `cmake --install` exports `bin/sturm-transpile`, `include/sturm/`, and `lib/cmake/sturm/`.
+> - PL-2 (sturm-mzfa): `.github/workflows/release.yml` tag-triggered build produces 4 prebuilt tarballs (`x86_64`/`aarch64` × `linux`/`macos`).
+> - PL-3 (sturm-bn4y): smoke-test matrix runs each prebuilt tarball on a clean runner without system LLVM and transpiles `tests/smoke/minimal_or.cpp`, asserting `uncompute_or(...)` in the output.
+> - PL-4 (sturm-cynu): `packaging/homebrew/sturm-transpile.rb` formula checked into the repo.
+> - PL-5 (sturm-e0v3): top-level `README.md` install section — one `brew install` line, one curl fallback.
+> - PL-7 (sturm-k5hu): Docker image built from `packaging/docker/Dockerfile` and published to GHCR on each tagged release.
+> - PL-6 (sturm-pumi): tag `v0.1.0` pushed; source tarball sha256 `907b8f2dda4c6261572109b05762f84a93280ad69dae9eb1b3c14fdf32610046` committed into `github.com/SoerenWilkening/homebrew-sturm` at `Formula/sturm-transpile.rb`. Release page: `https://github.com/SoerenWilkening/Sturm_CPP/releases/tag/v0.1.0`.
+> - Bonus (sturm-8gep): silent macOS transpile breakage fixed — LibTooling could not locate its builtin-headers resource directory, so the parser aborted before main-file translation and every Phase A-I matcher saw zero ops from user code. Now the Clang resource directory is baked into `sturm-transpile` at configure time and injected via an `ArgumentsAdjuster`, unblocking the Phase B/C/D example-observability ctests.
+
 The CMake invocation developers use today (`cmake -DSTURM_TRANSPILE=ON -DLLVM_DIR=... -DClang_DIR=...`) is a contributor workflow, not an end-user experience. For adoption the transpiler must install in one or two commands on macOS and Linux.
 
 LLVM is structurally required — any Clang-based source-to-source tool depends on `libclangTooling`, `libclangAST`, and `libLLVMSupport` for semantic C++ parsing — but the dependency can be hidden from end users by moving it into a package manager or a prebuilt binary. The complexity doesn't shrink; it moves off the critical path of a first-time user.
