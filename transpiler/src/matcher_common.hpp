@@ -116,9 +116,11 @@ inline bool is_user_braceless_body(const clang::Stmt* body) {
     if (clang::isa<clang::CompoundStmt>(body)) return false;
     const clang::SourceLocation loc = body->getBeginLoc();
     if (!loc.isValid()) return false;
-    // WHEN and friends expand through `_when_capture_`/`_when_val_`/
-    // `_when_guard_` nested `if`s; their then-branches superficially
-    // look like braceless bodies. Skip macro-expanded spellings.
+    // The WHEN macro expands to two nested `if`s (see
+    // include/sturm/control/when.hpp:225-228 —
+    // `_when_val_` binds the materialized expr, `_when_guard_` binds the
+    // RAII guard); their then-branches superficially look like braceless
+    // bodies. Skip macro-expanded spellings.
     if (loc.isMacroID()) return false;
     return true;
 }
@@ -761,16 +763,16 @@ inline bool is_range_covered_by_fused(
 }
 
 // Resolve the post-body close-brace anchor for a `WHEN(expr) { body }`
-// invocation. The WHEN macro expands to three nested `if`s:
+// invocation. The WHEN macro expands to two nested `if`s (see
+// include/sturm/control/when.hpp:225-228):
 //
-//   if (WhenCapture _when_capture_{}; true)       // outer
-//       if (decltype(auto) _when_val_ = ...; true) // middle (bound as when_if)
-//           if (auto _when_guard_ = ...; ...)      // inner
-//               { body }                           // CompoundStmt
+//   if (decltype(auto) _when_val_ = ...; true)   // outer (bound as when_if)
+//       if (auto _when_guard_ = ...; ...)        // inner (gate)
+//           { body }                             // CompoundStmt
 //
-// Starting from the middle `if` (our match anchor), descend `getThen()`
+// Starting from the outer `if` (our match anchor), descend `getThen()`
 // twice to reach the user's body CompoundStmt. The first descent lands
-// on the innermost `if` (the `_when_guard_` gate); the second descent
+// on the inner `if` (the `_when_guard_` gate); the second descent
 // lands on the CompoundStmt body. We then return the location immediately
 // past the closing `}` so insertions anchored here land after the user's
 // body, outside the WHEN's scope.

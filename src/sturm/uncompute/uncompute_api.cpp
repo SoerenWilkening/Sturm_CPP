@@ -1,10 +1,11 @@
 // uncompute_api.cpp — Implementation of `sturm::uncompute_or` (M3 transpiler-MVP).
 //
-// The gate sequence mirrors the forward-OR adjoint already present in
-// uncompute_op.hpp `BITWISE_SELF` kind=1 (lines 237-271) for the
-// quantum-quantum path.  Mixed and classical cases reuse the four-quadrant
-// rules used by `materialize_or` in include/sturm/qtypes/bit_proxy.hpp and
-// the OrExpr<qbool> materialization in include/sturm/qtypes/qbool_ops.hpp.
+// The gate sequence is the self-adjoint of the forward OR circuit that
+// `operator|` emits in include/sturm/qtypes/qbool_ops.hpp (quantum-quantum
+// path: 2x CX + CCX onto the result qubit).  Mixed and classical cases
+// reuse the four-quadrant rules used by `materialize_or` in
+// include/sturm/qtypes/bit_proxy.hpp and the qbool-level `operator|` in
+// include/sturm/qtypes/qbool_ops.hpp.
 //
 // This file does NOT allocate or release qubits; the caller retains
 // ownership.  All gate emission goes through `execute_gate` so the active

@@ -78,8 +78,9 @@ using detail::make_ref;
 
 // Peel through `IgnoreParenImpCasts` (matches the XorAssign matchers'
 // peel depth — `a ^= __t;`'s AST shape does not require a heavier
-// `peel_to_payload` walk because we never descend through lazy_expr /
-// OrExpr wrappers here).
+// `peel_to_payload` walk here: PJ-1d only looks up a plain DeclRefExpr
+// operand on a XorAssign, not through any wrapper/materialization
+// layer.
 const DeclRefExpr* peel_to_dre(const Expr* e) {
     if (!e) return nullptr;
     return dyn_cast_or_null<DeclRefExpr>(e->IgnoreParenImpCasts());
@@ -332,30 +333,31 @@ void register_ccnot_fuse_matcher(clang::ast_matchers::MatchFinder& finder,
         hasArgument(0, ignoringImplicit(declRefExpr().bind("and_lhs"))),
         hasArgument(1, ignoringImplicit(declRefExpr().bind("and_rhs"))));
 
-    // Two initializer shapes reach a `qbool __t = a & b;` VarDecl depending
-    // on the build profile:
-    //   (a) eager / hermetic — `operator&` returns `qbool` directly (e.g.
-    //       the snapshot fixtures under tests/transpiler/fixtures/fuse_xor_and*.cpp
-    //       and any non-backend build profile where qbool_logic.hpp's
-    //       classical `operator&` is active). The VarDecl's init is the
-    //       CXXOperatorCallExpr itself modulo implicit glue.
-    //   (b) lazy / backend — under STURM_BACKEND_ENABLED `operator&` on
-    //       qbool returns `AndExpr<qbool>` (lazy_expr.hpp:81), which is
-    //       materialized into the VarDecl's qbool slot via the
-    //       user-defined conversion `AndExpr<qbool>::operator qbool()`
-    //       (qbool_ops.hpp:160). The init AST chain is:
+    // Two initializer shapes reach a `qbool __t = a & b;` VarDecl:
+    //   (a) direct op-call — `operator&` on qbool returns an owning
+    //       `qbool` directly (post-PK-2: the pre-PK lazy wrapper path
+    //       was retired, and `operator&` in qbool_ops.hpp / qbool_logic.hpp
+    //       now always hands back a `qbool` value; see also
+    //       include/sturm/control/when.hpp:40-43 for the matching
+    //       retirement note). The VarDecl's init is the
+    //       CXXOperatorCallExpr itself modulo implicit glue. This is
+    //       the shape produced by the snapshot fixtures under
+    //       tests/transpiler/fixtures/fuse_xor_and*.cpp and by every
+    //       live build profile (backend and non-backend alike).
+    //   (b) wrapped-via-conversion — if some future fixture or header
+    //       re-introduces a wrapper type whose `operator qbool()` feeds
+    //       the VarDecl (AST chain:
     //         VarDecl → ExprWithCleanups
     //                 → ImplicitCastExpr<UserDefinedConversion>
     //                 → CXXMemberCallExpr (operator qbool())
     //                 → ImplicitCastExpr<NoOp>
     //                 → MaterializeTemporaryExpr
-    //                 → CXXOperatorCallExpr '&'
-    //       — same shape the MVP OR matcher peels in
-    //       matcher_qbool_bitwise.cpp:258-264. Without this second branch
-    //       the PJ-1d peephole silently misses every end-to-end backend
-    //       build (e.g. examples/zero_ancilla_fusion.cpp under
-    //       STURM_BACKEND_ENABLED=1), even though the hermetic snapshot
-    //       fixtures would still pass.
+    //                 → CXXOperatorCallExpr '&'),
+    //       we peel through the CXXMemberCallExpr the same way the MVP
+    //       OR matcher does in matcher_qbool_bitwise.cpp:258-264. No
+    //       in-tree build currently exercises this branch — it is kept
+    //       as a defensive fallback so the PJ-1d peephole doesn't
+    //       silently regress if a lazy shape re-enters the tree.
     auto eager_init = ignoringImplicit(and_call);
     auto lazy_init  = ignoringImplicit(
         cxxMemberCallExpr(on(ignoringImplicit(and_call))));
