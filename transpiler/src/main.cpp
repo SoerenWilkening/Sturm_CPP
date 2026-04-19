@@ -44,6 +44,9 @@
 #include "clang/Tooling/Tooling.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
+#include "llvm/Support/FileSystem.h"
+#include "llvm/Support/Path.h"
+#include "llvm/Support/Program.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <cerrno>
@@ -547,21 +550,45 @@ int main(int argc, const char** argv) {
     // the parser abandons main-file translation before the user's body is
     // built into the AST — every Phase A-I matcher then sees no ops from
     // the user's code and the transpile produces a byte-identical pass-
-    // through. STURM_CLANG_RESOURCE_DIR is baked in at CMake-configure
-    // time from the LLVM package the transpiler was linked against (see
-    // transpiler/CMakeLists.txt). The adjuster prepends the arg, so a
-    // user-supplied `--extra-arg=-resource-dir=...` that appears later in
-    // argv wins — the compile-time value is only a fallback.
-#ifdef STURM_CLANG_RESOURCE_DIR
+    // through.
+    //
+    // Lookup order:
+    //   1. `<bindir>/../lib/clang/<LLVM_VERSION_MAJOR>` next to the running
+    //      executable. This is the only path that survives a relocatable
+    //      tarball install (the build job ships the Clang builtin-headers
+    //      dir alongside `bin/sturm-transpile`), so it must come first.
+    //   2. `STURM_CLANG_RESOURCE_DIR` baked in at CMake-configure time from
+    //      the LLVM package the transpiler was linked against. This keeps
+    //      local in-tree builds green even when the install rule does not
+    //      run (e.g. `cmake --build build` + running the binary directly).
+    //
+    // The adjuster prepends the arg at BEGIN, so a user-supplied
+    // `--extra-arg=-resource-dir=...` that appears later in argv wins.
     {
-        const std::string rd_arg =
-            std::string("-resource-dir=") + STURM_CLANG_RESOURCE_DIR;
-        tool.appendArgumentsAdjuster(
-            clang::tooling::getInsertArgumentAdjuster(
-                rd_arg.c_str(),
-                clang::tooling::ArgumentInsertPosition::BEGIN));
-    }
+        std::string rd;
+        const std::string exe_path = llvm::sys::fs::getMainExecutable(
+            argv[0], reinterpret_cast<void*>(&main));
+        if (!exe_path.empty()) {
+            llvm::SmallString<256> candidate(exe_path);
+            llvm::sys::path::remove_filename(candidate);                 // strip exe
+            llvm::sys::path::remove_filename(candidate);                 // strip bin/
+            llvm::sys::path::append(candidate, "lib", "clang",
+                                    STURM_LLVM_VERSION_MAJOR_STR);
+            if (llvm::sys::fs::is_directory(candidate)) {
+                rd = std::string(candidate.str());
+            }
+        }
+#ifdef STURM_CLANG_RESOURCE_DIR
+        if (rd.empty()) rd = STURM_CLANG_RESOURCE_DIR;
 #endif
+        if (!rd.empty()) {
+            const std::string rd_arg = std::string("-resource-dir=") + rd;
+            tool.appendArgumentsAdjuster(
+                clang::tooling::getInsertArgumentAdjuster(
+                    rd_arg.c_str(),
+                    clang::tooling::ArgumentInsertPosition::BEGIN));
+        }
+    }
 
     TranspileFactory factory(input_path, kOutputDir.getValue());
     int tool_rc = tool.run(&factory);
