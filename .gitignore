@@ -24,3 +24,4 @@ Testing/
 .claude/agents/
 .claude/skills/
 .claude/scheduled_tasks.lock
+.claude/settings.local.json
