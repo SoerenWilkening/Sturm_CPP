@@ -98,7 +98,16 @@ jobs:
             -DClang_DIR="${LLVM_PREFIX}/lib/cmake/clang"
 
       - name: Build
-        run: cmake --build build -j
+        # `-j` with no numeric arg means unlimited parallelism, which
+        # forks more g++ invocations than a 2-core GitHub runner's 7GB
+        # RAM can hold when every TU pulls in clang/Tooling/Tooling.h
+        # (~1-2 GB RSS per process). `-j 2` matches the runner's core
+        # count on every matrix entry (ubuntu-24.04 / ubuntu-24.04-arm
+        # / macos-13 / macos-14 all provision 2-3 cores) and keeps the
+        # peak RSS under the cap. Observed in the v0.1.0 workflow run:
+        # both Linux builds were OOM-killed within 1m of entering this
+        # step. Full fix discussion in sturm-pumi.
+        run: cmake --build build -j 2
 
       - name: Install
         run: cmake --install build
