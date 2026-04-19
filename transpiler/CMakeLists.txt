@@ -93,7 +93,8 @@ target_compile_definitions(sturm-transpile PRIVATE ${LLVM_DEFS_LIST})
 set(STURM_CLANG_RESOURCE_DIR
     "${LLVM_INSTALL_PREFIX}/lib/clang/${LLVM_VERSION_MAJOR}")
 target_compile_definitions(sturm-transpile PRIVATE
-    STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}")
+    STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
+    STURM_LLVM_VERSION_MAJOR_STR="${LLVM_VERSION_MAJOR}")
 
 # Link against the shared libclang-cpp + libLLVM when available. The
 # distro-shipped LLVM layout (Debian / Ubuntu / Homebrew `llvm@17`)
@@ -174,6 +175,26 @@ endif()
 # sturmConfig.cmake (see top-level CMakeLists.txt install() block).
 install(TARGETS sturm-transpile
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
+
+# Ship the Clang builtin-headers resource directory alongside the binary so
+# the tarball is truly self-contained. At runtime the transpiler resolves
+# its resource dir relative to its own executable path
+# (`<bindir>/../lib/clang/<LLVM_VERSION_MAJOR>`), so the on-disk layout must
+# mirror that. Without these headers, the parser aborts on missing
+# `stdarg.h` (every macOS libc sys header needs it) and the output is a
+# silent pass-through — exactly the smoke-test failure on a clean runner
+# where system LLVM-17 has been purged. See transpiler/src/main.cpp's
+# ArgumentsAdjuster for the runtime lookup logic.
+if(EXISTS "${STURM_CLANG_RESOURCE_DIR}/include")
+    install(DIRECTORY "${STURM_CLANG_RESOURCE_DIR}/include"
+            DESTINATION "lib/clang/${LLVM_VERSION_MAJOR}")
+else()
+    message(WARNING
+        "sturm-transpile: Clang builtin-headers dir not found at "
+        "${STURM_CLANG_RESOURCE_DIR}/include — installed tarball will not "
+        "be self-contained (runs will silently pass through when system "
+        "LLVM-17 is absent).")
+endif()
 
 # ── Tests ─────────────────────────────────────────────────────────────────────
 enable_testing()
