@@ -39,7 +39,10 @@ jobs:
             runner: ubuntu-24.04-arm
             os: linux
           - triple: x86_64-macos
-            runner: macos-13
+            # `macos-13` was retired in early 2026. `macos-15-intel` is the
+            # current free-tier label for x86_64 macOS (see
+            # github.com/actions/runner-images README).
+            runner: macos-15-intel
             os: macos
           - triple: aarch64-macos
             runner: macos-14
@@ -103,7 +106,7 @@ jobs:
         # RAM can hold when every TU pulls in clang/Tooling/Tooling.h
         # (~1-2 GB RSS per process). `-j 2` matches the runner's core
         # count on every matrix entry (ubuntu-24.04 / ubuntu-24.04-arm
-        # / macos-13 / macos-14 all provision 2-3 cores) and keeps the
+        # / macos-15-intel / macos-14 all provision 2-3 cores) and keeps the
         # peak RSS under the cap. Observed in the v0.1.0 workflow run:
         # both Linux builds were OOM-killed within 1m of entering this
         # step. Full fix discussion in sturm-pumi.
@@ -243,7 +246,10 @@ jobs:
             runner: ubuntu-24.04-arm
             os: linux
           - triple: x86_64-macos
-            runner: macos-13
+            # `macos-13` was retired in early 2026. `macos-15-intel` is the
+            # current free-tier label for x86_64 macOS (see
+            # github.com/actions/runner-images README).
+            runner: macos-15-intel
             os: macos
           - triple: aarch64-macos
             runner: macos-14
