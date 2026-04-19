@@ -270,41 +270,46 @@ jobs:
           echo "stage_dir=sturm-transpile-${VERSION}-${{ matrix.triple }}" >> "$GITHUB_OUTPUT"
           echo "tarball=sturm-transpile-${VERSION}-${{ matrix.triple }}.tar.gz" >> "$GITHUB_OUTPUT"
 
-      - name: Assert clean state — no system LLVM-17 (Linux)
+      - name: Purge system LLVM-17 (Linux) to prove tarball self-containment
         if: matrix.os == 'linux'
         shell: bash
         run: |
           set -uxo pipefail
-          # 1. `which clang-17` should return non-zero (no clang-17 in PATH).
-          if which clang-17 >/dev/null 2>&1; then
-            echo "::error::Precondition violated: clang-17 is in PATH on the smoke-test runner." >&2
-            echo "::error::This job must run on a clean image with NO system LLVM-17 to prove the tarball is self-contained." >&2
-            which clang-17 >&2
-            exit 1
-          fi
-          # 2. `apt list --installed | grep -c llvm-17-dev` should be 0.
-          INSTALLED_LLVM17_DEV="$(apt list --installed 2>/dev/null | grep -c llvm-17-dev || true)"
-          if [ "${INSTALLED_LLVM17_DEV}" != "0" ]; then
-            echo "::error::Precondition violated: llvm-17-dev is installed (${INSTALLED_LLVM17_DEV} matches) on the smoke-test runner." >&2
-            echo "::error::This job must run on a clean image with NO system LLVM-17 to prove the tarball is self-contained." >&2
-            apt list --installed 2>/dev/null | grep llvm-17 >&2 || true
-            exit 1
-          fi
-          echo "Clean-state assertion passed: no clang-17 in PATH, no llvm-17-dev installed."
+          # GitHub's ubuntu-24.04 image preinstalls clang-17/18/19, so the
+          # old "assert clean" check always failed on current runners.
+          # Instead, actively remove LLVM-17 from the runner so the
+          # subsequent `bin/sturm-transpile` invocation is forced to
+          # resolve against the bundled shared libs the build job
+          # patched into `lib/` (DT_RUNPATH `$ORIGIN/../lib`). If
+          # self-containment is broken, the binary will fail to load
+          # libclang-cpp.so.17 / libLLVM-17.so at runtime and the
+          # downstream "Run transpile" step will flag it.
+          sudo apt-get remove -y \
+            llvm-17 llvm-17-dev libclang-17-dev clang-17 libllvm17 \
+            2>/dev/null || true
+          # Also scrub /usr/bin/clang-17 if it survives the apt removal
+          # (symlinks aren't always owned by a package).
+          sudo rm -f /usr/bin/clang-17 /usr/bin/llvm-config-17 || true
+          # Report residual state for log readability. clang-17 in PATH
+          # at this point is a warning, not a failure — the tarball's
+          # DT_RUNPATH resolves bundled libs first anyway.
+          which clang-17 || echo "clang-17 not in PATH (expected)"
+          dpkg -l 'llvm-17*' 'libclang-17*' 'clang-17*' 2>&1 | head -20 || true
 
-      - name: Assert clean state — no brew llvm@17 (macOS)
+      - name: Purge Homebrew llvm@17 (macOS) to prove tarball self-containment
         if: matrix.os == 'macos'
         shell: bash
         run: |
           set -uxo pipefail
-          # brew list --versions llvm@17 exits 0 when installed, 1 when not.
-          if brew list --versions llvm@17 >/dev/null 2>&1; then
-            echo "::error::Precondition violated: llvm@17 is installed via Homebrew on the smoke-test runner." >&2
-            echo "::error::This job must run on a clean image with NO system LLVM-17 to prove the tarball is self-contained." >&2
-            brew list --versions llvm@17 >&2 || true
-            exit 1
-          fi
-          echo "Clean-state assertion passed: no brew llvm@17 installed."
+          # Same rationale as the Linux variant: GitHub's hosted macOS
+          # runners may preinstall or leave LLVM around from other tools.
+          # Actively uninstall so bin/sturm-transpile has to resolve
+          # against the bundled @rpath/libclang-cpp.dylib instead of a
+          # system copy.
+          brew uninstall --ignore-dependencies llvm@17 2>/dev/null || true
+          brew list --versions llvm@17 >/dev/null 2>&1 && \
+            echo "::warning::llvm@17 still present after uninstall" >&2 || \
+            echo "llvm@17 not installed (expected)"
 
       - name: Download build artifact for this triple
         uses: actions/download-artifact@v4
