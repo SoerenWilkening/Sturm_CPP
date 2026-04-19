@@ -2,6 +2,17 @@
 
 This file provides instructions and context for AI coding agents working on this project.
 
+## 🚨 HARD LIMIT: MAX 6 THREADS FOR ALL BUILD/TEST COMMANDS 🚨
+
+**EVERY invocation of `cmake`, `cmake --build`, `ctest`, `make`, or `ninja` MUST be capped at 6 parallel threads/processes. NO EXCEPTIONS.**
+
+- `cmake --build <dir> --parallel 6` (NEVER `--parallel` alone, NEVER higher)
+- `ctest --parallel 6` or `CTEST_PARALLEL_LEVEL=6 ctest`
+- `make -j6` (NEVER bare `-j`, NEVER `-j$(nproc)`)
+- `ninja -j6`
+
+This applies to every command you run, every subagent you spawn, every script you author, every CI config you touch. When spawning subagents (bd-worker, bd-autopilot, etc.) restate this limit in their prompt. If you see a build command without `-j6`/`--parallel 6`, fix it before running.
+
 ## Required Reading
 
 At the start of every session, read:
