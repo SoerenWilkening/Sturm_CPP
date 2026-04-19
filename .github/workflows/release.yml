@@ -354,8 +354,16 @@ jobs:
           # cl::opt double-registration regression signature AND still
           # show it in the job log.
           STDERR_LOG=/tmp/sturm-transpile.stderr
+          # Pass the input as an ABSOLUTE path. `resolve_output_path` in
+          # transpiler/src/io.cpp treats relative inputs as subtree-to-
+          # mirror and absolute inputs as "collapse to basename", so an
+          # absolute path lands the emitted file at
+          # `/tmp/out/minimal_or.cpp` (flat) to match the verify step
+          # below. A relative input would land at
+          # `/tmp/out/tests/smoke/minimal_or.cpp` and the verify-step
+          # grep would miss it.
           set +e
-          "${STAGE}/bin/sturm-transpile" tests/smoke/minimal_or.cpp \
+          "${STAGE}/bin/sturm-transpile" "${PWD}/tests/smoke/minimal_or.cpp" \
             --output-dir /tmp/out \
             --extra-arg=-I"${PWD}/${STAGE}/include" \
             --extra-arg=-std=c++20 \
