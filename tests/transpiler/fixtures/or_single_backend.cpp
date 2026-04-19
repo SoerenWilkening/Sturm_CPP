@@ -1,18 +1,22 @@
-// LP3 RED fixture for the sturm-transpile lazy-path snapshot test.
+// LP3 RED fixture for the sturm-transpile conversion-wrapped-path
+// snapshot test.
 //
 // The MVP matcher (M8) matches the EAGER initializer shape — where
-// `operator|` returns a bare `qbool`. Under `STURM_BACKEND_ENABLED=1`
-// (examples/or_circuit.cpp, driven via lazy_expr.hpp), `operator|`
-// instead returns an `OrExpr<qbool>` which is materialized to `qbool`
-// via a user-defined conversion. The MVP matcher does not peel this
-// chain and therefore fails to inject `uncompute_or(...)` on the
-// real example.
+// `operator|` returns a bare `qbool`. Historically, under
+// `STURM_BACKEND_ENABLED=1` (examples/or_circuit.cpp, pre-PK-2),
+// `operator|` instead returned an expression-template wrapper that
+// was materialized to `qbool` via a user-defined conversion.  The MVP
+// matcher did not peel this chain and therefore failed to inject
+// `uncompute_or(...)` on the real example. (Phase K PK-2 has since
+// retired those qbool-level wrappers, but this hermetic fixture
+// preserves the shape so the matcher-widening regression remains
+// testable — see notes below.)
 //
-// This hermetic fixture reproduces that exact shape minimally so the
-// regression is visible without depending on backend headers. LP2's
-// AST calibration confirmed the call-site tree here is byte-identical
-// to the tree produced by the real `lazy_expr.hpp` — see the notes on
-// issue sturm-ea7.
+// This hermetic fixture reproduces that historical shape minimally
+// (defining its own local `OrExpr` wrapper below) so the regression is
+// visible without depending on backend headers. LP2's AST calibration
+// confirmed the call-site tree here is byte-identical to the tree the
+// pre-PK-2 backend header produced — see the notes on issue sturm-ea7.
 //
 // LP3 lands this fixture with a PLACEHOLDER expected file; LP4 widens
 // the matcher and freezes the real golden output. While LP3 is on

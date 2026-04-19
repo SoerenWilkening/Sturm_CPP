@@ -57,7 +57,7 @@ Bit make_ancilla_view(qbool& owner) {
 // MAJ(a, b, c):
 //   b ^= c;            CNOT(c, b)
 //   a ^= c;            CNOT(c, a)
-//   c ^= (a & b);      Toffoli via AndExpr
+//   c ^= (a & b);      Toffoli via operator^=
 //
 // Result: c = majority(a_in, b_in, c_in)
 //         b = b_in XOR c_in
@@ -71,7 +71,7 @@ template <typename Bit>
 inline void maj_dsl(Bit& a, Bit& b, Bit& c) {
     b ^= c;           // CNOT: b ^= c
     a ^= c;           // CNOT: a ^= c
-    c ^= (a & b);     // single Toffoli via AndExpr
+    c ^= (a & b);     // single Toffoli via operator^=
 }
 
 // ── UMA gate ─────────────────────────────────────────────────────────────────

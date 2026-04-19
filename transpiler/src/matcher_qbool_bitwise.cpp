@@ -77,10 +77,12 @@ public:
 
         // Debug-build guard (Risk R3, LP4 §"Optional hardening"): the widened
         // `anyOf(eager_init, lazy_init)` pattern is mutually exclusive by
-        // overload resolution (eager returns qbool, lazy returns
-        // OrExpr<qbool>), but a pathological reshuffle could still cause one
-        // VarDecl to bind twice. Assert that we have not already emitted an
-        // op for this var's declaration location in the current QScope.
+        // overload resolution (eager returns qbool directly, the conversion-
+        // wrapped branch fires only when operator| returns an expression-
+        // template wrapper that must go through a user-defined conversion),
+        // but a pathological reshuffle could still cause one VarDecl to bind
+        // twice. Assert that we have not already emitted an op for this
+        // var's declaration location in the current QScope.
 #ifndef NDEBUG
         const auto var_key = var->getLocation().getRawEncoding();
         for (const auto& existing : scope.ops) {
@@ -232,11 +234,14 @@ void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
     // Widened AST pattern (LP4) — see
     // `docs/archive/implementation_plan_transpiler_matcher_lazy_peel.md`
     // and the LP2 AST calibration notes on issue sturm-ea7. Fires on both
-    // initializer shapes `examples/or_circuit.cpp` can take:
+    // initializer shapes the matcher has to cover:
     //   (a) EAGER: `operator|(...) -> qbool`. VarDecl initializer is the
-    //       CXXOperatorCallExpr itself (modulo implicit glue). MVP shape.
-    //   (b) LAZY:  `operator|(...) -> OrExpr<qbool>`, materialized via
-    //       `OrExpr<qbool>::operator qbool()`. LP2 AST chain:
+    //       CXXOperatorCallExpr itself (modulo implicit glue). Standard
+    //       PK-2 shape — the qbool-level operators return owning qbool
+    //       directly.
+    //   (b) CONVERSION-WRAPPED: `operator|(...)` returns an expression-
+    //       template wrapper with a user-defined `operator qbool()` that
+    //       materialises to qbool. LP2 AST chain:
     //         VarDecl → ExprWithCleanups
     //                 → ImplicitCastExpr<UserDefinedConversion>
     //                 → CXXMemberCallExpr (operator qbool())
@@ -246,9 +251,13 @@ void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
     //       `ignoringImplicit` peels all of the above (incl. the
     //       UserDefinedConversion cast and MaterializeTemporaryExpr).
     //       N.B. no CXXConstructExpr on this chain — PRD sketch was off.
+    //       Phase K PK-2 retired the qbool-level wrappers, so today this
+    //       branch fires only against fixtures that re-supply such a
+    //       wrapper (see tests/transpiler/fixtures/or_single_backend.cpp).
     // Both branches bind the same `lhs`/`rhs`/`var` names; OrCallback::run
     // is unchanged. Branches are mutually exclusive by overload resolution
-    // (eager returns qbool; lazy returns OrExpr<qbool>).
+    // (eager returns qbool directly; the conversion-wrapped branch fires
+    // only when operator| returns a distinct wrapper type).
     auto or_call = cxxOperatorCallExpr(
         hasOverloadedOperatorName("|"),
         argumentCountIs(2),
@@ -281,11 +290,12 @@ void register_not_matcher(clang::ast_matchers::MatchFinder& finder,
     // non-member form, it is the single operand. Either way, the operand
     // we want to record is at index 0.
     //
-    // Only the direct (non-lazy) form is matched at PA-1: `~` does not go
-    // through OrExpr / AndExpr / lazy materialization — it is always eager
-    // (the operator returns qbool directly, allocating an ancilla and
-    // emitting X; see qbool_ops.hpp:141-153). No UserDefinedConversion
-    // peeling is needed here, unlike register_or_matcher's lazy branch.
+    // Only the direct (non-conversion-wrapped) form is matched at PA-1:
+    // `~` does not go through any expression-template wrapper — it is
+    // always eager (the operator returns qbool directly, allocating an
+    // ancilla and emitting X; see qbool_ops.hpp:141-153). No
+    // UserDefinedConversion peeling is needed here, unlike
+    // register_or_matcher's conversion-wrapped branch.
     auto not_call = cxxOperatorCallExpr(
         hasOverloadedOperatorName("~"),
         argumentCountIs(1),

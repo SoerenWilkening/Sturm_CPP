@@ -172,10 +172,10 @@ void demo(const sturm::qbool& in);
 // `ccnot_inplace(x, a, b);` planted before the demo's closing `}` by
 // the PJ-1c render case.  The reference fixture spells both calls by
 // hand via `primitive_AND(ctx, a_idx, b_idx, x_idx)` directly against
-// the 18-gate sink — NOT via `lazy_expr` / `operator&` on qbool,
-// because the pre-K lazy materialisation allocates an intermediate
-// ancilla which the fusion explicitly collapses away; using it would
-// give a trivially-mismatched comparison.  Expected stream: two CCX
+// the 18-gate sink — NOT via `operator&` on qbool, because the
+// pre-PK-2 expression-template materialisation path allocates an
+// intermediate ancilla which the fusion explicitly collapses away;
+// using it would give a trivially-mismatched comparison.  Expected stream: two CCX
 // records on the three caller-supplied qubit indices.  `x` is taken
 // by non-const reference because the runtime fixture's `x ^= __t;`
 // needs a non-const lvalue and `ccnot_inplace` (the helper the
@@ -741,9 +741,9 @@ int main() {
     // `ccnot_inplace(x, a, b);` at scope close — emits the same two-
     // CCX gate stream as a hand-written reference that calls
     // `primitive_AND(ctx, a, b, x)` directly against the 18-gate
-    // sink (bypassing the pre-K lazy_expr path, which would allocate
-    // an intermediate ancilla and therefore produce a mismatched
-    // stream).  Expected stream length is TWO CCX records on the
+    // sink (bypassing the pre-PK-2 expression-template materialisation
+    // path, which would allocate an intermediate ancilla and therefore
+    // produce a mismatched stream).  Expected stream length is TWO CCX records on the
     // three caller-supplied qubit indices — no ancilla allocation on
     // either side, which is the defining invariant of the fusion.
     std::printf("PJ-1i gate-stream equivalence test (fuse_xor_and pattern):\n");

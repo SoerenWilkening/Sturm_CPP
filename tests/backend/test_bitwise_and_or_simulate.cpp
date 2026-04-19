@@ -186,8 +186,8 @@ static void test_and_assign_simulate() {
 // a |= b: a=5 (0101), b=6 (0110), W=4 → a must hold 7 (0111) after, b unchanged.
 //
 // |= is out-of-place: allocates W fresh result qubits, computes
-// result[i] ^= (a[i] | b[i]) per bit (2 CX + Toffoli via OrExpr),
-// then moves result into a.
+// result[i] ^= (a[i] | b[i]) per bit via BitProxy's operator| / ^=
+// (2 CX + Toffoli), then moves result into a.
 //
 // Qubit layout:
 //   q[0..3]  = a (W=4, a_base=0)
@@ -347,7 +347,8 @@ static void test_free_and_simulate() {
 // c = a | b: a=5 (0101), b=6 (0110), W=4 → c must hold 7 (0111).
 //
 // Free operator| allocates W fresh result qubits and emits per-bit OR
-// gates: result[i] ^= (a[i] | b[i]) via OrExpr (2 CX + Toffoli per bit).
+// gates: result[i] ^= (a[i] | b[i]) via BitProxy's operator| / ^=
+// (2 CX + Toffoli per bit).
 // =============================================================================
 
 static void test_free_or_simulate() {

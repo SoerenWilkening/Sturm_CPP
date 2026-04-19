@@ -254,13 +254,13 @@ void register_compound_qbool_matcher(
         argumentCountIs(2));
 
     // Helper: a bitwise op-call argument that may be wrapped in a
-    // user-defined conversion `OrExpr<qbool>::operator qbool()` /
-    // `AndExpr<qbool>::operator qbool()` (the lazy_expr.hpp shape used
-    // under STURM_BACKEND_ENABLED). Matches either the bare op-call or
-    // the conversion-wrapped form. Both shapes are valid nested-arg
+    // user-defined conversion `operator qbool()` on an expression-
+    // template wrapper (e.g. the LP4 hermetic-mock OR fixture still
+    // carries such a wrapper). Matches either the bare op-call or the
+    // conversion-wrapped form. Both shapes are valid nested-arg
     // candidates for the compound matcher. `ignoringImplicit` peels
     // ImplicitCastExpr, MaterializeTemporaryExpr and CXXBindTemporaryExpr
-    // — the wrapper trio that wraps the `OrExpr<qbool>` lvalue between
+    // — the wrapper trio that wraps the returned wrapper lvalue between
     // its `operator qbool()` member call and its producing `|`/`&`
     // CXXOperatorCallExpr.
     auto nested_or_lazy_wrapped = anyOf(
@@ -287,10 +287,10 @@ void register_compound_qbool_matcher(
     //   (b) ctor-wrapped — same as (a) but with an elidable copy ctor
     //                       (mirrors Phase D comparator at
     //                       matcher_qint_compare.cpp:163-183);
-    //   (c) lazy-wrapped — under STURM_BACKEND_ENABLED `operator&`
-    //                       returns `AndExpr<qbool>`, materialized via
-    //                       `AndExpr<qbool>::operator qbool()`. The init
-    //                       chain is:
+    //   (c) conversion-wrapped — the bitwise op returns an expression-
+    //                       template wrapper that is materialised to
+    //                       qbool via a user-defined `operator qbool()`.
+    //                       The init chain is:
     //                         ExprWithCleanups
     //                         → ImplicitCastExpr<UserDefinedConversion>
     //                         → CXXMemberCallExpr (operator qbool())
@@ -298,7 +298,11 @@ void register_compound_qbool_matcher(
     //                         → MaterializeTemporaryExpr
     //                         → CXXOperatorCallExpr `&`
     //                       — same shape the MVP OR matcher peels in
-    //                       matcher_qbool_bitwise.cpp:223-224.
+    //                       matcher_qbool_bitwise.cpp:223-224. Phase K
+    //                       PK-2 retired the qbool-level expression-
+    //                       template wrappers, so this branch fires today
+    //                       only against fixtures that re-supply such a
+    //                       wrapper (see or_single_backend.cpp).
     auto direct_init  = ignoringImplicit(outer_bitwise_call);
     auto ctor_wrapped = ignoringImplicit(
         cxxConstructExpr(has(ignoringImplicit(outer_bitwise_call))));

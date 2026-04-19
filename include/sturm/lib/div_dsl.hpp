@@ -39,8 +39,9 @@ static inline void compute_overflow_or_dsl(
     overflow ^= b_bits[lo];
     for (size_t j = lo + 1u; j < n; ++j) {
         // OR(x,y) = x XOR y XOR (x AND y): compute AND before modifying overflow.
-        // For BitProxy, operator& returns AndExpr<BitProxy> which needs materialize_and().
-        // For qbool, implicit conversion from AndExpr<qbool> to qbool works directly.
+        // For qbool, operator& returns an owning qbool directly (PK-2).
+        // For BitProxy, we call materialize_and(a, b) so we can address the
+        // materialised qbool as a BitProxy before the XOR-in.
         if constexpr (std::is_same_v<Bit, qbool>) {
             qbool tmp = (overflow & b_bits[j]);  // materializes ancilla; uncomputes on destruct
             overflow ^= b_bits[j];

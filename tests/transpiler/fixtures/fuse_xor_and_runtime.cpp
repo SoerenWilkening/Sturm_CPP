@@ -14,9 +14,10 @@
 // transpiler/src/uncompute_pass.cpp plants a matching self-adjoint
 // `ccnot_inplace(x, a, b);` before the enclosing scope's close brace.
 // The hand-written companion `fuse_xor_and_reference.cpp` spells both
-// calls by hand via the primitive_AND sink (NOT via lazy_expr — the
-// pre-K lazy path would emit `a & b` as the four-gate AndExpr
-// materialization which does NOT match the single-CCX fused shape).
+// calls by hand via the primitive_AND sink (NOT via `operator&` on
+// qbool — the pre-PK-2 materialisation path would emit `a & b` as a
+// four-gate allocate-and-uncompute sequence which does NOT match the
+// single-CCX fused shape).
 //
 // Demo shape
 // ----------

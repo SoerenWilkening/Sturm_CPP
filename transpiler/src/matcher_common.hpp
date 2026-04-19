@@ -832,11 +832,13 @@ inline QValueRef make_ref(const clang::DeclRefExpr& dre) {
 // user-defined-conversion CXXMemberCallExpr wrappers to reach the "shape"
 // the matcher is interested in. The MaterializeTemporaryExpr /
 // CXXBindTemporaryExpr / CXXMemberCallExpr (zero-arg conversion) descents
-// are needed to traverse the `OrExpr<qbool>::operator qbool()` /
-// `AndExpr<qbool>::operator qbool()` chains that lazy_expr.hpp produces
-// under STURM_BACKEND_ENABLED. The CXXMemberCallExpr peel is restricted
-// to zero-arg member calls whose callee is a CXXConversionDecl so that
-// regular member calls (e.g. `b.flip()`) are not silently descended into.
+// are needed to traverse any user-defined-conversion / temporary-
+// materialisation chain a `|`/`&` producer might sit underneath (e.g.
+// the LP4 hermetic-mock OR fixture still exercises this path — see
+// tests/transpiler/fixtures/or_single_backend.cpp). The CXXMemberCallExpr
+// peel is restricted to zero-arg member calls whose callee is a
+// CXXConversionDecl so that regular member calls (e.g. `b.flip()`) are
+// not silently descended into.
 inline const clang::Expr* peel_to_payload(const clang::Expr* e) {
     if (!e) return nullptr;
     const clang::Expr* cur = e->IgnoreParenImpCasts();
@@ -865,10 +867,11 @@ inline const clang::Expr* peel_to_payload(const clang::Expr* e) {
         }
         if (const auto* mce = clang::dyn_cast<clang::CXXMemberCallExpr>(cur)) {
             // User-defined conversion: zero-arg member call whose target
-            // is a CXXConversionDecl (e.g. `OrExpr<qbool>::operator
-            // qbool()` in lazy_expr.hpp). Descend into the implicit object
-            // argument so we can keep walking toward the wrapped `|`/`&`
-            // CXXOperatorCallExpr.
+            // is a CXXConversionDecl (e.g. the `operator qbool()` a
+            // wrapping expression template might provide — the LP4 OR
+            // hermetic mock fixture still carries one). Descend into the
+            // implicit object argument so we can keep walking toward the
+            // wrapped `|`/`&` CXXOperatorCallExpr.
             if (mce->getNumArgs() == 0) {
                 if (const auto* method = mce->getMethodDecl()) {
                     if (clang::isa<clang::CXXConversionDecl>(method)) {

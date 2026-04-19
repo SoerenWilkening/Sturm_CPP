@@ -54,10 +54,9 @@
 #include "sturm/sturm.hpp"
 // The umbrella `sturm/sturm.hpp` pulls in the uncompute free-function
 // API (which declares `sturm::uncompute_or`).  The real quantum
-// `operator|` and its lazy-expression wrapper live in qbool_ops.hpp /
-// lazy_expr.hpp, so include them explicitly here — without them the
-// `a | b` below would hit the classical short-circuit path (which
-// emits no gates) or fail to compile entirely.
+// `operator|` lives in qbool_ops.hpp, so include it explicitly here
+// — without it the `a | b` below would hit the classical short-
+// circuit path (which emits no gates) or fail to compile entirely.
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 

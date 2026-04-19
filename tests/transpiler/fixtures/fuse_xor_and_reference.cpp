@@ -7,13 +7,13 @@
 // similar to the transpiler's expected output: two `ccnot_inplace`
 // calls (one forward fused emission + one self-adjoint uncompute),
 // but spelled via `primitive_AND(ctx, a_idx, b_idx, x_idx)` directly
-// against the 18-gate sink — NOT via `lazy_expr` / `operator&` on
-// qbool.  The pre-K `lazy_expr` path materialises `a & b` as a four-
-// gate CCX-plus-ancilla sequence (allocate ancilla, CCX(a,b,tmp), ...)
-// which would NOT match the SINGLE-CCX fused shape the PJ-1d matcher
-// collapses the pair into; using it here would give a trivially-
-// mismatched comparison that does not exercise the fusion.  By
-// bypassing the lazy wrappers and calling `primitive_AND` (which is
+// against the 18-gate sink — NOT via `operator&` on qbool.  The
+// pre-PK-2 expression-template materialisation path rendered `a & b`
+// as a four-gate CCX-plus-ancilla sequence (allocate ancilla,
+// CCX(a,b,tmp), ...) which would NOT match the SINGLE-CCX fused shape
+// the PJ-1d matcher collapses the pair into; using it here would give
+// a trivially-mismatched comparison that does not exercise the
+// fusion.  By bypassing that path and calling `primitive_AND` (which is
 // exactly one `execute_gate(ctx, STURM_GATE_CCX, ...)` call — see
 // include/sturm/backend/primitives.hpp:34-37) we emit the EXACT gate
 // stream the transpiled fixture produces: two CCX(a, b, x) records on
@@ -71,16 +71,16 @@ namespace m12_fused_reference {
 //
 // Why we call primitive_AND directly (not via `operator&` on qbool)
 // ----------------------------------------------------------------
-// The pre-K `lazy_expr` / `qbool_ops.hpp` materialisation path for
-// `a & b` allocates a fresh ancilla qubit, emits `CCX(a, b, tmp)`
-// into that ancilla, then needs a second CCX at scope close to
-// uncompute — that's a four-gate-plus-ancilla shape that the PJ-1d
-// peephole explicitly collapses OUT of existence.  The fused
-// transpiled output emits ONLY two CCX records on the original three
-// qubits (no ancilla).  To match that stream byte-for-byte the
-// reference must avoid the lazy materialisation entirely — which is
-// exactly what `primitive_AND(ctx, a, b, x)` does: one CCX, three
-// explicit qubit operands, no allocation.
+// The pre-PK-2 `qbool_ops.hpp` materialisation path for `a & b`
+// allocated a fresh ancilla qubit, emitted `CCX(a, b, tmp)` into that
+// ancilla, then needed a second CCX at scope close to uncompute —
+// that's a four-gate-plus-ancilla shape that the PJ-1d peephole
+// explicitly collapses OUT of existence.  The fused transpiled output
+// emits ONLY two CCX records on the original three qubits (no
+// ancilla).  To match that stream byte-for-byte the reference must
+// avoid any such materialisation entirely — which is exactly what
+// `primitive_AND(ctx, a, b, x)` does: one CCX, three explicit qubit
+// operands, no allocation.
 //
 // `const sturm::qbool&` inputs preserve the caller's qubit indices
 // across the demo boundary; `sturm::qbool& x` mirrors the runtime

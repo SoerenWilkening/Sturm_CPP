@@ -52,7 +52,7 @@ Bit make_ancilla_view(qbool& owner) {
 // Gate cost: 1 CCX.
 template <typename Bit>
 inline void lib_c_AND_dsl(Bit& c0, Bit& c1, Bit& tgt) {
-    tgt ^= (c0 & c1);   // AndExpr path: single CCX
+    tgt ^= (c0 & c1);   // operator^= path: single CCX
 }
 
 // ── lib_c_n_AND_dsl ───────────────────────────────────────────────────────────

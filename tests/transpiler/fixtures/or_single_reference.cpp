@@ -28,11 +28,10 @@
 
 #include "sturm/sturm.hpp"
 // The umbrella `sturm/sturm.hpp` only pulls in the uncompute free-
-// function API.  The real quantum `operator|` and its lazy-expression
-// wrapper live in `qbool_ops.hpp` / `lazy_expr.hpp`, so include them
-// explicitly — without them the `a | b` below would hit the eager
-// `qbool_logic.hpp` path (which does not emit gates) or fail to
-// compile entirely.
+// function API.  The real quantum `operator|` lives in
+// `qbool_ops.hpp`, so include it explicitly — without it the `a | b`
+// below would hit the eager `qbool_logic.hpp` path (which does not
+// emit gates) or fail to compile entirely.
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 
@@ -40,8 +39,9 @@ namespace m12_reference {
 
 // The body is the hand-written realization of what the transpiler must
 // emit.  `qbool tmp = a | b;` exercises the forward OR circuit
-// (see include/sturm/qtypes/qbool_ops.hpp `OrExpr<qbool>::operator
-// qbool()`); `sturm::uncompute_or(tmp, a, b);` emits the three-gate
+// (see include/sturm/qtypes/qbool_ops.hpp `operator|(const qbool&,
+// const qbool&)` — PK-2 returns owning qbool directly);
+// `sturm::uncompute_or(tmp, a, b);` emits the three-gate
 // adjoint (see src/sturm/uncompute/uncompute_api.cpp).  Together, the
 // two calls yield the six-gate CX+CX+CCX+CCX+CX+CX stream that the
 // test harness compares against the transpiler's output.

@@ -60,9 +60,8 @@
 #if defined(__has_include) && __has_include(<sturm/sturm.hpp>)
 #  include <sturm/sturm.hpp>
 // The umbrella `sturm/sturm.hpp` only pulls in the uncompute free-
-// function API.  The real quantum `operator|` and its lazy-expression
-// wrapper live in qbool_ops.hpp / lazy_expr.hpp, so include them
-// explicitly here.
+// function API.  The real quantum `operator|` lives in qbool_ops.hpp,
+// so include it explicitly here.
 #  include "sturm/qtypes/qbool.hpp"
 #  include "sturm/qtypes/qbool_ops.hpp"
 #else

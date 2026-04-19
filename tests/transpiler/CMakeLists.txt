@@ -697,7 +697,7 @@ set_tests_properties(transpiler_idempotent_when_nested_siblings PROPERTIES
     DEPENDS "snapshot_when_nested_siblings"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
-# ── LP3: RED snapshot fixture for the lazy OrExpr<qbool> initializer ────────
+# ── LP3: RED snapshot fixture for the conversion-wrapped `|`-initializer ───
 # Same driver and harness shape as snapshot_or_single, pointed at the
 # hermetic lazy-path fixture. LP3 lands this test against a PLACEHOLDER
 # expected file, so it is EXPECTED TO FAIL until LP4 widens
@@ -1704,8 +1704,8 @@ target_compile_features(test_gate_equivalence_or_single PRIVATE cxx_std_20)
 target_compile_definitions(test_gate_equivalence_or_single PRIVATE
     STURM_ANCILLA_CAPACITY=256
     # STURM_BACKEND_ENABLED activates the quantum operator path in
-    # qbool_ops.hpp / lazy_expr.hpp (OrExpr::operator qbool() that
-    # allocates an ancilla and emits CX + CX + CCX) and pulls in
+    # qbool_ops.hpp (post-PK-2: operator| returns owning qbool directly,
+    # allocating an ancilla and emitting CX + CX + CCX) and pulls in
     # the matching field/destructor machinery in qbool.hpp / qint_core.
     # Without this macro, `a | b` takes the classical short-circuit
     # path in qbool_logic.hpp and the gate stream would be empty on

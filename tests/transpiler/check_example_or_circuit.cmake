@@ -14,8 +14,12 @@
 #
 # This test binds the PRD's headline acceptance to a regression check:
 # the hermetic snapshot (snapshot_or_single_backend) proves the matcher
-# peels the lazy OrExpr<qbool> chain on a mock, and this test proves the
-# same matcher fires on the real example under the real build pipeline.
+# peels the conversion-wrapped `|`-producer chain on a mock (the
+# fixture still supplies an expression-template wrapper with a user-
+# defined `operator qbool()`; the qbool-level wrappers were retired in
+# Phase K PK-2 but the matcher widening remains useful), and this test
+# proves the same matcher fires on the real example under the real
+# build pipeline.
 #
 # Assertions:
 #   1. GENERATED exists on disk.

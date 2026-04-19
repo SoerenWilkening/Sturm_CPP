@@ -6,7 +6,7 @@
 // Functions in sturm:: namespace:
 //
 //   lib_or_dsl(a, b, c)   — OR:  c ^= (a | b)
-//                            Uses OrExpr consumed by operator^= (2 CX + 1 CCX).
+//                            operator| + operator^= path (2 CX + 1 CCX).
 //
 //   lib_nand_dsl(a, b, c) — NAND: c ^= (a & b); c.flip()
 //                            Toffoli + X = 2 gates.
@@ -34,13 +34,13 @@ namespace sturm {
 // ── lib_or_dsl ────────────────────────────────────────────────────────────────
 //
 // OR gate: c ^= (a | b).
-// Uses OrExpr consumed by operator^=, which emits 2 CX + 1 CCX (3 gates).
+// operator| feeds operator^=, which emits 2 CX + 1 CCX (3 gates).
 //
 // Precondition: c must be in |0> if you want c = a OR b after the call.
 //               If c is not |0>, this XORs the OR result into c.
 template <typename Bit>
 inline void lib_or_dsl(Bit& a, Bit& b, Bit& c) {
-    c ^= (a | b);   // OrExpr path: CNOT(a,c) + CNOT(b,c) + CCX(a,b,c)
+    c ^= (a | b);   // operator^= path: CNOT(a,c) + CNOT(b,c) + CCX(a,b,c)
 }
 
 // ── lib_nand_dsl ──────────────────────────────────────────────────────────────
@@ -51,7 +51,7 @@ inline void lib_or_dsl(Bit& a, Bit& b, Bit& c) {
 // Precondition: c must be in |0> if you want c = NAND(a,b) after the call.
 template <typename Bit>
 inline void lib_nand_dsl(Bit& a, Bit& b, Bit& c) {
-    c ^= (a & b);   // 1 CCX via AndExpr
+    c ^= (a & b);   // 1 CCX via operator^=
     c.flip();       // 1 X (or lifted under WHEN)
 }
 

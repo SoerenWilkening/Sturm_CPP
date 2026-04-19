@@ -41,8 +41,8 @@ namespace m12_nested_reference {
 // Hand-written realisation of the Phase G nested-WHEN lift.  The
 // three gate emissions are:
 //   1. `qbool __stu_ctrl0 = outer & inner;`
-//        → AndExpr<qbool>::operator qbool() allocates an ancilla
-//          and emits CCX(outer, inner, __stu_ctrl0).
+//        → operator&(qbool, qbool) (qbool_ops.hpp, PK-2) allocates an
+//          ancilla and emits CCX(outer, inner, __stu_ctrl0).
 //   2. `WHEN(__stu_ctrl0) { target.flip(); }`
 //        → WhenGuard pushes __stu_ctrl0 onto ctx->control_stack,
 //          emit_X_lifted sees depth==1 and emits CX(__stu_ctrl0,

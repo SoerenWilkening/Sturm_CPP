@@ -37,11 +37,10 @@
 #if defined(__has_include) && __has_include(<sturm/sturm.hpp>)
 #  include <sturm/sturm.hpp>
 // The umbrella `sturm/sturm.hpp` only pulls in the uncompute free-
-// function API.  The real quantum `operator|` and its lazy-expression
-// wrapper live in `qbool_ops.hpp` / `lazy_expr.hpp`, so include them
-// explicitly here — without them the `a | b` below would hit the
-// eager `qbool_logic.hpp` path (which does not emit gates) or fail to
-// compile entirely.
+// function API.  The real quantum `operator|` lives in
+// `qbool_ops.hpp`, so include it explicitly here — without it the
+// `a | b` below would hit the eager `qbool_logic.hpp` path (which
+// does not emit gates) or fail to compile entirely.
 #  include "sturm/qtypes/qbool.hpp"
 #  include "sturm/qtypes/qbool_ops.hpp"
 #else
