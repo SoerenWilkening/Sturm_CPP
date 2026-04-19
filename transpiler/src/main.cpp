@@ -541,6 +541,28 @@ int main(int argc, const char** argv) {
     // parse errors (the user will re-see them in the downstream compile).
     tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());
 
+    // Inject -resource-dir so libTooling can find its builtin headers
+    // (stdarg.h, stddef.h, etc.). Without this, the Clang driver fails to
+    // resolve macOS libc++ typedefs like __uint32_t / __darwin_wint_t and
+    // the parser abandons main-file translation before the user's body is
+    // built into the AST — every Phase A-I matcher then sees no ops from
+    // the user's code and the transpile produces a byte-identical pass-
+    // through. STURM_CLANG_RESOURCE_DIR is baked in at CMake-configure
+    // time from the LLVM package the transpiler was linked against (see
+    // transpiler/CMakeLists.txt). The adjuster prepends the arg, so a
+    // user-supplied `--extra-arg=-resource-dir=...` that appears later in
+    // argv wins — the compile-time value is only a fallback.
+#ifdef STURM_CLANG_RESOURCE_DIR
+    {
+        const std::string rd_arg =
+            std::string("-resource-dir=") + STURM_CLANG_RESOURCE_DIR;
+        tool.appendArgumentsAdjuster(
+            clang::tooling::getInsertArgumentAdjuster(
+                rd_arg.c_str(),
+                clang::tooling::ArgumentInsertPosition::BEGIN));
+    }
+#endif
+
     TranspileFactory factory(input_path, kOutputDir.getValue());
     int tool_rc = tool.run(&factory);
     // `tool.run` returns non-zero on hard parse failures. Treat them as

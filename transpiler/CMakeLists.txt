@@ -81,6 +81,20 @@ target_compile_features(sturm-transpile PRIVATE cxx_std_20)
 separate_arguments(LLVM_DEFS_LIST NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 target_compile_definitions(sturm-transpile PRIVATE ${LLVM_DEFS_LIST})
 
+# Bake the Clang builtin-headers resource directory into the binary so the
+# LibTooling driver can find stdarg.h / stddef.h at runtime. Without this,
+# every transpile on macOS (and any environment where LibTooling cannot
+# locate its own builtins via argv[0]) fails to resolve __uint32_t /
+# __darwin_wint_t in libc++ sys headers, the parser abandons main-file
+# translation before the user's body is built into the AST, and every Phase
+# A-I matcher sees zero ops from the user's code. The transpile still
+# succeeds (emits a pass-through), so the breakage is silent — hence the
+# compile-time capture here.
+set(STURM_CLANG_RESOURCE_DIR
+    "${LLVM_INSTALL_PREFIX}/lib/clang/${LLVM_VERSION_MAJOR}")
+target_compile_definitions(sturm-transpile PRIVATE
+    STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}")
+
 # Link against the shared libclang-cpp + libLLVM when available. The
 # distro-shipped LLVM layout (Debian / Ubuntu / Homebrew `llvm@17`)
 # contains both static component archives (libclangTooling.a, ...) AND a
