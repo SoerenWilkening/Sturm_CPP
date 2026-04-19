@@ -54,14 +54,15 @@ using sturm::foo;
 )CPP";
 
 // Stub for Phase F / Phase G / PH-1 braced-WHEN regression tests. The
-// PF-2 matcher anchors on the middle `if` in the three-`if` tower the
-// real `WHEN(expr)` macro expands to (include/sturm/control/when.hpp:293).
-// We replicate just the structure the matcher inspects: a
-// `sturm::detail::materialize_when` overload set, and a three-`if`
-// WHEN macro whose middle `if` init-stmt declares `_when_val_` from
-// `::sturm::detail::materialize_when(expr)`. WhenCapture / WhenGuard
-// are never inspected — a no-op placeholder suffices to make the macro
-// compile.
+// PF-2 matcher anchors on the outer `if` in the two-`if` tower the real
+// `WHEN(expr)` macro expands to (include/sturm/control/when.hpp:225-228,
+// as of the PK-3 capture-layer retirement). We replicate just the
+// structure the matcher inspects: a `sturm::detail::materialize_when`
+// overload set, and a two-`if` WHEN macro whose outer `if` init-stmt
+// declares `_when_val_` from `::sturm::detail::materialize_when(expr)`.
+// The guard body is never inspected — `qbool::should_run()` with a
+// `make_when_guard(qbool&) -> qbool&` substitute is sufficient to make
+// the macro compile.
 const std::string_view kQBoolWhenStub = R"CPP(
 namespace sturm {
 
@@ -81,7 +82,6 @@ namespace detail {
 inline qbool& materialize_when(qbool& q) { return q; }
 inline qbool  materialize_when(qbool&& q) { return static_cast<qbool&&>(q); }
 
-struct WhenCapture { WhenCapture() = default; };
 inline qbool& make_when_guard(qbool& q) { return q; }
 
 } // namespace detail
@@ -90,9 +90,8 @@ inline qbool& make_when_guard(qbool& q) { return q; }
 using sturm::qbool;
 
 #define WHEN(expr) \
-    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
     if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
-    if (auto& _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
+    if (auto _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
         _when_guard_.should_run())
 )CPP";
 
