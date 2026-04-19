@@ -90,8 +90,38 @@ target_compile_definitions(sturm-transpile PRIVATE ${LLVM_DEFS_LIST})
 # A-I matcher sees zero ops from the user's code. The transpile still
 # succeeds (emits a pass-through), so the breakage is silent — hence the
 # compile-time capture here.
-set(STURM_CLANG_RESOURCE_DIR
-    "${LLVM_INSTALL_PREFIX}/lib/clang/${LLVM_VERSION_MAJOR}")
+#
+# The layout varies across distributions:
+#   - macOS Homebrew llvm@17:     <prefix>/lib/clang/<N>
+#   - Ubuntu apt-installed clang: /usr/lib/clang/<N>   (NOT under llvm-17/)
+#   - From-source LLVM build:     <build>/lib/clang/<N>
+# The authoritative answer for each layout is `clang -print-resource-dir`,
+# so we ask the actual Clang binary installed alongside the package we
+# linked against. Falls back to `${LLVM_INSTALL_PREFIX}/lib/clang/<N>` if
+# no clang binary is findable (e.g. truly static-only LLVM builds).
+find_program(STURM_CLANG_BIN
+    NAMES "clang-${LLVM_VERSION_MAJOR}" "clang"
+    HINTS "${LLVM_TOOLS_BINARY_DIR}"
+    NO_DEFAULT_PATH)
+if(STURM_CLANG_BIN)
+    execute_process(
+        COMMAND "${STURM_CLANG_BIN}" -print-resource-dir
+        OUTPUT_VARIABLE STURM_CLANG_RESOURCE_DIR
+        OUTPUT_STRIP_TRAILING_WHITESPACE
+        RESULT_VARIABLE _rc)
+    if(NOT _rc EQUAL 0)
+        message(WARNING "sturm-transpile: `${STURM_CLANG_BIN} "
+                        "-print-resource-dir` exited non-zero (${_rc}); "
+                        "falling back to computed path.")
+        unset(STURM_CLANG_RESOURCE_DIR)
+    endif()
+endif()
+if(NOT STURM_CLANG_RESOURCE_DIR)
+    set(STURM_CLANG_RESOURCE_DIR
+        "${LLVM_INSTALL_PREFIX}/lib/clang/${LLVM_VERSION_MAJOR}")
+endif()
+message(STATUS "sturm-transpile: Clang resource dir = "
+               "${STURM_CLANG_RESOURCE_DIR}")
 target_compile_definitions(sturm-transpile PRIVATE
     STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
     STURM_LLVM_VERSION_MAJOR_STR="${LLVM_VERSION_MAJOR}")
