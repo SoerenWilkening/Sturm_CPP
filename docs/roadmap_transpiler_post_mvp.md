@@ -679,6 +679,18 @@ Only after coverage is complete. Deferring these avoids premature optimization a
 
 ## Phase K — Cleanup
 
+> **2026-04-19:** Complete. All seven Phase K deliverables are verified landed by PK-audit; the legacy runtime auto-uncompute layer is gone and the transpile path is the only path.
+>
+> - PK-1 (`when_capture.hpp` / `when_capture_fwd.hpp`): deleted. In-tree citation in `include/sturm/control/when.hpp:32-34` documents the retirement — the intermediate uncompute deferral relied on the retired `uncompute_op` / `qint_base` runtime, and compound WHEN expressions' inverse emission is now the transpiler's responsibility (Phase G `matcher_when_nested` + uncompute free functions).
+> - PK-2 (`lazy_expr.hpp` `AndExpr` / `OrExpr`): deleted. Overloaded `operator|` / `operator&` now return an owning `qbool` directly — the zero-ancilla optimization lives in the IR pass (PJ-1 `ccnot_inplace`). In-tree citation in `include/sturm/control/when.hpp:42-43` and in `include/sturm/qtypes/qbool_logic.hpp`.
+> - PK-2 (`uncompute_op.hpp` / `uncompute_run.hpp` / `qint_base.hpp`): deleted. The tagged-union branches were already retired incrementally through Phases C/D; Phase K removed the residual headers.
+> - PK-4 (`WhenGuard` AND-fold): retired in Phase G (sturm-ewto). The runtime `WhenGuard` in `include/sturm/control/when.hpp` is clean — only a `control_stack` swap remains; the ancilla allocation / CCX construction path is gone.
+> - PK-5 (`STURM_AUTO_UNCOMPUTE`): flag gone. The transpile path is the only path; the `#if`-guarded destructor branches have been removed.
+> - PK-6 (`STURM_TRANSPILE=OFF` escape hatch): gone. No developer-diagnostic mode was re-added (2026-04-19 user decision) — keeping a qubit-leaking fallback alive would preserve the exact failure mode Phase K was meant to retire.
+> - PK-7 (`docs/01_principles.md` revisions): landed. **B1b** (line 47) now reads "AST-based auto-generation is the default"; **B9** (line 68) now reads "Two optimization layers in the default runtime path ... and one global optimization pass at transpile time"; new **B10** (line 70) codifies that uncomputation is a compile-time concern, not a runtime concern — destructors release qubit indices to the pool; they do not emit gates.
+>
+> Stale-comment sweep landed under PK-stale-comments; harness WHEN-stub sync under PK-harness-whencapture. Next up: Phase M (long-term stretches). Phase L shipped `v0.1.1` in parallel.
+
 > **2026-04-15:** LP1–LP8 landed — lazy OR initializers now rewrite; PRD + plan archived under `docs/archive/`.
 
 Once the transpiler covers every construct the runtime auto-uncompute handled, retire the legacy layer.
