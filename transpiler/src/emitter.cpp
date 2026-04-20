@@ -51,7 +51,9 @@
 
 #include "sturm/transpile/io.hpp"
 #include "sturm/transpile/skip.hpp"
+#include "sturm/transpile/uncompute_pass.hpp"
 
+#include "clang/AST/ASTContext.h"
 #include "clang/Basic/FileEntry.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -71,51 +73,42 @@ namespace fs = std::filesystem;
 
 namespace sturm::transpile {
 
-// ── emit() ────────────────────────────────────────────────────────────────────
+namespace {
 
-bool emit(const clang::SourceManager& sm,
-          clang::Rewriter& rw,
-          const std::vector<UncomputeInsertion>& insertions,
-          const std::vector<QReplacement>& replacements,
-          std::string_view source_path,
-          std::string_view output_dir) {
+// Shared core: apply the (replacements, insertions) pair to the Rewriter in
+// the PE-2 order (replacements first, insertions-in-reverse second) and
+// return the serialized main-file buffer. No header, no file I/O.
+//
+// Both emit() and emit_to_string() funnel through here so the byte-level
+// rewrite semantics are defined exactly once. The back-compat emit()
+// overload keeps its historical signature (SourceManager + externally-owned
+// Rewriter) so existing call sites and tests stay byte-identical; the new
+// emit_to_string() constructs its own Rewriter from ASTContext because the
+// PM1-4 plugin never has one to hand us.
+std::string apply_rewrites_and_serialize(
+    const clang::SourceManager& sm,
+    clang::Rewriter& rw,
+    const std::vector<UncomputeInsertion>& insertions,
+    const std::vector<QReplacement>& replacements) {
     // Step 1 (PE-2): apply every source-range replacement BEFORE the
     // insertion pass. The replacement ranges (VarDecl bodies) and the
     // insertion anchor (scope `close_brace`) are disjoint by construction,
     // so Clang's Rewriter handles them independently with no merging
-    // logic on our side. Replacements are applied in the order supplied
-    // so the matcher can schedule them in whatever sequence is most
-    // natural for its own bookkeeping.
+    // logic on our side.
     for (const auto& rep : replacements) {
         if (!rep.range.isValid()) {
-            // Defensive: a malformed matcher output with an invalid range
-            // is not representable by the Rewriter. Skip rather than abort
-            // so a single bad replacement doesn't discard the whole run.
             continue;
         }
-        // ReplaceText returns true on failure (unrewritable range); we
-        // ignore the return so partial replacements still propagate to
-        // disk. An unrewritable range is a bug elsewhere and swallowing
-        // the specific record here keeps the rest of the output intact.
         (void)rw.ReplaceText(rep.range, rep.replacement);
     }
 
     // Step 2: apply every insertion. Reverse iteration — see file-level
-    // comment for why this is correct and why forward iteration would be
-    // wrong for multi-op scopes.
+    // comment for why this is correct for multi-op scopes.
     for (auto it = insertions.rbegin(); it != insertions.rend(); ++it) {
         const auto& ins = *it;
         if (!ins.insert_before.isValid()) {
-            // Defensive: a malformed M8 output with an invalid location is
-            // not representable by the Rewriter. Skip rather than abort so
-            // a single bad insertion doesn't discard the whole run.
             continue;
         }
-        // InsertTextBefore puts `ins.code` directly before the anchor loc.
-        // Returns true on failure (unrewritable location) — we ignore the
-        // return so partial insertions still propagate to disk; an
-        // unrewritable location is already a bug elsewhere and swallowing
-        // the specific record here keeps the rest of the output intact.
         (void)rw.InsertTextBefore(ins.insert_before, ins.code);
     }
 
@@ -129,22 +122,82 @@ bool emit(const clang::SourceManager& sm,
         buf->write(os);
         os.flush();
     } else {
-        // No edits recorded (insertions empty or all filtered) — fall back
-        // to the original main-file contents so we still emit a valid copy.
-        clang::OptionalFileEntryRef fe = sm.getFileEntryRefForID(main_id);
+        // No edits recorded — fall back to the original main-file contents
+        // so callers get the unmodified TU text rather than an empty string.
         llvm::StringRef contents = sm.getBufferData(main_id);
         body.assign(contents.data(), contents.size());
-        (void)fe;
     }
+    return body;
+}
 
-    // Step 4: prepend the idempotency header (helper from M5's skip module).
+} // namespace
+
+// ── emit_to_string() ─────────────────────────────────────────────────────────
+//
+// PM1-2: pure rewrite. Synthesize insertions/replacements from the QUnit,
+// build a Rewriter against `ctx`, apply the edits, return the serialized
+// main-file buffer. No idempotency header is prepended — the PM1-4 plugin
+// feeds this buffer to a nested CompilerInvocation that parses it as the
+// original TU, so the sentinel would be out-of-place.
+std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx) {
+    auto synth = sturm::transpile::synthesize(unit);
+    clang::Rewriter rw(ctx.getSourceManager(), ctx.getLangOpts());
+    return apply_rewrites_and_serialize(
+        ctx.getSourceManager(), rw, synth.insertions, synth.replacements);
+}
+
+// ── emit_to_file() ───────────────────────────────────────────────────────────
+//
+// PM1-2: call emit_to_string, prepend the idempotency header, write to the
+// resolved output path. The standalone driver (main.cpp) calls this; the
+// plugin (PM1-4) does NOT — it calls emit_to_string and routes the bytes
+// directly into a nested invocation without a header.
+bool emit_to_file(const QUnit& unit,
+                  clang::ASTContext& ctx,
+                  std::string_view source_path,
+                  std::string_view output_dir) {
+    std::string body = emit_to_string(unit, ctx);
+
+    // Prepend the idempotency header (helper from M5's skip module).
     std::string out;
     out.reserve(body.size() + 128);
     out.append(idempotency_header(source_path));
     out.append(body);
 
-    // Step 5: write to <output_dir>/<resolved path>. Resolve via the same
-    // helper the identity-copy path uses so the layout rules are identical.
+    // Write to <output_dir>/<resolved path>. Resolve via the same helper
+    // the identity-copy path uses so the layout rules are identical.
+    fs::path dst = sturm::transpile::resolve_output_path(
+        fs::path(source_path), fs::path(output_dir));
+    if (!sturm::transpile::write_file(dst, out)) {
+        std::fprintf(stderr,
+                     "sturm-transpile: error: could not write output %s\n",
+                     dst.string().c_str());
+        return false;
+    }
+    return true;
+}
+
+// ── emit() ────────────────────────────────────────────────────────────────────
+
+bool emit(const clang::SourceManager& sm,
+          clang::Rewriter& rw,
+          const std::vector<UncomputeInsertion>& insertions,
+          const std::vector<QReplacement>& replacements,
+          std::string_view source_path,
+          std::string_view output_dir) {
+    // Shared core applies replacements, then insertions in reverse, and
+    // serializes the main-file buffer.
+    std::string body = apply_rewrites_and_serialize(
+        sm, rw, insertions, replacements);
+
+    // Prepend the idempotency header (helper from M5's skip module).
+    std::string out;
+    out.reserve(body.size() + 128);
+    out.append(idempotency_header(source_path));
+    out.append(body);
+
+    // Write to <output_dir>/<resolved path>. Resolve via the same helper
+    // the identity-copy path uses so the layout rules are identical.
     fs::path dst = sturm::transpile::resolve_output_path(
         fs::path(source_path), fs::path(output_dir));
     if (!sturm::transpile::write_file(dst, out)) {

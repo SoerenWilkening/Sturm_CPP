@@ -41,16 +41,60 @@
 #ifndef STURM_TRANSPILE_EMITTER_HPP
 #define STURM_TRANSPILE_EMITTER_HPP
 
+#include "sturm/transpile/qir.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
 
+#include "clang/AST/ASTContext.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
+#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace sturm::transpile {
+
+/// PM1-2 — pure rewrite step.
+///
+/// Apply the synthesized uncompute insertions and VarDecl replacements for
+/// `unit` to a fresh `clang::Rewriter` bound to `ctx`'s SourceManager, then
+/// serialize the main-file rewrite buffer into a std::string and return it.
+///
+/// The returned string is EXACTLY the rewritten main-file contents — no
+/// idempotency header is prepended, nothing is written to disk. This is the
+/// entry point the PM1-4 in-memory Clang plugin will call: the plugin hands
+/// the returned buffer to a nested CompilerInvocation which compiles it as
+/// if it were the original translation unit, so any sentinel header would
+/// be a syntax error (a comment is fine, but prepending it here would make
+/// the emit_to_file path double-prepend; we avoid both problems by keeping
+/// the header strictly inside emit_to_file).
+///
+/// Internally this calls `synthesize(unit)` to build the insertion and
+/// replacement lists (the same call the standalone driver makes), applies
+/// the replacements first and the insertions second (same order as emit()),
+/// and serializes the resulting buffer via `raw_string_ostream`.
+///
+/// If the Rewriter recorded no edits (empty insertions AND empty
+/// replacements, or every edit had an invalid range/location) the returned
+/// string is a verbatim copy of the main file's original buffer, so
+/// callers can unconditionally treat the return value as "the TU source
+/// to feed downstream" without branching on whether a rewrite occurred.
+std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx);
+
+/// PM1-2 — file emission step.
+///
+/// Call `emit_to_string(unit, ctx)`, prepend `idempotency_header(
+/// source_path)` to the returned buffer, then write the combined bytes to
+/// `resolve_output_path(source_path, output_dir)` via `write_file`.
+///
+/// Returns true on success, false on any I/O failure (best-effort
+/// diagnostic written to stderr). Header-prepend logic lives here and
+/// nowhere else: the plugin (PM1-4) uses `emit_to_string` directly.
+bool emit_to_file(const QUnit& unit,
+                  clang::ASTContext& ctx,
+                  std::string_view source_path,
+                  std::string_view output_dir);
 
 /// Full MVP emit step.
 ///
