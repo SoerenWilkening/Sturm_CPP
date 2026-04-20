@@ -342,3 +342,35 @@ target_sources(example_uncompute_hoisting PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_uncompute_hoisting PRIVATE orkan_headers)
+
+# ── Example: Phase M PM1-8 in-memory transpile tutorial ─────────────────────
+# Three-phase composition demo that exercises Phase E (compound
+# qbool expressions), Phase F (compound-WHEN integration), and Phase J
+# PJ-1 (zero-ancilla fusion) in a single translation unit — each
+# rewrite confined to its own block scope so the injections compose
+# cleanly without matcher cross-talk.  Routed through the default
+# add_quantum_executable() plugin mode added in PM1-5, so the
+# rewrite lives in memory: clang++ loads
+# $<TARGET_FILE:sturm-transpile-plugin>, runs the shared
+# TranspileConsumer under a ReplaceAction against the AST, then
+# drives a nested CompilerInvocation + EmitObjAction over the
+# rewritten buffer.  The plugin's `dump-to=<path>` arg (wired in
+# cmake/SturmTranspile.cmake) mirrors the rewritten buffer onto disk
+# at ${CMAKE_BINARY_DIR}/sturm_gen/examples/in_memory_transpile.cpp
+# so the PM1-8 injected-observability CTest continues to work
+# unchanged.  Same helper / bypass pattern as every preceding
+# Phase B–J example above.
+add_quantum_executable(example_in_memory_transpile
+    in_memory_transpile.cpp
+)
+target_sources(example_in_memory_transpile PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)

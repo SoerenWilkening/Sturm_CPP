@@ -1396,6 +1396,73 @@ set_tests_properties(transpiler_idempotent_example_uncompute_hoisting PROPERTIES
     FIXTURES_REQUIRED "example_uncompute_hoisting_built"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase M / PM1-8: end-to-end injected observability + idempotency for ──
+# the in-memory transpile tutorial.  Same harness pattern as the PJ-3g
+# uncompute_hoisting block above, but the `_injected` test reads the
+# plugin-mirrored buffer (the default add_quantum_executable() mode
+# since PM1-5 is "plugin"; see cmake/SturmTranspile.cmake) and the
+# `_idempotent` test exercises the PM1-6 `--dump-transpiled` /
+# standalone-binary path by round-tripping the mirrored file through
+# sturm-transpile into a scratch dir.  The example combines Phase E
+# (compound flatten), Phase F (WHEN-lift), and Phase J PJ-1 (zero-
+# ancilla fusion) into a single TU:
+#   1. build_example_in_memory_transpile — SETUP fixture that builds
+#      the example_in_memory_transpile target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/in_memory_transpile.cpp
+#      via the plugin's `dump-to=` arg threaded by
+#      cmake/SturmTranspile.cmake.
+#   2. transpiler_example_in_memory_transpile_injected — reads the
+#      mirrored buffer and asserts all three rewrites fired inside
+#      main()'s three inner scopes:
+#        - Phase E: `qbool __stu_t0 = b | c;` / `qbool r = __stu_t0 & d;`
+#          flat decls + LIFO `uncompute_and(r, __stu_t0, d);` /
+#          `uncompute_or(__stu_t0, b, c);` pair.
+#        - Phase F: `qbool __stu_t0 = wb | wc;` /
+#          `qbool __stu_t1 = __stu_t0 & wd;` flat decls ABOVE
+#          `WHEN(__stu_t1) { ... }` + LIFO `uncompute_and` /
+#          `uncompute_or` pair after the WHEN body.
+#        - Phase J PJ-1: two `ccnot_inplace(fx, fa, fb);` calls
+#          (forward fused call + self-adjoint uncompute) replacing
+#          the original `qbool __t = fa & fb;` + `fx ^= __t;` pair.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) —
+#      the "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name.
+#   3. transpiler_idempotent_example_in_memory_transpile — re-running
+#      sturm-transpile on the already-mirrored sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+add_test(
+    NAME build_example_in_memory_transpile
+    COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+            --target example_in_memory_transpile)
+set_tests_properties(build_example_in_memory_transpile PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_SETUP "example_in_memory_transpile_built")
+
+add_test(
+    NAME transpiler_example_in_memory_transpile_injected
+    COMMAND "${CMAKE_COMMAND}"
+            -DSOURCE=${CMAKE_SOURCE_DIR}/examples/in_memory_transpile.cpp
+            -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/in_memory_transpile.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_in_memory_transpile.cmake)
+set_tests_properties(transpiler_example_in_memory_transpile_injected PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_REQUIRED "example_in_memory_transpile_built"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_example_in_memory_transpile
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/in_memory_transpile.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_in_memory_transpile_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_example_in_memory_transpile PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_REQUIRED "example_in_memory_transpile_built"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── M12: gate-stream equivalence test ───────────────────────────────────────
 # Proves PRD acceptance criterion #4 — the transpiler's output, compiled
 # and run, emits the same gate stream as a hand-written reference that
