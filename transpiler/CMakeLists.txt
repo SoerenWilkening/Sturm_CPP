@@ -317,6 +317,18 @@ endif()
 install(TARGETS sturm-transpile
         RUNTIME DESTINATION ${CMAKE_INSTALL_BINDIR})
 
+# ── Install rule (Phase M PM1-9) ──────────────────────────────────────────────
+# Ship the Clang plugin shared library alongside the driver so downstream
+# consumers using the default plugin mode (PM1-5 add_quantum_executable)
+# can locate it at <prefix>/lib/libsturm-transpile-plugin.{so,dylib}.
+# Linux → libsturm-transpile-plugin.so; macOS → libsturm-transpile-plugin.dylib.
+# The target is SHARED (see comment above), so a single LIBRARY DESTINATION
+# covers both platforms — CMake routes .so into LIBRARY and .dylib into
+# LIBRARY as well (RUNTIME is DLLs on Windows only, which we do not ship).
+install(TARGETS sturm-transpile-plugin
+        LIBRARY DESTINATION ${CMAKE_INSTALL_LIBDIR}
+        RUNTIME DESTINATION ${CMAKE_INSTALL_LIBDIR})
+
 # Ship the Clang builtin-headers resource directory alongside the binary so
 # the tarball is truly self-contained. At runtime the transpiler resolves
 # its resource dir relative to its own executable path

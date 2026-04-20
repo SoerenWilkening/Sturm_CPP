@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
-project(STURM VERSION 0.1.0 LANGUAGES CXX C)
+project(STURM VERSION 0.1.2 LANGUAGES CXX C)
 
 # ── C++ standard ──────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)

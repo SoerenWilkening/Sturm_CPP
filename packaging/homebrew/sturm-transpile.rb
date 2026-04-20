@@ -1,8 +1,8 @@
 class SturmTranspile < Formula
   desc "C++ DSL transpiler for quantum-classical programming with compile-time uncompute"
   homepage "https://github.com/SoerenWilkening/Sturm_CPP"
-  url "https://github.com/SoerenWilkening/Sturm_CPP/archive/refs/tags/v0.1.0.tar.gz"
-  sha256 "PLACEHOLDER_FILLED_AT_PL6"
+  url "https://github.com/SoerenWilkening/Sturm_CPP/archive/refs/tags/v0.1.2.tar.gz"
+  sha256 "PLACEHOLDER_FILLED_AT_PM1_9"
   license "AGPL-3.0-or-later"
 
   depends_on "cmake" => :build
@@ -20,6 +20,17 @@ class SturmTranspile < Formula
   end
 
   test do
+    # PM1-9: assert the plugin .so/.dylib landed in the Cellar's lib/.
+    # The default add_quantum_executable() path (PM1-5) loads this via
+    # `clang++ -fplugin=...`, so a missing file breaks every downstream
+    # consumer that relies on the plugin mode. Homebrew does not ship a
+    # .so-on-macOS convention, so we probe both extensions.
+    plugin_so   = lib/"libsturm-transpile-plugin.so"
+    plugin_dylib = lib/"libsturm-transpile-plugin.dylib"
+    assert_predicate(plugin_so.exist? ? plugin_so : plugin_dylib, :exist?,
+                     "expected libsturm-transpile-plugin.{so,dylib} under " \
+                     "#{lib} after `brew install`")
+
     # Self-contained fixture: sturm/sturm.hpp alone does not expose qbool's
     # operator| (that lives in sturm/qtypes/qbool_ops.hpp and requires
     # STURM_BACKEND_ENABLED + sturm/control/when.hpp to wire up). The

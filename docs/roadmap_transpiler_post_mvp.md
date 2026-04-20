@@ -750,9 +750,66 @@ Options, not mutually exclusive:
 
 ## Phase M — Long-term stretches
 
+> **2026-04-19:** Phase M item 1 (in-memory transpile) complete; shipped
+> as **`v0.1.2`**. The filesystem round-trip has been retired from the
+> default build — `add_quantum_executable()` (PM1-5) invokes
+> `clang++ -fplugin=$<TARGET_FILE:sturm-transpile-plugin>` and the
+> plugin runs the shared `TranspileConsumer` against the AST in memory,
+> driving a nested `CompilerInvocation` + `EmitObjAction` over the
+> rewritten buffer without ever writing a sibling `.cpp` to disk. The
+> legacy dump path is preserved behind `set(STURM_TRANSPILE_MODE "dump")`
+> and via `--dump-transpiled=<path>` on the standalone binary (PM1-6);
+> both paths converge on `transpiler/src/io.cpp`, so the dump output is
+> byte-identical to the plugin's in-memory buffer. Sub-items:
+>
+> - PM1-0 (sturm-nimr): de-risking spike proving a nested
+>   `CompilerInvocation` survives inside a Clang plugin without
+>   re-entering `cl::opt` registration.
+> - PM1-1..PM1-4: shared `TranspileConsumer` / `plugin.cpp` /
+>   `transpile_consumer.cpp` / nested codegen wiring.
+> - PM1-5: `cmake/SturmTranspile.cmake` rewrite — plugin mode is the
+>   default (`STURM_TRANSPILE_MODE=plugin`), `dump` is opt-in.
+> - PM1-6 (sturm-cpzx): `--dump-transpiled=<path>` flag on the
+>   standalone `sturm-transpile` binary; mirrors the plugin's `dump-to=`
+>   arg into the same `transpiler/src/io.cpp` write path.
+> - PM1-7 (sturm-03ou): CTest harnesses audited; all
+>   `check_example_*.cmake` fixtures keep using the standalone binary
+>   for snapshot generation (decoupled from how examples are compiled);
+>   `test_gate_equivalence.cpp` (M12) compiles the `*_transpiled`
+>   namespaces via `-fplugin=` in plugin mode. New `plugin_smoke_test`
+>   CTest compiles `tests/smoke/minimal_or.cpp` via `clang++ -fplugin=...
+>   -c` and asserts the object defines the expected symbols with an
+>   `uncompute_or` gate sequence.
+> - PM1-8 (sturm-0sc0): `examples/in_memory_transpile.cpp` tutorial
+>   exercising Phase E compound + Phase F WHEN-lift + Phase J PJ-1
+>   fusion in a single TU, with the paired
+>   `tests/transpiler/check_example_in_memory_transpile.cmake`
+>   `_injected` / `_idempotent` CTests.
+> - PM1-9 (sturm-fu75): README "Getting started" rewritten to the
+>   one-line `add_quantum_executable(...)` with `-fplugin` under the
+>   hood (contrasted with the two-step legacy build); Homebrew formula
+>   bumped to `v0.1.2` with a new `test do` assertion that the plugin
+>   `.so` / `.dylib` lands under `Cellar/sturm-transpile/v0.1.2/lib/`;
+>   `transpiler/CMakeLists.txt` install rule extended to ship
+>   `libsturm-transpile-plugin.{so,dylib}` alongside the driver so the
+>   four `release.yml` prebuilt tarballs (x86_64/aarch64 × linux/macos)
+>   carry both `bin/sturm-transpile` and
+>   `lib/libsturm-transpile-plugin.{so,dylib}`. `docs/01_principles.md`
+>   unchanged — B10 ("Inverses are emitted by the transpiler as
+>   explicit uncompute_* / ccnot_inplace / invert(routine)(...) calls
+>   in the generated source file") survives the shift to in-memory
+>   because the "generated source file" now lives in a `MemoryBuffer`;
+>   no other principle needed touching. Tag `v0.1.2` triggers the
+>   Phase L release workflow; Homebrew bottle installs cleanly on
+>   macOS + Linux runners; GHCR Docker image builds.
+>
+> Items 2–5 below (alternative backends, diagnostics, source maps,
+> transpiler pluginization, peephole gate reordering deferred from
+> PJ-2) remain open.
+
 Lower priority, tracked for visibility.
 
-- **In-memory transpile.** Skip the filesystem round-trip: transpile and feed directly to Clang's codegen. Keep the sibling-file emit as a `--dump-transpiled` option for debugging.
+- **In-memory transpile.** *Complete — shipped in v0.1.2 (2026-04-19).* Skip the filesystem round-trip: transpile and feed directly to Clang's codegen. Keep the sibling-file emit as a `--dump-transpiled` option for debugging.
 - **Alternative backends.** The IR is backend-agnostic. A second emitter could target OpenQASM 3, a simulator-specific IR, or a custom hardware-aware representation.
 - **Diagnostics.** Quantum-specific compile errors ("operand modified inside its own WHEN", "qbool escapes its scope without explicit measurement or uncompute"). Requires the liveness analysis from Phase H to be mature.
 - **Source maps.** Preserve `#line` directives in the generated file so that compiler and debugger diagnostics point at the user's source, not the generated temporary names.
