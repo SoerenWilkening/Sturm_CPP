@@ -60,11 +60,51 @@ static const char kSturmTranspileVersion[] =
 // ── Command-line options ──────────────────────────────────────────────────────
 static cl::OptionCategory kToolCategory("sturm-transpile options");
 
+// PM1-6: --output-dir is NO LONGER unconditionally required. When
+// --dump-transpiled (see below) is supplied, the rewritten buffer lands
+// at the user-chosen path directly and the output-dir pathway is
+// irrelevant. At least one of the two must still be present — the
+// positional-input-only invocation would have nowhere to write. We
+// enforce that at runtime after option parsing rather than via
+// cl::Required on either flag, because cl::Required would reject the
+// otherwise-valid `--dump-transpiled` invocation.
 static cl::opt<std::string> kOutputDir(
     "output-dir",
-    cl::desc("Destination directory for transpiled output files"),
+    cl::desc("Destination directory for transpiled output files "
+             "(optional when --dump-transpiled is set)"),
     cl::value_desc("dir"),
-    cl::Required,
+    cl::Optional,
+    cl::cat(kToolCategory));
+
+// PM1-6: --dump-transpiled / -d <path>. When set, the standalone binary
+// writes the rewritten buffer (header + body) to <path> instead of to
+// resolve_output_path(input, output_dir). This is the quick debugging
+// hook for "show me what the plugin would emit for one file without
+// touching CMake" — the same contract the plugin honours via
+// -fplugin-arg-sturm-transpile-dump-to=<path> (see transpiler/src/plugin.cpp).
+// The gate the PM1-6 issue commits us to is byte-for-byte equivalence:
+// `sturm-transpile foo.cpp --output-dir gen` must land the same bytes
+// at `gen/foo.cpp` as `sturm-transpile foo.cpp --dump-transpiled
+// /tmp/out.cpp` lands at `/tmp/out.cpp` (sans the path component of
+// the destination). The implementation reuses emit_to_string +
+// idempotency_header from the M9 emitter so that invariant is
+// trivially maintained.
+static cl::opt<std::string> kDumpTranspiled(
+    "dump-transpiled",
+    cl::desc("Write the rewritten buffer (header + body) to this exact "
+             "path instead of `<output-dir>/<relpath-of-input>`. "
+             "Makes --output-dir optional."),
+    cl::value_desc("path"),
+    cl::Optional,
+    cl::cat(kToolCategory));
+
+// Short alias `-d <path>` mirrors the issue's cl::opt name contract.
+// Declared as a separate cl::opt so LLVM's parser accepts both spellings
+// and a late-argument `-d=<path>` equivalently.
+static cl::alias kDumpTranspiledShort(
+    "d",
+    cl::desc("Alias for --dump-transpiled=<path>"),
+    cl::aliasopt(kDumpTranspiled),
     cl::cat(kToolCategory));
 
 // Note: the input source file is supplied as a positional argument handled
@@ -94,9 +134,11 @@ namespace {
 
 class TranspileAction : public clang::ASTFrontendAction {
 public:
-    TranspileAction(std::string source_path, std::string output_dir)
+    TranspileAction(std::string source_path, std::string output_dir,
+                    std::string dump_transpiled_path)
         : source_path_(std::move(source_path)),
-          output_dir_(std::move(output_dir)) {}
+          output_dir_(std::move(output_dir)),
+          dump_transpiled_path_(std::move(dump_transpiled_path)) {}
     std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
         clang::CompilerInstance& ci, llvm::StringRef) override {
         // Standalone driver: hand the shared consumer the file-emission
@@ -105,27 +147,36 @@ public:
         // Plugin callers (PM1-3) construct the same consumer with
         // EmissionMode::Plugin so the buffer is stashed in-memory for a
         // nested CompilerInvocation.
+        //
+        // PM1-6: when `dump_transpiled_path_` is non-empty the consumer
+        // writes to that exact path instead of resolving against
+        // `output_dir_`.
         return std::make_unique<sturm::transpile::TranspileConsumer>(
             ci,
             sturm::transpile::EmissionMode::StandaloneFile,
             source_path_,
-            output_dir_);
+            output_dir_,
+            dump_transpiled_path_);
     }
 private:
     std::string source_path_;
     std::string output_dir_;
+    std::string dump_transpiled_path_;
 };
 
 class TranspileFactory : public clang::tooling::FrontendActionFactory {
 public:
-    TranspileFactory(std::string src, std::string out)
-        : src_(std::move(src)), out_(std::move(out)) {}
+    TranspileFactory(std::string src, std::string out, std::string dump)
+        : src_(std::move(src)),
+          out_(std::move(out)),
+          dump_(std::move(dump)) {}
     std::unique_ptr<clang::FrontendAction> create() override {
-        return std::make_unique<TranspileAction>(src_, out_);
+        return std::make_unique<TranspileAction>(src_, out_, dump_);
     }
 private:
     std::string src_;
     std::string out_;
+    std::string dump_;
 };
 
 } // namespace
@@ -152,6 +203,16 @@ static bool verbatim_copy(const fs::path& path, const fs::path& output_dir) {
     return sturm::transpile::write_file(dst, bytes);
 }
 
+// PM1-6: copy `path` verbatim to the user-supplied --dump-transpiled
+// destination. Skip files (magic comment + already-generated) are passed
+// through BYTE-IDENTICAL just like the output-dir variant — the dump
+// destination is the sole mutation. Returns true on success.
+static bool verbatim_copy_to(const fs::path& path, const fs::path& dst) {
+    std::string bytes;
+    if (!sturm::transpile::read_file(path, bytes)) return false;
+    return sturm::transpile::write_file(dst, bytes);
+}
+
 // ── Driver ────────────────────────────────────────────────────────────────────
 
 int main(int argc, const char** argv) {
@@ -166,11 +227,14 @@ int main(int argc, const char** argv) {
             "transpiler.\n\n"
             "USAGE:\n"
             "  sturm-transpile <input.cpp> --output-dir <dir>\n"
+            "  sturm-transpile <input.cpp> --dump-transpiled <path>\n"
             "  sturm-transpile --version\n\n"
             "For each input source file, sturm-transpile parses it with\n"
             "Clang and rewrites quantum intermediates with explicit\n"
             "uncompute_* calls. Output is written to\n"
-            "<output-dir>/<relpath-of-input> with an AUTO-GENERATED header.\n"
+            "<output-dir>/<relpath-of-input> with an AUTO-GENERATED header,\n"
+            "or — when --dump-transpiled=<path> (-d <path>) is supplied —\n"
+            "to <path> verbatim.\n"
             "Files whose first non-blank line is either the magic comment\n"
             "`// sturm-transpile: skip` or the AUTO-GENERATED sentinel\n"
             "already emitted by a prior run are copied through verbatim.\n");
@@ -194,6 +258,22 @@ int main(int argc, const char** argv) {
     }
     const std::string& input_path = inputs.front();
 
+    // PM1-6: validate --output-dir / --dump-transpiled mutual
+    // non-emptiness. At least one destination flag must be present —
+    // otherwise the driver has nowhere to write the rewritten buffer.
+    // We allow BOTH to be set only because the legacy CI driving path
+    // already supplies --output-dir; when --dump-transpiled is also
+    // present it takes precedence (both the skip path and the full
+    // pipeline path below write to the dump destination in that case).
+    const bool have_dump = !kDumpTranspiled.getValue().empty();
+    const bool have_outdir = !kOutputDir.getValue().empty();
+    if (!have_dump && !have_outdir) {
+        std::fprintf(stderr,
+                     "sturm-transpile: error: one of --output-dir=<dir> "
+                     "or --dump-transpiled=<path> is required\n");
+        return 2;
+    }
+
     // Fail-fast on missing input.
     std::error_code ec;
     if (!fs::exists(fs::path(input_path), ec) || ec) {
@@ -208,8 +288,19 @@ int main(int argc, const char** argv) {
     // #5 (idempotency) and AC #6 (skip marker).
     std::string head = read_head(fs::path(input_path));
     if (sturm::transpile::should_skip(head)) {
-        if (!verbatim_copy(fs::path(input_path),
-                           fs::path(kOutputDir.getValue()))) {
+        bool ok = false;
+        if (have_dump) {
+            // PM1-6: the dump-transpiled path wins. A skipped file in
+            // dump mode lands BYTE-IDENTICAL at the user-supplied path
+            // — same invariant as the output-dir verbatim copy, just a
+            // different destination.
+            ok = verbatim_copy_to(fs::path(input_path),
+                                  fs::path(kDumpTranspiled.getValue()));
+        } else {
+            ok = verbatim_copy(fs::path(input_path),
+                               fs::path(kOutputDir.getValue()));
+        }
+        if (!ok) {
             std::fprintf(stderr,
                          "sturm-transpile: error: verbatim copy failed for "
                          "%s\n", input_path.c_str());
@@ -283,15 +374,22 @@ int main(int argc, const char** argv) {
         }
     }
 
-    TranspileFactory factory(input_path, kOutputDir.getValue());
+    TranspileFactory factory(input_path, kOutputDir.getValue(),
+                             kDumpTranspiled.getValue());
     int tool_rc = tool.run(&factory);
     // `tool.run` returns non-zero on hard parse failures. Treat them as
     // soft: if the emitter managed to write an output (because the AST
     // was recoverable), we still prefer returning 0 so downstream CMake
     // builds see the generated file. If NO output was produced we return
     // the tool's error code so the caller notices.
-    fs::path expected_out = sturm::transpile::resolve_output_path(
-        fs::path(input_path), fs::path(kOutputDir.getValue()));
+    //
+    // PM1-6: when --dump-transpiled is set the expected output lives at
+    // the user-supplied path, not `resolve_output_path(...)`. Check that
+    // instead.
+    fs::path expected_out = have_dump
+        ? fs::path(kDumpTranspiled.getValue())
+        : sturm::transpile::resolve_output_path(
+              fs::path(input_path), fs::path(kOutputDir.getValue()));
     if (!fs::exists(expected_out)) {
         // Nothing landed on disk — treat that as a hard failure.
         if (tool_rc == 0) tool_rc = 1;

@@ -76,10 +76,20 @@ public:
     ///                    header (StandaloneFile) and passed through to
     ///                    resolve_output_path.
     /// - `output_dir`   : destination directory. Ignored in Plugin mode.
+    ///                    Ignored in StandaloneFile mode when
+    ///                    `dump_transpiled_path` is non-empty.
+    /// - `dump_transpiled_path` : PM1-6. StandaloneFile-mode override. When
+    ///                    non-empty, the rewritten buffer + idempotency
+    ///                    header are written to this exact path instead
+    ///                    of `resolve_output_path(source_path, output_dir)`.
+    ///                    Ignored in Plugin mode (the plugin has its own
+    ///                    `dump-to=<path>` arg that is handled in the
+    ///                    wrapping PluginASTAction, not here).
     TranspileConsumer(clang::CompilerInstance& ci,
                       EmissionMode mode,
                       std::string source_path,
-                      std::string output_dir);
+                      std::string output_dir,
+                      std::string dump_transpiled_path = {});
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override;
 
@@ -96,6 +106,10 @@ private:
     EmissionMode mode_;
     std::string source_path_;
     std::string output_dir_;
+    // PM1-6: StandaloneFile-mode override. When non-empty, emit lands
+    // at this exact path (header + rewritten buffer) instead of
+    // resolve_output_path(source_path_, output_dir_).
+    std::string dump_transpiled_path_;
 
     QUnit unit_;
     // Phase I PI-1: context-wide forward/adjoint map populated by the

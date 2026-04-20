@@ -11,7 +11,9 @@
 #include "transpile_consumer.hpp"
 
 #include "sturm/transpile/emitter.hpp"
+#include "sturm/transpile/io.hpp"
 #include "sturm/transpile/matcher.hpp"
+#include "sturm/transpile/skip.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
 
 #include "matcher_user_routine.hpp"
@@ -21,6 +23,8 @@
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
+#include <cstdio>
+#include <filesystem>
 #include <utility>
 
 namespace sturm::transpile {
@@ -28,11 +32,13 @@ namespace sturm::transpile {
 TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
                                      EmissionMode mode,
                                      std::string source_path,
-                                     std::string output_dir)
+                                     std::string output_dir,
+                                     std::string dump_transpiled_path)
     : ci_(ci),
       mode_(mode),
       source_path_(std::move(source_path)),
-      output_dir_(std::move(output_dir)) {
+      output_dir_(std::move(output_dir)),
+      dump_transpiled_path_(std::move(dump_transpiled_path)) {
     // Phase I PI-1: the routine registry matcher runs first so the
     // map is built before any PI-2+ routine-call matcher consults
     // it. Placing registration at the top of the consumer body
@@ -311,6 +317,33 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
     // CompilerInvocation.
     switch (mode_) {
         case EmissionMode::StandaloneFile: {
+            // PM1-6: when `dump_transpiled_path_` is non-empty the
+            // standalone driver wants the emitted bytes landing at that
+            // exact path, bypassing `resolve_output_path`. The header +
+            // rewritten buffer content is IDENTICAL to the legacy
+            // output-dir path (the dump flag's gate is "output matches
+            // the legacy standalone invocation byte-for-byte"), so we
+            // reuse `emit_to_string` for the rewrite step and prepend
+            // the same idempotency header the M9 emit() path would.
+            if (!dump_transpiled_path_.empty()) {
+                std::string body =
+                    sturm::transpile::emit_to_string(unit_, ctx);
+                std::string out;
+                out.reserve(body.size() + 128);
+                out.append(
+                    sturm::transpile::idempotency_header(source_path_));
+                out.append(body);
+                if (!sturm::transpile::write_file(
+                        std::filesystem::path(dump_transpiled_path_),
+                        out)) {
+                    std::fprintf(stderr,
+                                 "sturm-transpile: error: could not "
+                                 "write --dump-transpiled output %s\n",
+                                 dump_transpiled_path_.c_str());
+                }
+                break;
+            }
+
             // M8: synthesize uncompute insertions + replacements from
             // the QUnit. PE-2: the return type is QSynthesisResult — a
             // struct of two vectors. Pre-Phase-E the `replacements`
