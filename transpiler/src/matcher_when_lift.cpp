@@ -75,6 +75,12 @@
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
+// PM2-4: pulls in `format_line_directive` so each lifted `qbool
+// __stu_tN = ...;` decl can be prefixed with a `#line` directive
+// anchored at the WHEN replacement's range begin (the user's
+// compound expression inside `WHEN(...)`) — source-map emission
+// for Phase F WHEN-lift decls.
+#include "sturm/transpile/emitter.hpp"
 #include "matcher_common.hpp"
 #include "fresh_names.hpp"
 
@@ -124,9 +130,29 @@ using namespace clang::ast_matchers;
 // trailing semicolon). We append a newline after every line so the
 // inserted block sits on its own line(s) immediately above the WHEN
 // macro invocation.
-static std::string render_decl_block(const std::vector<std::string>& flat_lines) {
+//
+// PM2-4: when `line_directive` is non-empty, it is emitted immediately
+// BEFORE each flat decl line so that Clang diagnostics landing inside
+// any synthesized decl cite the user's originating WHEN-argument
+// expression. All flattened decls share the same anchor (the
+// replacement's `range.getBegin()` is the spelling begin of the user's
+// compound expression), so every decl's directive is identical — the
+// text is appended once per line, not deduped, because repeated
+// `#line` directives are idempotent for Clang's line counter and
+// keep the block's semantics obvious in a diff review.
+//
+// When `line_directive` is empty (degenerate loc — invalid / not in
+// main file), the emission falls back to the pre-PM2-4 layout
+// byte-for-byte so any snapshot that happens to synthesize outside
+// the main file stays stable.
+static std::string render_decl_block(
+    const std::vector<std::string>& flat_lines,
+    const std::string& line_directive) {
     std::ostringstream os;
     for (const auto& line : flat_lines) {
+        if (!line_directive.empty()) {
+            os << line_directive;
+        }
         os << line << "\n";
     }
     return os.str();
@@ -393,9 +419,25 @@ public:
         // Anchor at the WHEN macro's expansion loc — the file location
         // where `WHEN(...)` is spelled — so the decls land immediately
         // before the user's `WHEN(...)` call site.
+        //
+        // PM2-4: prefix each lifted decl with a `#line <N> "<basename>"`
+        // directive anchored at the replacement's
+        // `range.getBegin()` (the spelling begin of the user's
+        // compound expression inside `WHEN(...)`). The WHEN-lift
+        // decls conceptually "come from" the user's compound
+        // expression — a compile error in any decl should cite the
+        // user's WHEN-argument line, NOT the synthesized block's
+        // physical position above the WHEN call site. All flattened
+        // decls share the same anchor because they all originate
+        // from the same user expression; the helper returns empty
+        // on degenerate inputs (invalid loc, non-main-file) in which
+        // case the block falls back to the pre-PM2-4 layout
+        // byte-for-byte.
+        const std::string line_directive = format_line_directive(
+            sm, spelling_begin);
         UncomputeInsertion decl_block;
         decl_block.insert_before = sm.getExpansionLoc(if_loc);
-        decl_block.code = render_decl_block(flat_lines);
+        decl_block.code = render_decl_block(flat_lines, line_directive);
         unit_->raw_insertions.push_back(std::move(decl_block));
 
         // Step (4): transfer scratch ops into the enclosing scope, each

@@ -72,8 +72,15 @@ void test_pf_when_compound_detects_once() {
 
     CHECK(r.unit.raw_insertions.size() == 1);
     if (r.unit.raw_insertions.size() == 1) {
-        CHECK_EQ_STR(r.unit.raw_insertions[0].code,
-                     std::string("qbool __stu_t0 = b | c;\n"));
+        // PM2-4: the raw insertion now carries a leading `#line`
+        // directive anchored at the replacement's `range.getBegin()`
+        // (the spelling begin of the user's WHEN argument). Assert
+        // the trailing decl and the directive substring rather than
+        // a strict byte equality — the directive's line number and
+        // basename depend on the harness's source layout.
+        const std::string& code = r.unit.raw_insertions[0].code;
+        CHECK(code.find("qbool __stu_t0 = b | c;\n") != std::string::npos);
+        CHECK(code.find("#line ") != std::string::npos);
         CHECK(r.unit.raw_insertions[0].insert_before.isValid());
     }
 
@@ -131,8 +138,11 @@ void test_pf_when_not_lifts_once() {
 
     CHECK(r.unit.raw_insertions.size() == 1);
     if (r.unit.raw_insertions.size() == 1) {
-        CHECK_EQ_STR(r.unit.raw_insertions[0].code,
-                     std::string("qbool __stu_t0 = ~a;\n"));
+        // PM2-4: same substring-only assertion as the OR case; the
+        // raw insertion now carries a leading `#line` directive.
+        const std::string& code = r.unit.raw_insertions[0].code;
+        CHECK(code.find("qbool __stu_t0 = ~a;\n") != std::string::npos);
+        CHECK(code.find("#line ") != std::string::npos);
     }
 
     CHECK(r.unit.scopes.size() == 1);

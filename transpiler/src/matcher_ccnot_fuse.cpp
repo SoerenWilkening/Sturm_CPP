@@ -43,6 +43,11 @@
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
+// PM2-4: pulls in `format_line_directive` so the fused replacement
+// string can be prefixed with a `#line` directive anchored at the
+// fused range's begin (the VarDecl's begin loc) — source-map
+// emission for PJ-1d ccnot-fuse peephole replacements.
+#include "sturm/transpile/emitter.hpp"
 #include "matcher_common.hpp"
 
 #include "clang/AST/ASTContext.h"
@@ -266,11 +271,48 @@ public:
         // Stage the replacement. Replacement text is `ccnot_inplace(x,
         // a, b);` with no trailing newline — the original source's
         // own layout is preserved around the substituted region.
+        //
+        // PM2-4: prefix the call with a `#line <N> "<basename>"`
+        // directive anchored at the fused range's begin (the
+        // VarDecl's begin loc — `fused_range.getBegin()`). The fused
+        // pair spans two user statements, so a compile-error
+        // diagnostic originating inside the synthesized
+        // `ccnot_inplace(...)` call should cite the VarDecl's line
+        // (where the user wrote `qbool __t = a & b;`), not the
+        // Rewriter buffer's physical line number. The helper
+        // returns an empty string on degenerate inputs (invalid loc,
+        // non-main-file loc); in that case the replacement text
+        // falls back to the pre-PM2-4 layout byte-for-byte so no
+        // existing snapshot regresses silently.
+        //
+        // Why the leading `\n`? The replacement range begins at the
+        // VarDecl's first token (`qbool`); the pre-existing source
+        // text immediately before the range is the four-space
+        // indent of that VarDecl's line. A `#line` directive MUST
+        // be the first non-whitespace token on its line per the
+        // C/C++ standard, so we unconditionally prefix a `\n` to
+        // guarantee the directive starts a fresh line regardless of
+        // what text precedes the replaced region.
+        const std::string line_directive = format_line_directive(
+            sm, fused_range.getBegin());
+        std::string replacement_text;
+        if (!line_directive.empty()) {
+            replacement_text.reserve(1 + line_directive.size() +
+                                     /*call width*/ 64);
+            replacement_text.push_back('\n');
+            replacement_text.append(line_directive);
+        }
+        replacement_text.append("ccnot_inplace(");
+        replacement_text.append(target_name);
+        replacement_text.append(", ");
+        replacement_text.append(a_name);
+        replacement_text.append(", ");
+        replacement_text.append(b_name);
+        replacement_text.append(");");
+
         QReplacement rep;
         rep.range = fused_range;
-        rep.replacement =
-            std::string("ccnot_inplace(") + target_name + ", "
-            + a_name + ", " + b_name + ");";
+        rep.replacement = std::move(replacement_text);
         unit_->replacements.push_back(std::move(rep));
 
         // Stage the QOperation for the uncompute-pass LIFO schedule.

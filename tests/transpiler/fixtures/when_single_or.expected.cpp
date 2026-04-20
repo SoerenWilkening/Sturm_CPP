@@ -64,7 +64,8 @@ using sturm::qbool;
         _when_guard_.should_run())
 
 void demo(qbool a, qbool b, qbool c) {
-    qbool __stu_t0 = b | c;
+    #line 65 "when_single_or.cpp"
+qbool __stu_t0 = b | c;
 WHEN(__stu_t0) { (void)a; }
 #line 65 "when_single_or.cpp"
     uncompute_or(__stu_t0, b, c);

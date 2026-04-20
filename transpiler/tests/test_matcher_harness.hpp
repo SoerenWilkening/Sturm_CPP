@@ -72,3 +72,6 @@ void run_dead_ancilla_tests();
 void run_pm2_compound_line_tests();
 // PM2-3: M8 uncompute synthesis `#line` directive emission.
 void run_pm2_uncompute_line_tests();
+// PM2-4: `#line` directive emission on QReplacement strings produced
+// by Phase J PJ-1d ccnot-fuse + Phase F WHEN-lift matchers.
+void run_pm2_replacement_line_tests();

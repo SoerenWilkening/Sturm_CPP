@@ -187,11 +187,18 @@ void test_fuse_canonical_pair() {
         CHECK_EQ_STR(op.operands[1].name, std::string("b"));
     }
 
-    // One QReplacement over both stmts.
+    // One QReplacement over both stmts. PM2-4: the replacement text is
+    // prefixed with a `\n#line <N> "<basename>"\n` directive anchored
+    // at the fused range's begin (the VarDecl's begin loc). We assert
+    // the trailing call substring and the directive presence rather
+    // than the full byte sequence — the line number depends on the
+    // prepended qbool stub size and the filename basename depends on
+    // the virtual file passed to runToolOnCodeWithArgs.
     CHECK(unit.replacements.size() == 1);
     if (!unit.replacements.empty()) {
-        CHECK_EQ_STR(unit.replacements.front().replacement,
-                     std::string("ccnot_inplace(x, a, b);"));
+        const std::string& rep = unit.replacements.front().replacement;
+        CHECK(rep.find("ccnot_inplace(x, a, b);") != std::string::npos);
+        CHECK(rep.find("#line ") != std::string::npos);
         CHECK(unit.replacements.front().range.isValid());
     }
 }
@@ -210,9 +217,14 @@ void test_fuse_arbitrary_tmp_name() {
     if (unit.scopes.empty()) return;
     CHECK(unit.scopes.front().ops.size() == 1);
     CHECK(unit.replacements.size() == 1);
+    // PM2-4: the replacement is prefixed with a `#line` directive (see
+    // test_fuse_canonical_pair for rationale). Assert the substring
+    // rather than the full byte sequence so the test stays stable as
+    // the directive's line number / basename vary by harness.
     if (!unit.replacements.empty()) {
-        CHECK_EQ_STR(unit.replacements.front().replacement,
-                     std::string("ccnot_inplace(x, a, b);"));
+        const std::string& rep = unit.replacements.front().replacement;
+        CHECK(rep.find("ccnot_inplace(x, a, b);") != std::string::npos);
+        CHECK(rep.find("#line ") != std::string::npos);
     }
 }
 

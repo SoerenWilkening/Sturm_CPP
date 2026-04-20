@@ -69,7 +69,9 @@ using sturm::qbool;
         _when_guard_.should_run())
 
 void demo(qbool a, qbool b, qbool c, qbool d) {
-    qbool __stu_t0 = b | c;
+    #line 70 "when_compound.cpp"
+qbool __stu_t0 = b | c;
+#line 70 "when_compound.cpp"
 qbool __stu_t1 = __stu_t0 & d;
 WHEN(__stu_t1) { (void)a; }
 #line 70 "when_compound.cpp"

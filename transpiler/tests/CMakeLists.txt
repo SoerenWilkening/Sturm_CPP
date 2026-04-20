@@ -203,6 +203,9 @@ add_executable(test_transpile_matcher
     test_matcher_pm2_compound_line.cpp
     # PM2-3: M8 uncompute-synthesis `#line` directive emission tests.
     test_matcher_pm2_uncompute_line.cpp
+    # PM2-4: QReplacement `#line` directive emission for ccnot-fuse +
+    # WHEN-lift tests.
+    test_matcher_pm2_replacement_line.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp

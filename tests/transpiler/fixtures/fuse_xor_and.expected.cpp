@@ -31,7 +31,9 @@ inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
 using sturm::qbool;
 
 void demo(qbool a, qbool b, qbool x) {
-    ccnot_inplace(x, a, b);
+    
+#line 32 "fuse_xor_and.cpp"
+ccnot_inplace(x, a, b);
 
 #line 32 "fuse_xor_and.cpp"
     ccnot_inplace(x, a, b);

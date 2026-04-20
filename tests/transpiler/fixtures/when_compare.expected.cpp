@@ -69,7 +69,8 @@ using sturm::qbool;
         _when_guard_.should_run())
 
 void demo(sturm::qint_t<8> a, sturm::qint_t<8> b, qbool d) {
-    qbool __stu_t0 = a == b;
+    #line 70 "when_compare.cpp"
+qbool __stu_t0 = a == b;
 WHEN(__stu_t0) { (void)d; }
 #line 70 "when_compare.cpp"
     uncompute_eq_qint(__stu_t0, a, b);
