@@ -803,16 +803,75 @@ Options, not mutually exclusive:
 >   Phase L release workflow; Homebrew bottle installs cleanly on
 >   macOS + Linux runners; GHCR Docker image builds.
 >
-> Items 2–5 below (alternative backends, diagnostics, source maps,
-> transpiler pluginization, peephole gate reordering deferred from
-> PJ-2) remain open.
+> Remaining items below (diagnostics, transpiler pluginization,
+> peephole gate reordering deferred from PJ-2) remain open.
+
+> **2026-04-20:** Phase M item 2 (source maps via `#line` directives)
+> complete. Every transpiler-emitted insertion and replacement now
+> carries a `#line <N> "<user-file>"` directive so that compiler and
+> debugger diagnostics inside transpiled regions cite the user's
+> source file and original line number — not a synthesized `__stu_tN`
+> temporary line, not `<memory-buffer>`. The shared helper
+> `format_line_directive(SourceManager&, SourceLocation) -> std::string`
+> (PM2-1) in `transpiler/src/emitter.cpp` returns
+> `#line <N> "<file>"\n` via `getPresumedLoc()` (honouring user
+> `#line` pragmas) and empty string for invalid / out-of-main-file
+> locations. The helper is threaded through every emission site:
+> Phase E compound synthesized decls (PM2-2), `uncompute_pass.cpp`
+> `render_uncompute` (PM2-3), `QReplacement` strings including PJ-1
+> fuse + Phase F WHEN-lift (PM2-4), and PJ-3 hoist attribution using
+> the decl's own source location rather than the loop header (PM2-5).
+> Idempotency is preserved end-to-end (PM2-6): a transpiled file fed
+> back through the transpiler produces a byte-identical buffer
+> because the `#line` directives already resolve to the same
+> presumed locations on the second pass. Sub-items:
+>
+> - PM2-1 (sturm-c9qo): `format_line_directive()` helper landed in
+>   `transpiler/src/emitter.cpp`.
+> - PM2-2 (sturm-kdsv): Phase E compound matcher
+>   (`transpiler/src/matcher_qbool_compound.cpp`) prefixes every
+>   synthesized `qbool __stu_tN = ...;` decl with the `#line`
+>   directive pointing at the original initializer expression.
+> - PM2-3 (sturm-tvkv): `uncompute_pass.cpp` `render_uncompute`
+>   prefixes every synthesized `uncompute_*(...)` / `invert(...)(...)`
+>   / `ccnot_inplace(...)` call with the `#line` directive pointing
+>   at the forward op's source location.
+> - PM2-4 (sturm-j1by): `QReplacement` string emission carries a
+>   `#line` prefix for PJ-1 fuse (`matcher_ccnot_fuse.cpp`) and
+>   Phase F WHEN-lift (`matcher_when_lift.cpp`), covering the
+>   in-place rewrites that do not go through the uncompute pass.
+> - PM2-5 (sturm-19qx): PJ-3 hoist attribution policy — the
+>   hoisted forward compute's `#line` cites the original decl's
+>   location, not the loop header; the post-loop uncompute cites
+>   the same decl location. Pins user-facing "click to jump to
+>   source" correctness for the hoist optimization.
+> - PM2-6 (sturm-727c): Idempotency verification — the
+>   `transpiler_idempotent_example_*` CTests already exercise the
+>   two-pass byte-identity invariant, and every Phase E/F/H/I/J
+>   idempotency fixture stays green after `#line` emission
+>   because the presumed-location lookup is stable across passes.
+> - PM2-7 (sturm-bvjm): Snapshot fixtures under
+>   `tests/transpiler/fixtures/*.expected.cpp` regenerated with
+>   the new `#line` directives. 64 snapshot + 46 idempotency
+>   fixtures total; 138/138 transpiler tests green.
+> - PM2-8 (sturm-y4kd): New `source_map_diagnostic` CTest pins
+>   the user-facing guarantee. `tests/transpiler/fixtures/source_map_diagnostic_input.cpp`
+>   carries a deliberate type error inside a transpiled region;
+>   `tests/transpiler/check_source_map_diagnostic.cmake` compiles
+>   via `clang++ -fplugin=$<TARGET_FILE:sturm-transpile-plugin> -c`
+>   and asserts stderr cites `source_map_diagnostic_input.cpp:<user_line>:`
+>   — not a synthesized `__stu_tN` line, not `<memory-buffer>`.
+>
+> Alternative backends (OpenQASM 3 / simulator IRs / custom
+> hardware-aware representation) are off the roadmap permanently
+> per the 2026-04-20 user decision — the corresponding bullet has
+> been removed below.
 
 Lower priority, tracked for visibility.
 
 - **In-memory transpile.** *Complete — shipped in v0.1.2 (2026-04-19).* Skip the filesystem round-trip: transpile and feed directly to Clang's codegen. Keep the sibling-file emit as a `--dump-transpiled` option for debugging.
-- **Alternative backends.** The IR is backend-agnostic. A second emitter could target OpenQASM 3, a simulator-specific IR, or a custom hardware-aware representation.
 - **Diagnostics.** Quantum-specific compile errors ("operand modified inside its own WHEN", "qbool escapes its scope without explicit measurement or uncompute"). Requires the liveness analysis from Phase H to be mature.
-- **Source maps.** Preserve `#line` directives in the generated file so that compiler and debugger diagnostics point at the user's source, not the generated temporary names.
+- **Source maps.** *Complete — shipped 2026-04-20.* Transpiler-emitted insertions and replacements carry `#line <N> "<user-file>"` directives via the shared `format_line_directive()` helper in `transpiler/src/emitter.cpp` (PM2-1), threaded through Phase E compound decls (PM2-2), `render_uncompute` (PM2-3), `QReplacement` strings for PJ-1 fuse + Phase F WHEN-lift (PM2-4), and PJ-3 hoist attribution (PM2-5). Idempotency preserved end-to-end (PM2-6); 64 snapshot + 46 idempotency fixtures regenerated under `tests/transpiler/fixtures/*.expected.cpp` (PM2-7); user-facing guarantee pinned by the new `source_map_diagnostic` CTest with `tests/transpiler/fixtures/source_map_diagnostic_input.cpp` + `tests/transpiler/check_source_map_diagnostic.cmake` (PM2-8).
 - **Transpiler pluginization.** User-defined rewrite rules registered with the transpiler, for ecosystem libraries that introduce new quantum operations. Only after the core is stable.
 - **Peephole gate reordering** *(deferred from Phase J PJ-2, 2026-04-16).* Commute commuting gates across unrelated ops to expose fusion opportunities and cancellations beyond what PJ-1's adjacent-statement peephole captures. Requires alias analysis for the value-gain ratio to pay its way; dropped from Phase J on that basis.
 
