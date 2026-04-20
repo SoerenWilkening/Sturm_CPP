@@ -2529,3 +2529,46 @@ else()
         "tests/transpiler: plugin_smoke_test skipped "
         "(clang++ or nm not found next to LLVM_TOOLS_BINARY_DIR).")
 endif()
+
+# ── PM2-8: source_map_diagnostic ───────────────────────────────────────────
+#
+# Plugin-mode source-map smoke probe: compiles a fixture with a deliberate
+# `qbool & int` type error inside a `WHEN(...)` argument and asserts that
+# Clang's stderr cites the user's `source_map_diagnostic_input.cpp:<line>:`
+# — proving that (a) `plugin.cpp`'s `getMemBufferCopy(rewritten,
+# input_path)` preserves the user's filename under the nested
+# `CompilerInvocation`, and (b) the Phase-M `#line` directives emitted by
+# the rewrite pipeline (matcher_when_lift / matcher_qbool_compound /
+# uncompute_pass / …) anchor synthesized statements back at the
+# originating user expression line.
+#
+# Shares the `_STURM_SMOKE_CLANGXX` lookup from the `plugin_smoke_test`
+# block above — if `clang++` is not locatable next to the LLVM we linked,
+# neither test runs, consistent with the gate-equivalence tests' pattern.
+# `llvm-nm` is NOT required (stderr-substring assertion only), so the
+# guard here is narrower than `plugin_smoke_test`'s.
+#
+# EXPECTED_LINE is hard-coded to 78 — the line of the user's
+# `WHEN((b | c) & 42) { (void)a; }` statement inside the fixture at
+# `tests/transpiler/fixtures/source_map_diagnostic_input.cpp`. If that
+# file gains or loses preamble lines, bump this number to match — the
+# harness will FATAL_ERROR with a clear message pointing at the
+# mismatch.
+if(_STURM_SMOKE_CLANGXX)
+    add_test(
+        NAME source_map_diagnostic
+        COMMAND "${CMAKE_COMMAND}"
+                -DCLANGXX=${_STURM_SMOKE_CLANGXX}
+                -DPLUGIN=$<TARGET_FILE:sturm-transpile-plugin>
+                -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/source_map_diagnostic_input.cpp
+                -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/source_map_diagnostic
+                -DEXPECTED_LINE=78
+                -P ${CMAKE_CURRENT_SOURCE_DIR}/check_source_map_diagnostic.cmake)
+    set_tests_properties(source_map_diagnostic PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-transpile-plugin>")
+else()
+    message(STATUS
+        "tests/transpiler: source_map_diagnostic skipped "
+        "(clang++ not found next to LLVM_TOOLS_BINARY_DIR).")
+endif()
