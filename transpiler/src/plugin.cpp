@@ -112,10 +112,17 @@
 #include "transpile_consumer.hpp"
 
 #include "clang/AST/ASTConsumer.h"
+#include "clang/CodeGen/CodeGenAction.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Frontend/CompilerInvocation.h"
+#include "clang/Frontend/FrontendOptions.h"
 #include "clang/Frontend/FrontendPluginRegistry.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
+#include "llvm/Support/MemoryBuffer.h"
+#include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
 #include <fstream>
@@ -189,40 +196,223 @@ class SturmPluginAction : public clang::PluginASTAction {
     // for the full reasoning.
     ActionType getActionType() override { return ReplaceAction; }
 
-    // After HandleTranslationUnit finishes we honour the -verbose /
-    // -dump-to flags. The rewritten buffer lives on the consumer; we
-    // read it via the observer pointer stashed in CreateASTConsumer.
+    // PM1-4 — run the parent parse (drives the matcher pool + fills the
+    // rewritten buffer on the consumer), then execute the program action
+    // the parent invocation would have run — EmitObj, EmitBC,
+    // EmitLLVMOnly, EmitAssembly, … — against a nested
+    // CompilerInvocation whose main-file input is the REWRITTEN source,
+    // served via an InMemory + Overlay VFS so system headers still
+    // resolve through the real filesystem.
     //
-    // TODO(backend): PM1-4 (sturm-bkcr) will override ExecuteAction
-    // instead and hand the rewritten buffer to a nested
-    // CompilerInvocation + EmitObjAction here. At PM1-3 we only need
-    // the plumbing to reach this point without crashing on a non-Sturm
-    // translation unit.
-    void EndSourceFileAction() override {
+    // Design points locked in by the PM1-0 spike (branch
+    // spike/sturm-nimr-nested-plugin, `transpiler/spike_nimr/plugin_spike.cpp`):
+    //
+    //   * Clang 17 has no `CompilerInvocation::print()`; the canonical
+    //     "dump the invocation for a human" call is
+    //     `getCC1CommandLine()`, which gives us the same flags the
+    //     driver would have spelled out. Verbose-mode dumps use it.
+    //   * The Overlay layers the InMemoryFileSystem in front of the
+    //     RealFileSystem so the rewritten main file shadows the user's
+    //     on-disk main file while every other open (system headers,
+    //     -I paths, …) falls through to the real VFS.
+    //   * `std::make_shared<CompilerInvocation>(parent.getInvocation())`
+    //     inherits every CC1 option the parent accumulated — -O, -I, -D,
+    //     -std, -flto, -fsanitize, target triple, etc. — for free.
+    //   * The nested CompilerInstance gets a FRESH DiagnosticsEngine
+    //     backed by a TextDiagnosticPrinter writing to llvm::errs() so
+    //     codegen errors in the rewritten buffer surface to the user
+    //     with the plugin's name in the banner. Sharing the parent's
+    //     engine risked state leakage between the two Sema runs.
+    //
+    // Non-object program actions (EmitBC, EmitLLVM, EmitAssembly,
+    // ParseSyntaxOnly, etc.) are inherited from the parent invocation so
+    // that `-S`, `-emit-llvm`, `-fsyntax-only` — whatever the user
+    // passed through the driver — continue to "do the right thing"
+    // through the plugin. We do NOT unconditionally force EmitObj
+    // because doing so would break a `clang++ -S` invocation that asks
+    // for assembly.
+    void ExecuteAction() override {
+        // 1. Let the parent ASTConsumer (our TranspileConsumer) finish
+        //    the AST walk + matchAST. On return `consumer_observer_`'s
+        //    rewritten_buffer() holds the post-rewrite source.
+        clang::PluginASTAction::ExecuteAction();
+
         if (consumer_observer_ == nullptr) {
-            clang::PluginASTAction::EndSourceFileAction();
+            // No consumer was constructed (empty input / early bailout);
+            // nothing to hand to a nested invocation.
             return;
         }
-        const std::string& buf = consumer_observer_->rewritten_buffer();
+
+        clang::CompilerInstance& parent = getCompilerInstance();
+
+        // 2. Pull the rewritten buffer. If emit_to_string produced an
+        //    empty buffer (empty input or nothing to rewrite), we fall
+        //    back to reading the original main file from disk — the
+        //    spike proved this shape works and it gives us a consistent
+        //    codegen path for non-Sturm translation units.
+        std::string rewritten = consumer_observer_->rewritten_buffer();
+
+        const auto& parent_inv = parent.getInvocation();
+        const auto& parent_fopts = parent_inv.getFrontendOpts();
+        if (parent_fopts.Inputs.empty()) {
+            llvm::errs() << "sturm-transpile plugin: "
+                         << "parent invocation has no inputs; "
+                         << "skipping nested EmitObjAction\n";
+            return;
+        }
+        const std::string input_path =
+            parent_fopts.Inputs.front().getFile().str();
+
+        if (rewritten.empty()) {
+            // Fallback: read the original main file so the nested
+            // invocation still has a buffer to codegen. In practice the
+            // consumer always emits at least a pass-through copy, so
+            // this path only fires on pathological TUs.
+            auto real_fs = llvm::vfs::getRealFileSystem();
+            auto orig_or_err = real_fs->getBufferForFile(input_path);
+            if (!orig_or_err) {
+                llvm::errs() << "sturm-transpile plugin: cannot read "
+                             << "input '" << input_path << "': "
+                             << orig_or_err.getError().message() << "\n";
+                return;
+            }
+            rewritten = std::string((*orig_or_err)->getBuffer());
+        }
 
         if (verbose_) {
             llvm::errs() << "sturm-transpile plugin: TU '"
                          << getCurrentFile()
                          << "' rewritten_buffer() size="
-                         << buf.size() << "\n";
+                         << rewritten.size() << "\n";
         }
 
+        // 3. Dump the rewritten buffer to -fplugin-arg-sturm-transpile-
+        //    dump-to=<path> BEFORE running the nested invocation. The
+        //    PM1-3 test exercises this, and writing first means the dump
+        //    survives even if nested codegen fails downstream.
         if (!dump_to_.empty()) {
             std::ofstream os(dump_to_, std::ios::binary);
             if (!os) {
                 llvm::errs() << "sturm-transpile plugin: cannot open "
                              << dump_to_ << " for dump-to write\n";
             } else {
-                os.write(buf.data(),
-                         static_cast<std::streamsize>(buf.size()));
+                os.write(rewritten.data(),
+                         static_cast<std::streamsize>(rewritten.size()));
+                dump_written_ = true;
             }
         }
 
+        // 4. Build the InMemory + Overlay VFS. The in-memory layer
+        //    shadows JUST the main source path with the rewritten
+        //    bytes; every other path (system headers, -I paths, …)
+        //    falls through to the real FS.
+        auto real_fs = llvm::vfs::getRealFileSystem();
+        auto in_mem =
+            llvm::makeIntrusiveRefCnt<llvm::vfs::InMemoryFileSystem>();
+        in_mem->addFile(
+            input_path, /*mtime=*/0,
+            llvm::MemoryBuffer::getMemBufferCopy(rewritten, input_path));
+        auto overlay =
+            llvm::makeIntrusiveRefCnt<llvm::vfs::OverlayFileSystem>(
+                real_fs);
+        overlay->pushOverlay(in_mem);
+
+        // 5. Clone the parent invocation. Every CC1 option — -O*, -I*,
+        //    -D*, -std, -flto, -fsanitize, target triple — rides along
+        //    for free. We inherit the ProgramAction so -S / -emit-llvm /
+        //    -c all "do the right thing". One exception: when the
+        //    parent's ProgramAction is PluginAction (i.e. the user
+        //    activated us explicitly with `-plugin sturm-transpile`), we
+        //    flip it to EmitObj so the nested run actually emits an
+        //    object file rather than looping back into the plugin.
+        auto cloned = std::make_shared<clang::CompilerInvocation>(parent_inv);
+
+        if (verbose_) {
+            llvm::errs() << "=== cloned CompilerInvocation ===\n";
+            for (const auto& a : cloned->getCC1CommandLine()) {
+                llvm::errs() << a << "\n";
+            }
+            llvm::errs() << "=== end cloned CompilerInvocation ===\n";
+        }
+
+        auto& cloned_fopts = cloned->getFrontendOpts();
+        if (cloned_fopts.ProgramAction == clang::frontend::PluginAction ||
+            cloned_fopts.ProgramAction == clang::frontend::ParseSyntaxOnly) {
+            // The parent's action IS us (ReplaceAction activated via
+            // -plugin sturm-transpile). Running the plugin from a
+            // nested invocation on the overlay would recurse forever;
+            // flip to EmitObj so the nested run produces a .o. If the
+            // user originally asked for ParseSyntaxOnly (-fsyntax-only),
+            // inheriting it would still do the right thing, but we'd
+            // produce no .o which breaks the `-c` contract — flip to
+            // EmitObj as well when the parent's -o points at a .o.
+            cloned_fopts.ProgramAction = clang::frontend::EmitObj;
+        }
+        // Do NOT clear the plugin list here — the nested CompilerInstance
+        // would happily re-load sturm-transpile from the PLUGINS vector
+        // but our ActionType is ReplaceAction which only fires when the
+        // user ACTIVATES it via `-plugin sturm-transpile`. The parent's
+        // frontend is what activates us; the cloned invocation keeps the
+        // `-plugin` registration but the cloned ProgramAction above is
+        // no longer PluginAction, so the plugin is loaded-but-inert in
+        // the child — exactly what we want.
+
+        // 6. Construct the child CompilerInstance on the overlay.
+        clang::CompilerInstance child;
+        child.setInvocation(cloned);
+        child.createDiagnostics(
+            new clang::TextDiagnosticPrinter(llvm::errs(),
+                                             &cloned->getDiagnosticOpts()),
+            /*ShouldOwnClient=*/true);
+        child.createFileManager(overlay);
+        child.createSourceManager(child.getFileManager());
+
+        // 7. Dispatch on the inherited ProgramAction. The spike proved
+        //    the EmitObj path; we extend it to the sibling codegen
+        //    actions so -S / -emit-llvm / -c all work. Anything we do
+        //    not recognise falls back to EmitObj — same as if the user
+        //    had passed -c, which is the most common case.
+        std::unique_ptr<clang::FrontendAction> action;
+        switch (cloned_fopts.ProgramAction) {
+            case clang::frontend::EmitObj:
+                action = std::make_unique<clang::EmitObjAction>();
+                break;
+            case clang::frontend::EmitBC:
+                action = std::make_unique<clang::EmitBCAction>();
+                break;
+            case clang::frontend::EmitLLVM:
+                action = std::make_unique<clang::EmitLLVMAction>();
+                break;
+            case clang::frontend::EmitLLVMOnly:
+                action = std::make_unique<clang::EmitLLVMOnlyAction>();
+                break;
+            case clang::frontend::EmitAssembly:
+                action = std::make_unique<clang::EmitAssemblyAction>();
+                break;
+            case clang::frontend::EmitCodeGenOnly:
+                action = std::make_unique<clang::EmitCodeGenOnlyAction>();
+                break;
+            default:
+                // Unknown / unsupported ProgramAction — fall back to
+                // EmitObj which is the most common case (`-c`).
+                action = std::make_unique<clang::EmitObjAction>();
+                break;
+        }
+
+        if (!child.ExecuteAction(*action)) {
+            llvm::errs() << "sturm-transpile plugin: "
+                         << "nested frontend action failed for '"
+                         << input_path << "'\n";
+        }
+    }
+
+    // After HandleTranslationUnit finishes the -verbose trace is emitted
+    // from inside ExecuteAction (above); EndSourceFileAction remains in
+    // place for the PM1-3 contract — ASTFrontendAction's base class runs
+    // its own EndSourceFile hooks from here, and we preserve that
+    // ordering.  dump-to is handled in ExecuteAction (before the nested
+    // invocation) so keep this hook minimal.
+    void EndSourceFileAction() override {
         clang::PluginASTAction::EndSourceFileAction();
     }
 
@@ -236,9 +426,14 @@ class SturmPluginAction : public clang::PluginASTAction {
     // -fplugin-arg-sturm-transpile-verbose → print per-TU trace line.
     bool verbose_ = false;
     // -fplugin-arg-sturm-transpile-dump-to=<path> → write rewritten
-    // buffer to this path after HandleTranslationUnit runs. Empty
+    // buffer to this path BEFORE the nested invocation runs. Empty
     // when the flag was not passed.
     std::string dump_to_;
+    // PM1-4: set once ExecuteAction has written the dump file so
+    // EndSourceFileAction can skip the legacy dump path and avoid
+    // double-writing. Kept as internal debug state — no external
+    // observer reads it.
+    bool dump_written_ = false;
 };
 
 // Static registration — this is the ONE external symbol the plugin .so

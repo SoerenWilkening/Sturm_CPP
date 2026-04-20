@@ -357,6 +357,39 @@ else()
                    "(clang++ not found next to LLVM_TOOLS_BINARY_DIR)")
 endif()
 
+# ── Integration test: nested plugin codegen (PM1-4) ─────────────────────────
+# The PM1-4 gate: the plugin's ExecuteAction runs a nested
+# CompilerInvocation + EmitObjAction over the rewritten buffer so one
+# clang++ -fplugin command produces the same .o the legacy two-step
+# (sturm-transpile, then clang++ -c) would have produced. We compare
+# llvm-objdump -d disassembly for three fixtures spanning Phase E / H / J.
+find_program(STURM_PLUGIN_OBJDUMP_BIN
+    NAMES "llvm-objdump-${LLVM_VERSION_MAJOR}" "llvm-objdump"
+    HINTS "${LLVM_TOOLS_BINARY_DIR}"
+    NO_DEFAULT_PATH)
+if(STURM_PLUGIN_CLANGXX_BIN AND STURM_PLUGIN_OBJDUMP_BIN)
+    add_executable(test_plugin_nested
+        test_plugin_nested.cpp
+    )
+    target_compile_features(test_plugin_nested PRIVATE cxx_std_20)
+    target_compile_definitions(test_plugin_nested PRIVATE
+        STURM_PLUGIN_PATH="$<TARGET_FILE:sturm-transpile-plugin>"
+        STURM_PLUGIN_CLANGXX="${STURM_PLUGIN_CLANGXX_BIN}"
+        STURM_TRANSPILE_BIN="$<TARGET_FILE:sturm-transpile>"
+        STURM_PLUGIN_OBJDUMP="${STURM_PLUGIN_OBJDUMP_BIN}"
+        STURM_PLUGIN_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
+        STURM_PLUGIN_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
+    )
+    add_dependencies(test_plugin_nested
+        sturm-transpile-plugin sturm-transpile)
+    add_test(NAME test_plugin_nested COMMAND test_plugin_nested)
+    set_tests_properties(test_plugin_nested PROPERTIES LABELS "transpiler")
+else()
+    message(STATUS "sturm-transpile: test_plugin_nested skipped "
+                   "(clang++ or llvm-objdump not found next to "
+                   "LLVM_TOOLS_BINARY_DIR)")
+endif()
+
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
     test_driver.cpp
