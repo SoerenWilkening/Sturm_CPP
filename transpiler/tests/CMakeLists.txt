@@ -328,6 +328,35 @@ endif()
 add_test(NAME test_transpile_consumer COMMAND test_transpile_consumer)
 set_tests_properties(test_transpile_consumer PROPERTIES LABELS "transpiler")
 
+# ── Integration test: plugin load (PM1-3) ────────────────────────────────────
+# Shells out to the host clang++ with -fplugin=$<TARGET_FILE:...> against
+# trivial non-Sturm TUs. Verifies the plugin loads, parses cleanly,
+# honours -verbose and -dump-to=<path>, ignores unknown future flags,
+# and rejects an empty dump-to= path. The compile-time macro
+# STURM_PLUGIN_PATH is the generator expression for the plugin .so /
+# .dylib; STURM_PLUGIN_CLANGXX is the clang++ driver located at
+# configure time next to the Clang version we linked against.
+find_program(STURM_PLUGIN_CLANGXX_BIN
+    NAMES "clang++-${LLVM_VERSION_MAJOR}" "clang++"
+    HINTS "${LLVM_TOOLS_BINARY_DIR}"
+    NO_DEFAULT_PATH)
+if(STURM_PLUGIN_CLANGXX_BIN)
+    add_executable(test_plugin_load
+        test_plugin_load.cpp
+    )
+    target_compile_features(test_plugin_load PRIVATE cxx_std_20)
+    target_compile_definitions(test_plugin_load PRIVATE
+        STURM_PLUGIN_PATH="$<TARGET_FILE:sturm-transpile-plugin>"
+        STURM_PLUGIN_CLANGXX="${STURM_PLUGIN_CLANGXX_BIN}"
+    )
+    add_dependencies(test_plugin_load sturm-transpile-plugin)
+    add_test(NAME test_plugin_load COMMAND test_plugin_load)
+    set_tests_properties(test_plugin_load PROPERTIES LABELS "transpiler")
+else()
+    message(STATUS "sturm-transpile: test_plugin_load skipped "
+                   "(clang++ not found next to LLVM_TOOLS_BINARY_DIR)")
+endif()
+
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
     test_driver.cpp

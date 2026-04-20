@@ -200,6 +200,116 @@ else()
     target_link_libraries(sturm-transpile PRIVATE ${LLVM_LIBS})
 endif()
 
+# ── Plugin: sturm-transpile-plugin (PM1-3) ────────────────────────────────────
+# Clang plugin (.so / .dylib) that drives the shared TranspileConsumer in
+# EmissionMode::Plugin. Loaded via `clang++ -fplugin=$<TARGET_FILE:...>`
+# on a downstream compile, reuses the same matcher pool as the standalone
+# binary, and (after PM1-4 wires nested codegen) substitutes the
+# transpiler-rewritten source for the user's raw input before EmitObjAction.
+#
+# Link discipline mirrors the main binary: shared libclang-cpp + libLLVM
+# when available (to avoid cl::opt double-registration — Phase L /
+# sturm-mzfa lesson), fallback to the static per-component archives
+# otherwise. Symbol hiding is enforced on Linux via
+# -Wl,--exclude-libs,ALL so the tens of thousands of symbols the
+# shared LLVM .so exposes do not leak out of OUR plugin's interface
+# (Clang's loader only needs the FrontendPluginRegistry Add<> ctor).
+# On macOS, two-level namespace lookup already prevents symbol
+# collision between dlopen'd plugins and the host clang's copy of
+# LLVM, so no extra flag is required.
+#
+# The file is built as SHARED (not MODULE) so the target exports a
+# normal .so/.dylib — Clang's plugin loader treats the two file types
+# interchangeably and SHARED keeps the TARGET_FILE path consistent on
+# both Linux (libsturm-transpile-plugin.so) and macOS
+# (libsturm-transpile-plugin.dylib). Tests reach the file via the
+# $<TARGET_FILE:sturm-transpile-plugin> generator expression, so a
+# rename never needs to touch the test fixtures.
+add_library(sturm-transpile-plugin SHARED
+    src/plugin.cpp
+    src/transpile_consumer.cpp
+    src/io.cpp
+    src/skip.cpp
+    src/qir.cpp
+    src/matcher_qbool_bitwise.cpp
+    src/matcher_qbool_compound.cpp
+    src/matcher_qbool_assign.cpp
+    src/matcher_qint_const.cpp
+    src/matcher_qint_qint.cpp
+    src/matcher_qint_compare.cpp
+    src/matcher_when_lift.cpp
+    src/matcher_when_nested.cpp
+    src/matcher_brace_wrap.cpp
+    src/matcher_outer_var_guard.cpp
+    src/matcher_hoist_invariant.cpp
+    src/matcher_ccnot_fuse.cpp
+    src/matcher_dead_ancilla.cpp
+    src/routine_registry.cpp
+    src/matcher_user_routine.cpp
+    src/uncompute_pass.cpp
+    src/emitter.cpp
+)
+target_include_directories(sturm-transpile-plugin PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/include
+    ${CMAKE_CURRENT_SOURCE_DIR}/src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(sturm-transpile-plugin PRIVATE -fno-rtti)
+endif()
+target_compile_features(sturm-transpile-plugin PRIVATE cxx_std_20)
+target_compile_definitions(sturm-transpile-plugin PRIVATE
+    ${LLVM_DEFS_LIST}
+    STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
+    STURM_LLVM_VERSION_MAJOR_STR="${LLVM_VERSION_MAJOR}")
+
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(sturm-transpile-plugin PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(sturm-transpile-plugin PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN support)
+    target_link_libraries(sturm-transpile-plugin PRIVATE ${LLVM_LIBS_PLUGIN})
+endif()
+
+# Hide the transitively-pulled LLVM symbols from the plugin's exported
+# interface on Linux. A no-op on macOS / Darwin, where two-level
+# namespace lookup already keeps the plugin's LLVM copy from colliding
+# with the host clang's copy.
+if(CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # Hide the transitively-pulled LLVM symbols from the plugin's
+    # EXPORTED interface. This prevents the tens of thousands of LLVM
+    # / Clang symbols from leaking out of the plugin .so while still
+    # letting the plugin RESOLVE those symbols (via its DT_NEEDED
+    # libLLVM-17.so / libclang-cpp.so entries) — exclude-libs only
+    # touches the dynamic symbol TABLE, not runtime lookup.
+    target_link_options(sturm-transpile-plugin PRIVATE
+        "LINKER:--exclude-libs,ALL")
+endif()
+
+# Clang's plugin loader matches on basename; we keep the conventional
+# `lib` prefix here because `-fplugin=<full-path>` takes an absolute
+# path and does not care about the prefix. The target-file generator
+# expression (`$<TARGET_FILE:sturm-transpile-plugin>`) resolves to the
+# right thing on every platform without bespoke PREFIX massaging.
+
 # ── Install rule (Phase L PL-1) ───────────────────────────────────────────────
 # Ship the transpiler driver into <prefix>/bin so downstream consumers can
 # locate it via the IMPORTED `sturm-transpile` target wired up in
