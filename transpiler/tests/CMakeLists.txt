@@ -176,6 +176,8 @@ add_executable(test_transpile_matcher
     test_matcher_hoist_invariant.cpp
     test_matcher_ccnot_fuse.cpp
     test_matcher_dead_ancilla.cpp
+    # PM2-2: Phase E compound-matcher `#line` directive emission tests.
+    test_matcher_pm2_compound_line.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
@@ -192,6 +194,18 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    # PM2-2: `matcher_qbool_compound.cpp` now calls
+    # `format_line_directive` from `emitter.cpp` to prefix each
+    # synthesized `__stu_tN` decl with a `#line` directive.  Link the
+    # emitter TU so this test binary resolves the symbol; the helper's
+    # only LLVM / Clang dependencies (`SourceManager`, `PresumedLoc`)
+    # are already satisfied by the existing clangBasic link line.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    # emitter.cpp transitively includes io.hpp / skip.hpp / uncompute_pass.hpp
+    # so their implementation TUs must be on the link line too.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
 )
 target_include_directories(test_transpile_matcher PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include

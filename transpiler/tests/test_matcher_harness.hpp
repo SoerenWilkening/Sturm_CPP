@@ -68,3 +68,5 @@ void run_loop_invariant_tests();
 void run_hoist_invariant_tests();
 void run_ccnot_fuse_tests();
 void run_dead_ancilla_tests();
+// PM2-2: Phase E compound-flatten `#line` directive emission.
+void run_pm2_compound_line_tests();

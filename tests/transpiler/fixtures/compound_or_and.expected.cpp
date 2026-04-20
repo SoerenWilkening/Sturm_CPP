@@ -44,7 +44,10 @@ inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool b, qbool c, qbool d) { qbool __stu_t0 = b | c;
-    qbool r = __stu_t0 & d; (void)r;     uncompute_and(r, __stu_t0, d);
+void demo(qbool b, qbool c, qbool d) { 
+#line 45 "compound_or_and.cpp"
+qbool __stu_t0 = b | c;
+    #line 45 "compound_or_and.cpp"
+qbool r = __stu_t0 & d; (void)r;     uncompute_and(r, __stu_t0, d);
     uncompute_or(__stu_t0, b, c);
 }

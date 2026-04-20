@@ -42,8 +42,11 @@ inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
 using sturm::qbool;
 
 void demo(qbool a, qbool b, qbool c, qbool x) {
-    qbool __stu_t0 = b & c;
-    qbool __t = a & __stu_t0;
+    
+#line 43 "fuse_xor_and_reject_nested_rhs.cpp"
+qbool __stu_t0 = b & c;
+    #line 43 "fuse_xor_and_reject_nested_rhs.cpp"
+qbool __t = a & __stu_t0;
     x ^= __t;
     x ^= __t;
     uncompute_and(__t, a, __stu_t0);

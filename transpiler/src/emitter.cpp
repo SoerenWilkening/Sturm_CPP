@@ -129,11 +129,43 @@ std::string format_line_directive(const clang::SourceManager& sm,
         return {};
     }
 
+    // PM2-2: normalise the filename to its basename so the emitted
+    // `#line` directive is reproducible across build trees. ClangTool
+    // internally `makeAbsolute`s source paths before parsing (see
+    // `clang/lib/Tooling/Tooling.cpp` — `ClangTool::run`), so in
+    // production `getPresumedLoc().getFilename()` returns an absolute
+    // path like `/abs/path/to/compound_or_and.cpp`. Baking that into
+    // a snapshot fixture would break byte-exact equality across
+    // machines (every CI runner has a different `$GITHUB_WORKSPACE`
+    // / `$PWD`), so the PM2-1 helper extracts the basename here.
+    //
+    // The narrowing is safe because the helper is gated on
+    // `isInMainFile(loc)`; an absolute or relative path that resolves
+    // to the main file deterministically basenames to the same
+    // leaf. User-authored `#line` pragmas that supply a plain
+    // filename (the common case — `#line 100 "virtual.cpp"`) are
+    // unaffected: a basename of a basename is itself.
+    //
+    // The edge case — a user pragma like `#line 100 "sub/x.cpp"` —
+    // loses the `sub/` prefix. That is a conscious trade: the
+    // compound matcher only emits directives whose filename is the
+    // main file's own name (it never injects an unrelated path), so
+    // the only way this basename step can alter a user-authored
+    // `#line` directive is if the user's pragma itself lives in the
+    // main file AND the pragma's target happens to share the main
+    // file's FileID — a path that does not occur in any shipping
+    // fixture and would be semantically ambiguous anyway.
+    std::filesystem::path path(filename);
+    const std::string basename = path.filename().string();
+    if (basename.empty()) {
+        return {};
+    }
+
     // Build the directive. Use a stringstream so we get the same
     // conversion semantics as the rest of the emitter (which already
     // depends on <sstream>).
     std::ostringstream os;
-    os << "#line " << line << " \"" << filename << "\"\n";
+    os << "#line " << line << " \"" << basename << "\"\n";
     return os.str();
 }
 

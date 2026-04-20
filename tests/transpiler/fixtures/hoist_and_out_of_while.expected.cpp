@@ -60,8 +60,11 @@ using sturm::qbool;
 void demo(qbool a, qbool b, qbool c) {
     int i = 0;
     while (i < 3) {
-        qbool __stu_t0 = a & b;
-    qbool t = __stu_t0 & c;
+        
+#line 61 "hoist_and_out_of_while.cpp"
+qbool __stu_t0 = a & b;
+    #line 61 "hoist_and_out_of_while.cpp"
+qbool t = __stu_t0 & c;
         (void)t;
         ++i;
         uncompute_and(t, __stu_t0, c);

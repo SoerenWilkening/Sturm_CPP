@@ -35,6 +35,10 @@
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
+// PM2-2: pulls in `format_line_directive` so the flat-decl block can be
+// prefixed with `#line` directives anchored at the user's compound
+// expression — source-map emission for Phase E synthesized decls.
+#include "sturm/transpile/emitter.hpp"
 #include "fresh_names.hpp"
 #include "matcher_common.hpp"
 
@@ -216,9 +220,54 @@ public:
         // decl is emitted WITHOUT a trailing `;` because the original
         // source's semicolon lies just past `stmt_range`'s end — the
         // Rewriter preserves it verbatim and we would otherwise double it.
+        //
+        // PM2-2: each synthesized `__stu_tN` decl is prefixed by a
+        // `#line <compound.begin>` directive so that Clang diagnostics
+        // and debug-line info for code inside the synthesized block cite
+        // the user's originating compound expression (not a synthesized
+        // line). Immediately before the final (user) VarDecl we emit a
+        // restoring `#line <var.begin>` directive so that subsequent
+        // user code — everything following the replacement range —
+        // stays line-accurate in the presence of extra synthesized
+        // lines. Helper `format_line_directive` returns an empty string
+        // on degenerate inputs (invalid loc, non-main-file loc); in
+        // that case we fall back to the original layout, ensuring no
+        // fixture that happens to synthesize outside the main file
+        // regresses silently.
+        //
+        // Why the leading `\n`? The replacement range starts at the
+        // user's VarDecl — the immediately preceding source text is
+        // either `{ ` (single-line user source) or the previous line's
+        // trailing content + indent (multi-line scope). In either case
+        // `#line` would land on a line that is NOT its own — and per
+        // the C/C++ standard, `#line` must be the first non-whitespace
+        // token on its line. The leading `\n` guarantees this.
+        const std::string compound_line = format_line_directive(
+            sm_, outer_call->getBeginLoc());
+        const std::string restoring_line = format_line_directive(
+            sm_, var->getBeginLoc());
+
         std::ostringstream body;
-        for (const auto& line : flat_lines) {
-            body << line << "\n    ";
+        const bool emit_directives =
+            !compound_line.empty() && !restoring_line.empty();
+        if (emit_directives) {
+            for (std::size_t i = 0; i < flat_lines.size(); ++i) {
+                if (i == 0) {
+                    body << "\n";
+                } else {
+                    body << "    ";
+                }
+                body << compound_line;
+                body << flat_lines[i] << "\n";
+            }
+            body << "    " << restoring_line;
+        } else {
+            // Defensive fallback: preserve the pre-PM2-2 layout when
+            // either directive is empty (e.g. a future regression test
+            // that synthesizes on a header location would hit this path).
+            for (const auto& line : flat_lines) {
+                body << line << "\n    ";
+            }
         }
         body << detail::render_decl_line(var->getNameAsString(), *outer_kind,
                                          lhs_name, rhs_name,
