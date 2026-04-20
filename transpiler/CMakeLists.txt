@@ -44,6 +44,7 @@ message(STATUS "sturm-transpile: using LLVM ${LLVM_PACKAGE_VERSION} "
 # ── sturm-transpile binary ────────────────────────────────────────────────────
 add_executable(sturm-transpile
     src/main.cpp
+    src/transpile_consumer.cpp
     src/io.cpp
     src/skip.cpp
     src/qir.cpp

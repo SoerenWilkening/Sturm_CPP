@@ -257,6 +257,77 @@ add_dependencies(test_transpile_skip sturm-transpile)
 add_test(NAME test_transpile_skip COMMAND test_transpile_skip)
 set_tests_properties(test_transpile_skip PROPERTIES LABELS "transpiler")
 
+# ── Unit test: shared TranspileConsumer (PM1-1) ─────────────────────────────
+# The PM1-1 extraction pulls TranspileConsumer + its matcher registration
+# pool out of main.cpp. This test pins the new EmissionMode boundary:
+# StandaloneFile writes a headered file to disk; Plugin stashes the
+# rewritten buffer on the consumer without touching disk or prepending
+# the M5 sentinel.
+add_executable(test_transpile_consumer
+    test_transpile_consumer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/transpile_consumer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_lift.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_transpile_consumer PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_transpile_consumer PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_transpile_consumer PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_CONSUMER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_transpile_consumer PRIVATE
+    ${LLVM_DEFS_LIST_CONSUMER})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_transpile_consumer PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_transpile_consumer PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_CONSUMER support)
+    target_link_libraries(test_transpile_consumer PRIVATE
+        ${LLVM_LIBS_CONSUMER})
+endif()
+add_test(NAME test_transpile_consumer COMMAND test_transpile_consumer)
+set_tests_properties(test_transpile_consumer PROPERTIES LABELS "transpiler")
+
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
     test_driver.cpp
