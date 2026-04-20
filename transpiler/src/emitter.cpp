@@ -73,6 +73,70 @@ namespace fs = std::filesystem;
 
 namespace sturm::transpile {
 
+// ── PM2-1: `#line` directive formatter ───────────────────────────────────────
+//
+// Produces `#line <N> "<file>"\n` anchored at the *presumed* location of
+// `loc`, so any user-authored `#line` pragmas already in the source are
+// honored. Returns an empty string on any degenerate input — invalid loc,
+// invalid presumed loc, or an out-of-main-file loc — so callers can
+// unconditionally concatenate the result without branching.
+//
+// Why presumed (not spelling)? The whole point of source maps is to make
+// diagnostics and debugger frames point at what the *user* thinks of as
+// "their code". If the user wrote a `#line 42 "orig.cpp"` pragma 10 lines
+// up, Clang's `getPresumedLoc()` returns line 42 + offset at "orig.cpp";
+// that's what a human reader expects. Spelling location would point at
+// the physical file/line, defeating the pragma.
+//
+// Why "main file only"? Phase-M synthesizes into the rewritten main-file
+// buffer; the nested plugin parse later ingests that buffer verbatim. A
+// `#line` directive pointing at a header path would either be dead text
+// (if the header isn't open in the nested parse's VFS) or actively
+// wrong (if Clang resolves it differently than the original expansion).
+// Emitting nothing is the safe fallback.
+std::string format_line_directive(const clang::SourceManager& sm,
+                                  clang::SourceLocation loc) {
+    if (!loc.isValid()) {
+        return {};
+    }
+
+    // Only emit directives for locations inside the main-file buffer.
+    // `isInMainFile()` checks the *expansion* location's FileID against
+    // the main FileID, which matches our "edits land in the rewritten
+    // main buffer" invariant. Locations in headers, built-in buffers,
+    // or the command-line scratch buffer are excluded.
+    if (!sm.isInMainFile(loc)) {
+        return {};
+    }
+
+    clang::PresumedLoc ploc = sm.getPresumedLoc(loc);
+    if (ploc.isInvalid()) {
+        return {};
+    }
+
+    // getPresumedLoc() can report line == 0 for certain degenerate
+    // cases (notional "start of file" before the first token). Emitting
+    // `#line 0 "..."` would tell Clang to number the next line as line
+    // 1, which is fine in practice but is defensively elided here to
+    // keep the output minimal and the semantics obvious.
+    const unsigned line = ploc.getLine();
+    if (line == 0) {
+        return {};
+    }
+
+    const char* filename = ploc.getFilename();
+    if (filename == nullptr) {
+        return {};
+    }
+
+    // Build the directive. Use a stringstream so we get the same
+    // conversion semantics as the rest of the emitter (which already
+    // depends on <sstream>).
+    std::ostringstream os;
+    os << "#line " << line << " \"" << filename << "\"\n";
+    return os.str();
+}
+
 namespace {
 
 // Shared core: apply the (replacements, insertions) pair to the Rewriter in

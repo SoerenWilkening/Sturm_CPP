@@ -40,6 +40,7 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Frontend/PCHContainerOperations.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 #include "clang/Tooling/Tooling.h"
 
@@ -47,6 +48,7 @@
 #include <cstdio>
 #include <filesystem>
 #include <fstream>
+#include <functional>
 #include <memory>
 #include <sstream>
 #include <string>
@@ -785,6 +787,274 @@ static void test_emit_to_file_matches_legacy_emit_bytes() {
     CHECK_EQ_STR(split.bytes_on_disk, expected_golden());
 }
 
+// ── PM2-1: format_line_directive helper ──────────────────────────────────────
+//
+// Unit tests for the shared `#line` directive formatter. Four behaviors to
+// pin down:
+//
+//   1. Valid in-main-file location produces `#line <N> "<file>"\n` with the
+//      *presumed* line number (not the spelling one).
+//   2. Invalid SourceLocation returns an empty string.
+//   3. A location that lives outside the main-file buffer (e.g. in a
+//      `#include`d header) returns an empty string.
+//   4. A user-authored `#line 100 "orig.cpp"` pragma is honored: the helper
+//      reports `orig.cpp` as the filename and the pragma-adjusted line
+//      number, not the physical filename/line.
+//
+// The tests use a tiny LibTooling harness that captures a specific
+// SourceLocation from the parsed AST (via a VarDecl named with a known
+// identifier) and then invokes `format_line_directive` on it directly.
+
+namespace {
+
+// Capture struct for the PM2-1 helper tests. We locate a named VarDecl,
+// record its begin location, and stash the SourceManager pointer so the
+// test body can call format_line_directive on captured locations.
+struct LineDirectiveCapture {
+    clang::SourceLocation var_begin_loc;
+    clang::SourceLocation header_loc;       // a loc known to be outside main
+    const clang::SourceManager* sm = nullptr;
+    std::string presumed_file;              // as reported by getPresumedLoc
+    unsigned    presumed_line = 0;
+    bool        found_var = false;
+};
+
+// MatchFinder callback — binds the named VarDecl and records its begin
+// location. Also grabs one location that lies in the qbool stub so the
+// caller can verify the helper rejects non-main-file locs. (The stub is
+// prepended to the code buffer and is parsed as part of the main file —
+// so we cannot use it for the header check directly. We instead inject
+// a `#include` into the body; see the harness builders below.)
+class LineDirectiveCallback
+    : public clang::ast_matchers::MatchFinder::MatchCallback {
+public:
+    explicit LineDirectiveCallback(LineDirectiveCapture& cap) : cap_(cap) {}
+    void run(const clang::ast_matchers::MatchFinder::MatchResult& r) override {
+        const auto* vd = r.Nodes.getNodeAs<clang::VarDecl>("pm21_target");
+        if (!vd) return;
+        cap_.sm = r.SourceManager;
+        cap_.var_begin_loc = vd->getBeginLoc();
+        cap_.found_var = true;
+        clang::PresumedLoc ploc = r.SourceManager->getPresumedLoc(
+            cap_.var_begin_loc);
+        if (!ploc.isInvalid()) {
+            cap_.presumed_file = ploc.getFilename()
+                                     ? ploc.getFilename() : "";
+            cap_.presumed_line = ploc.getLine();
+        }
+    }
+private:
+    LineDirectiveCapture& cap_;
+};
+
+class LineDirectiveConsumer : public clang::ASTConsumer {
+public:
+    LineDirectiveConsumer(LineDirectiveCapture& cap, std::string target)
+        : cap_(cap), cb_(cap) {
+        using namespace clang::ast_matchers;
+        finder_.addMatcher(
+            varDecl(hasName(target)).bind("pm21_target"), &cb_);
+    }
+    void HandleTranslationUnit(clang::ASTContext& ctx) override {
+        finder_.matchAST(ctx);
+        // Invoke the helper from the tests INSIDE the consumer so the
+        // SourceManager is alive. The caller supplies a lambda-like
+        // callback via the capture struct's `verify` slot.
+        if (on_tu_) on_tu_(ctx, cap_);
+    }
+    void set_on_tu(std::function<void(clang::ASTContext&,
+                                      LineDirectiveCapture&)> f) {
+        on_tu_ = std::move(f);
+    }
+private:
+    clang::ast_matchers::MatchFinder finder_;
+    LineDirectiveCapture& cap_;
+    LineDirectiveCallback cb_;
+    std::function<void(clang::ASTContext&, LineDirectiveCapture&)> on_tu_;
+};
+
+class LineDirectiveAction : public clang::ASTFrontendAction {
+public:
+    LineDirectiveAction(LineDirectiveCapture& cap,
+                        std::string target,
+                        std::function<void(clang::ASTContext&,
+                                           LineDirectiveCapture&)> on_tu)
+        : cap_(cap), target_(std::move(target)), on_tu_(std::move(on_tu)) {}
+    std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+        clang::CompilerInstance&, llvm::StringRef) override {
+        auto c = std::make_unique<LineDirectiveConsumer>(cap_, target_);
+        c->set_on_tu(on_tu_);
+        return c;
+    }
+private:
+    LineDirectiveCapture& cap_;
+    std::string target_;
+    std::function<void(clang::ASTContext&,
+                       LineDirectiveCapture&)> on_tu_;
+};
+
+class LineDirectiveFactory : public clang::tooling::FrontendActionFactory {
+public:
+    LineDirectiveFactory(LineDirectiveCapture& cap,
+                         std::string target,
+                         std::function<void(clang::ASTContext&,
+                                            LineDirectiveCapture&)> on_tu)
+        : cap_(cap), target_(std::move(target)),
+          on_tu_(std::move(on_tu)) {}
+    std::unique_ptr<clang::FrontendAction> create() override {
+        return std::make_unique<LineDirectiveAction>(
+            cap_, target_, on_tu_);
+    }
+private:
+    LineDirectiveCapture& cap_;
+    std::string target_;
+    std::function<void(clang::ASTContext&,
+                       LineDirectiveCapture&)> on_tu_;
+};
+
+} // namespace
+
+// Runs a small tool invocation on `code` (no qbool stub prepended — the
+// test buffers are specific about what lines hold what), matching on a
+// named VarDecl, and executing `on_tu` inside HandleTranslationUnit so the
+// helper can be called while the SourceManager is live.
+static LineDirectiveCapture run_line_directive_tool(
+    std::string_view code,
+    const std::string& target,
+    const std::string& source_name,
+    std::function<void(clang::ASTContext&,
+                       LineDirectiveCapture&)> on_tu) {
+    LineDirectiveCapture cap;
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    LineDirectiveFactory factory(cap, target, std::move(on_tu));
+    (void)clang::tooling::runToolOnCodeWithArgs(
+        factory.create(), std::string(code), args, source_name);
+    return cap;
+}
+
+// Case 1 — valid in-main-file location → `#line N "file"\n`.
+static void test_format_line_directive_valid_main_file() {
+    // Ten-line buffer: the target VarDecl lives on line 3 of "mine.cpp".
+    // We use a tag in the source text (`// TARGET LINE`) to make any
+    // future off-by-one reshuffles obvious in the diff.
+    std::string code =
+        "// line 1\n"
+        "void demo() {\n"
+        "    int target = 42;  // TARGET LINE (line 3)\n"
+        "}\n";
+
+    LineDirectiveCapture cap = run_line_directive_tool(
+        code, "target", "mine.cpp",
+        [](clang::ASTContext& ctx, LineDirectiveCapture& c) {
+            if (!c.found_var) return;
+            std::string got = format_line_directive(
+                ctx.getSourceManager(), c.var_begin_loc);
+            // Expected: `#line 3 "mine.cpp"\n`. We assert against both
+            // the full value and its components so a regression reports
+            // the specific drift.
+            std::string want = "#line 3 \"mine.cpp\"\n";
+            CHECK_EQ_STR(got, want);
+        });
+
+    CHECK(cap.found_var);
+    CHECK_EQ_STR(cap.presumed_file, std::string("mine.cpp"));
+    CHECK(cap.presumed_line == 3);
+}
+
+// Case 2 — invalid SourceLocation → empty string.
+static void test_format_line_directive_invalid_returns_empty() {
+    std::string code =
+        "void demo() { int x = 0; (void)x; }\n";
+
+    run_line_directive_tool(
+        code, "x", "demo.cpp",
+        [](clang::ASTContext& ctx, LineDirectiveCapture&) {
+            // Default-constructed SourceLocation is invalid.
+            clang::SourceLocation invalid;
+            CHECK(!invalid.isValid());
+            std::string got = format_line_directive(
+                ctx.getSourceManager(), invalid);
+            CHECK_EQ_STR(got, std::string{});
+        });
+}
+
+// Case 3 — out-of-main-file location → empty string. We force the
+// condition by matching a VarDecl that comes from a header (a virtual
+// in-memory header supplied to the tool): its begin location lives in
+// the included-file's FileID, so `isInMainFile(loc)` is false and the
+// helper must return an empty string.
+static void test_format_line_directive_non_main_file_returns_empty() {
+    // Main file has `#include "side.h"` and no target VarDecl of its own;
+    // the header (supplied via FileContentMappings below) declares a
+    // VarDecl named `from_header`. Because the main-file FileID differs
+    // from the header's FileID, `isInMainFile(from_header->getBeginLoc())`
+    // is false by construction.
+    std::string main_code =
+        "#include \"side.h\"\n"
+        "void demo() { (void)from_header; }\n";
+    std::string header_code =
+        "extern int from_header;\n";
+
+    LineDirectiveCapture cap;
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    std::vector<std::pair<std::string, std::string>> mappings{
+        {"side.h", header_code}
+    };
+    LineDirectiveFactory factory(
+        cap, "from_header",
+        [](clang::ASTContext& ctx, LineDirectiveCapture& c) {
+            if (!c.found_var) return;
+            const clang::SourceManager& sm = ctx.getSourceManager();
+            // Sanity: the captured location MUST lie outside the main
+            // file or the test's construction is wrong.
+            CHECK(!sm.isInMainFile(c.var_begin_loc));
+            // The helper must reject this location with an empty string.
+            std::string got = format_line_directive(sm, c.var_begin_loc);
+            CHECK_EQ_STR(got, std::string{});
+        });
+    (void)clang::tooling::runToolOnCodeWithArgs(
+        factory.create(), main_code, args, "demo.cpp",
+        "sturm-transpile-test",
+        std::make_shared<clang::PCHContainerOperations>(),
+        mappings);
+    CHECK(cap.found_var);
+}
+
+// Case 4 — user `#line` pragma honored via getPresumedLoc(). The physical
+// location is on line 4 of "mine.cpp" but the pragma says "line 100 of
+// virtual.cpp", so the helper must emit the pragma-adjusted values.
+static void test_format_line_directive_honors_user_line_pragma() {
+    // Buffer layout:
+    //   1: // header
+    //   2: #line 100 "virtual.cpp"
+    //   3: void demo() {
+    //   4:     int target = 42;   // physical line 4, presumed line 101
+    //   5: }
+    // The `#line 100 "virtual.cpp"` pragma renumbers the NEXT line as 100,
+    // so line 3 presumes as 100 and line 4 presumes as 101.
+    std::string code =
+        "// header\n"
+        "#line 100 \"virtual.cpp\"\n"
+        "void demo() {\n"
+        "    int target = 42;\n"
+        "}\n";
+
+    LineDirectiveCapture cap = run_line_directive_tool(
+        code, "target", "mine.cpp",
+        [](clang::ASTContext& ctx, LineDirectiveCapture& c) {
+            if (!c.found_var) return;
+            std::string got = format_line_directive(
+                ctx.getSourceManager(), c.var_begin_loc);
+            // Expected: the helper reports the PRESUMED file/line.
+            std::string want = "#line 101 \"virtual.cpp\"\n";
+            CHECK_EQ_STR(got, want);
+        });
+
+    CHECK(cap.found_var);
+    CHECK_EQ_STR(cap.presumed_file, std::string("virtual.cpp"));
+    CHECK(cap.presumed_line == 101);
+}
+
 // ── Entry point ──────────────────────────────────────────────────────────────
 
 int main() {
@@ -797,6 +1067,10 @@ int main() {
     test_emit_to_string_equals_file_minus_header();
     test_emit_to_string_no_ops_returns_original();
     test_emit_to_file_matches_legacy_emit_bytes();
+    test_format_line_directive_valid_main_file();
+    test_format_line_directive_invalid_returns_empty();
+    test_format_line_directive_non_main_file_returns_empty();
+    test_format_line_directive_honors_user_line_pragma();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

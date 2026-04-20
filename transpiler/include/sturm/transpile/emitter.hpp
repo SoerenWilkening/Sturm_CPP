@@ -55,6 +55,43 @@
 
 namespace sturm::transpile {
 
+/// PM2-1 — shared `#line` directive formatter for source-map emission.
+///
+/// Returns a single-line string of the form:
+///
+///     #line <N> "<file>"\n
+///
+/// where `<N>` and `<file>` come from `sm.getPresumedLoc(loc)`. Using the
+/// *presumed* (not *spelling*) location ensures that any user-authored
+/// `#line` pragmas already in the source are honored — the emitted
+/// directive will carry whatever file/line the user wanted Clang to report
+/// for `loc`, not the raw physical location.
+///
+/// Returns an EMPTY string when any of the following hold:
+///   - `loc` is invalid (`SourceLocation::isValid()` is false);
+///   - the presumed location reported by Clang is invalid (file pointer
+///     null or line == 0 — this happens for built-in-buffer or
+///     command-line-defined macro expansion locations);
+///   - `loc` does not lie in the main-file buffer of `sm`.
+///
+/// The "must live in the main file" rule is deliberately defensive.
+/// The source-map plan emits `#line` directives inside the *rewritten*
+/// main-file buffer, so a location in a `#include`d header has no
+/// well-defined mapping there. Rather than fabricate a nonsensical
+/// `#line 0 "<invalid>"` directive (which would actively corrupt
+/// downstream compile-error diagnostics), we return an empty string and
+/// let callers concatenate it as a no-op.
+///
+/// The returned string is terminated by a single `\n` so callers can
+/// prepend it directly to a synthesized-code block without worrying
+/// about line fusion. Callers that want to *restore* the user's line
+/// count after a synthesized block should simply call this helper again
+/// with the next user `SourceLocation` (typically a following statement's
+/// `getBeginLoc()` or the enclosing scope's close-brace location) and
+/// concatenate the result at the end of the block.
+std::string format_line_directive(const clang::SourceManager& sm,
+                                  clang::SourceLocation loc);
+
 /// PM1-2 — pure rewrite step.
 ///
 /// Apply the synthesized uncompute insertions and VarDecl replacements for
