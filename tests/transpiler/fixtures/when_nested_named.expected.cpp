@@ -77,6 +77,8 @@ using sturm::qbool;
 
 void demo(qbool a, qbool b, qbool c) {
     WHEN(a) { qbool __stu_ctrl0 = a & b;
-WHEN(__stu_ctrl0) { (void)c; }    uncompute_and(__stu_ctrl0, a, b);
+WHEN(__stu_ctrl0) { (void)c; }
+#line 77 "when_nested_named.cpp"
+    uncompute_and(__stu_ctrl0, a, b);
  }
 }

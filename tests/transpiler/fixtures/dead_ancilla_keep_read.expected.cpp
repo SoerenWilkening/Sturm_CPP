@@ -42,6 +42,12 @@ using sturm::qbool;
 void demo(qbool a, qbool b, qbool x) {
     qbool t = a | b;
     x ^= t;
+
+#line 42 "dead_ancilla_keep_read.cpp"
     x ^= t;
+
+#line 41 "dead_ancilla_keep_read.cpp"
     uncompute_or(t, a, b);
+
+#line 43 "dead_ancilla_keep_read.cpp"
 }

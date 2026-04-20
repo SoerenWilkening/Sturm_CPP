@@ -21,5 +21,9 @@ public:
 } // namespace sturm
 using qint = sturm::qint_t<1>;
 
-void demo(qint a) { a += 3;     a -= 3;
+void demo(qint a) { a += 3; 
+#line 22 "add_assign_const.cpp"
+    a -= 3;
+
+#line 22 "add_assign_const.cpp"
 }

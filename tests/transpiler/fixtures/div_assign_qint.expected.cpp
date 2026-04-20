@@ -18,5 +18,9 @@ public:
 } // namespace sturm
 using qint = sturm::qint_t<1>;
 
-void demo(qint a, qint b) { a /= b;     uncompute_div_qint(a, b);
+void demo(qint a, qint b) { a /= b; 
+#line 19 "div_assign_qint.cpp"
+    uncompute_div_qint(a, b);
+
+#line 19 "div_assign_qint.cpp"
 }

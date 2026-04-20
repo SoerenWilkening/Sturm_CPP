@@ -71,7 +71,11 @@ using sturm::qbool;
 void demo(qbool a, qbool b, qbool c, qbool d) {
     qbool __stu_t0 = b | c;
 qbool __stu_t1 = __stu_t0 & d;
-WHEN(__stu_t1) { (void)a; }    uncompute_and(__stu_t1, __stu_t0, d);
+WHEN(__stu_t1) { (void)a; }
+#line 70 "when_compound.cpp"
+    uncompute_and(__stu_t1, __stu_t0, d);
+
+#line 70 "when_compound.cpp"
     uncompute_or(__stu_t0, b, c);
 
 }

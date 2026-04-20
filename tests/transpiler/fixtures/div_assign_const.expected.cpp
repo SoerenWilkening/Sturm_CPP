@@ -21,5 +21,9 @@ public:
 } // namespace sturm
 using qint = sturm::qint_t<1>;
 
-void demo(qint a) { a /= 5;     a *= 5;
+void demo(qint a) { a /= 5; 
+#line 22 "div_assign_const.cpp"
+    a *= 5;
+
+#line 22 "div_assign_const.cpp"
 }

@@ -64,6 +64,7 @@ add_executable(sturm-transpile
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
+    src/source_map.cpp
     src/emitter.cpp
 )
 target_include_directories(sturm-transpile PRIVATE
@@ -247,6 +248,7 @@ add_library(sturm-transpile-plugin SHARED
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
+    src/source_map.cpp
     src/emitter.cpp
 )
 target_include_directories(sturm-transpile-plugin PRIVATE

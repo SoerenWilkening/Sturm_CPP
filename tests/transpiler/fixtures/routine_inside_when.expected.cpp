@@ -79,6 +79,10 @@ void demo(qbool c, const qbool& in) {
     WHEN(c) {
         qbool tmp;
         my_rotate(tmp, in, 3);
-        invert(my_rotate)(tmp, in, 3);
+    
+#line 79 "routine_inside_when.cpp"
+    invert(my_rotate)(tmp, in, 3);
+
+#line 80 "routine_inside_when.cpp"
 }
 }

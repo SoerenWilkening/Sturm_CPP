@@ -43,6 +43,12 @@ void demo(qbool a, qbool b, qbool c, qbool x) {
     qbool __t = a & b;
     x ^= c;
     x ^= __t;
+
+#line 43 "fuse_xor_and_reject_intervening_stmt.cpp"
     x ^= __t;
+
+#line 42 "fuse_xor_and_reject_intervening_stmt.cpp"
     x ^= c;
+
+#line 44 "fuse_xor_and_reject_intervening_stmt.cpp"
 }

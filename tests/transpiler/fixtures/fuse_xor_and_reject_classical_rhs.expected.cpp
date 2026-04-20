@@ -54,5 +54,9 @@ void demo(qbool a, qbool b, qbool x) {
     qbool __t = a & b;
     (void)__t;
     x ^= 1;
+
+#line 54 "fuse_xor_and_reject_classical_rhs.cpp"
     x ^= 1;
+
+#line 55 "fuse_xor_and_reject_classical_rhs.cpp"
 }

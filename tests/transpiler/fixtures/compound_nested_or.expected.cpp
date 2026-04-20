@@ -52,7 +52,15 @@ qbool __stu_t0 = a | b;
     #line 47 "compound_nested_or.cpp"
 qbool __stu_t1 = c | d;
     #line 47 "compound_nested_or.cpp"
-qbool r = __stu_t0 | __stu_t1; (void)r;     uncompute_or(r, __stu_t0, __stu_t1);
+qbool r = __stu_t0 | __stu_t1; (void)r; 
+#line 47 "compound_nested_or.cpp"
+    uncompute_or(r, __stu_t0, __stu_t1);
+
+#line 47 "compound_nested_or.cpp"
     uncompute_or(__stu_t1, c, d);
+
+#line 47 "compound_nested_or.cpp"
     uncompute_or(__stu_t0, a, b);
+
+#line 47 "compound_nested_or.cpp"
 }

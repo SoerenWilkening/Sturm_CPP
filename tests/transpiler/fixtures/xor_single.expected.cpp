@@ -33,6 +33,10 @@ inline qbool operator^(const qbool&, const qbool&) { return qbool{}; }
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a, qbool b) { qbool tmp = a ^ b; (void)tmp;     tmp ^= a;
+void demo(qbool a, qbool b) { qbool tmp = a ^ b; (void)tmp; 
+#line 34 "xor_single.cpp"
+    tmp ^= a;
     tmp ^= b;
+
+#line 34 "xor_single.cpp"
 }

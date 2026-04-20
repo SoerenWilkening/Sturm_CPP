@@ -57,10 +57,18 @@ void demo(qbool a, qbool b, bool cond) {
     if (cond) {
         qbool tmp_then = a | b;
         (void)tmp_then;
-        uncompute_or(tmp_then, a, b);
+    
+#line 56 "if_else_intermediate_or.cpp"
+    uncompute_or(tmp_then, a, b);
+
+#line 58 "if_else_intermediate_or.cpp"
 } else {
         qbool tmp_else = a | b;
         (void)tmp_else;
-        uncompute_or(tmp_else, a, b);
+    
+#line 59 "if_else_intermediate_or.cpp"
+    uncompute_or(tmp_else, a, b);
+
+#line 61 "if_else_intermediate_or.cpp"
 }
 }

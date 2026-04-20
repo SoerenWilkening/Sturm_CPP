@@ -13,6 +13,12 @@
 #include "sturm/transpile/uncompute_pass.hpp"
 
 #include "sturm/transpile/qir.hpp"
+// PM2-3: pulls in `format_line_directive` so each rendered uncompute call
+// can be prefixed with a `#line` directive anchored at the user's forward
+// (compute) expression — source-map emission for every uncompute kind.
+#include "sturm/transpile/emitter.hpp"
+
+#include "clang/Basic/SourceManager.h"
 
 #include <algorithm>
 #include <sstream>
@@ -257,7 +263,8 @@ std::string render_uncompute(const QOperation& op) {
 
 } // namespace
 
-QSynthesisResult synthesize(const QUnit& unit) {
+QSynthesisResult synthesize(const QUnit& unit,
+                            const clang::SourceManager* sm) {
     QSynthesisResult result;
     std::vector<UncomputeInsertion>& out = result.insertions;
 
@@ -308,6 +315,19 @@ QSynthesisResult synthesize(const QUnit& unit) {
                              b.stmt_range.getBegin().getRawEncoding();
                   });
 
+        // PM2-3 bookkeeping: track whether any insertion for this scope
+        // lands at `scope.close_brace` (the default anchor used by every
+        // Phase A..E matcher and all kinds without Phase F/J per-op
+        // overrides). When `sm` is provided AND at least one such
+        // insertion exists, we append a restoring `#line` directive
+        // insertion anchored at the same `close_brace` so code AFTER the
+        // scope stays line-accurate. The restoring entry is pushed LAST
+        // for this scope, which (given `emit()`'s reverse iteration over
+        // the insertion list) places it IMMEDIATELY before the user's
+        // `}` in the final source text — i.e. after every uncompute call
+        // that shares the anchor.
+        bool scope_has_close_brace_insertion = false;
+
         for (auto it = sorted_ops.rbegin(); it != sorted_ops.rend(); ++it) {
             const QOperation& op = *it;
             // Phase H PH-3: honour the per-op skip flag the
@@ -329,6 +349,40 @@ QSynthesisResult synthesize(const QUnit& unit) {
                 // produces such ops.
                 continue;
             }
+
+            // PM2-3: prepend a `#line` directive pointing at the forward
+            // op's `stmt_range.getBegin()` — the uncompute is the
+            // structural dual of that statement, so the user's compute
+            // line is the correct anchor for any diagnostic or debugger
+            // step landing inside the synthesized uncompute text. Empty
+            // string on degenerate inputs (invalid loc, non-main-file
+            // loc) — in that case the rendered code is emitted
+            // unchanged, preserving the pre-PM2-3 shape byte-for-byte.
+            //
+            // Why the leading `\n`? The insertion lands right before its
+            // anchor location (`close_brace` or an override). The
+            // pre-existing text immediately before the anchor is
+            // whatever the user's source held there — typically a `;`
+            // from the last statement plus some trailing whitespace.
+            // `#line` must be the first NON-WHITESPACE token on its own
+            // line per the C/C++ standard, so we unconditionally prefix
+            // a `\n` to guarantee the directive lands at column 0 of a
+            // fresh line. A double newline (when the prior insertion
+            // already ends in `\n`) is harmless — it just leaves a
+            // blank line between uncompute blocks.
+            if (sm != nullptr) {
+                const std::string line_directive = format_line_directive(
+                    *sm, op.stmt_range.getBegin());
+                if (!line_directive.empty()) {
+                    std::string prefixed;
+                    prefixed.reserve(1 + line_directive.size() + code.size());
+                    prefixed.push_back('\n');
+                    prefixed.append(line_directive);
+                    prefixed.append(code);
+                    code = std::move(prefixed);
+                }
+            }
+
             UncomputeInsertion rec;
             // Anchor selection for the uncompute insertion, in priority
             // order:
@@ -361,9 +415,54 @@ QSynthesisResult synthesize(const QUnit& unit) {
                 rec.insert_before = op.insert_before_override;
             } else {
                 rec.insert_before = scope.close_brace;
+                scope_has_close_brace_insertion = true;
             }
             rec.code = std::move(code);
             out.push_back(std::move(rec));
+        }
+
+        // PM2-3: emit a restoring `#line` directive at the scope's
+        // `close_brace` when at least one uncompute call landed there.
+        // The restoring directive points at the close_brace's own line,
+        // so the user's source lines AFTER the scope (outside `}`) stay
+        // numbered correctly even though the synthesized uncompute
+        // block's `#line` prefixes re-anchored the line counter to
+        // earlier forward expressions. Pushed LAST in the scope's
+        // insertions so `emit()`'s reverse-iteration order places its
+        // text IMMEDIATELY before `}` — after every per-op uncompute
+        // directive+call. Skipped when `sm` is null (backward-compat
+        // path for hand-built tests) or when
+        // `format_line_directive` degenerates to empty (invalid loc,
+        // non-main-file loc — in which case no synthesized directives
+        // were emitted above either, so no restore is needed).
+        //
+        // Override-anchored insertions (Phase F WHEN-lift, Phase J
+        // PJ-3 hoist) deliberately do NOT trigger a restoring directive
+        // here — their matchers (PM2-4, PM2-5, PM2-6) own the source-
+        // map contract for those locations. Emitting a restoring
+        // directive at `scope.close_brace` for an override-anchored
+        // insertion would mis-attribute the user's line count to the
+        // outer scope's close brace when the uncompute actually landed
+        // elsewhere.
+        if (sm != nullptr && scope_has_close_brace_insertion) {
+            const std::string restore_directive = format_line_directive(
+                *sm, scope.close_brace);
+            if (!restore_directive.empty()) {
+                UncomputeInsertion rec;
+                rec.insert_before = scope.close_brace;
+                // Leading `\n` mirrors the per-op prefix rationale: the
+                // immediately preceding insertion ends in `\n`, but the
+                // pre-existing user source at the close_brace is `}`
+                // (no leading whitespace guarantee). A consistent `\n`
+                // prefix keeps the directive at column 0 in every
+                // possible context.
+                std::string code;
+                code.reserve(1 + restore_directive.size());
+                code.push_back('\n');
+                code.append(restore_directive);
+                rec.code = std::move(code);
+                out.push_back(std::move(rec));
+            }
         }
     }
 

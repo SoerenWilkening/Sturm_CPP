@@ -55,6 +55,10 @@ void demo(const qbool& in) {
     for (int i = 0; i < 3; ++i) {
         qbool tmp;
         my_rotate(tmp, in, i);
-        invert(my_rotate)(tmp, in, i);
+    
+#line 55 "routine_inside_loop.cpp"
+    invert(my_rotate)(tmp, in, i);
+
+#line 56 "routine_inside_loop.cpp"
 }
 }

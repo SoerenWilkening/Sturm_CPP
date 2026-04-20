@@ -32,5 +32,9 @@ using sturm::qbool;
 
 void demo(qbool a, qbool b, qbool x) {
     ccnot_inplace(x, a, b);
+
+#line 32 "fuse_xor_and.cpp"
     ccnot_inplace(x, a, b);
+
+#line 34 "fuse_xor_and.cpp"
 }

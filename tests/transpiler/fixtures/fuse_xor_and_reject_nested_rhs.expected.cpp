@@ -48,7 +48,15 @@ qbool __stu_t0 = b & c;
     #line 43 "fuse_xor_and_reject_nested_rhs.cpp"
 qbool __t = a & __stu_t0;
     x ^= __t;
+
+#line 44 "fuse_xor_and_reject_nested_rhs.cpp"
     x ^= __t;
+
+#line 43 "fuse_xor_and_reject_nested_rhs.cpp"
     uncompute_and(__t, a, __stu_t0);
+
+#line 43 "fuse_xor_and_reject_nested_rhs.cpp"
     uncompute_and(__stu_t0, b, c);
+
+#line 45 "fuse_xor_and_reject_nested_rhs.cpp"
 }

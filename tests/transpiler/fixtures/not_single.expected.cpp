@@ -33,5 +33,9 @@ public:
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a) { qbool tmp = ~a; (void)tmp;     tmp = ~tmp;
+void demo(qbool a) { qbool tmp = ~a; (void)tmp; 
+#line 34 "not_single.cpp"
+    tmp = ~tmp;
+
+#line 34 "not_single.cpp"
 }

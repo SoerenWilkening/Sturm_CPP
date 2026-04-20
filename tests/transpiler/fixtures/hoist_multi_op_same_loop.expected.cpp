@@ -58,6 +58,10 @@ void demo(qbool a, qbool b, qbool c, qbool d) {
         (void)r1;
         (void)r2;
     }
+
+#line 55 "hoist_multi_op_same_loop.cpp"
     uncompute_or(r2, c, d);
+
+#line 54 "hoist_multi_op_same_loop.cpp"
     uncompute_or(r1, a, b);
 }

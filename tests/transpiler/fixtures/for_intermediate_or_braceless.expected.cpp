@@ -54,5 +54,7 @@ using sturm::qbool;
 
 void demo(qbool a, qbool b) {
     for (int i = 0; i < 3; ++i) { qbool tmp = a | b; (void)tmp; }
+
+#line 54 "for_intermediate_or_braceless.cpp"
     uncompute_or(tmp, a, b);
 }

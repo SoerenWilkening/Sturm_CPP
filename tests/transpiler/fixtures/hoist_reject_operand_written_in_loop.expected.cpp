@@ -49,6 +49,10 @@ void demo(qbool a, qbool b) {
         a = b;
         qbool t = a | b;
         (void)t;
-        uncompute_or(t, a, b);
+    
+#line 48 "hoist_reject_operand_written_in_loop.cpp"
+    uncompute_or(t, a, b);
+
+#line 50 "hoist_reject_operand_written_in_loop.cpp"
 }
 }

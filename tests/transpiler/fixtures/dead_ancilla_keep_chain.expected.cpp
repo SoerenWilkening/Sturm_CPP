@@ -50,5 +50,9 @@ using sturm::qbool;
 void demo(qbool a, qbool b, qbool d) {
     qbool t = a | b;
     
+
+#line 49 "dead_ancilla_keep_chain.cpp"
     uncompute_or(t, a, b);
+
+#line 51 "dead_ancilla_keep_chain.cpp"
 }

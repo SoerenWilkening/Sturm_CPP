@@ -40,5 +40,9 @@ void demo(qbool a, qbool b, qbool x, qbool y) {
     qbool __t = a & b;
     x ^= __t;
     y = __t;
+
+#line 39 "fuse_xor_and_reject_extra_reader.cpp"
     x ^= __t;
+
+#line 41 "fuse_xor_and_reject_extra_reader.cpp"
 }

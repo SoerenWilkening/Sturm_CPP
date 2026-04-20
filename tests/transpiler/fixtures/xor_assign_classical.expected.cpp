@@ -21,5 +21,9 @@ public:
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a) { a ^= 1;     a ^= 1;
+void demo(qbool a) { a ^= 1; 
+#line 22 "xor_assign_classical.cpp"
+    a ^= 1;
+
+#line 22 "xor_assign_classical.cpp"
 }

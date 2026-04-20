@@ -49,6 +49,15 @@
 #include <string>
 #include <vector>
 
+// PM2-3: forward-declare `clang::SourceManager` so the `synthesize()` overload
+// that emits `#line` directives can accept one by pointer without dragging the
+// heavy `SourceManager.h` header into every TU that includes this file
+// (test_uncompute_pass.cpp hand-builds a QUnit and has no SourceManager at
+// all). The implementation in uncompute_pass.cpp includes the full header.
+namespace clang {
+class SourceManager;
+} // namespace clang
+
 namespace sturm::transpile {
 
 // UncomputeInsertion and QReplacement are defined in qir.hpp (both are part
@@ -103,7 +112,31 @@ struct QSynthesisResult {
 /// the (possibly empty) list of replacements the matcher attached to
 /// `unit`. The caller (M9 emitter) feeds both to clang::Rewriter with the
 /// replacement pass run first.
-QSynthesisResult synthesize(const QUnit& unit);
+///
+/// PM2-3: the optional `sm` parameter enables `#line` directive emission
+/// on every synthesized uncompute insertion. When non-null:
+///   - Each rendered op's `code` is prefixed with a `#line` directive
+///     built from `op.stmt_range.getBegin()` via
+///     `format_line_directive(*sm, ...)`, so Clang diagnostics and
+///     debug-line info for the synthesized uncompute call cite the user's
+///     originating compute line (the dual of which this uncompute is).
+///   - For every scope that has at least one uncompute insertion anchored
+///     at its `close_brace` (the default anchor used by Phases A..E and
+///     every pre-override matcher), one extra "restoring" `#line`
+///     insertion is appended pointing at the `close_brace`'s own line,
+///     so code after the scope stays line-accurate. The restoring
+///     insertion is emitted at the same `close_brace` location and is the
+///     LAST entry for that scope in the returned list, which (given the
+///     reverse-iteration applied by `emit()`) places it immediately
+///     before the user's `}` in the final source text.
+///
+/// When `sm` is null (the default, preserved for backward compatibility
+/// with hand-built tests in `test_uncompute_pass.cpp` that construct
+/// `SourceLocation`s via `getFromRawEncoding` and have no
+/// `SourceManager`), no `#line` directives are emitted — the output is
+/// byte-identical to the pre-PM2-3 shape.
+QSynthesisResult synthesize(const QUnit& unit,
+                            const clang::SourceManager* sm = nullptr);
 
 } // namespace sturm::transpile
 

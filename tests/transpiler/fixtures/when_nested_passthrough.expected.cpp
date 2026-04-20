@@ -78,7 +78,9 @@ using sturm::qbool;
 void demo(qbool a, qbool b, qbool c, qbool d) {
     WHEN(a) {
         qbool __stu_t0 = b | c;
-WHEN(__stu_t0) { (void)d; }    uncompute_or(__stu_t0, b, c);
+WHEN(__stu_t0) { (void)d; }
+#line 78 "when_nested_passthrough.cpp"
+    uncompute_or(__stu_t0, b, c);
 
     }
 }

@@ -51,5 +51,7 @@ void demo(qbool a, qbool b) {
         qbool tmp = a | b;
         (void)tmp;
     }
+
+#line 49 "while_intermediate_or.cpp"
     uncompute_or(tmp, a, b);
 }

@@ -49,6 +49,10 @@ inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
 using sturm::qbool;
 
 void demo(qbool a, qbool b, bool cond) {
-    if (cond) { qbool tmp = a | b; (void)tmp;     uncompute_or(tmp, a, b);
+    if (cond) { qbool tmp = a | b; (void)tmp; 
+#line 50 "if_then_intermediate_or_braceless.cpp"
+    uncompute_or(tmp, a, b);
+
+#line 50 "if_then_intermediate_or_braceless.cpp"
 }
 }

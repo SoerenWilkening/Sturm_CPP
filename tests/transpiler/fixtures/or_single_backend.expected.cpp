@@ -57,5 +57,9 @@ inline OrExpr<qbool> operator|(const qbool& a, const qbool& b) {
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a, qbool b) { qbool tmp = a | b; (void)tmp;     uncompute_or(tmp, a, b);
+void demo(qbool a, qbool b) { qbool tmp = a | b; (void)tmp; 
+#line 58 "or_single_backend.cpp"
+    uncompute_or(tmp, a, b);
+
+#line 58 "or_single_backend.cpp"
 }

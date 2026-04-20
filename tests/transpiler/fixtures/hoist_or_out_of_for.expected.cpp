@@ -49,5 +49,7 @@ void demo(qbool a, qbool b) {
         qbool t = a | b;
         (void)t;
     }
+
+#line 47 "hoist_or_out_of_for.cpp"
     uncompute_or(t, a, b);
 }

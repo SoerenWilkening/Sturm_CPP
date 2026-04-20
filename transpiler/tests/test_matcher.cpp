@@ -30,6 +30,8 @@ int main() {
     run_dead_ancilla_tests();
     // PM2-2: Phase E compound `#line` directive emission.
     run_pm2_compound_line_tests();
+    // PM2-3: M8 uncompute synthesis `#line` directive emission.
+    run_pm2_uncompute_line_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

@@ -20,5 +20,9 @@ public:
 } // namespace sturm
 using qint = sturm::qint_t<1>;
 
-void demo(qint a, qint b) { a %= b;     uncompute_mod_qint(a, b);
+void demo(qint a, qint b) { a %= b; 
+#line 21 "mod_assign_qint.cpp"
+    uncompute_mod_qint(a, b);
+
+#line 21 "mod_assign_qint.cpp"
 }

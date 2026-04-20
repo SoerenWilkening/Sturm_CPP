@@ -50,5 +50,7 @@ using sturm::qbool;
 void demo(qbool a, qbool b) {
     int i = 0;
     while (i < 3) { qbool tmp = a | b; (void)tmp; }
+
+#line 50 "while_intermediate_or_braceless.cpp"
     uncompute_or(tmp, a, b);
 }

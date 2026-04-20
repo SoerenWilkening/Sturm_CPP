@@ -23,5 +23,9 @@ public:
 } // namespace sturm
 using sturm::qbool;
 
-void demo(sturm::qint_t<8> a, sturm::qint_t<8> b) { qbool c = a > b;     uncompute_gt_qint(c, a, b);
+void demo(sturm::qint_t<8> a, sturm::qint_t<8> b) { qbool c = a > b; 
+#line 24 "gt_compare_qint.cpp"
+    uncompute_gt_qint(c, a, b);
+
+#line 24 "gt_compare_qint.cpp"
 }

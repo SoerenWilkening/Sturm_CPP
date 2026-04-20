@@ -52,5 +52,9 @@ using sturm::qbool;
 void demo(const qbool& in) {
     qbool tmp;
     my_rotate(tmp, in, 3);
+
+#line 52 "routine_single_out_local.cpp"
     invert(my_rotate)(tmp, in, 3);
+
+#line 53 "routine_single_out_local.cpp"
 }

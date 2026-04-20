@@ -73,7 +73,9 @@ void demo(qbool a, qbool b, qbool c, qbool d) {
     WHEN(a) {
         (void)c;
         qbool __stu_ctrl0 = a & b;
-WHEN(__stu_ctrl0) { (void)d; }    uncompute_and(__stu_ctrl0, a, b);
+WHEN(__stu_ctrl0) { (void)d; }
+#line 73 "when_nested_siblings.cpp"
+    uncompute_and(__stu_ctrl0, a, b);
 
         (void)c;
     }

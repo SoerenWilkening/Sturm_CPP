@@ -112,7 +112,14 @@ public:
 
     void HandleTranslationUnit(clang::ASTContext& ctx) override {
         finder_.matchAST(ctx);
-        auto result = synthesize(fx_.unit);
+        // PM2-3: pass the live SourceManager so synthesize() emits
+        // `#line` directives alongside every rendered uncompute call.
+        // This makes the emit() path match the emit_to_string() path
+        // (which calls `synthesize(unit, &sm)` from inside
+        // `emit_to_string`). The pre-PM2-3 no-SM path is now exercised
+        // exclusively by the hand-built `test_transpile_uncompute_pass`
+        // cases.
+        auto result = synthesize(fx_.unit, &ctx.getSourceManager());
         fx_.insertions = std::move(result.insertions);
         fx_.replacements = std::move(result.replacements);
         clang::Rewriter rw(ctx.getSourceManager(), ctx.getLangOpts());
@@ -226,13 +233,18 @@ static std::string expected_golden() {
     // therefore part of what Rewriter considers the "original" source,
     // so it must appear verbatim in the output.
     out += std::string(kQBoolStub);
-    // Note the 5 spaces between `;` and `uncompute_or(`: one is the
-    // single space the original source has between `;` and `}`, and
-    // four are the indent on the injected `uncompute_or` line. Rewriter
-    // preserves the original character stream verbatim except where it
-    // inserts new text, so this whitespace pattern is deterministic.
-    out += "void demo(qbool a, qbool b) { qbool tmp = a | b;"
-           "     uncompute_or(tmp, a, b);\n}\n";
+    // PM2-3: the synthesize() pass now prefixes each rendered uncompute
+    // call with a `#line` directive anchored at the forward op's begin
+    // location AND appends a restoring `#line` at the scope's close
+    // brace. Both the forward VarDecl and the close brace sit on line
+    // 11 of the parsed TU (the qbool stub occupies lines 2-10 and the
+    // user body is one line), so both emitted directives carry `11`.
+    out += "void demo(qbool a, qbool b) { qbool tmp = a | b; \n"
+           "#line 11 \"demo.cpp\"\n"
+           "    uncompute_or(tmp, a, b);\n"
+           "\n"
+           "#line 11 \"demo.cpp\"\n"
+           "}\n";
     return out;
 }
 
@@ -243,7 +255,9 @@ static void test_golden_snapshot() {
 
     CHECK(fx.ok);
     CHECK(fx.unit.scopes.size() == 1);
-    CHECK(fx.insertions.size() == 1);
+    // PM2-3: two insertions — the rendered OR uncompute + the
+    // restoring `#line` directive appended at the scope close brace.
+    CHECK(fx.insertions.size() == 2);
     CHECK(fs::exists(fx.out_path));
 
     CHECK_EQ_STR(fx.bytes_on_disk, expected_golden());
@@ -266,24 +280,35 @@ static void test_idempotency_skip_detection() {
 // ── Emitter preserves insertion order for multiple ops ───────────────────────
 
 static void test_multiple_ops_lifo_in_output() {
-    // Two forward ops in the same scope produce two insertions in LIFO
-    // order (M8 contract). The emitter must preserve that order when
-    // calling InsertTextBefore so the most recent intermediate's uncompute
-    // call lands first in source text, closest to the close-brace.
+    // Two forward ops in the same scope produce TWO rendered uncompute
+    // insertions in LIFO order (M8 contract), PLUS one PM2-3 restoring
+    // `#line` insertion appended at the scope close brace. The emitter
+    // must preserve that relative order when calling InsertTextBefore so
+    // the most recent intermediate's uncompute call lands first in
+    // source text, closest to the close-brace.
     EmitFixture fx = run_emit(
         "void demo(qbool a, qbool b, qbool c, qbool d) {"
         " qbool t0 = a | b; qbool t1 = c | d; }\n",
         "multi");
 
     CHECK(fx.ok);
-    CHECK(fx.insertions.size() == 2);
-    if (fx.insertions.size() != 2) return;
+    // PM2-3: three insertions — [t1_uncompute, t0_uncompute, restore].
+    CHECK(fx.insertions.size() == 3);
+    if (fx.insertions.size() != 3) return;
 
-    // Order in M8 list: t1 uncompute first, t0 second (LIFO).
-    CHECK_EQ_STR(fx.insertions[0].code,
-                 std::string("    uncompute_or(t1, c, d);\n"));
-    CHECK_EQ_STR(fx.insertions[1].code,
-                 std::string("    uncompute_or(t0, a, b);\n"));
+    // Order in M8 list: t1 uncompute first, t0 second (LIFO), then the
+    // restoring `#line`. Each per-op insertion carries a PM2-3 `#line`
+    // prefix pointing at the forward op's line, then the rendered call.
+    CHECK(fx.insertions[0].code.find("uncompute_or(t1, c, d);")
+          != std::string::npos);
+    CHECK(fx.insertions[0].code.find("#line ") != std::string::npos);
+    CHECK(fx.insertions[1].code.find("uncompute_or(t0, a, b);")
+          != std::string::npos);
+    CHECK(fx.insertions[1].code.find("#line ") != std::string::npos);
+    // Restoring entry: no uncompute_or call text, just a `#line`.
+    CHECK(fx.insertions[2].code.find("uncompute_or")
+          == std::string::npos);
+    CHECK(fx.insertions[2].code.find("#line ") != std::string::npos);
 
     // Both substrings must appear in the emitted file, with t1's line
     // closer to the close brace than t0's. Rewriter at the same anchor

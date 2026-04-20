@@ -53,6 +53,8 @@ void demo(qbool a, qbool b) {
             qbool t = a | b;
             (void)t;
         }
-        uncompute_or(t, a, b);
+    
+#line 51 "hoist_nested_loops_inner_only.cpp"
+    uncompute_or(t, a, b);
 }
 }

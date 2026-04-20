@@ -52,6 +52,10 @@ void demo(qbool a, qbool b, bool cond) {
     if (cond) {
         qbool t = a | b;
         (void)t;
-        uncompute_or(t, a, b);
+    
+#line 51 "hoist_reject_branch_not_loop.cpp"
+    uncompute_or(t, a, b);
+
+#line 53 "hoist_reject_branch_not_loop.cpp"
 }
 }

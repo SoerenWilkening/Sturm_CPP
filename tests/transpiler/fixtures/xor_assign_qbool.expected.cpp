@@ -22,5 +22,9 @@ public:
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a, qbool b) { a ^= b;     a ^= b;
+void demo(qbool a, qbool b) { a ^= b; 
+#line 23 "xor_assign_qbool.cpp"
+    a ^= b;
+
+#line 23 "xor_assign_qbool.cpp"
 }

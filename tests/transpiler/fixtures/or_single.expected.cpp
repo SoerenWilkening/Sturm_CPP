@@ -36,5 +36,9 @@ inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
 } // namespace sturm
 using sturm::qbool;
 
-void demo(qbool a, qbool b) { qbool tmp = a | b; (void)tmp;     uncompute_or(tmp, a, b);
+void demo(qbool a, qbool b) { qbool tmp = a | b; (void)tmp; 
+#line 37 "or_single.cpp"
+    uncompute_or(tmp, a, b);
+
+#line 37 "or_single.cpp"
 }

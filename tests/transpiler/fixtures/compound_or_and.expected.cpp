@@ -48,6 +48,12 @@ void demo(qbool b, qbool c, qbool d) {
 #line 45 "compound_or_and.cpp"
 qbool __stu_t0 = b | c;
     #line 45 "compound_or_and.cpp"
-qbool r = __stu_t0 & d; (void)r;     uncompute_and(r, __stu_t0, d);
+qbool r = __stu_t0 & d; (void)r; 
+#line 45 "compound_or_and.cpp"
+    uncompute_and(r, __stu_t0, d);
+
+#line 45 "compound_or_and.cpp"
     uncompute_or(__stu_t0, b, c);
+
+#line 45 "compound_or_and.cpp"
 }

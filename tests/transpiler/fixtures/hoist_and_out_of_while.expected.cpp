@@ -67,7 +67,13 @@ qbool __stu_t0 = a & b;
 qbool t = __stu_t0 & c;
         (void)t;
         ++i;
-        uncompute_and(t, __stu_t0, c);
+    
+#line 61 "hoist_and_out_of_while.cpp"
+    uncompute_and(t, __stu_t0, c);
+
+#line 64 "hoist_and_out_of_while.cpp"
 }
+
+#line 61 "hoist_and_out_of_while.cpp"
     uncompute_and(__stu_t0, a, b);
 }

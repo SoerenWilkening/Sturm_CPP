@@ -351,7 +351,14 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // output to the pre-PE-2 pipeline (the "existing snapshot
             // fixtures byte-identical" acceptance criterion is enforced
             // by the snapshot tests downstream).
-            auto synth = sturm::transpile::synthesize(unit_);
+            //
+            // PM2-3: pass the active SourceManager so `synthesize()`
+            // prefixes each rendered uncompute call with a `#line`
+            // directive pointing at the forward op's begin loc, and
+            // appends a restoring `#line` at every close-brace that
+            // carries at least one uncompute insertion.
+            auto synth = sturm::transpile::synthesize(
+                unit_, &ctx.getSourceManager());
 
             // M9: build a Rewriter over the same
             // SourceManager/LangOptions and let emit() apply

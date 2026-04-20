@@ -76,6 +76,7 @@ set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 add_executable(test_transpile_uncompute_pass
     test_uncompute_pass.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
 )
 target_include_directories(test_transpile_uncompute_pass PRIVATE
@@ -90,6 +91,27 @@ target_compile_features(test_transpile_uncompute_pass PRIVATE cxx_std_20)
 separate_arguments(LLVM_DEFS_LIST_UNCOMPUTE NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 target_compile_definitions(test_transpile_uncompute_pass PRIVATE
     ${LLVM_DEFS_LIST_UNCOMPUTE})
+# PM2-3: `uncompute_pass.cpp` now calls into `format_line_directive` (from
+# `source_map.cpp`), which in turn reaches `clang::SourceManager::isIn
+# MainFile` / `getPresumedLoc` from `libclangBasic`. The helper is
+# gated on `sm != nullptr` so every hand-built test case in this file
+# avoids the actual call, but the symbols still need to resolve at link
+# time. Pull in `libclangBasic` (and the `llvm::DisableABIBreakingChecks`
+# weak symbol it references) via the shared-vs-static path mirrored from
+# every other transpiler test target.
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_transpile_uncompute_pass PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_transpile_uncompute_pass PRIVATE
+        clangBasic
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_UNCOMPUTE support)
+    target_link_libraries(test_transpile_uncompute_pass PRIVATE
+        ${LLVM_LIBS_UNCOMPUTE})
+endif()
 add_test(NAME test_transpile_uncompute_pass
          COMMAND test_transpile_uncompute_pass)
 set_tests_properties(test_transpile_uncompute_pass PROPERTIES
@@ -102,6 +124,7 @@ set_tests_properties(test_transpile_uncompute_pass PROPERTIES
 add_executable(test_transpile_emitter
     test_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
@@ -178,6 +201,8 @@ add_executable(test_transpile_matcher
     test_matcher_dead_ancilla.cpp
     # PM2-2: Phase E compound-matcher `#line` directive emission tests.
     test_matcher_pm2_compound_line.cpp
+    # PM2-3: M8 uncompute-synthesis `#line` directive emission tests.
+    test_matcher_pm2_uncompute_line.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
@@ -201,6 +226,12 @@ add_executable(test_transpile_matcher
     # only LLVM / Clang dependencies (`SourceManager`, `PresumedLoc`)
     # are already satisfied by the existing clangBasic link line.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    # PM2-3: `format_line_directive` moved from emitter.cpp into its own TU
+    # `source_map.cpp` so test_transpile_uncompute_pass (no Rewriter
+    # linkage) can resolve just that symbol. Link it here so the PM2-2
+    # compound-matcher tests keep resolving `format_line_directive` via
+    # the shared-source-map TU.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     # emitter.cpp transitively includes io.hpp / skip.hpp / uncompute_pass.hpp
     # so their implementation TUs must be on the link line too.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
@@ -296,6 +327,7 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp

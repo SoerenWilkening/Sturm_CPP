@@ -37,6 +37,10 @@ void demo(qbool a, qbool b) {
         qbool r;
         r ^= a;
         a ^= b;
-        r ^= a;
+    
+#line 36 "for_mixed_xor_reject.cpp"
+    r ^= a;
+
+#line 38 "for_mixed_xor_reject.cpp"
 }
 }

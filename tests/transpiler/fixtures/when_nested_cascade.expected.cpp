@@ -79,7 +79,11 @@ using sturm::qbool;
 void demo(qbool a, qbool b, qbool c, qbool d) {
     WHEN(a) { qbool __stu_ctrl0 = a & b;
 WHEN(__stu_ctrl0) { qbool __stu_ctrl1 = b & c;
-WHEN(__stu_ctrl1) { (void)d; }    uncompute_and(__stu_ctrl1, b, c);
- }    uncompute_and(__stu_ctrl0, a, b);
+WHEN(__stu_ctrl1) { (void)d; }
+#line 78 "when_nested_cascade.cpp"
+    uncompute_and(__stu_ctrl1, b, c);
+ }
+#line 78 "when_nested_cascade.cpp"
+    uncompute_and(__stu_ctrl0, a, b);
  }
 }
