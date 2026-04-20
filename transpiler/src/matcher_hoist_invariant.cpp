@@ -86,6 +86,37 @@
 // `onEndOfTranslationUnit`, which is called AFTER the entire traversal,
 // so the LAST-registration convention is a diagnostic-grouping choice
 // rather than a correctness requirement.
+//
+// PM2-5 Source-map attribution policy
+// -----------------------------------
+// Hoisting changes the INSERTION LOCATION of a synthesized uncompute
+// (from the loop body's close brace to the loop-enclosing scope's
+// close brace) but it does NOT change the op's SOURCE ATTRIBUTION.
+// The `#line` directive the M8 synthesis pass prefixes onto the
+// rendered uncompute text must point at `op.stmt_range.getBegin()`
+// — the location of the user's ORIGINAL in-loop expression (e.g.
+// the `qbool t = a | b;` on line N inside the loop body) — NOT at
+// `op.hoist_to_override` (the post-loop close brace, which is
+// merely the physical insertion point after hoisting).
+//
+// Rationale: when a hoisted uncompute raises a diagnostic or a
+// debugger lands a step frame inside the synthesized text, the user
+// expects to see their ORIGINAL in-loop expression's line — the
+// thing they actually wrote — not the `}` that closes the loop's
+// enclosing scope. The uncompute IS the structural dual of the
+// in-loop expression even when its emitted text has been relocated.
+//
+// This matcher preserves the invariant by design: it ONLY writes to
+// `op.hoist_to_override` and `op.insert_before_override`, and NEVER
+// overwrites `op.stmt_range`. The `uncompute_pass.cpp` synthesis
+// step then reads `op.stmt_range.getBegin()` for the `#line`
+// derivation while independently selecting the `insert_before`
+// anchor from `op.hoist_to_override`. Decoupling these two fields
+// is what keeps the PM2-5 contract intact — any future refactor
+// that tries to reuse one for both roles would collapse attribution
+// onto the physical insertion point and break the user-facing
+// diagnostic experience. Tests in `test_matcher_pm2_hoist_line.cpp`
+// exercise this end-to-end.
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"

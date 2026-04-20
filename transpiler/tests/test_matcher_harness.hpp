@@ -75,3 +75,7 @@ void run_pm2_uncompute_line_tests();
 // PM2-4: `#line` directive emission on QReplacement strings produced
 // by Phase J PJ-1d ccnot-fuse + Phase F WHEN-lift matchers.
 void run_pm2_replacement_line_tests();
+// PM2-5: `#line` attribution policy for PJ-3 hoisted ops — hoist
+// changes insertion location only; attribution stays with the user's
+// in-loop expression (`op.stmt_range.getBegin()`).
+void run_pm2_hoist_line_tests();

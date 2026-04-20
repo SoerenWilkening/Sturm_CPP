@@ -206,6 +206,10 @@ add_executable(test_transpile_matcher
     # PM2-4: QReplacement `#line` directive emission for ccnot-fuse +
     # WHEN-lift tests.
     test_matcher_pm2_replacement_line.cpp
+    # PM2-5: hoist `#line` attribution policy — hoisted op emits #line
+    # pointing at the ORIGINAL in-loop stmt_range.getBegin() location,
+    # NOT the hoist_to_override target (post-loop close brace).
+    test_matcher_pm2_hoist_line.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp

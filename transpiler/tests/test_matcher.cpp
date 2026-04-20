@@ -34,6 +34,10 @@ int main() {
     run_pm2_uncompute_line_tests();
     // PM2-4: QReplacement `#line` prefix for ccnot-fuse + WHEN-lift.
     run_pm2_replacement_line_tests();
+    // PM2-5: hoist #line attribution policy — hoisted op emits #line
+    // pointing at the ORIGINAL in-loop stmt_range.getBegin(), not the
+    // hoist_to_override target.
+    run_pm2_hoist_line_tests();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
