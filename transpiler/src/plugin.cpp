@@ -48,7 +48,7 @@
 //    -Xclang -plugin-arg-sturm-transpile -Xclang <arg>
 //
 // (passing the cc1 arg pair through verbatim). Our ParseArgs below
-// honours two <arg> tokens:
+// honours three <arg> tokens:
 //
 //   - `dump-to=<path>` : after HandleTranslationUnit runs, dump the
 //     rewritten buffer to `<path>` on disk. The on-disk dump is
@@ -64,8 +64,18 @@
 //     the main-file path and the rewritten-buffer length. Kept minimal so
 //     the default (non-verbose) plugin output is silent and does not
 //     pollute downstream build logs.
+//   - `load=<path>`    : PM4-4 runtime-dlopen a third-party sturm plugin
+//     from the absolute shared-library path. Performs `dlopen(RTLD_LOCAL
+//     | RTLD_NOW)`, resolves and compares the plugin's
+//     `sturm_plugin_clang_version_v1` against the host's
+//     `CLANG_VERSION_STRING`, then resolves `sturm_register_plugin_v1`
+//     and queues it for the consumer ctor's Registry drain. Handle is
+//     intentionally leaked until process exit per plan §7. Any failure
+//     (dlopen error, version mismatch, missing entry point) emits a
+//     single-line stderr error and returns false from ParseArgs,
+//     aborting plugin setup.
 //
-// Both flags are optional and compose. Unknown args are ignored (not an
+// All flags are optional and compose. Unknown args are ignored (not an
 // error — future flags should not break old plugins). Values containing
 // `=` (e.g. Windows-style paths) survive the pair-forwarding intact
 // because the cc1 side receives `<arg>` as a single token.
@@ -117,9 +127,11 @@
 
 #include "transpile_consumer.hpp"
 
+#include "sturm/transpile/plugin_api.hpp"
 #include "sturm/transpile/skip.hpp"
 
 #include "clang/AST/ASTConsumer.h"
+#include "clang/Basic/Version.h"
 #include "clang/CodeGen/CodeGenAction.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/CompilerInvocation.h"
@@ -133,6 +145,8 @@
 #include "llvm/Support/VirtualFileSystem.h"
 #include "llvm/Support/raw_ostream.h"
 
+#include <cstring>
+#include <dlfcn.h>
 #include <fstream>
 #include <memory>
 #include <string>
@@ -144,6 +158,129 @@ namespace {
 constexpr const char* kDumpToPrefix = "dump-to=";
 // Length of "dump-to=" so substr() is transparent.
 constexpr std::size_t kDumpToPrefixLen = 8;
+// PM4-4: the load= argument prefix used by CMake's `PLUGINS` argument
+// (PM4-5) to dlopen a third-party plugin shared library at parse time.
+constexpr const char* kLoadPrefix = "load=";
+constexpr std::size_t kLoadPrefixLen = 5;
+
+// PM4-4: load one runtime-dlopen plugin from `path`. Returns true on
+// success, false on any failure; on failure a single-line error is
+// emitted on stderr before returning. The handle is intentionally leaked
+// until process exit per plan §7 (callback targets live in the plugin's
+// code segment; `dlclose` would unmap them mid-execution).
+//
+// Contract (plan §3 + §4):
+//   1. `dlopen(path, RTLD_LOCAL | RTLD_NOW)` — RTLD_NOW surfaces
+//      unresolved references at load time; RTLD_LOCAL keeps the plugin's
+//      symbols private so a subsequent `load=` of a second plugin cannot
+//      shadow the first's internals.
+//   2. `dlsym("sturm_plugin_clang_version_v1")` — the plugin's Clang
+//      version accessor. Null = refuse (plugin lacks the mandatory
+//      version symbol). Call it and compare the returned C-string
+//      against the host's own `CLANG_VERSION_STRING` byte-for-byte;
+//      mismatch = refuse. Full-string compare is pessimistic on purpose
+//      (17.0.6 vs 17.0.7 is still a refuse — a patched distro Clang the
+//      plugin author did not test against).
+//   3. `dlsym("sturm_register_plugin_v1")` — the actual registration
+//      entry point. Null = refuse (not a sturm plugin or wrong ABI).
+//   4. Push a `LinkTimeRegisterFn` onto the runtime-registrars Meyer
+//      vector that invokes the entry against the consumer's Registry
+//      when PM4-3's consumer ctor drains the vector. Captures ONLY the
+//      function pointer (stable for the life of the handle, which we
+//      never release), so the capture has trivial copyability.
+bool load_runtime_plugin(const std::string& path, bool verbose) {
+    void* handle = ::dlopen(path.c_str(), RTLD_LOCAL | RTLD_NOW);
+    if (handle == nullptr) {
+        const char* err = ::dlerror();
+        llvm::errs() << "sturm-transpile plugin: failed to dlopen "
+                     << path << ": "
+                     << (err != nullptr ? err : "(unknown error)")
+                     << "\n";
+        return false;
+    }
+
+    // Clear any stale dlerror state (posix: `dlerror` returns the most
+    // recent error since the last call) before each `dlsym` so a
+    // null-return genuinely means "not found".
+    (void)::dlerror();
+    using ClangVersionFn = const char* (*)();
+    auto* version_fn = reinterpret_cast<ClangVersionFn>(
+        ::dlsym(handle, "sturm_plugin_clang_version_v1"));
+    if (version_fn == nullptr) {
+        llvm::errs() << "sturm-transpile plugin: "
+                     << path << " missing sturm_plugin_clang_version_v1 "
+                     << "symbol; wrong ABI version or not a sturm "
+                     << "plugin?\n";
+        return false;
+    }
+    const char* plugin_ver = version_fn();
+    if (plugin_ver == nullptr) {
+        llvm::errs() << "sturm-transpile plugin: "
+                     << path << " sturm_plugin_clang_version_v1 "
+                     << "returned null\n";
+        return false;
+    }
+    if (std::strcmp(plugin_ver, CLANG_VERSION_STRING) != 0) {
+        llvm::errs() << "sturm-transpile plugin: "
+                     << path << " built against Clang "
+                     << plugin_ver << ", host is Clang "
+                     << CLANG_VERSION_STRING
+                     << "; refusing to load.\n";
+        return false;
+    }
+
+    (void)::dlerror();
+    using RegisterFn =
+        void (*)(::sturm::transpile::plugin::Registry&);
+    auto* register_fn = reinterpret_cast<RegisterFn>(
+        ::dlsym(handle, "sturm_register_plugin_v1"));
+    if (register_fn == nullptr) {
+        llvm::errs() << "sturm-transpile plugin: "
+                     << path << " missing sturm_register_plugin_v1 "
+                     << "entry point; wrong ABI version or not a "
+                     << "sturm plugin?\n";
+        return false;
+    }
+
+    // Push a wrapper that forwards into the resolved entry point. The
+    // Meyer vector is drained by PM4-3's consumer ctor; until PM4-3
+    // lands the vector accumulates entries but is never drained in-
+    // process — which is fine: the test harness invokes the drain
+    // directly against a fresh Registry (see tests that mimic the
+    // pm4_smoke_linktime pattern). Handle intentionally leaks.
+    ::sturm::transpile::plugin::runtime_registrars().push_back(
+        [register_fn](::sturm::transpile::plugin::Registry& r) {
+            register_fn(r);
+        });
+    (void)handle;
+
+    if (verbose) {
+        llvm::errs() << "sturm-transpile plugin: loaded runtime plugin "
+                     << path << " (Clang "
+                     << CLANG_VERSION_STRING << ")\n";
+        // Invoke the entry against a throw-away Registry to enumerate
+        // the kind_ids the plugin claims. Gives the test harness a
+        // direct "plugin X registered kind_id Y" observation that is
+        // independent of PM4-3's not-yet-merged consumer-ctor drain.
+        // The probe Registry goes out of scope at the end of this
+        // branch — none of its state leaks into the real per-consumer
+        // Registry the `runtime_registrars()` drain will populate.
+        ::sturm::transpile::plugin::Registry probe;
+        register_fn(probe);
+        const auto kinds = probe.kind_ids();
+        llvm::errs() << "sturm-transpile plugin: " << path
+                     << " registered kind_ids:";
+        if (kinds.empty()) {
+            llvm::errs() << " (none)";
+        } else {
+            for (const auto& k : kinds) {
+                llvm::errs() << ' ' << k;
+            }
+        }
+        llvm::errs() << "\n";
+    }
+    return true;
+}
 
 /// PM1-3 — Clang PluginASTAction that drives the shared TranspileConsumer.
 ///
@@ -181,6 +318,14 @@ class SturmPluginAction : public clang::PluginASTAction {
     // ignored so a future plugin flag does not break an old plugin.
     bool ParseArgs(const clang::CompilerInstance& /*ci*/,
                    const std::vector<std::string>& args) override {
+        // PM4-4 two-pass discipline: collect every `load=<path>` token
+        // first, then process them AFTER the full arg list has been
+        // scanned. This lets a `verbose` token anywhere in the arg list
+        // (including after the `load=` tokens) influence the load
+        // diagnostic output — the cc1 arg pair order is up to the
+        // CMake caller and the user-facing contract is "flags compose
+        // regardless of order".
+        std::vector<std::string> pending_loads;
         for (const auto& a : args) {
             if (a == "verbose") {
                 verbose_ = true;
@@ -193,8 +338,26 @@ class SturmPluginAction : public clang::PluginASTAction {
                                  << "path\n";
                     return false;
                 }
+            } else if (a.compare(0, kLoadPrefixLen, kLoadPrefix) == 0) {
+                // PM4-4: queue the dlopen. Empty path is a hard error
+                // (same posture as dump-to=); a typo in the CMake glue
+                // should not silently disable plugin loading.
+                std::string path = a.substr(kLoadPrefixLen);
+                if (path.empty()) {
+                    llvm::errs() << "sturm-transpile plugin: "
+                                 << "-plugin-arg-sturm-transpile load="
+                                 << "<path> requires a non-empty path\n";
+                    return false;
+                }
+                pending_loads.push_back(std::move(path));
             }
             // Unknown flag — silently ignore. See file header for why.
+        }
+        // Execute the queued loads in command-line order (plan §6).
+        for (const auto& p : pending_loads) {
+            if (!load_runtime_plugin(p, verbose_)) {
+                return false;
+            }
         }
         return true;
     }

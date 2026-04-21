@@ -348,6 +348,14 @@ else()
     target_link_libraries(sturm-transpile-plugin PRIVATE ${LLVM_LIBS_PLUGIN})
 endif()
 
+# PM4-4: `plugin.cpp`'s `load=<path>` dispatch calls `dlopen` / `dlsym` /
+# `dlerror` from `<dlfcn.h>`. On glibc >= 2.34 those live directly in
+# libc.so.6 and no extra link is needed; on older glibc they live in
+# libdl.so.2. `CMAKE_DL_LIBS` resolves to the right thing on both and
+# expands to empty on platforms where the dynamic-loader symbols are
+# intrinsic (macOS darwin).
+target_link_libraries(sturm-transpile-plugin PRIVATE ${CMAKE_DL_LIBS})
+
 # Hide the transitively-pulled LLVM symbols from the plugin's exported
 # interface on Linux. A no-op on macOS / Darwin, where two-level
 # namespace lookup already keeps the plugin's LLVM copy from colliding

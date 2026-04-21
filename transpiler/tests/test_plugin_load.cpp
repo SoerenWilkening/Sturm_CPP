@@ -41,9 +41,14 @@ namespace {
 #ifndef STURM_PLUGIN_CLANGXX
 #error "STURM_PLUGIN_CLANGXX must be defined to the clang++ driver path"
 #endif
+#ifndef STURM_PM4_DEMO_PLUGIN_PATH
+#error \
+    "STURM_PM4_DEMO_PLUGIN_PATH must be defined to the demo plugin .so path"
+#endif
 
 const char* plugin_path() { return STURM_PLUGIN_PATH; }
 const char* clangxx_bin() { return STURM_PLUGIN_CLANGXX; }
+const char* demo_plugin_path() { return STURM_PM4_DEMO_PLUGIN_PATH; }
 
 struct RunResult {
     int exit_code = -1;
@@ -308,6 +313,100 @@ void gate_empty_dump_to_rejected(const std::string& dir) {
               "plugin accepted empty dump-to= path", r);
 }
 
+// Gate 6 — PM4-4 `load=<abs-path-to-demo-plugin>` succeeds.
+// Loading the PM4-7 demo plugin (MODULE library built in-tree) through
+// the host transpiler plugin's `ParseArgs` must:
+//   - Complete compilation with exit code 0.
+//   - Under `verbose`, emit the `loaded runtime plugin` trace line so the
+//     test can observe that the dlopen + version + dlsym chain reached
+//     the end-of-success branch.
+//   - Under `verbose`, list the `pm4.demo.tag` kind_id in the
+//     `registered kind_ids:` trace line. This is the "kind_id is
+//     resolvable afterward" gate the PM4-4 issue calls out: the plugin
+//     entry executed, `register_op("pm4.demo.tag", ...)` populated a
+//     probe Registry, and the host observed the kind via
+//     `Registry::kind_ids()`.
+//   - NOT surface any `error:` / `fatal error` / `failed to dlopen`
+//     diagnostic.
+// The gate pins the happy-path end-to-end: the demo plugin compiled
+// against the same Clang the host was compiled against MUST load.
+void gate_load_demo_plugin_succeeds(const std::string& dir) {
+    const std::string src = dir + "/load_demo.cpp";
+    write_file(src, "int main() { return 0; }\n");
+
+    const std::string obj = dir + "/load_demo.o";
+    std::string cmd = std::string(clangxx_bin()) +
+        plugin_active_args() +
+        plugin_arg_pair("verbose") +
+        plugin_arg_pair(std::string("load=") + demo_plugin_path()) +
+        " -c -o " + obj +
+        " " + src;
+    auto r = run(cmd);
+    CHECK_MSG(r.exit_code == 0,
+              "plugin load=<demo plugin> compile failed", r);
+    CHECK_MSG(contains(r.combined_output,
+                       "loaded runtime plugin"),
+              "verbose trace did not report runtime plugin load", r);
+    CHECK_MSG(contains(r.combined_output, demo_plugin_path()),
+              "verbose trace missing demo plugin path", r);
+    CHECK_MSG(contains(r.combined_output, "registered kind_ids:"),
+              "verbose trace missing 'registered kind_ids' line", r);
+    CHECK_MSG(contains(r.combined_output, "pm4.demo.tag"),
+              "verbose trace did not list pm4.demo.tag kind_id", r);
+    CHECK_MSG(!contains(r.combined_output, "failed to dlopen"),
+              "plugin reported dlopen failure on valid path", r);
+    CHECK_MSG(!contains(r.combined_output, "error:"),
+              "plugin load produced an error diagnostic", r);
+}
+
+// Gate 7 — `load=/nonexistent/path.so` fails with the documented
+// `failed to dlopen` error. The plan §3 pins this exact stderr string
+// (PM4-9 `pm4_missing_plugin_errors` will grep for it); we assert the
+// contract here so a future plugin.cpp refactor cannot silently change
+// the wording.
+void gate_load_nonexistent_errors(const std::string& dir) {
+    const std::string src = dir + "/load_missing.cpp";
+    write_file(src, "int main() { return 0; }\n");
+
+    const std::string obj = dir + "/load_missing.o";
+    // The path is intentionally nonsensical to maximise the chance that
+    // no file of that name exists on any CI host. A real path ending in
+    // ".does-not-exist-xyz.so" under /tmp also works, but the /proc
+    // prefix avoids a tempdir-cleanup race if an unrelated test left a
+    // like-named artifact behind.
+    const std::string bogus =
+        "/proc/self/nonexistent-sturm-pm4-plugin.so";
+    std::string cmd = std::string(clangxx_bin()) +
+        plugin_active_args() +
+        plugin_arg_pair(std::string("load=") + bogus) +
+        " -c -o " + obj +
+        " " + src;
+    auto r = run(cmd);
+    CHECK_MSG(r.exit_code != 0,
+              "plugin accepted nonexistent load= path", r);
+    CHECK_MSG(contains(r.combined_output, "failed to dlopen"),
+              "plugin did not report dlopen failure for missing plugin",
+              r);
+}
+
+// Gate 8 — empty `load=` is rejected (same posture as empty `dump-to=`).
+// A typo in the CMake glue (e.g. `PLUGINS ""`) must surface as a hard
+// parse error rather than silently disabling the plugin load.
+void gate_empty_load_rejected(const std::string& dir) {
+    const std::string src = dir + "/load_empty.cpp";
+    write_file(src, "int main() { return 0; }\n");
+
+    const std::string obj = dir + "/load_empty.o";
+    std::string cmd = std::string(clangxx_bin()) +
+        plugin_active_args() +
+        plugin_arg_pair("load=") +
+        " -c -o " + obj +
+        " " + src;
+    auto r = run(cmd);
+    CHECK_MSG(r.exit_code != 0,
+              "plugin accepted empty load= path", r);
+}
+
 }  // namespace
 
 int main() {
@@ -322,6 +421,10 @@ int main() {
     gate_dump_to_flag_writes_file(dir);
     gate_unknown_arg_ignored(dir);
     gate_empty_dump_to_rejected(dir);
+    // PM4-4 gates.
+    gate_load_demo_plugin_succeeds(dir);
+    gate_load_nonexistent_errors(dir);
+    gate_empty_load_rejected(dir);
 
     std::fprintf(stderr, "\ntest_plugin_load: %d/%d passed\n",
                  tests_pass, tests_run);

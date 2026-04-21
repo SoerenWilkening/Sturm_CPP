@@ -62,6 +62,20 @@ std::vector<LinkTimeRegisterFn>& registrars() {
     return vec;
 }
 
+// ── Runtime-dlopen Meyer's singleton (PM4-4) ────────────────────────────────
+// Separate from `registrars()` so the consumer ctor's drain order stays
+// deterministic per plan §6 (in-tree → runtime → link-time). ParseArgs
+// under `load=<path>` appends one entry per successfully dlopen'd plugin;
+// each entry wraps the dlsym'd `sturm_register_plugin_v1` pointer so the
+// drain can invoke it against the per-consumer Registry. Same lazy-
+// construction posture as `registrars()` — no static-init-order
+// dependency between the runtime-append (fires during cc1 ParseArgs,
+// which runs after all static-init) and the ctor drain.
+std::vector<LinkTimeRegisterFn>& runtime_registrars() {
+    static std::vector<LinkTimeRegisterFn> vec;
+    return vec;
+}
+
 // ── Registry::register_matcher ────────────────────────────────────────────────
 // Duplicate-name check runs BEFORE we insert `fn` into either the name set
 // or the drain vector: if the check fires, neither side observes a partial
@@ -129,6 +143,23 @@ const UncomputeRenderFn* Registry::find_render_fn(
         return nullptr;
     }
     return &it->second;
+}
+
+// ── Registry::kind_ids ────────────────────────────────────────────────────────
+// PM4-4 diagnostic helper. Walks the `render_fns_` map and returns every
+// registered kind_id as a flat vector. Iteration order mirrors the
+// unordered_map's internal layout (unspecified but stable across reads of
+// the same map), which is fine for the one consumer: plugin.cpp's
+// verbose-mode trace concatenates them into a single comma-separated
+// line. Not intended for dispatch-hot paths — the caller pays a full
+// copy of every key.
+std::vector<std::string> Registry::kind_ids() const {
+    std::vector<std::string> out;
+    out.reserve(render_fns_.size());
+    for (const auto& [k, _] : render_fns_) {
+        out.push_back(k);
+    }
+    return out;
 }
 
 } // namespace sturm::transpile::plugin

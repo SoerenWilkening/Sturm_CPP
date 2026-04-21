@@ -69,6 +69,14 @@
 #include "sturm/transpile/plugin_api.hpp"
 #include "sturm/transpile/qir.hpp"
 
+// PM4-4 Clang-ABI gate: pull in `CLANG_VERSION_STRING` so
+// `STURM_PLUGIN_DEFINE_CLANG_VERSION()` below expands to a valid C string.
+// `<clang/Basic/Version.inc>` is the canonical source of the macro; it
+// lives under the Clang install tree and is already on the include path
+// for this TU via `examples/plugin_demo/CMakeLists.txt` (which adds
+// `${CLANG_INCLUDE_DIRS}` and `${LLVM_INCLUDE_DIRS}`).
+#include "clang/Basic/Version.inc"
+
 #include <sstream>
 #include <string>
 
@@ -150,3 +158,13 @@ extern "C" void sturm_register_plugin_v1(
         // the function, not a closure.
         &::sturm::transpile::plugin_demo::render_tag_inverse);
 }
+
+// ── PM4-4 Clang-ABI gate ────────────────────────────────────────────────────
+// The host `dlsym`s this symbol before calling `sturm_register_plugin_v1`
+// and refuses to load the plugin if the returned string differs from its
+// own `CLANG_VERSION_STRING`. See `plugin_api.hpp` for the full contract.
+// The macro expands to an `extern "C"` function returning the Clang
+// version the plugin was compiled against; the host's pessimistic full-
+// string compare (e.g. "17.0.6" vs "17.0.7" is a refuse) catches every
+// distro-patched mismatch at load time.
+STURM_PLUGIN_DEFINE_CLANG_VERSION()

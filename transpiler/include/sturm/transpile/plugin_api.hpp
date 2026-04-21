@@ -1,59 +1,23 @@
 // plugin_api.hpp — PM4-1: public plugin extension surface for the
-// sturm-transpile transpiler.
+// sturm-transpile transpiler. Sole contact point between sturm-transpile
+// and a third-party plugin `.so`. A plugin TU includes this header to:
 //
-// This header is the **sole** contact point between sturm-transpile and a
-// third-party plugin `.so`. A plugin source file includes this header to:
+//   1. Author a body for `extern "C" void sturm_register_plugin_v1(...)`
+//      (runtime-dlopen primary path; plan §3), OR
+//   2. Register a link-time `StaticRegistrar` via `STURM_REGISTER_PLUGIN`
+//      (fallback, plan §5).
 //
-//   1. Author a body for the `extern "C" void sturm_register_plugin_v1(...)`
-//      entry point the host transpiler calls back on dlopen (the primary
-//      runtime-load path; see docs/implementation_plan_transpiler_phase_m_pm4.md
-//      §3), OR
+// Scope (plan §1):
+//   - AST matchers — register callables handed a `MatchFinder&` + `QUnit&`
+//     that own their `MatchCallback` lifetime; the host keeps plugin .so's
+//     loaded for the life of the process (no `dlclose`, plan §7).
+//   - Uncompute rules — register a string-keyed renderer consulted by
+//     `render_uncompute`'s `case QOpKind::PLUGIN:` (PM4-3).
 //
-//   2. Register a link-time `StaticRegistrar` — via the
-//      `STURM_REGISTER_PLUGIN(TypeName)` convenience macro — that wires a
-//      plugin struct's `register_all(Registry&)` method into the
-//      Meyer's-singleton drain the host performs in `TranspileConsumer`'s
-//      constructor (fallback path; see the same plan §5).
-//
-// Scope
-// -----
-// Only two extension points are exposed in the `_v1` ABI (see plan §1):
-//
-//   - **AST matchers**: register a callable that is handed a
-//     `clang::ast_matchers::MatchFinder&` and a `QUnit&`. The callable owns
-//     its `MatchCallback` lifetime; the host preserves the
-//     `MatchFinder::addMatcher(..., callback)` raw-pointer discipline by
-//     keeping the plugin shared library open for the life of the process
-//     (no `dlclose` in v1, per plan §7).
-//
-//   - **Uncompute rules**: register a string-keyed renderer. The host's
-//     `render_uncompute` dispatch gains a single `case QOpKind::PLUGIN:`
-//     case (PM4-3) that looks up the matching renderer by a string
-//     `kind_id` carried on the `QOperation` and invokes it to obtain the
-//     uncompute source text.
-//
-// Explicitly NOT exposed (see plan §1 "out of scope"):
-//
-//   - Diagnostics emission. PM3 owns the diagnostics surface. Plugins
-//     cannot push into `DiagnosticsEngine` through this API. Stubbing this
-//     gap is a future `_v2` concern.
-//   - IR passes (`QUnit`-level transforms). Plugins operate AST-match-side
-//     and render-side only; they do not participate in `synthesize()`.
-//   - Runtime hooks. PM4 is a transpile-time-only surface.
-//
-// ABI versioning
-// --------------
-// The `_v1` suffix is part of the symbol name, not a struct field. A future
-// breaking change renames the entry point to `sturm_register_plugin_v2` and
-// the host's `dlsym` returns null on a mismatched plugin. The ABI is
-// deliberately **unstable** across sturm minor versions: a plugin author
-// must rebuild their `.so` against the sturm version they compile against
-// (plan §2).
-//
-// LOC budget: header ≤ 300 lines (CLAUDE.md rule). This file contains only
-// declarations + a single Meyer's-singleton-accessor function prototype +
-// one inline `StaticRegistrar` constructor body; the Registry methods are
-// pure declarations and land in PM4-2's `plugin_registry.cpp`.
+// NOT exposed: DiagnosticsEngine, IR passes (`synthesize()`), runtime.
+// ABI versioning: `_v1` is part of the symbol name; breaking changes bump
+// to `_v2`. Unstable across sturm minor versions — rebuild plugins per
+// release. LOC budget: ≤ 300 lines (CLAUDE.md rule).
 
 #ifndef STURM_TRANSPILE_PLUGIN_API_HPP
 #define STURM_TRANSPILE_PLUGIN_API_HPP
@@ -178,6 +142,16 @@ public:
     /// against `QOperation::plugin_kind_id`.
     const UncomputeRenderFn* find_render_fn(std::string_view kind_id) const;
 
+    /// PM4-4 diagnostic helper: return every kind_id currently registered
+    /// (insertion order not preserved — iteration order mirrors the
+    /// unordered_map's internal bucket layout). Used by plugin.cpp's
+    /// verbose-mode trace to print which ops a runtime-dlopen plugin
+    /// claimed, so a test harness can assert the plugin registered the
+    /// expected kind without round-tripping through PM4-3's consumer-ctor
+    /// drain. Not part of the plugin-side ABI — plugin code never calls
+    /// this, only the host.
+    std::vector<std::string> kind_ids() const;
+
 private:
     // `register_matcher` and `register_op` share no key domain — a plugin
     // may register a matcher named "foo" AND an op with `kind_id="foo"`
@@ -205,6 +179,15 @@ using LinkTimeRegisterFn = std::function<void(Registry&)>;
 /// running before this function's first call constructs the vector on
 /// demand, so no registrar ever observes uninitialized storage.
 std::vector<LinkTimeRegisterFn>& registrars();
+
+/// PM4-4 runtime-dlopen counterpart to `registrars()`. Populated by
+/// `plugin.cpp`'s `ParseArgs` after a successful `dlopen` + version check +
+/// `dlsym("sturm_register_plugin_v1")`. Each entry wraps the dlsym'd entry
+/// point so the consumer's drain can invoke it against its per-consumer
+/// Registry. Drain order per plan §6 is in-tree → runtime → link-time,
+/// which PM4-3's consumer ctor enforces by draining this vector before
+/// `registrars()`.
+std::vector<LinkTimeRegisterFn>& runtime_registrars();
 
 /// Helper object a plugin creates at namespace scope to enqueue a
 /// link-time registration. The typical usage is through the
@@ -283,5 +266,22 @@ struct StaticRegistrar {
 /// registration.
 extern "C" void sturm_register_plugin_v1(
     ::sturm::transpile::plugin::Registry& registry);
+
+/// PM4-4 Clang-ABI gate. Every runtime-loaded plugin must also export
+/// `sturm_plugin_clang_version_v1` — a C-linkage accessor returning the
+/// `CLANG_VERSION_STRING` the plugin was built against. The host
+/// `dlsym`s this symbol before calling `sturm_register_plugin_v1` and
+/// refuses to register the plugin if the returned string differs from
+/// its own. Mismatch = refuse to load; missing = refuse to load (plan
+/// §4). The plugin author invokes `STURM_PLUGIN_DEFINE_CLANG_VERSION()`
+/// at namespace scope in its TU; the macro expands to an `extern "C"`
+/// function definition returning `CLANG_VERSION_STRING`, which requires
+/// `<clang/Basic/Version.inc>` (or a transitive include that pulls it,
+/// e.g. the plugin's `ASTMatchFinder.h` include via `Version.h`) to be
+/// in scope.
+#define STURM_PLUGIN_DEFINE_CLANG_VERSION()                                  \
+    extern "C" const char* sturm_plugin_clang_version_v1() {                 \
+        return CLANG_VERSION_STRING;                                         \
+    }
 
 #endif // STURM_TRANSPILE_PLUGIN_API_HPP

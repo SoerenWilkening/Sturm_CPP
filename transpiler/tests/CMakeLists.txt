@@ -538,8 +538,15 @@ if(STURM_PLUGIN_CLANGXX_BIN)
     target_compile_definitions(test_plugin_load PRIVATE
         STURM_PLUGIN_PATH="$<TARGET_FILE:sturm-transpile-plugin>"
         STURM_PLUGIN_CLANGXX="${STURM_PLUGIN_CLANGXX_BIN}"
+        # PM4-4: path to the PM4-7 demo plugin MODULE library used as
+        # the runtime-dlopen fixture in the `load=<path>` gate. The demo
+        # plugin target is defined in examples/plugin_demo/CMakeLists.txt
+        # and lives under build/examples/plugin_demo/libsturm-pm4-demo-
+        # plugin.{so,dylib}.
+        STURM_PM4_DEMO_PLUGIN_PATH="$<TARGET_FILE:sturm-pm4-demo-plugin>"
     )
-    add_dependencies(test_plugin_load sturm-transpile-plugin)
+    add_dependencies(test_plugin_load sturm-transpile-plugin
+                                       sturm-pm4-demo-plugin)
     add_test(NAME test_plugin_load COMMAND test_plugin_load)
     set_tests_properties(test_plugin_load PROPERTIES LABELS "transpiler")
 else()
