@@ -58,6 +58,7 @@ add_executable(sturm-transpile
     src/matcher_when_lift.cpp
     src/matcher_when_nested.cpp
     src/matcher_when_operand_mutation.cpp
+    src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
     src/matcher_hoist_invariant.cpp
@@ -245,6 +246,7 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_when_lift.cpp
     src/matcher_when_nested.cpp
     src/matcher_when_operand_mutation.cpp
+    src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
     src/matcher_hoist_invariant.cpp

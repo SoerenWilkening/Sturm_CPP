@@ -290,6 +290,18 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // the Error on stderr.
     sturm::transpile::register_when_operand_mutation_matcher(
         finder_, unit_, diag_);
+    // PM3-5: Class 2 — quantum -> classical in branch condition. Pure
+    // diagnostic matcher; advisory only, does NOT mutate `unit_`.
+    // Anchors on explicit casts (`static_cast<bool>`, C-style, or
+    // functional) from a qbool / qint_t; on match the callback walks
+    // ASTContext::getParents toward the nearest control stmt and
+    // fires iff the cast reached the stmt's cond slot AND the stmt is
+    // not WHEN-expanded. Registration order is irrelevant for
+    // correctness — the cast AST shape is structurally disjoint from
+    // every per-op callback above. Grouped with the other PM3-family
+    // diagnostic matchers at the bottom of the registration block.
+    sturm::transpile::register_quantum_to_classical_cond_matcher(
+        finder_, unit_, diag_);
     // PM3-6: Class 4 — caller drops returned qbool / qint_t. This
     // matcher is a pure diagnostic; it does not mutate `unit_` and
     // does not interact with any per-op or post-processor matcher

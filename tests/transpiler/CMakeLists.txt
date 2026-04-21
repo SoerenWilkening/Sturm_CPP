@@ -2807,3 +2807,49 @@ add_test(
 set_tests_properties(plugin_diagnostic_when_operand_mutation_clean PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PM3-5: plugin_diagnostic_quantum_to_classical_cond_* ──────────────────
+#
+# Two CTests exercise the PM3-5 Class 2 matcher (quantum -> classical in
+# branch condition). The new matcher anchors on an explicit cast
+# (`static_cast<bool>`, C-style, or functional) from a qbool / qint_t
+# to a classical `bool` / integral, whose nearest enclosing control-stmt
+# ancestor reaches the cast via the cond slot. The PH-2 WHEN-expanded
+# three-`if` tower must be skipped via `detail::is_expansion_of_macro`.
+#
+#   plugin_diagnostic_quantum_to_classical_cond_fires — positive:
+#       `if (static_cast<bool>(q))` with `q` a qbool; the matcher MUST
+#       fire the Error and the driver MUST exit non-zero.
+#   plugin_diagnostic_quantum_to_classical_cond_clean — negative:
+#       `if (classical_flag) { WHEN(q) { ... } }`; the classical `if`
+#       has a bool cond (no cast) and the WHEN's tower is filtered out
+#       by `is_expansion_of_macro`. The matcher MUST NOT fire and the
+#       driver MUST exit zero.
+#
+# The positive CTest also pins source-map plumbing via -DEXPECTED_LINE
+# so stderr cites `quantum_to_classical_cond_input.cpp:<line>:`. The
+# cast lives on line 52; bump if the fixture preamble grows or shrinks.
+add_test(
+    NAME plugin_diagnostic_quantum_to_classical_cond_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/quantum_to_classical_cond_input.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_quantum_to_classical_cond_fires"
+            "-DMUST_CONTAIN=branch condition derives from quantum value via explicit cast"
+            "-DEXPECTED_LINE=52"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_quantum_to_classical_cond_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_quantum_to_classical_cond_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_quantum_to_classical_cond_clean
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/quantum_to_classical_cond_clean.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_quantum_to_classical_cond_clean"
+            "-DMUST_NOT_CONTAIN=branch condition derives from quantum value via explicit cast"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_quantum_to_classical_cond_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_quantum_to_classical_cond_clean PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

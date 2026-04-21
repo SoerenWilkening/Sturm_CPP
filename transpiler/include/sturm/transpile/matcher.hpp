@@ -530,6 +530,39 @@ void register_when_operand_mutation_matcher(
     QUnit& unit,
     DiagContext& diag);
 
+/// PM3-5 / Class 2: Register the quantum->classical-in-branch-condition
+/// diagnostic matcher. Anchors on any explicit cast
+/// (`cxxStaticCastExpr`, `cStyleCastExpr`, or `cxxFunctionalCastExpr`)
+/// whose destination type is boolean or integral AND whose source
+/// operand resolves through `peel_to_payload` to a `DeclRefExpr` to a
+/// `sturm::qbool` / `sturm::qint_t` VarDecl. On match the callback
+/// walks `ASTContext::getParents` (skipping `ImplicitCastExpr`,
+/// `ParenExpr`, `ExprWithCleanups` wrappers) to find the nearest
+/// enclosing `IfStmt` / `WhileStmt` / `DoStmt` / `ConditionalOperator`
+/// and fires iff the cast was reached via the control stmt's condition
+/// slot AND the control stmt is NOT itself inside a WHEN macro
+/// expansion (via `detail::is_expansion_of_macro`).
+///
+/// Bare `if(q)` on a qbool is already a C++ error via the
+/// `explicit operator bool()` on `qbool`; this matcher targets the
+/// user who reached for `static_cast<bool>(q)` (or a C-style /
+/// functional cast) to silence the error — and, in doing so, collapse
+/// the qubit state into a classical bit prematurely.
+///
+/// The matcher is advisory only — it does NOT mutate `unit.scopes` or
+/// schedule any `QReplacement`. The Error severity on
+/// `DiagContext::report_quantum_to_classical_cond` aborts compilation
+/// with a non-zero exit; the reviewer sees the cast line cited in the
+/// user's source file.
+///
+/// Contract mirrors the PM3-2 / PM3-3 / PM3-4 guard helpers — call at
+/// most once per QUnit; the QUnit and DiagContext must outlive the
+/// MatchFinder's run.
+void register_quantum_to_classical_cond_matcher(
+    clang::ast_matchers::MatchFinder& finder,
+    QUnit& unit,
+    DiagContext& diag);
+
 /// PM3-6 / Class 4: Register the "caller drops returned qbool" diagnostic
 /// matcher. Anchors on any `CallExpr` whose return type resolves to a
 /// NamedDecl named `sturm::qbool` or `sturm::qint_t` AND whose parent

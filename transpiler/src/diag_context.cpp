@@ -92,9 +92,28 @@ void DiagContext::report_when_operand_mutation(
 
 void DiagContext::report_quantum_to_classical_cond(
     clang::SourceLocation loc, std::string_view name) {
-    (void)loc;
-    (void)name;
-    // TODO(backend): PM3-5 wires the detection site here.
+    // PM3-5 / Class 2: Quantum -> classical in a branch condition. Fires
+    // when an explicit cast (`static_cast<bool>(q)`, `(bool)q`, or
+    // `bool(q)`) from a qbool / qint_t appears in the condition slot of
+    // an IfStmt / WhileStmt / DoStmt / ConditionalOperator. `%0` is the
+    // source qbool / qint_t identifier being cast. Error severity —
+    // collapsing a quantum value to classical at branch time cannot be
+    // honoured by the transpiler (contradicts the WHEN primitive's
+    // lexical-scope control semantics under P4), so compilation must
+    // abort. The `getOrRegister` cache amortises the diag-ID lookup to
+    // one call per TU. The fix-hint suggests `WHEN(q) { ... }` —
+    // scheduling the body lexically on the quantum state rather than
+    // collapsing it.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: branch condition derives from quantum value via "
+        "explicit cast; use WHEN(%0) { ... } to schedule the body "
+        "conditionally on the quantum state.");
+    // `DiagnosticsEngine::Report(...) << arg` takes `std::string` for
+    // the `%N` slot; constructing one from a string_view is necessary
+    // because the builder's operator<< does not have a string_view
+    // overload.
+    diag_.Report(loc, id) << std::string(name);
 }
 
 void DiagContext::report_missing_adjoint(
