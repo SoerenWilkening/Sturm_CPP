@@ -44,6 +44,7 @@
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
 namespace clang {
+class DiagnosticsEngine;
 class SourceManager;
 } // namespace clang
 
@@ -478,6 +479,41 @@ void register_dead_ancilla_matcher(
 /// fixtures stay byte-identical.
 void apply_eliminated_stmt_guards(QUnit& unit,
                                   const clang::SourceManager& sm);
+
+/// PM3-6 / Class 4: Register the "caller drops returned qbool" diagnostic
+/// matcher. Anchors on any `CallExpr` whose return type resolves to a
+/// NamedDecl named `sturm::qbool` or `sturm::qint_t` AND whose parent
+/// stmt is either a `CompoundStmt` directly, or an `ExprWithCleanups`
+/// that sits under a `CompoundStmt`. The second alternative is
+/// load-bearing because Clang inserts an `ExprWithCleanups` above any
+/// by-value temporary whose type has a non-trivial destructor — which
+/// `sturm::qbool` does, via the qubit slot in its `qint_t<1>` base.
+///
+/// On match the callback emits a `DiagnosticsEngine::Warning` (NOT
+/// `Error` — compilation must continue so the user sees every leak in
+/// one pass). The message cites the callee's qualified name:
+///
+///     STURM: discarded quantum return from '<callee>' — the qubit
+///     will be released immediately; bind it to a named variable if
+///     you intend to use it.
+///
+/// Shapes that correctly escape the matcher:
+///
+///   - `qbool x = make_qbool();` — the CallExpr's parent is a VarDecl /
+///     DeclStmt, not a CompoundStmt.
+///   - `(void)make_qbool();`     — the CallExpr's parent is a
+///     `CStyleCastExpr` (the `(void)` cast), which breaks the
+///     `hasParent(compoundStmt())` chain. The user has signalled an
+///     explicit discard and the matcher respects that.
+///
+/// Unlike the Phase A–I matchers, this diagnostic matcher does not
+/// append anything to the `QUnit` — it reports and returns. The
+/// `diag` reference must outlive the MatchFinder's run; the consumer
+/// hands in `ci.getDiagnostics()` so the report path lines up with the
+/// PM3-1 `TextDiagnosticPrinter` wired into the standalone driver.
+void register_dropped_quantum_return_matcher(
+    clang::ast_matchers::MatchFinder& finder,
+    clang::DiagnosticsEngine& diag);
 
 } // namespace sturm::transpile
 

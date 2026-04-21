@@ -61,6 +61,7 @@ add_executable(sturm-transpile
     src/matcher_hoist_invariant.cpp
     src/matcher_ccnot_fuse.cpp
     src/matcher_dead_ancilla.cpp
+    src/matcher_dropped_quantum_return.cpp
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
@@ -245,6 +246,7 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_hoist_invariant.cpp
     src/matcher_ccnot_fuse.cpp
     src/matcher_dead_ancilla.cpp
+    src/matcher_dropped_quantum_return.cpp
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp

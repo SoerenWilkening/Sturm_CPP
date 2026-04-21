@@ -2599,3 +2599,70 @@ add_test(
 set_tests_properties(transpile_diagnostic_surfaces PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PM3-6: dropped_quantum_return_diagnostic ──────────────────────────────
+#
+# Three CTests exercise the PM3-6 Class 4 matcher
+# (`register_dropped_quantum_return_matcher`):
+#
+#   dropped_quantum_return_diagnostic          — positive: bare-statement
+#                                                  call to a qbool-
+#                                                  returning function
+#                                                  MUST emit the Warning
+#                                                  substring to stderr
+#                                                  AND exit zero.
+#   dropped_quantum_return_diagnostic_bound    — negative: binding the
+#                                                  return to a VarDecl
+#                                                  (`qbool x =
+#                                                  make_qbool();`) MUST
+#                                                  suppress the Warning.
+#   dropped_quantum_return_diagnostic_void_cast — negative: explicit
+#                                                  `(void)make_qbool();`
+#                                                  discard MUST suppress
+#                                                  the Warning.
+#
+# All three assert rc == 0 — the Warning severity is NOT Error, so
+# compilation MUST continue. The substring check uses the distinctive
+# "STURM: discarded quantum return from" prefix baked into the
+# matcher's locked-down message template.
+#
+# Unlike the PM2-8 source_map_diagnostic CTest (plugin-mode only), this
+# family drives the in-tree `sturm-transpile` binary directly — no host
+# clang++ search, no compile-commands.json, no include-dir wiring. The
+# fixtures use a hermetic `sturm::qbool` stub whose shape matches the
+# matcher's `hasDeclaration(namedDecl(hasName("sturm::qbool")))` anchor.
+add_test(
+    NAME dropped_quantum_return_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dropped_quantum_return_input.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dropped_quantum_return_input
+            -DMUST_CONTAIN=STURM: discarded quantum return from
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_dropped_quantum_return_diagnostic.cmake)
+set_tests_properties(dropped_quantum_return_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME dropped_quantum_return_diagnostic_bound
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dropped_quantum_return_bound.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dropped_quantum_return_bound
+            -DMUST_NOT_CONTAIN=STURM: discarded quantum return from
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_dropped_quantum_return_diagnostic.cmake)
+set_tests_properties(dropped_quantum_return_diagnostic_bound PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME dropped_quantum_return_diagnostic_void_cast
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/dropped_quantum_return_void_cast.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/dropped_quantum_return_void_cast
+            -DMUST_NOT_CONTAIN=STURM: discarded quantum return from
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_dropped_quantum_return_diagnostic.cmake)
+set_tests_properties(dropped_quantum_return_diagnostic_void_cast PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

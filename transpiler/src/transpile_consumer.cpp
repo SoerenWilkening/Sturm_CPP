@@ -269,6 +269,18 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // Downstream blocks (sturm-8cwe PJ-3f snapshot fixtures) rely
     // on this ordering staying stable.
     sturm::transpile::register_hoist_invariant_matcher(finder_, unit_);
+    // PM3-6: Class 4 — caller drops returned qbool / qint_t. This
+    // matcher is a pure diagnostic; it does not mutate `unit_` and
+    // does not interact with any per-op or post-processor matcher
+    // above. Registration order is therefore irrelevant for
+    // correctness — we park it LAST so the PM3-family callbacks stay
+    // grouped at the bottom of the registration block. The
+    // DiagnosticsEngine threaded here is the shared one attached to
+    // the parent CompilerInstance; under StandaloneFile mode it
+    // routes through the PM3-1 `TextDiagnosticPrinter(llvm::errs(),
+    // ...)` so the user sees the Warning on stderr.
+    sturm::transpile::register_dropped_quantum_return_matcher(
+        finder_, ci_.getDiagnostics());
 }
 
 void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
