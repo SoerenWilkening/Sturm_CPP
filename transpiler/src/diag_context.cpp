@@ -71,16 +71,23 @@ unsigned DiagContext::getOrRegister(int level, std::string_view fmt) {
 
 void DiagContext::report_when_operand_mutation(
     clang::SourceLocation loc, std::string_view name) {
-    (void)loc;
-    (void)name;
-    // TODO(backend): PM3-4 wires the detection site here. Expected
-    // body:
-    //   const unsigned id = getOrRegister(
-    //       clang::DiagnosticsEngine::Error,
-    //       "STURM: WHEN operand '%0' is mutated inside the WHEN "
-    //       "body — mutation of a control qbool/qint is undefined "
-    //       "behaviour (P4).");
-    //   diag_.Report(loc, id) << std::string(name);
+    // PM3-4 / Class 1: the format string is locked down by the issue
+    // description. `%0` is the mutated qbool/qint identifier. Error
+    // severity per P4 ("the operands of a `WHEN` control expression
+    // must not be modified within the scope; violation is undefined
+    // behaviour") — the transpiler cannot honour a source program
+    // that relies on UB, so compilation must abort. The
+    // `getOrRegister` cache amortises the diag-ID lookup to one call
+    // per TU.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: WHEN operand '%0' is mutated inside the WHEN body - "
+        "mutation of a control qbool/qint is undefined behaviour (P4).");
+    // `DiagnosticsEngine::Report(...) << arg` takes `std::string` for
+    // the `%N` slot; constructing one from a string_view is
+    // necessary because the builder's operator<< does not have a
+    // string_view overload.
+    diag_.Report(loc, id) << std::string(name);
 }
 
 void DiagContext::report_quantum_to_classical_cond(

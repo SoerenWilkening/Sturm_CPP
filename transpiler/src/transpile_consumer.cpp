@@ -276,6 +276,20 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // Downstream blocks (sturm-8cwe PJ-3f snapshot fixtures) rely
     // on this ordering staying stable.
     sturm::transpile::register_hoist_invariant_matcher(finder_, unit_);
+    // PM3-4: Class 1 — WHEN operand mutation. Pure diagnostic matcher;
+    // advisory only, does NOT mutate `unit_`. Registration order is
+    // irrelevant for correctness because the callback anchors on the
+    // WHEN macro's middle IfStmt (the same pattern the Phase F / G
+    // WHEN matchers use) — structurally disjoint from every per-op
+    // callback above. Grouped with the other PM3-family diagnostic
+    // matchers at the bottom of the registration block. The
+    // DiagContext threaded here is the shared `diag_` member captured
+    // from the parent CompilerInstance's DiagnosticsEngine; under
+    // StandaloneFile mode it routes through the PM3-1
+    // `TextDiagnosticPrinter(llvm::errs(), ...)` so the user sees
+    // the Error on stderr.
+    sturm::transpile::register_when_operand_mutation_matcher(
+        finder_, unit_, diag_);
     // PM3-6: Class 4 — caller drops returned qbool / qint_t. This
     // matcher is a pure diagnostic; it does not mutate `unit_` and
     // does not interact with any per-op or post-processor matcher

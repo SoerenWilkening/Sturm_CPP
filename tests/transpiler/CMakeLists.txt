@@ -2762,3 +2762,48 @@ add_test(
 set_tests_properties(plugin_diagnostic_missing_adjoint_clean PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PM3-4: plugin_diagnostic_when_operand_mutation_* ──────────────────────
+#
+# Two CTests exercise the PM3-4 Class 1 matcher (WHEN operand mutation),
+# wiring the new `register_when_operand_mutation_matcher` through the
+# shared `DiagContext` (PM3-0) + `DiagnosticsEngine` + `TextDiagnostic
+# Printer` (PM3-1) path.
+#
+#   plugin_diagnostic_when_operand_mutation_fires — positive:
+#       WHEN(a | b) { a ^= 1; } mutates the control operand `a` inside
+#       the body; the matcher MUST fire the Error and the driver MUST
+#       exit non-zero.
+#   plugin_diagnostic_when_operand_mutation_clean — negative:
+#       WHEN(a | b) { qbool c; c ^= 1; } mutates a freshly-declared
+#       local that is NOT in the operand set; the matcher MUST NOT
+#       fire and the driver MUST exit zero.
+#
+# The positive CTest also pins source-map plumbing via -DEXPECTED_LINE
+# so stderr cites `when_operand_mutation_input.cpp:<line>:`. The
+# `a ^= 1;` mutation lives on line 63 inside the WHEN body; bump if
+# the fixture's preamble grows or shrinks.
+add_test(
+    NAME plugin_diagnostic_when_operand_mutation_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_operand_mutation_input.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_when_operand_mutation_fires"
+            "-DMUST_CONTAIN=WHEN operand 'a' is mutated inside the WHEN body"
+            "-DEXPECTED_LINE=63"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_when_operand_mutation_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_when_operand_mutation_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_when_operand_mutation_clean
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_operand_mutation_clean.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_when_operand_mutation_clean"
+            "-DMUST_NOT_CONTAIN=is mutated inside the WHEN body"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_when_operand_mutation_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_when_operand_mutation_clean PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

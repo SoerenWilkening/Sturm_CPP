@@ -493,6 +493,43 @@ void register_dead_ancilla_matcher(
 void apply_eliminated_stmt_guards(QUnit& unit,
                                   const clang::SourceManager& sm);
 
+/// PM3-4 / Class 1: Register the WHEN-operand-mutation diagnostic matcher.
+/// Anchors on the middle `IfStmt` in the three-`if` tower the `WHEN`
+/// macro expands to (same init-stmt pattern as `register_when_lift_
+/// matcher`). On match the callback:
+///
+///   1. Walks the `materialize_when` argument via a
+///      `RecursiveASTVisitor`, collecting every `DeclRefExpr` whose
+///      referenced `VarDecl` has declared quantum type (`qbool`, `qint`,
+///      `qint_t`) into a `SmallPtrSet<const VarDecl*, 4>`. The walk is
+///      exhaustive so compound, comparator, ternary, and unary shapes
+///      contribute their operands uniformly.
+///   2. Descends `IfStmt::getThen()` twice to reach the user's body
+///      `CompoundStmt` (pattern copied from `matcher_when_lift.cpp:
+///      55-57`).
+///   3. Runs a second `RecursiveASTVisitor` over the body looking for
+///      `CXXOperatorCallExpr`s with an assignment-shape operator (`=`,
+///      `^=`, `+=`, `-=`, `*=`, `/=`, `%=`, `|=`, `&=`) or a
+///      `UnaryOperator` with an increment / decrement opcode (`++`,
+///      `--`, both pre and post). For every such node whose LHS /
+///      operand resolves to a `VarDecl` in the operand set, funnel the
+///      mutation's begin loc through `SourceManager::getFileLoc(...)`
+///      and call `diag.report_when_operand_mutation(loc, name)`.
+///
+/// The matcher is advisory only — it does NOT mutate `unit.scopes` or
+/// schedule any `QReplacement`. The Error severity on
+/// `DiagContext::report_when_operand_mutation` aborts compilation with
+/// a non-zero exit; the reviewer sees the mutation line cited in the
+/// user's source file (NOT `<memory-buffer>`).
+///
+/// Contract mirrors the PM3-2 / PM3-3 guard helpers — call at most
+/// once per QUnit; the QUnit and DiagContext must outlive the
+/// MatchFinder's run.
+void register_when_operand_mutation_matcher(
+    clang::ast_matchers::MatchFinder& finder,
+    QUnit& unit,
+    DiagContext& diag);
+
 /// PM3-6 / Class 4: Register the "caller drops returned qbool" diagnostic
 /// matcher. Anchors on any `CallExpr` whose return type resolves to a
 /// NamedDecl named `sturm::qbool` or `sturm::qint_t` AND whose parent
