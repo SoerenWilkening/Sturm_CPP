@@ -225,6 +225,11 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
+    # PM3-0 / PM3-2 / PM3-3: matcher_outer_var_guard.cpp and
+    # matcher_user_routine.cpp both call into DiagContext; link its
+    # TU so the test binary resolves `report_outer_var_mutation` and
+    # `report_missing_adjoint`.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
     # PM2-2: `matcher_qbool_compound.cpp` now calls
     # `format_line_directive` from `emitter.cpp` to prefix each

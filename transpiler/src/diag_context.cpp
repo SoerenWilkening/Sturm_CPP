@@ -92,9 +92,25 @@ void DiagContext::report_quantum_to_classical_cond(
 
 void DiagContext::report_missing_adjoint(
     clang::SourceLocation loc, std::string_view fn) {
-    (void)loc;
-    (void)fn;
-    // TODO(backend): PM3-3 wires the detection site here.
+    // PM3-3: Class 3 — missing adjoint registration. Fires when a
+    // CallExpr targets a FunctionDecl that is NOT in the PI-1
+    // RoutineRegistry AND has at least one quantum output parameter
+    // (non-const `qbool&` / `qint&` — i.e. `outputs_mask != 0` on the
+    // callsite's would-be QOperation). Error severity — compilation
+    // must abort because the transpiler cannot emit an
+    // `invert(<fn>)(...)` call without a registered adjoint, and a
+    // silent miss would leak qubits at run time (contradicts P9).
+    //
+    // The `%0` slot is the callee's qualified name. The PI-1 macro
+    // `STURM_REGISTER_ADJOINT(fn, adj)` takes the same name verbatim,
+    // so the suggested fix text substitutes both occurrences with the
+    // user's callsite identifier.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: call to '%0' requires uncomputation (has quantum "
+        "output parameter), but no adjoint is registered. Use "
+        "STURM_REGISTER_ADJOINT(%0, <adjoint_fn>) at TU scope.");
+    diag_.Report(loc, id) << std::string(fn);
 }
 
 void DiagContext::report_dropped_quantum_return(

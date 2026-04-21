@@ -25,10 +25,15 @@
 
 #include "test_matcher_harness.hpp"
 
+#include "diag_context.hpp"
 #include "sturm/transpile/matcher.hpp"
 
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -114,12 +119,26 @@ using sturm::qbool;
     reset_outer_var_guard_detection_count_for_test();
 
     clang::ast_matchers::MatchFinder finder;
+    // PM3-2: the guard matcher requires a DiagContext for its
+    // diagnostic path. Unit tests do not own a CompilerInstance, so
+    // we build a standalone DiagnosticsEngine with a throwaway
+    // IgnoringDiagConsumer — the test asserts on the hoist detection
+    // counter, not on formatted stderr output.
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
+        new clang::DiagnosticIDs());
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> opts(
+        new clang::DiagnosticOptions());
+    clang::DiagnosticsEngine diag_engine(
+        ids, opts.get(), new clang::IgnoringDiagConsumer(),
+        /*ShouldOwnClient=*/true);
+    DiagContext diag_ctx(diag_engine);
+
     register_or_matcher(finder, out.unit);
     register_xor_assign_matcher(finder, out.unit);
     register_xor_assign_classical_matcher(finder, out.unit);
     // PH-3 runs AFTER Phase A matchers so the xor-assign ops it flags
     // with `skip_uncompute=true` are already in `unit.scopes`.
-    register_outer_var_guard_matcher(finder, out.unit);
+    register_outer_var_guard_matcher(finder, out.unit, diag_ctx);
     // Hoist runs LAST so it observes PH-3's skip flags.
     register_hoist_invariant_matcher(finder, out.unit);
 

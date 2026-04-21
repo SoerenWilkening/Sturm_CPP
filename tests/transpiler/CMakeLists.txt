@@ -2702,3 +2702,63 @@ add_test(
 set_tests_properties(plugin_diagnostic_outer_var_guard PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PM3-3: plugin_diagnostic_missing_adjoint_* ────────────────────────────
+#
+# Two CTests exercise the PM3-3 Class 3 matcher (missing adjoint
+# registration), wiring the pre-existing PI-2 user-routine matcher
+# (`register_user_routine_matcher`) through the shared `DiagContext`
+# (PM3-0) + `DiagnosticsEngine` + `TextDiagnosticPrinter` (PM3-1) path.
+#
+#   plugin_diagnostic_missing_adjoint_fires — positive: bare call to a
+#                                              function whose parameters
+#                                              include a non-const
+#                                              qbool& output AND that
+#                                              is NOT registered via
+#                                              STURM_REGISTER_ADJOINT
+#                                              MUST emit the Error to
+#                                              stderr AND exit non-zero.
+#   plugin_diagnostic_missing_adjoint_clean — negative: the same call
+#                                              shape with const qbool&
+#                                              INPUT-only parameters
+#                                              MUST suppress the Error
+#                                              (silent early-return)
+#                                              AND exit zero.
+#
+# The positive CTest also pins the source-map plumbing via
+# `-DEXPECTED_LINE` so stderr cites
+# `missing_adjoint_diagnostic_input.cpp:<line>:` — same guarantee as the
+# PM2-8 source_map_diagnostic CTest and the PM3-2 outer-var guard
+# CTest. EXPECTED_LINE is hard-coded to 78 — the line of `op(a, b);`
+# inside the fixture's `demo()` body. If the fixture gains or loses
+# preamble lines, bump this number to match.
+#
+# Unlike the PM2-8 source_map_diagnostic CTest (plugin-mode only), this
+# family drives the in-tree `sturm-transpile` binary directly — no host
+# clang++ search, no compile-commands.json. The fixtures use a hermetic
+# `sturm::qbool` stub identical in shape to the PM3-6 `dropped_quantum_
+# return_*.cpp` fixtures.
+add_test(
+    NAME plugin_diagnostic_missing_adjoint_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/missing_adjoint_diagnostic_input.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_missing_adjoint_fires"
+            "-DMUST_CONTAIN=no adjoint is registered"
+            "-DEXPECTED_LINE=78"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_missing_adjoint_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_missing_adjoint_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_missing_adjoint_clean
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/missing_adjoint_clean.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_missing_adjoint_clean"
+            "-DMUST_NOT_CONTAIN=no adjoint is registered"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_missing_adjoint_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_missing_adjoint_clean PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

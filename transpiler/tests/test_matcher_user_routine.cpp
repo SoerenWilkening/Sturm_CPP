@@ -25,15 +25,20 @@
 
 #include "test_matcher_harness.hpp"
 
+#include "diag_context.hpp"
 #include "matcher_user_routine.hpp"
 #include "routine_registry.hpp"
 #include "sturm/transpile/qir.hpp"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 
 #include <cstdio>
 #include <memory>
@@ -237,8 +242,24 @@ RunResult run_user_routine_matcher(std::string_view user_src) {
     RoutineRegistry reg;
     clang::ast_matchers::MatchFinder reg_finder;
     clang::ast_matchers::MatchFinder user_finder;
+
+    // PM3-3: the PI-2 matcher now requires a DiagContext for its
+    // missing-adjoint diagnostic path. The PI-2 tests exercise the
+    // REGISTERED path (adjoints are installed via STURM_REGISTER_ADJOINT
+    // inside the fixture source), so the diagnostic branch never fires
+    // — a throwaway DiagnosticsEngine with IgnoringDiagConsumer is
+    // sufficient to honour the signature.
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
+        new clang::DiagnosticIDs());
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> opts(
+        new clang::DiagnosticOptions());
+    clang::DiagnosticsEngine diag_engine(
+        ids, opts.get(), new clang::IgnoringDiagConsumer(),
+        /*ShouldOwnClient=*/true);
+    DiagContext diag_ctx(diag_engine);
+
     register_routine_registry_matcher(reg_finder, reg);
-    register_user_routine_matcher(user_finder, unit, reg);
+    register_user_routine_matcher(user_finder, unit, reg, diag_ctx);
 
     reset_user_routine_detection_count_for_test();
 

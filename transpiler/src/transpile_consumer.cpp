@@ -225,7 +225,7 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // structurally disjoint from every Phase A..H matcher anchor —
     // but placing it here keeps diagnostic output grouped by phase.
     sturm::transpile::register_user_routine_matcher(
-        finder_, unit_, registry_);
+        finder_, unit_, registry_, diag_);
     // Phase J PJ-3e: the uncompute-hoisting matcher runs LAST —
     // after every Phase A..I per-op matcher (MVP OR, PA-1/PA-2
     // bitwise, PA-3/PA-4 xor-assign, PB/PC qint compound-assigns,

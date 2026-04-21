@@ -402,6 +402,15 @@ int main(int argc, const char** argv) {
     // PM1-6: when --dump-transpiled is set the expected output lives at
     // the user-supplied path, not `resolve_output_path(...)`. Check that
     // instead.
+    //
+    // PM3-3: Error-severity diagnostics (class 3 missing-adjoint, class 1
+    // WHEN-operand, class 2 quantum→classical) are terminal — the
+    // transpiler cannot honour P9 without an adjoint, and silently
+    // producing a (possibly wrong) output file would mask the contract
+    // break. When `tool.run` reports an error, we propagate the non-zero
+    // exit code even if a partial output file was written. The pre-PM3-3
+    // "soft parse failure, keep output" behaviour is preserved for the
+    // `tool_rc == 0` path below.
     fs::path expected_out = have_dump
         ? fs::path(kDumpTranspiled.getValue())
         : sturm::transpile::resolve_output_path(
@@ -414,5 +423,11 @@ int main(int argc, const char** argv) {
                      input_path.c_str());
         return tool_rc;
     }
-    return 0;
+    // PM3-3: propagate tool_rc when it indicates errors from
+    // DiagnosticsEngine (terminal diagnostics like the missing-adjoint
+    // Error). This is what clang does, and what the PM3-3 acceptance
+    // gate requires. Warning-severity PM3 diagnostics leave `tool_rc`
+    // at zero, so the outer_var_guard / dropped_quantum_return /
+    // source_map_diagnostic Warning paths continue to exit zero.
+    return tool_rc;
 }

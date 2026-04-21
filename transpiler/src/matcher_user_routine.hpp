@@ -57,6 +57,13 @@
 
 namespace sturm::transpile {
 
+// PM3-3: forward declaration so the PI-2 matcher's registration helper
+// can accept a `DiagContext&` argument without dragging the full
+// `transpiler/src/diag_context.hpp` into this header. The full
+// definition lives in `transpiler/src/diag_context.hpp` and is
+// included by `matcher_user_routine.cpp` proper.
+struct DiagContext;
+
 /// Register the Phase I PI-2 routine-call matcher against `finder`,
 /// directing every match into `unit` and consulting `registry` for the
 /// forward-function allowlist. Both `unit` and `registry` must outlive
@@ -75,11 +82,21 @@ namespace sturm::transpile {
 ///      empty (USER_ROUTINE produces no single named result — each
 ///      output parameter is a separate mutation).
 ///
+/// PM3-3: adds a `DiagContext&` parameter so the matcher can surface
+/// an Error through the shared `DiagnosticsEngine` when a CallExpr
+/// targets a function that is NOT in the registry AND has at least
+/// one quantum output parameter (`outputs_mask != 0`). The pre-PM3-3
+/// silent early-return still applies to the disjoint case (callee
+/// not registered AND outputs_mask == 0 — pure classical
+/// side-effect call), so ordinary classical helpers never trigger
+/// a false-positive diagnostic.
+///
 /// Call at most once per QUnit.
 void register_user_routine_matcher(
     clang::ast_matchers::MatchFinder& finder,
     QUnit& unit,
-    const RoutineRegistry& registry);
+    const RoutineRegistry& registry,
+    DiagContext& diag);
 
 /// Test-only instrumentation (Phase I / PI-2). Returns the number of
 /// successfully-matched routine calls since the last reset (one

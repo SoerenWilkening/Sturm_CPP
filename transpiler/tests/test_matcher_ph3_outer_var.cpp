@@ -14,10 +14,15 @@
 
 #include "test_matcher_harness.hpp"
 
+#include "diag_context.hpp"
 #include "sturm/transpile/matcher.hpp"
 
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 
 #include <cstddef>
 #include <cstdio>
@@ -66,13 +71,27 @@ PH3Run run_ph3_xor_assign_matcher(std::string_view user_src) {
     reset_outer_var_guard_detection_count_for_test();
 
     clang::ast_matchers::MatchFinder finder;
+    // PM3-2: the guard matcher requires a DiagContext for its
+    // diagnostic path. Unit tests do not own a CompilerInstance, so
+    // we build a standalone DiagnosticsEngine with a throwaway
+    // IgnoringDiagConsumer — the test asserts on the detection
+    // counter, not on formatted stderr output.
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs> ids(
+        new clang::DiagnosticIDs());
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> opts(
+        new clang::DiagnosticOptions());
+    clang::DiagnosticsEngine diag_engine(
+        ids, opts.get(), new clang::IgnoringDiagConsumer(),
+        /*ShouldOwnClient=*/true);
+    DiagContext diag_ctx(diag_engine);
+
     // Phase A matchers first so they push QOperations onto
     // `unit.scopes` before the PH-3 callback classifies each mutation.
     // Registration order is load-bearing: MatchFinder invokes callbacks
     // in registration order for a given matched node.
     register_xor_assign_matcher(finder, out.unit);
     register_xor_assign_classical_matcher(finder, out.unit);
-    register_outer_var_guard_matcher(finder, out.unit);
+    register_outer_var_guard_matcher(finder, out.unit, diag_ctx);
 
     auto factory = clang::tooling::newFrontendActionFactory(&finder);
     std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
