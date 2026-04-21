@@ -81,10 +81,41 @@ endif()
 
 # ── Public entry point ────────────────────────────────────────────────────
 # Usage:
-#     add_quantum_executable(<target> <source> [<source> ...])
+#     add_quantum_executable(<target>
+#         <source> [<source> ...]
+#         [PLUGINS <path> [<path> ...]])
 #
 # Accepts one or more source files. Relative paths are resolved against
 # CMAKE_CURRENT_SOURCE_DIR. Absolute paths are respected verbatim.
+#
+# PLUGINS (PM4-5 / `sturm-4oyr.6`)
+# --------------------------------
+# Optional multi-value keyword accepting a list of absolute shared-library
+# paths (or $<TARGET_FILE:...> generator expressions resolving to same).
+# Each entry is threaded to the Clang plugin at parse time as a
+# per-source cc1 arg pair of EXACTLY:
+#
+#     -Xclang -plugin-arg-sturm-transpile -Xclang load=<abs-path>
+#
+# so `plugin.cpp`'s `ParseArgs` sees a `load=<abs-path>` token, dlopen's
+# the given `.so` / `.dylib` with `RTLD_LOCAL | RTLD_NOW`, validates the
+# plugin's Clang version against the host's `CLANG_VERSION_STRING`, and
+# queues its `sturm_register_plugin_v1` entry for the per-consumer
+# `Registry` drain.
+#
+# Why the cc1 spelling? The driver-level `-fplugin-arg-<plugin>-<arg>`
+# flag splits on the FIRST hyphen after `-fplugin-arg-`, so our
+# hyphenated plugin name "sturm-transpile" does not survive the
+# driver-level spelling (the driver sees plugin "sturm" + arg
+# "transpile-<rest>"). Going through `-Xclang -plugin-arg-sturm-transpile
+# -Xclang <arg>` sidesteps that split and delivers the arg verbatim.
+# This matches the existing `dump-to=<path>` plumbing below.
+#
+# PLUGINS is PLUGIN-MODE ONLY. In dump mode the transpile step runs the
+# standalone `sturm-transpile` binary, not a Clang plugin, so there is
+# no `-plugin-arg-sturm-transpile` slot to thread `load=<path>` through.
+# Passing PLUGINS with -DSTURM_TRANSPILE_MODE=dump is a configuration
+# error and fails the helper with a FATAL_ERROR.
 #
 # Side effects (common to both modes):
 #   - Defines an executable target `<target>`.
@@ -92,7 +123,26 @@ endif()
 #   - Registers a dependency on either `sturm-transpile` (dump mode) or
 #     `sturm-transpile-plugin` (plugin mode).
 function(add_quantum_executable target)
-    set(sources ${ARGN})
+    # cmake_parse_arguments peels off keyword arguments BEFORE ARGN is
+    # iterated. The PLUGINS list is MULTI_VALUE so the user can pass
+    # several paths; everything not claimed by PLUGINS stays in
+    # STURM_AQE_UNPARSED_ARGUMENTS as the positional source list.
+    #
+    # `PARSE_ARGV 1` skips the `target` positional so ${ARGN} alone is
+    # parsed. OPTIONS_LIST / ONE_VALUE_LIST are both empty — today
+    # only PLUGINS is supported; future keywords (e.g. SOURCES) can be
+    # added without breaking callers because positional sources remain
+    # the default path.
+    set(_options "")
+    set(_one_value "")
+    set(_multi_value PLUGINS)
+    cmake_parse_arguments(PARSE_ARGV 1 STURM_AQE
+        "${_options}" "${_one_value}" "${_multi_value}")
+
+    # Positional sources survive in STURM_AQE_UNPARSED_ARGUMENTS. Every
+    # pre-PM4-5 call site passed only source paths, so the contract is
+    # byte-identical for those callers.
+    set(sources ${STURM_AQE_UNPARSED_ARGUMENTS})
     if(NOT sources)
         message(FATAL_ERROR
             "add_quantum_executable(${target}): no source files provided. "
@@ -116,8 +166,24 @@ function(add_quantum_executable target)
             "before the include().")
     endif()
 
+    # PLUGINS is a plugin-mode-only feature. Forwarding it to dump mode
+    # would silently drop the paths because the dump-mode path invokes
+    # the standalone `sturm-transpile` binary (no `-plugin-arg-` slot),
+    # so fail loudly here with an actionable reconfigure hint.
+    if(STURM_AQE_PLUGINS AND NOT (STURM_TRANSPILE_MODE STREQUAL "plugin"))
+        message(FATAL_ERROR
+            "add_quantum_executable(${target}): PLUGINS argument is only "
+            "supported under STURM_TRANSPILE_MODE=plugin (the default). "
+            "The dump-mode path invokes the standalone `sturm-transpile` "
+            "binary and has no Clang-plugin `-plugin-arg-` slot to thread "
+            "`load=<path>` through. Reconfigure with "
+            "-DSTURM_TRANSPILE_MODE=plugin or drop the PLUGINS argument.")
+    endif()
+
     if(STURM_TRANSPILE_MODE STREQUAL "plugin")
-        _sturm_add_quantum_executable_plugin(${target} ${sources})
+        _sturm_add_quantum_executable_plugin(${target}
+            SOURCES ${sources}
+            PLUGINS ${STURM_AQE_PLUGINS})
     else()
         _sturm_add_quantum_executable_dump(${target} ${sources})
     endif()
@@ -142,8 +208,28 @@ endfunction()
 # buffer is ALSO mirrored to `${CMAKE_BINARY_DIR}/sturm_gen/<relpath>`
 # for the injected-observability CTests that grep that file for
 # transpiler-injected `uncompute_*` calls.
+#
+# PM4-5: This helper additionally accepts `PLUGINS` — a list of absolute
+# shared-library paths that get threaded to the plugin's `ParseArgs` as
+# per-source `load=<path>` cc1 arg pairs. The outer public entry point
+# (`add_quantum_executable`) does the keyword parsing; we forward the
+# parsed SOURCES + PLUGINS lists through named keyword arguments here so
+# future helper-internal keyword additions do not collide with the list
+# positions.
 function(_sturm_add_quantum_executable_plugin target)
-    set(sources ${ARGN})
+    set(_options "")
+    set(_one_value "")
+    set(_multi_value SOURCES PLUGINS)
+    cmake_parse_arguments(PARSE_ARGV 1 STURM_AQE_PLUGIN
+        "${_options}" "${_one_value}" "${_multi_value}")
+
+    # SOURCES is the primary payload; a caller that failed to pass any
+    # would have tripped the outer helper's no-sources check, but
+    # belt-and-suspenders matters here because this helper is also
+    # reachable from a future find_package(sturm) consumer that copies
+    # the dispatch shape.
+    set(sources ${STURM_AQE_PLUGIN_SOURCES})
+    set(plugins ${STURM_AQE_PLUGIN_PLUGINS})
 
     # The plugin must be a known target before we reference its
     # TARGET_FILE. In the STURM monorepo the target is added by
@@ -231,6 +317,35 @@ function(_sturm_add_quantum_executable_plugin target)
             "-plugin-arg-sturm-transpile"
             "-Xclang"
             "dump-to=${dump_path}")
+
+        # PM4-5 (`sturm-4oyr.6`): for each PLUGINS entry, append a
+        # separate `-Xclang -plugin-arg-sturm-transpile -Xclang
+        # load=<abs-path>` cc1 arg pair. Mirrors the dump-to= plumbing
+        # above — every plugin arg ride the same cc1 pair shape because
+        # the driver mis-parses the hyphenated plugin name under the
+        # user-facing `-fplugin-arg-<name>-<arg>` spelling (see the
+        # file header for the full lesson). The plugin's `ParseArgs`
+        # (transpiler/src/plugin.cpp) collects every `load=<path>`
+        # token into a pending-loads list and processes them in order
+        # after the full arg scan completes (so `verbose` later in the
+        # list still influences earlier `load=` diagnostics).
+        #
+        # Each plugin path produces its OWN 4-token tuple rather than
+        # collapsing into a single `-plugin-arg-` scope — Clang's cc1
+        # `-plugin-arg-<name> <arg>` only takes ONE arg token per
+        # pair, so two `load=` payloads require two pairs. The order
+        # in which the pairs land on the command line matches the
+        # PLUGINS list order; `ParseArgs` then registers the plugins
+        # in that same order (plan §6: "Execute the queued loads in
+        # command-line order").
+        foreach(plugin_path ${plugins})
+            set_property(SOURCE "${abs_src}" APPEND PROPERTY
+                COMPILE_OPTIONS
+                "-Xclang"
+                "-plugin-arg-sturm-transpile"
+                "-Xclang"
+                "load=${plugin_path}")
+        endforeach()
 
         # Note on plugin-change invalidation: `add_dependencies` above
         # gives us a target-level build order (the plugin .so is

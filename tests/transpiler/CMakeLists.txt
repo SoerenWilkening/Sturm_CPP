@@ -18,6 +18,16 @@ enable_language(C)
 
 add_subdirectory(test_cmake_glue)
 
+# PM4-5 (sturm-4oyr.6): integration test for
+# `add_quantum_executable(... PLUGINS <path>)`. Mirrors the
+# `test_cmake_glue` fixture above but exercises the PM4-5 extension —
+# the helper must append a per-source cc1 arg pair of exactly
+#   -Xclang -plugin-arg-sturm-transpile -Xclang load=<abs-path>
+# for each path in the PLUGINS list. The fixture references the PM4-7
+# demo plugin target `sturm-pm4-demo-plugin` via $<TARGET_FILE:...> so
+# the genex resolves to a real on-disk shared library at generate time.
+add_subdirectory(test_cmake_plugins)
+
 # ── M11: snapshot fixture (sturm-transpile or_single.cpp) ───────────────────
 # The test requires the sturm-transpile binary, which is built as part of
 # the default target set.
