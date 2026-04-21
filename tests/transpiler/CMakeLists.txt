@@ -2572,3 +2572,30 @@ else()
         "tests/transpiler: source_map_diagnostic skipped "
         "(clang++ not found next to LLVM_TOOLS_BINARY_DIR).")
 endif()
+
+# ── PM3-1: transpile_diagnostic_surfaces ───────────────────────────────────
+#
+# Standalone-driver diagnostic-surfacing probe: compiles a fixture with a
+# deliberate `static_assert(false, "STURM_PM3_DIAG_SURFACES_OK")` under
+# `bin/sturm-transpile` and asserts that the driver's stderr contains the
+# distinctive marker substring. Guards the PM3-1 contract that the
+# standalone driver now installs a `TextDiagnosticPrinter(llvm::errs(),
+# ...)` instead of the pre-PM3-1 `clang::IgnoringDiagConsumer` (which
+# swallowed every diagnostic).
+#
+# Unlike `source_map_diagnostic` (PM2-8, plugin-mode only), this test
+# does NOT need a host clang++ next to the LLVM we linked — it drives
+# the in-tree `sturm-transpile` binary directly, so the test is always
+# registered (no `_STURM_SMOKE_CLANGXX` guard). The fixture is a trivial
+# TU with no `sturm::qbool` / `sturm::qint` references so no compile-
+# commands.json / include path setup is required.
+add_test(
+    NAME transpile_diagnostic_surfaces
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/standalone_diag_surfaces_input.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/standalone_diag_surfaces
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_standalone_diag_surfaces.cmake)
+set_tests_properties(transpile_diagnostic_surfaces PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

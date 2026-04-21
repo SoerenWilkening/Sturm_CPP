@@ -26,11 +26,14 @@
 #include "transpile_consumer.hpp"
 
 #include "clang/AST/ASTConsumer.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
+#include "clang/Frontend/TextDiagnosticPrinter.h"
 #include "clang/Tooling/CommonOptionsParser.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 #include "llvm/Support/CommandLine.h"
 #include "llvm/Support/Error.h"
 #include "llvm/Support/FileSystem.h"
@@ -324,9 +327,22 @@ int main(int argc, const char** argv) {
     // would never fire on the real header chain (LP4 risk R1).
     std::vector<std::string> source_paths{input_path};
     clang::tooling::ClangTool tool(parser.getCompilations(), source_paths);
-    // Suppress diagnostics: the MVP transpiler does not need to surface
-    // parse errors (the user will re-see them in the downstream compile).
-    tool.setDiagnosticConsumer(new clang::IgnoringDiagConsumer());
+    // PM3-1: route diagnostics through TextDiagnosticPrinter(llvm::errs())
+    // so the user sees Clang's warnings / errors under the standalone
+    // driver — mirroring the plugin path at
+    // `transpiler/src/plugin.cpp:395-398` which hands the nested
+    // CompilerInstance the same printer over `cloned->getDiagnosticOpts()`.
+    // Prior to PM3-1 we installed `clang::IgnoringDiagConsumer` on the
+    // theory that the downstream compile would re-surface any parse
+    // errors; that left every quantum-specific diagnostic introduced by
+    // PM3-2..PM3-6 invisible under the standalone driver. The
+    // `DiagnosticOptions` local is ref-counted by the printer
+    // (IntrusiveRefCntPtr field), so a heap allocation with an initial
+    // ref-bump via `IntrusiveRefCntPtr` is the canonical idiom.
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> diag_opts(
+        new clang::DiagnosticOptions());
+    tool.setDiagnosticConsumer(
+        new clang::TextDiagnosticPrinter(llvm::errs(), diag_opts.get()));
 
     // Inject -resource-dir so libTooling can find its builtin headers
     // (stdarg.h, stddef.h, etc.). Without this, the Clang driver fails to
