@@ -95,6 +95,53 @@ target_compile_definitions(test_plugin_api_compile PRIVATE
 add_test(NAME test_plugin_api_compile COMMAND test_plugin_api_compile)
 set_tests_properties(test_plugin_api_compile PROPERTIES LABELS "transpiler")
 
+# ── Unit test: PM4-2 plugin_registry.cpp ────────────────────────────────────
+# Exercises Registry::{register_matcher, register_op, invoke_all,
+# find_render_fn} plus the `registrars()` Meyer singleton + `StaticRegistrar`
+# link-time path. Collision detection is checked via fork-based subprocess
+# assertions (the collision path calls `std::abort`, the test verifies the
+# child terminates on SIGABRT). The test links `plugin_registry.cpp` and
+# drags in `clangASTMatchers` because `invoke_all` takes a `MatchFinder&`
+# whose ctor/dtor live in that library.
+add_executable(test_plugin_registry
+    test_plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_plugin_registry PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_plugin_registry PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_plugin_registry PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_PLUGIN_REG NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_plugin_registry PRIVATE
+    ${LLVM_DEFS_LIST_PLUGIN_REG})
+# MatchFinder's ctor/dtor live in libclangASTMatchers; we only need the
+# minimum to construct + destruct one. Mirror the shared-vs-static split
+# used elsewhere in this file.
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_plugin_registry PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_plugin_registry PRIVATE
+        clangASTMatchers
+        clangBasic
+        clangAST
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN_REG support)
+    target_link_libraries(test_plugin_registry PRIVATE
+        ${LLVM_LIBS_PLUGIN_REG})
+endif()
+add_test(NAME test_plugin_registry COMMAND test_plugin_registry)
+set_tests_properties(test_plugin_registry PROPERTIES LABELS "transpiler")
+
 # ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
 # Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
 # wrapper — so the test does NOT need to link any LibTooling components. It

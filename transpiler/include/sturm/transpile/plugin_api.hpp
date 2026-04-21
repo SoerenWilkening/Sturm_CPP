@@ -63,6 +63,8 @@
 #include <functional>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -162,6 +164,31 @@ public:
     void register_op(std::string_view kind_id,
                      MatcherRegisterFn fn,
                      UncomputeRenderFn render_fn);
+
+    /// Drain every matcher-registration callback accumulated by the
+    /// `register_matcher` / `register_op` calls above, in insertion order.
+    /// Called by `TranspileConsumer`'s constructor (PM4-3) after the
+    /// in-tree matcher pool is seeded and after the runtime-dlopen /
+    /// link-time drains have filled this Registry (plan §6).
+    void invoke_all(clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+    /// Look up the uncompute renderer registered for a given `kind_id`.
+    /// Returns `nullptr` when no renderer is registered. The PM4-3
+    /// `render_uncompute` dispatch (`case QOpKind::PLUGIN:`) uses this
+    /// against `QOperation::plugin_kind_id`.
+    const UncomputeRenderFn* find_render_fn(std::string_view kind_id) const;
+
+private:
+    // `register_matcher` and `register_op` share no key domain — a plugin
+    // may register a matcher named "foo" AND an op with `kind_id="foo"`
+    // without a collision. The two sets below are independent.
+    std::unordered_set<std::string> matcher_names_;
+    std::unordered_map<std::string, UncomputeRenderFn> render_fns_;
+
+    // Single vector drained by `invoke_all` in insertion order (§6
+    // ordering matters when two runtime-dlopen plugins compete for the
+    // same AST anchor).
+    std::vector<MatcherRegisterFn> matchers_;
 };
 
 /// Holds one link-time registration function registered via

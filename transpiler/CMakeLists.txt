@@ -70,6 +70,10 @@ add_executable(sturm-transpile
     src/uncompute_pass.cpp
     src/source_map.cpp
     src/emitter.cpp
+    # PM4-2: Registry implementation + Meyer's-singleton vector for
+    # link-time registrars. Plugin-path matchers (PM4-4 dlopen, PM4-3
+    # in-process Registry& threading) resolve into this TU.
+    src/plugin_registry.cpp
 )
 target_include_directories(sturm-transpile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -258,6 +262,10 @@ add_library(sturm-transpile-plugin SHARED
     src/uncompute_pass.cpp
     src/source_map.cpp
     src/emitter.cpp
+    # PM4-2: Registry implementation + Meyer's-singleton vector for
+    # link-time registrars. Plugin-path matchers (PM4-4 dlopen, PM4-3
+    # in-process Registry& threading) resolve into this TU.
+    src/plugin_registry.cpp
 )
 target_include_directories(sturm-transpile-plugin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
