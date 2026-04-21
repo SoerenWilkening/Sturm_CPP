@@ -587,6 +587,168 @@ else()
                    "LLVM_TOOLS_BINARY_DIR)")
 endif()
 
+# ── PM4-8 smoke: runtime-dlopen path via `PLUGINS` CMake argument ───────────
+# End-to-end gate for the `add_quantum_executable(... PLUGINS
+# $<TARGET_FILE:sturm-pm4-demo-plugin>)` pipeline added in PM4-5
+# (`sturm-4oyr.6`). The smoke has two halves:
+#
+#   (1) A user fixture target `pm4_smoke_dlopen_fixture` compiled
+#       through `add_quantum_executable(... PLUGINS
+#       $<TARGET_FILE:sturm-pm4-demo-plugin>)`. This is the PRIMARY
+#       artifact the PM4-8 contract asks for — if the `PLUGINS` cc1
+#       arg pattern ever regressed (typo in `-Xclang` token order,
+#       wrong generator expression resolution, `load=<path>` mishandled
+#       by `plugin.cpp`'s `ParseArgs`, etc.), this target would fail to
+#       compile and a `ctest -R pm4_smoke_dlopen` run would never even
+#       reach the `pm4_smoke_dlopen` binary's `main()`.
+#
+#   (2) A test binary `pm4_smoke_dlopen` that:
+#         - confirms the fixture target's `.o` + dump-to sibling are on
+#           disk (proof the PLUGINS-driven compile ran to completion);
+#         - replays a `verbose + load=<demo>` compile against a scratch
+#           non-Sturm TU and asserts the demo's `pm4.demo.tag` kind_id
+#           shows up in the host's probe Registry trace;
+#         - conditionally checks the rewritten buffer for the
+#           `pm4_demo_tag_inverse(` sentinel (deferred today because
+#           PM4-3 / `sturm-4oyr.4` has not merged the
+#           `QOpKind::PLUGIN` dispatch — see the test binary's
+#           file-level comment for the handoff plan).
+#
+# The ctest case itself is wired through `pm4_smoke_dlopen.cmake` so
+# failure diagnostics are captured + surfaced by the same relay
+# posture `pm4_smoke_linktime` uses.
+#
+# Fixture target: `pm4_smoke_dlopen_fixture` ─────────────────────────────
+# Source: `transpiler/tests/fixtures/pm4_smoke_dlopen_fixture.cpp`
+# (a minimal `int main() { return 0; }` TU — no `sturm::qbool` ops, so
+# the in-tree matcher pool fires zero times and the rewritten buffer
+# is the input verbatim + the PM1-7 `AUTO-GENERATED` header). The
+# fixture's sole purpose is to drive `add_quantum_executable(...
+# PLUGINS <demo>)` end-to-end; the in-tree matcher pool's behaviour
+# is pinned by every other transpiler test under this directory.
+#
+# Why `add_quantum_executable` rather than a manual `add_executable`
+# -------------------------------------------------------------------
+# The PM4-8 issue description explicitly requires "user code must be
+# compiled via `add_quantum_executable(... PLUGINS $<TARGET_FILE:
+# sturm-pm4-demo-plugin>)`". Threading the helper here — instead of
+# shelling out to clang++ with a hand-spelled `-Xclang ... load=`
+# pattern — pins the PUBLIC build-system surface, not just the
+# underlying cc1 arg list. A regression in the helper's keyword
+# parsing, the `PLUGINS` multi-value plumbing, or the per-source
+# `COMPILE_OPTIONS` append would be caught here. The `verbose` replay
+# in gate B of the test binary exercises the plugin-side leg
+# separately against a scratch source.
+#
+# The `add_quantum_executable` helper builds the target under
+# `plugin` mode by default. The `plugin` mode path (documented in
+# `cmake/SturmTranspile.cmake:65-72`) is exactly what the PM4-5
+# `PLUGINS` argument is defined against — `dump` mode would fail the
+# helper with a FATAL_ERROR because PLUGINS has no cc1 slot in the
+# standalone driver path. This test therefore assumes default mode;
+# a build reconfigured with `-DSTURM_TRANSPILE_MODE=dump` would
+# silently exclude the PM4-8 CTest at configure time.
+#
+# `STURM_PLUGIN_CLANGXX_BIN` is also required because the test's
+# `gate_verbose_load_observes_kind_id` shells out to clang++ for the
+# verbose-replay leg. The variable is set by `find_program` in the
+# `test_plugin_load` block above; if clang++ is not reachable next to
+# `LLVM_TOOLS_BINARY_DIR`, both `test_plugin_load` and
+# `pm4_smoke_dlopen` are skipped the same way.
+if(STURM_TRANSPILE_MODE STREQUAL "plugin" AND STURM_PLUGIN_CLANGXX_BIN)
+    add_quantum_executable(pm4_smoke_dlopen_fixture
+        fixtures/pm4_smoke_dlopen_fixture.cpp
+        PLUGINS $<TARGET_FILE:sturm-pm4-demo-plugin>)
+    # `add_quantum_executable` only wires `add_dependencies(<target>
+    # sturm-transpile-plugin)` for the host plugin. The DEMO plugin
+    # path is threaded via `-Xclang ... load=$<TARGET_FILE:...>` but
+    # the helper does NOT add a build-order dependency on it — that
+    # would require the helper to know about every PLUGINS entry at
+    # configure time, which it deliberately does not (PLUGINS paths
+    # are raw strings, not necessarily CMake targets). Add the
+    # explicit dependency here so the demo `.so` is built before the
+    # fixture compile tries to `load=` it.
+    add_dependencies(pm4_smoke_dlopen_fixture sturm-pm4-demo-plugin)
+
+    # ── Test binary: `pm4_smoke_dlopen` ─────────────────────────────────
+    # Standalone `int main()` harness (same posture as
+    # `test_plugin_load`). Takes five compile-time macros describing
+    # the on-disk artifacts the fixture target produced, so the
+    # binary has zero configure-time knowledge of the build-tree
+    # layout. The `$<TARGET_FILE:...>` / `$<TARGET_OBJECTS:...>`
+    # generator expressions resolve at build time against the
+    # fixture target declared above.
+    #
+    # `$<TARGET_OBJECTS:...>` would give us a ;-separated list of
+    # every object the target produced; for a single-source target
+    # like `pm4_smoke_dlopen_fixture` that is exactly one `.o`. We
+    # pass the path as a double-quoted string so the macro expands
+    # into a C string literal inside the test TU.
+    add_executable(pm4_smoke_dlopen
+        pm4_smoke_dlopen.cpp
+    )
+    target_compile_features(pm4_smoke_dlopen PRIVATE cxx_std_20)
+    target_compile_definitions(pm4_smoke_dlopen PRIVATE
+        STURM_PLUGIN_PATH="$<TARGET_FILE:sturm-transpile-plugin>"
+        STURM_PLUGIN_CLANGXX="${STURM_PLUGIN_CLANGXX_BIN}"
+        STURM_PM4_DEMO_PLUGIN_PATH="$<TARGET_FILE:sturm-pm4-demo-plugin>"
+        # The fixture target's final executable path. `$<TARGET_FILE:...>`
+        # resolves to the linked artifact (no extension on Linux,
+        # `.exe` on Windows), produced by the nested EmitObjAction
+        # driving a clang++ link step. Its existence on disk is our
+        # "the PLUGINS-driven compile + nested codegen + link all
+        # completed" gate — a silent plugin load failure earlier in
+        # the pipeline would have left this file absent.
+        STURM_SMOKE_DLOPEN_FIXTURE_OBJ="$<TARGET_FILE:pm4_smoke_dlopen_fixture>"
+        # The dump-to mirror path. `add_quantum_executable`'s plugin
+        # mode computes `${CMAKE_BINARY_DIR}/sturm_gen/<relpath>` per
+        # source (see `cmake/SturmTranspile.cmake:297-301`). The
+        # relative path this resolves to is:
+        #   transpiler/tests/fixtures/pm4_smoke_dlopen_fixture.cpp
+        # because the fixture source lives under
+        # `${CMAKE_SOURCE_DIR}/transpiler/tests/fixtures/`.
+        STURM_SMOKE_DLOPEN_DUMP_PATH="${CMAKE_BINARY_DIR}/sturm_gen/transpiler/tests/fixtures/pm4_smoke_dlopen_fixture.cpp"
+    )
+    # Build-order dependencies: the test binary reads artifacts the
+    # fixture target + the host plugin + the demo plugin produce, so
+    # all three must exist on disk before the test binary's `main()`
+    # runs. `add_quantum_executable` already set up the
+    # `pm4_smoke_dlopen_fixture → sturm-transpile-plugin` edge; we
+    # add the `pm4_smoke_dlopen → pm4_smoke_dlopen_fixture` edge +
+    # the `pm4_smoke_dlopen → sturm-pm4-demo-plugin` edge (needed for
+    # `gate_verbose_load_observes_kind_id`'s replay compile, which
+    # dlopens the demo .so against a scratch TU).
+    add_dependencies(pm4_smoke_dlopen
+        pm4_smoke_dlopen_fixture
+        sturm-transpile-plugin
+        sturm-pm4-demo-plugin)
+
+    # Wrap the ctest invocation in `pm4_smoke_dlopen.cmake` so the
+    # test script mirrors the `.cmake` shape used by
+    # `pm4_smoke_linktime` — outer harness runs the binary, surfaces
+    # a clear failure message if the exit is non-zero, documents the
+    # contract this smoke pins (see the .cmake file's comment block).
+    add_test(NAME pm4_smoke_dlopen
+        COMMAND ${CMAKE_COMMAND}
+            -DTEST_BIN=$<TARGET_FILE:pm4_smoke_dlopen>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/pm4_smoke_dlopen.cmake
+    )
+    set_tests_properties(pm4_smoke_dlopen PROPERTIES LABELS "transpiler")
+else()
+    if(NOT STURM_TRANSPILE_MODE STREQUAL "plugin")
+        message(STATUS "sturm-transpile: pm4_smoke_dlopen skipped — "
+                       "STURM_TRANSPILE_MODE is '${STURM_TRANSPILE_MODE}', "
+                       "not 'plugin'. PM4-8 exercises the PLUGINS cc1 "
+                       "arg threading which only applies to plugin mode.")
+    else()
+        message(STATUS "sturm-transpile: pm4_smoke_dlopen skipped — "
+                       "clang++ not found next to "
+                       "LLVM_TOOLS_BINARY_DIR (STURM_PLUGIN_CLANGXX_BIN "
+                       "unset). The test's verbose-replay leg needs a "
+                       "reachable clang++ driver.")
+    endif()
+endif()
+
 # ── PM4-10 smoke: link-time registrar path (`STURM_PM4_LINK_DEMO=ON`) ───────
 # Only registered when `-DSTURM_PM4_LINK_DEMO=ON` is on the configure
 # command line (the matching `option()` lives in `transpiler/CMakeLists.txt`
