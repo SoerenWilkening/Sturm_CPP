@@ -868,6 +868,172 @@ else()
     endif()
 endif()
 
+# ── PM4-9 smoke 3: pm4_dogfood_snapshot (byte-identity post-migration) ─────
+# Runs the standalone `sturm-transpile` binary against the four Phase B
+# compound-assign fixtures under `tests/transpiler/fixtures/` (add / sub /
+# mul / div `_assign_const`) and byte-compares each generated sibling
+# against its locked-down `.expected.cpp` golden. Mirrors the in-tree
+# `snapshot_{add,sub,mul,div}_assign_const` CTest gates but is co-located
+# with the other `pm4_smoke_*` binaries so `ctest -R pm4_` surfaces the
+# full PM4 smoke set in one group. The contract this smoke pins: the
+# PM4-6 dogfood migration of the four PB matchers to the Registry API
+# (`STURM_REGISTER_PLUGIN(PBDogfoodPlugin)` at `matcher_qint_const.cpp:
+# 280`) is transparent to the rewritten-output surface.
+#
+# No dependency on a plugin `.so`: the standalone driver already embeds
+# every in-tree matcher via its object-file link line, so the dogfood
+# migration's link-time `StaticRegistrar` ctors fire during static-init
+# of `sturm-transpile` itself. The PB matchers are reachable through the
+# consumer ctor's drain of `registrars()` without any runtime dlopen.
+add_executable(pm4_dogfood_snapshot
+    pm4_dogfood_snapshot.cpp
+)
+target_compile_features(pm4_dogfood_snapshot PRIVATE cxx_std_20)
+target_compile_definitions(pm4_dogfood_snapshot PRIVATE
+    STURM_TRANSPILE_BIN="$<TARGET_FILE:sturm-transpile>"
+    # The four PB fixtures (`add_assign_const.cpp` / `sub_assign_const.cpp`
+    # / `mul_assign_const.cpp` / `div_assign_const.cpp`) + their
+    # `.expected.cpp` goldens live under `tests/transpiler/fixtures/`.
+    # Thread the absolute path in at configure time so the binary does
+    # not have to guess at the source-tree layout — mirrors the
+    # `STURM_TRANSPILE_FIXTURES_DIR` macro the skip test uses.
+    STURM_PM4_FIXTURES_DIR="${CMAKE_SOURCE_DIR}/tests/transpiler/fixtures"
+    # Scratch-output root: the test binary creates per-fixture
+    # subdirectories under this path and the `sturm-transpile
+    # --output-dir` argument writes the generated sibling into them.
+    # Same shape as the `OUTPUT_DIR` parameter `run_snapshot.cmake`
+    # passes through at line 40 of `tests/transpiler/CMakeLists.txt`.
+    STURM_PM4_SCRATCH_DIR="${CMAKE_CURRENT_BINARY_DIR}/gen/pm4_dogfood_snapshot"
+)
+add_dependencies(pm4_dogfood_snapshot sturm-transpile)
+add_test(NAME pm4_dogfood_snapshot
+    COMMAND ${CMAKE_COMMAND}
+        -DTEST_BIN=$<TARGET_FILE:pm4_dogfood_snapshot>
+        -P ${CMAKE_CURRENT_SOURCE_DIR}/pm4_dogfood_snapshot.cmake
+)
+set_tests_properties(pm4_dogfood_snapshot PROPERTIES LABELS "transpiler")
+
+# ── PM4-9 smoke 4: pm4_missing_plugin_errors ───────────────────────────────
+# Drives the `add_quantum_executable(... PLUGINS <path>)` cc1 arg pattern
+# (`-Xclang -plugin-arg-sturm-transpile -Xclang load=<path>`) with a path
+# that is guaranteed NOT to exist on any CI host, and asserts that the
+# compile fails with the documented `sturm-transpile plugin: failed to
+# dlopen` stderr prefix (`plugin.cpp:195-198`). Also pins that `verbose`
+# mode does NOT convert the fatal dlopen failure into a silent pass.
+#
+# Gated on `STURM_PLUGIN_CLANGXX_BIN`: the test shells out to clang++ for
+# its single probe, so without a reachable driver the smoke cannot run.
+# Same gating posture as `test_plugin_load` / `pm4_smoke_dlopen`.
+if(STURM_PLUGIN_CLANGXX_BIN)
+    add_executable(pm4_missing_plugin_errors
+        pm4_missing_plugin_errors.cpp
+    )
+    target_compile_features(pm4_missing_plugin_errors PRIVATE cxx_std_20)
+    target_compile_definitions(pm4_missing_plugin_errors PRIVATE
+        STURM_PLUGIN_PATH="$<TARGET_FILE:sturm-transpile-plugin>"
+        STURM_PLUGIN_CLANGXX="${STURM_PLUGIN_CLANGXX_BIN}"
+    )
+    add_dependencies(pm4_missing_plugin_errors sturm-transpile-plugin)
+    add_test(NAME pm4_missing_plugin_errors
+        COMMAND ${CMAKE_COMMAND}
+            -DTEST_BIN=$<TARGET_FILE:pm4_missing_plugin_errors>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/pm4_missing_plugin_errors.cmake
+    )
+    set_tests_properties(pm4_missing_plugin_errors PROPERTIES
+        LABELS "transpiler")
+else()
+    message(STATUS "sturm-transpile: pm4_missing_plugin_errors skipped — "
+                   "clang++ not found next to LLVM_TOOLS_BINARY_DIR "
+                   "(STURM_PLUGIN_CLANGXX_BIN unset).")
+endif()
+
+# ── PM4-9 smoke 5: pm4_two_plugins_independent ─────────────────────────────
+# Pins the Registry's duplicate-`kind_id` collision detection
+# (`plugin_registry.cpp:108-113`) end-to-end across two independently
+# built runtime-loadable MODULE plugins that both claim `pm4.demo.tag`.
+#
+# The "independent second plugin" is built here as
+# `sturm-pm4-collision-plugin` from
+# `transpiler/tests/fixtures/pm4_collision_plugin.cpp` — a minimal
+# MODULE library whose `sturm_register_plugin_v1` entry calls
+# `register_op("pm4.demo.tag", ...)` with a different renderer body
+# (`pm4_collision_tag_inverse(` instead of `pm4_demo_tag_inverse(`) so
+# the two plugins are fully independent on the source surface. The
+# single-source-of-truth for the collision target string lives on the
+# first demo plugin at `examples/plugin_demo/plugin_demo.cpp:89`.
+#
+# Build target (collision plugin MODULE library):
+# - MODULE library (dlopen-only), same posture as the first demo plugin.
+# - Export `PREFIX "lib"` so the filename is predictable
+#   (`libsturm-pm4-collision-plugin.so` on Linux /`.dylib` on macOS).
+# - On macOS, `-undefined dynamic_lookup` is needed so the plugin's
+#   Registry method references resolve against the host at dlopen time.
+#   Same shape as `examples/plugin_demo/CMakeLists.txt:132-139`.
+if(STURM_PLUGIN_CLANGXX_BIN)
+    add_library(sturm-pm4-collision-plugin MODULE
+        fixtures/pm4_collision_plugin.cpp
+    )
+    target_include_directories(sturm-pm4-collision-plugin PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${LLVM_INCLUDE_DIRS}
+        ${CLANG_INCLUDE_DIRS}
+    )
+    if(NOT LLVM_ENABLE_RTTI)
+        target_compile_options(sturm-pm4-collision-plugin PRIVATE
+            -fno-rtti)
+    endif()
+    target_compile_features(sturm-pm4-collision-plugin PRIVATE cxx_std_20)
+    separate_arguments(LLVM_DEFS_LIST_PM4_COLLISION NATIVE_COMMAND
+        "${LLVM_DEFINITIONS}")
+    target_compile_definitions(sturm-pm4-collision-plugin PRIVATE
+        ${LLVM_DEFS_LIST_PM4_COLLISION})
+    set_target_properties(sturm-pm4-collision-plugin PROPERTIES
+        PREFIX "lib"
+    )
+    if(APPLE)
+        target_link_options(sturm-pm4-collision-plugin PRIVATE
+            "LINKER:-undefined,dynamic_lookup")
+    endif()
+
+    add_executable(pm4_two_plugins_independent
+        pm4_two_plugins_independent.cpp
+    )
+    target_compile_features(pm4_two_plugins_independent PRIVATE cxx_std_20)
+    target_compile_definitions(pm4_two_plugins_independent PRIVATE
+        STURM_PLUGIN_PATH="$<TARGET_FILE:sturm-transpile-plugin>"
+        STURM_PLUGIN_CLANGXX="${STURM_PLUGIN_CLANGXX_BIN}"
+        STURM_PM4_DEMO_PLUGIN_PATH="$<TARGET_FILE:sturm-pm4-demo-plugin>"
+        STURM_PM4_COLLISION_PLUGIN_PATH="$<TARGET_FILE:sturm-pm4-collision-plugin>"
+    )
+    # Under `STURM_PM4_LINK_DEMO=ON`, the demo plugin's registrar is
+    # baked into `sturm-transpile-plugin.so` at link time. The test's
+    # single-plugin control experiment (gate C) would then itself
+    # trigger the collision (first runtime `load=<demo>` + baked-in
+    # link-time registration), so we defer gate C under that config —
+    # gate B remains the authoritative collision assertion. Mirrors the
+    # `STURM_PM4_LINK_DEMO_ENABLED` posture used by
+    # `test_plugin_load.cpp:115-119` and `pm4_smoke_dlopen.cpp:322-326`.
+    if(STURM_PM4_LINK_DEMO)
+        target_compile_definitions(pm4_two_plugins_independent PRIVATE
+            STURM_PM4_LINK_DEMO_ENABLED=1)
+    endif()
+    add_dependencies(pm4_two_plugins_independent
+        sturm-transpile-plugin
+        sturm-pm4-demo-plugin
+        sturm-pm4-collision-plugin)
+    add_test(NAME pm4_two_plugins_independent
+        COMMAND ${CMAKE_COMMAND}
+            -DTEST_BIN=$<TARGET_FILE:pm4_two_plugins_independent>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/pm4_two_plugins_independent.cmake
+    )
+    set_tests_properties(pm4_two_plugins_independent PROPERTIES
+        LABELS "transpiler")
+else()
+    message(STATUS "sturm-transpile: pm4_two_plugins_independent skipped "
+                   "— clang++ not found next to LLVM_TOOLS_BINARY_DIR "
+                   "(STURM_PLUGIN_CLANGXX_BIN unset).")
+endif()
+
 # ── PM4-10 smoke: link-time registrar path (`STURM_PM4_LINK_DEMO=ON`) ───────
 # Only registered when `-DSTURM_PM4_LINK_DEMO=ON` is on the configure
 # command line (the matching `option()` lives in `transpiler/CMakeLists.txt`
