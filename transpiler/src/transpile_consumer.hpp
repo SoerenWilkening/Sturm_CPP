@@ -37,6 +37,7 @@
 #include "clang/AST/ASTConsumer.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
+#include "diag_context.hpp"
 #include "routine_registry.hpp"
 
 #include <string>
@@ -110,6 +111,17 @@ private:
     // at this exact path (header + rewritten buffer) instead of
     // resolve_output_path(source_path_, output_dir_).
     std::string dump_transpiled_path_;
+
+    // PM3-0: shared DiagContext threaded into PM3 matcher registrations.
+    // Constructed from `ci_.getDiagnostics()` in the ctor init list so
+    // the engine reference binds to the same DiagnosticsEngine the
+    // PM3-1 `TextDiagnosticPrinter` is attached to (standalone driver)
+    // or the plugin's parent CompilerInstance (plugin mode). PM3-0 only
+    // constructs this member — it is not yet threaded into any matcher
+    // layer. PM3-2 .. PM3-6 extend the matcher signatures to accept
+    // `DiagContext&` and replace raw `fprintf` / `Report` call sites
+    // with `diag_.report_*(...)` invocations.
+    DiagContext diag_;
 
     QUnit unit_;
     // Phase I PI-1: context-wide forward/adjoint map populated by the

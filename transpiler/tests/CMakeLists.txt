@@ -318,6 +318,7 @@ set_tests_properties(test_transpile_skip PROPERTIES LABELS "transpiler")
 add_executable(test_transpile_consumer
     test_transpile_consumer.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/transpile_consumer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp

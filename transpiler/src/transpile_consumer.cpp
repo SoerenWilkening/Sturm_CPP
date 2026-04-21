@@ -38,7 +38,20 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
       mode_(mode),
       source_path_(std::move(source_path)),
       output_dir_(std::move(output_dir)),
-      dump_transpiled_path_(std::move(dump_transpiled_path)) {
+      dump_transpiled_path_(std::move(dump_transpiled_path)),
+      // PM3-0: capture the parent CompilerInstance's DiagnosticsEngine
+      // into the shared diag context. Matchers registered below that
+      // fire PM3 diagnostics (PM3-2 .. PM3-6) will receive a reference
+      // to this member; PM3-0 is scaffold only and does not yet thread
+      // it through. The `(void)diag_;` below silences the
+      // -Wunused-private-field warning for the interim — the next
+      // sub-issue removes it.
+      diag_(ci.getDiagnostics()) {
+    // PM3-0: silence `-Wunused-private-field` on `diag_` for the
+    // scaffold slice. Sub-issues PM3-2 .. PM3-6 thread `diag_` into
+    // the matcher registrations immediately below and this line is
+    // removed.
+    (void)diag_;
     // Phase I PI-1: the routine registry matcher runs first so the
     // map is built before any PI-2+ routine-call matcher consults
     // it. Placing registration at the top of the consumer body

@@ -45,6 +45,7 @@ message(STATUS "sturm-transpile: using LLVM ${LLVM_PACKAGE_VERSION} "
 add_executable(sturm-transpile
     src/main.cpp
     src/transpile_consumer.cpp
+    src/diag_context.cpp
     src/io.cpp
     src/skip.cpp
     src/qir.cpp
@@ -230,6 +231,7 @@ endif()
 add_library(sturm-transpile-plugin SHARED
     src/plugin.cpp
     src/transpile_consumer.cpp
+    src/diag_context.cpp
     src/io.cpp
     src/skip.cpp
     src/qir.cpp
