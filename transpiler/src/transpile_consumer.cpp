@@ -40,18 +40,11 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
       output_dir_(std::move(output_dir)),
       dump_transpiled_path_(std::move(dump_transpiled_path)),
       // PM3-0: capture the parent CompilerInstance's DiagnosticsEngine
-      // into the shared diag context. Matchers registered below that
-      // fire PM3 diagnostics (PM3-2 .. PM3-6) will receive a reference
-      // to this member; PM3-0 is scaffold only and does not yet thread
-      // it through. The `(void)diag_;` below silences the
-      // -Wunused-private-field warning for the interim — the next
-      // sub-issue removes it.
+      // into the shared diag context. Matchers that fire PM3
+      // diagnostics receive a reference to this member; the PM3-2
+      // sub-issue cashed in the first slot by wiring the PH-3
+      // outer-var guard through it.
       diag_(ci.getDiagnostics()) {
-    // PM3-0: silence `-Wunused-private-field` on `diag_` for the
-    // scaffold slice. Sub-issues PM3-2 .. PM3-6 thread `diag_` into
-    // the matcher registrations immediately below and this line is
-    // removed.
-    (void)diag_;
     // Phase I PI-1: the routine registry matcher runs first so the
     // map is built before any PI-2+ routine-call matcher consults
     // it. Placing registration at the top of the consumer body
@@ -219,7 +212,8 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // registration order on a given node, so placing this register
     // call LAST among the mutation matchers is the load-bearing
     // ordering invariant for PH-3.
-    sturm::transpile::register_outer_var_guard_matcher(finder_, unit_);
+    sturm::transpile::register_outer_var_guard_matcher(
+        finder_, unit_, diag_);
     // Phase I PI-2: the user-defined-routine call matcher runs
     // after the Phase H PH-2 brace-wrap matcher, after the Phase
     // A/B/C compound-assign matchers, and after PH-3's outer-var

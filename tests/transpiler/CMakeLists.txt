@@ -2666,3 +2666,39 @@ add_test(
 set_tests_properties(dropped_quantum_return_diagnostic_void_cast PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PM3-2: plugin_diagnostic_outer_var_guard ──────────────────────────────
+#
+# Pins the PM3-2 end-to-end wiring: the PH-3 outer-variable-mutation
+# guard (`matcher_outer_var_guard.cpp`) routes its diagnostic through
+# the shared `DiagContext` (PM3-0) + `DiagnosticsEngine` +
+# `TextDiagnosticPrinter` (PM3-1) path, replacing the pre-PM3-2 raw
+# `fprintf(stderr, ...)` output. Drives the in-tree `sturm-transpile`
+# binary against the existing `for_outer_xor_reject.cpp` fixture (reused
+# from the Phase H snapshot tests — the `a ^= b;` inside a for-body on
+# an outer-scoped qbool `a`) and asserts the PM3-2 contract via
+# `check_outer_var_guard_diagnostic.cmake`:
+#
+#   - Clang-formatted `<file>:<line>:<col>: warning: STURM: ...`
+#     — stderr cites the user's `for_outer_xor_reject.cpp:<line>:`.
+#   - Format fragment `modified inside` is present (pins the
+#     locked-down `DiagContext::report_outer_var_mutation` message).
+#   - `<memory-buffer>` never surfaces — `getFileLoc(...)` plumbing is
+#     honoured.
+#   - Process exits zero (Warning severity, not Error; compilation
+#     continues so every PH-3 mutation is surfaced in a single pass).
+#
+# EXPECTED_LINE is hard-coded to 24 — the line of `a ^= b;` inside the
+# fixture's for-body. If the fixture gains or loses preamble lines,
+# bump this number to match.
+add_test(
+    NAME plugin_diagnostic_outer_var_guard
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/for_outer_xor_reject.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_outer_var_guard
+            -DEXPECTED_LINE=24
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_outer_var_guard_diagnostic.cmake)
+set_tests_properties(plugin_diagnostic_outer_var_guard PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

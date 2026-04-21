@@ -50,6 +50,11 @@ class SourceManager;
 
 namespace sturm::transpile {
 
+// PM3-2: forward declaration so the PH-3 guard's registration helper
+// can accept a `DiagContext&` argument without dragging the full
+// `transpiler/src/diag_context.hpp` into the public matcher header.
+struct DiagContext;
+
 /// Register the MVP `qbool tmp = a | b;` matcher against `finder`, directing
 /// every match into `unit`. `unit` must outlive the MatchFinder's run. Call
 /// at most once per QUnit.
@@ -325,8 +330,16 @@ void reset_brace_wrap_detection_count_for_test();
 /// flagged. Contract mirrors the other `register_*_matcher` helpers —
 /// call at most once per QUnit; the QUnit must outlive the MatchFinder's
 /// run.
+///
+/// PM3-2: the matcher's stderr diagnostic is now routed through the
+/// shared `DiagContext` so the report lands on the parent
+/// CompilerInstance's `DiagnosticsEngine` (the PM3-1
+/// `TextDiagnosticPrinter` under the standalone driver, the in-process
+/// printer under the plugin). The `diag` reference must outlive the
+/// MatchFinder's run; the consumer owns it as a member.
 void register_outer_var_guard_matcher(
-    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit,
+    DiagContext& diag);
 
 /// Test-only instrumentation (Phase H / PH-3). Counts the number of
 /// outer-variable mutations the guard matcher has flagged (i.e. the

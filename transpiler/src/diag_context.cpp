@@ -109,14 +109,31 @@ void DiagContext::report_dropped_quantum_return(
 
 void DiagContext::report_outer_var_mutation(
     clang::SourceLocation loc,
+    std::string_view kind,
     std::string_view name,
     unsigned decl_line) {
-    (void)loc;
-    (void)name;
-    (void)decl_line;
-    // TODO(backend): PM3-2 wires the detection site here. Expected
-    // body replaces the std::fprintf(stderr, ...) call at
-    // matcher_outer_var_guard.cpp:280-286.
+    // PM3-2: the format string is locked down in the issue
+    // description. `%0` is the type qualifier ("qbool/qint" per the
+    // matcher's current non-discriminating classification), `%1` is
+    // the mutated identifier, `%2` is the 1-based user-source line
+    // the variable was declared on. Warning severity — NOT Error —
+    // because compilation must continue so the user sees every
+    // outer-var mutation in one pass instead of stopping at the
+    // first. The `getOrRegister` cache amortises the diag-ID lookup
+    // to a single call per TU.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Warning,
+        "STURM: %0 '%1' (declared at line %2) is modified inside a "
+        "for/while/if/WHEN body — automatic uncomputation would "
+        "require reverse-loop synthesis. Provide a manual adjoint "
+        "(P9) or restructure.");
+    // `DiagnosticsEngine::Report(...) << arg` takes std::string by
+    // value for the `%N` slot; constructing one from a string_view
+    // is necessary because the builder's operator<< does not have a
+    // string_view overload.
+    diag_.Report(loc, id) << std::string(kind)
+                          << std::string(name)
+                          << decl_line;
 }
 
 } // namespace sturm::transpile

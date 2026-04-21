@@ -171,7 +171,17 @@ struct DiagContext {
     /// inside a for / while / if / WHEN body. Warning severity. Cites
     /// the original decl line so the user can find both halves of the
     /// mutation.
+    ///
+    /// `kind` is the human-readable type qualifier embedded in the
+    /// `%0` slot of the format (e.g. `"qbool/qint"` — the matcher does
+    /// not currently discriminate between the two element types).
+    /// `name` is the mutated identifier (`%1`); `decl_line` is the
+    /// 1-based user-source line at which `name` was declared (`%2`).
+    /// Caller funnels macro-expansion locations through
+    /// `SourceManager::getFileLoc(...)` before handing `loc` over so
+    /// the diagnostic cites user source, not the memory buffer.
     void report_outer_var_mutation(clang::SourceLocation loc,
+                                   std::string_view kind,
                                    std::string_view name,
                                    unsigned decl_line);
 

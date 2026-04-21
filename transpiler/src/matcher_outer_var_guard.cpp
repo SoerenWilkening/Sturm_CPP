@@ -62,6 +62,7 @@
 
 #include "sturm/transpile/matcher.hpp"
 #include "sturm/transpile/qir.hpp"
+#include "diag_context.hpp"
 #include "matcher_common.hpp"
 
 #include "clang/AST/ASTContext.h"
@@ -76,10 +77,10 @@
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 
-#include <cstdio>
 #include <cstring>
 #include <memory>
 #include <string>
+#include <string_view>
 #include <vector>
 
 namespace sturm::transpile {
@@ -243,32 +244,36 @@ static QOperation* find_op_for_call(QUnit& unit, const CXXOperatorCallExpr* call
     return nullptr;
 }
 
-// Emit the PH-3 diagnostic. Format locked-down by the issue description:
-//   <file>:<line>:<col>: error: STURM: qbool/qint '<name>' (declared at
-//     <decl line>) is modified inside a for/while/if/WHEN body —
-//     automatic uncomputation would require reverse-loop synthesis.
-//     Provide a manual adjoint (P9) or restructure.
+// Emit the PH-3 diagnostic via the shared DiagContext. The format
+// string is locked down in `DiagContext::report_outer_var_mutation`:
+//   STURM: %0 '%1' (declared at line %2) is modified inside a
+//   for/while/if/WHEN body — automatic uncomputation would require
+//   reverse-loop synthesis. Provide a manual adjoint (P9) or
+//   restructure.
+//
+// Pre-PM3-2 this function wrote a `<file>:<line>:<col>: error: ...`
+// line directly to stderr via fprintf; PM3-2 routes the same
+// information through `clang::DiagnosticsEngine` so the output is
+// formatted by the parent CompilerInstance's `TextDiagnosticPrinter`
+// and the severity is a proper `Warning` (not a hand-rolled `error:`
+// prefix) — see the issue description for the end-to-end rationale.
 static void emit_diagnostic(const SourceManager& sm,
                             const VarDecl* vd,
-                            const CXXOperatorCallExpr* call) {
+                            const CXXOperatorCallExpr* call,
+                            DiagContext& diag) {
     if (!vd || !call) return;
     const SourceLocation call_loc = call->getBeginLoc();
     const SourceLocation decl_loc = vd->getLocation();
 
     // Resolve the file location (the spelling loc, in case we are in
     // a macro expansion — the user cares about where they wrote the
-    // code, not where the macro expanded).
-    const PresumedLoc call_pl = sm.getPresumedLoc(sm.getFileLoc(call_loc));
+    // code, not where the macro expanded). The PM2-8 source_map
+    // diagnostic test asserts `<memory-buffer>` never appears in
+    // stderr; funnelling through `getFileLoc` is what guarantees the
+    // reported loc resolves to the user's filename rather than the
+    // plugin's nested MemoryBuffer pseudo-path.
+    const SourceLocation file_call_loc = sm.getFileLoc(call_loc);
     const PresumedLoc decl_pl = sm.getPresumedLoc(sm.getFileLoc(decl_loc));
-
-    const char* file = "<unknown>";
-    unsigned line = 0;
-    unsigned col = 0;
-    if (call_pl.isValid()) {
-        file = call_pl.getFilename() ? call_pl.getFilename() : "<unknown>";
-        line = call_pl.getLine();
-        col = call_pl.getColumn();
-    }
 
     unsigned decl_line = 0;
     if (decl_pl.isValid()) {
@@ -277,13 +282,16 @@ static void emit_diagnostic(const SourceManager& sm,
 
     const std::string name = vd->getNameAsString();
 
-    std::fprintf(stderr,
-                 "%s:%u:%u: error: STURM: qbool/qint '%s' (declared at "
-                 "%u) is modified inside a for/while/if/WHEN body — "
-                 "automatic uncomputation would require reverse-loop "
-                 "synthesis. Provide a manual adjoint (P9) or "
-                 "restructure.\n",
-                 file, line, col, name.c_str(), decl_line);
+    // `kind` is a human-readable label embedded in the `%0` slot of
+    // the format. The matcher does not currently discriminate qbool
+    // vs qint_t at the diagnostic site (the Phase A/B/C upstream
+    // matchers already enforced the element-type guards by the time
+    // we are flagging the op), so we hand over the joint label
+    // verbatim — matches the pre-PM3-2 fprintf output.
+    constexpr std::string_view kKind = "qbool/qint";
+
+    diag.report_outer_var_mutation(
+        file_call_loc, kKind, std::string_view(name), decl_line);
 }
 
 // Shared callback body for every mutation operator-kind. The bound
@@ -291,12 +299,13 @@ static void emit_diagnostic(const SourceManager& sm,
 // and its LHS DeclRefExpr.
 class OuterVarGuardCallback : public MatchFinder::MatchCallback {
 public:
-    explicit OuterVarGuardCallback(QUnit* unit) : unit_(unit) {}
+    OuterVarGuardCallback(QUnit* unit, DiagContext* diag)
+        : unit_(unit), diag_(diag) {}
 
     void run(const MatchFinder::MatchResult& r) override {
         const auto* call = r.Nodes.getNodeAs<CXXOperatorCallExpr>("call");
         const auto* lhs  = r.Nodes.getNodeAs<DeclRefExpr>("lhs");
-        if (!call || !lhs || !r.Context) return;
+        if (!call || !lhs || !r.Context || !diag_) return;
 
         const VarDecl* vd = var_decl_of(lhs);
         if (!vd) return;
@@ -329,13 +338,14 @@ public:
         QOperation* op = find_op_for_call(*unit_, call);
         if (!op) return;
 
-        emit_diagnostic(sm, vd, call);
+        emit_diagnostic(sm, vd, call, *diag_);
         op->skip_uncompute = true;
         ++g_outer_var_guard_detection_count;
     }
 
 private:
     QUnit* unit_;
+    DiagContext* diag_;
 };
 
 std::vector<std::unique_ptr<OuterVarGuardCallback>>&
@@ -370,13 +380,14 @@ void add_pattern(MatchFinder& finder, OuterVarGuardCallback* cb,
 } // namespace
 
 void register_outer_var_guard_matcher(
-    clang::ast_matchers::MatchFinder& finder, QUnit& unit) {
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit,
+    DiagContext& diag) {
     // One callback instance handles every mutation operator kind. The
     // pattern per operator is registered separately because MatchFinder
     // does not natively take an "anyOf over overloaded operator names"
     // matcher at the call-expr level.
     auto& pool = outer_var_guard_callback_pool();
-    pool.push_back(std::make_unique<OuterVarGuardCallback>(&unit));
+    pool.push_back(std::make_unique<OuterVarGuardCallback>(&unit, &diag));
     OuterVarGuardCallback* cb = pool.back().get();
 
     // Phase A / PA-3 + PA-4.
