@@ -66,6 +66,35 @@ target_compile_definitions(test_transpile_qir PRIVATE ${LLVM_DEFS_LIST_QIR})
 add_test(NAME test_transpile_qir COMMAND test_transpile_qir)
 set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 
+# ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
+# The PM4-1 public plugin surface lands as a pure header; the Registry
+# method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke
+# test translation unit includes the header, instantiates a `Registry`
+# (ctor is `= default`, so no implementation is linked), and exits 0 to
+# prove the header parses cleanly under the same include + definition
+# set every other transpiler test compiles under. It deliberately does
+# NOT link `plugin_registry.cpp`, so any stray unresolved symbol inside
+# the header (e.g. a mis-declared inline method) surfaces as a link
+# error here — the intended gate for PM4-1 before PM4-2 lands.
+add_executable(test_plugin_api_compile
+    test_plugin_api_compile.cpp
+)
+target_include_directories(test_plugin_api_compile PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_plugin_api_compile PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_plugin_api_compile PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_PLUGIN_API NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_plugin_api_compile PRIVATE
+    ${LLVM_DEFS_LIST_PLUGIN_API})
+add_test(NAME test_plugin_api_compile COMMAND test_plugin_api_compile)
+set_tests_properties(test_plugin_api_compile PROPERTIES LABELS "transpiler")
+
 # ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
 # Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
 # wrapper — so the test does NOT need to link any LibTooling components. It
