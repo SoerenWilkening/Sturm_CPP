@@ -580,6 +580,81 @@ else()
                    "LLVM_TOOLS_BINARY_DIR)")
 endif()
 
+# ── PM4-10 smoke: link-time registrar path (`STURM_PM4_LINK_DEMO=ON`) ───────
+# Only registered when `-DSTURM_PM4_LINK_DEMO=ON` is on the configure
+# command line (the matching `option()` lives in `transpiler/CMakeLists.txt`
+# — see the file-level comment there for the build-posture rationale).
+# When the option is OFF (the default), this CTest case is not declared
+# and a full-suite `ctest` run neither builds nor exercises the
+# link-time path. The PM4-10 workflow asks the user to reconfigure with
+# `-DSTURM_PM4_LINK_DEMO=ON` and rerun CTest to enable the probe.
+#
+# The test binary links `plugin_demo.cpp` + `pm4_link_demo_registrar.cpp`
+# directly — mirroring the PRODUCTION `sturm-transpile-plugin` link line
+# under `STURM_PM4_LINK_DEMO=ON` (the same two TUs get added to the
+# plugin library in that configuration). Linking the registrar shim
+# into this test binary fires its namespace-scope `StaticRegistrar` ctor
+# at process start; the test's `main` then drains the Meyer's-singleton
+# vector and asserts the demo's `pm4.demo.tag` renderer is reachable and
+# emits the expected uncompute text.
+#
+# Linkage mirrors `test_plugin_demo` (plugin_registry.cpp + qir.cpp for
+# the Registry method bodies; shared libclang-cpp / libLLVM when
+# available, fallback to the static per-component archives otherwise —
+# needed because the demo TU's `#include "sturm/transpile/qir.hpp"`
+# transitively pulls `clang/Basic/SourceLocation.h`, whose opaque ctor
+# lives in libclangBasic).
+if(STURM_PM4_LINK_DEMO)
+    add_executable(pm4_smoke_linktime
+        pm4_smoke_linktime.cpp
+        ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/pm4_link_demo_registrar.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    )
+    target_include_directories(pm4_smoke_linktime PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${LLVM_INCLUDE_DIRS}
+        ${CLANG_INCLUDE_DIRS}
+    )
+    if(NOT LLVM_ENABLE_RTTI)
+        target_compile_options(pm4_smoke_linktime PRIVATE -fno-rtti)
+    endif()
+    target_compile_features(pm4_smoke_linktime PRIVATE cxx_std_20)
+    separate_arguments(LLVM_DEFS_LIST_PM4_SMOKE_LT NATIVE_COMMAND
+        "${LLVM_DEFINITIONS}")
+    target_compile_definitions(pm4_smoke_linktime PRIVATE
+        ${LLVM_DEFS_LIST_PM4_SMOKE_LT})
+    if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+        target_link_libraries(pm4_smoke_linktime PRIVATE
+            ${STURM_LIBCLANG_CPP}
+            ${STURM_LIBLLVM}
+        )
+    else()
+        target_link_libraries(pm4_smoke_linktime PRIVATE
+            clangBasic
+        )
+        llvm_map_components_to_libnames(LLVM_LIBS_PM4_SMOKE_LT support)
+        target_link_libraries(pm4_smoke_linktime PRIVATE
+            ${LLVM_LIBS_PM4_SMOKE_LT})
+    endif()
+
+    # Wrap the ctest invocation in `pm4_smoke_linktime.cmake` so the
+    # test script is a self-contained driver (mirrors the `.cmake`
+    # shape the PM4 plan specifies for every `pm4_smoke_*` smoke).
+    # The `.cmake` script is an outer harness that: (1) runs the test
+    # binary, (2) surfaces a clear failure message if the binary exits
+    # non-zero, (3) documents the contract this smoke pins (same
+    # rewritten-output assertion as smoke 1, but via the link-time
+    # path — see the script's file-level comment).
+    add_test(NAME pm4_smoke_linktime
+        COMMAND ${CMAKE_COMMAND}
+            -DTEST_BIN=$<TARGET_FILE:pm4_smoke_linktime>
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/pm4_smoke_linktime.cmake
+    )
+    set_tests_properties(pm4_smoke_linktime PROPERTIES LABELS "transpiler")
+endif()
+
 # ── Integration test: driver ──────────────────────────────────────────────────
 add_executable(test_transpile_driver
     test_driver.cpp

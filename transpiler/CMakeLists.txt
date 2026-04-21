@@ -6,6 +6,28 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+# ── PM4-10 option: statically link the demo plugin's registrar ──────────────
+# When ON, the PM4-7 demo plugin's registrar is baked into
+# `sturm-transpile-plugin` via the `STURM_REGISTER_PLUGIN` macro (link-time
+# path, per docs/implementation_plan_transpiler_phase_m_pm4.md §5). This
+# feeds the PM4-10 smoke test (`pm4_smoke_linktime`) and verifies the
+# Meyer's-singleton drain end-to-end without relying on dlopen.
+#
+# Defaults to OFF so production builds keep `sturm-transpile-plugin` free
+# of demo-plugin symbols. The option is read both here (to add the demo
+# TUs to the plugin library sources) and in `tests/CMakeLists.txt`
+# (to register the `pm4_smoke_linktime` CTest case, which depends on the
+# registrar actually being linked in).
+option(STURM_PM4_LINK_DEMO
+    "Statically link the PM4-7 demo plugin registrar into \
+sturm-transpile-plugin via STURM_REGISTER_PLUGIN (PM4-10 smoke test path)"
+    OFF)
+if(STURM_PM4_LINK_DEMO)
+    message(STATUS "sturm-transpile: STURM_PM4_LINK_DEMO=ON — demo plugin "
+                   "registrar baked into sturm-transpile-plugin "
+                   "(pm4_smoke_linktime enabled)")
+endif()
+
 # ── Locate LLVM + Clang ───────────────────────────────────────────────────────
 # find_package uses LLVM_DIR / Clang_DIR if provided. On Ubuntu 24.04 the
 # relevant config files live under /usr/lib/llvm-17/lib/cmake/{llvm,clang}.
@@ -267,6 +289,25 @@ add_library(sturm-transpile-plugin SHARED
     # in-process Registry& threading) resolve into this TU.
     src/plugin_registry.cpp
 )
+
+# PM4-10: when `STURM_PM4_LINK_DEMO=ON`, bake the demo plugin's registrar
+# into `sturm-transpile-plugin` via the `STURM_REGISTER_PLUGIN` macro.
+# The shim TU (`pm4_link_demo_registrar.cpp`) provides the namespace-
+# scope `StaticRegistrar` that forwards into the demo's
+# `sturm_register_plugin_v1` entry point; the demo's own TU
+# (`examples/plugin_demo/plugin_demo.cpp`) provides that entry point plus
+# the `render_tag_inverse` renderer. Both TUs must be compiled together
+# so the forward declaration in the shim resolves at link time.
+#
+# The option is OFF by default; when OFF, neither TU is compiled into
+# the plugin library and production builds stay demo-free.
+if(STURM_PM4_LINK_DEMO)
+    target_sources(sturm-transpile-plugin PRIVATE
+        ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/src/pm4_link_demo_registrar.cpp
+    )
+endif()
+
 target_include_directories(sturm-transpile-plugin PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
     ${CMAKE_CURRENT_SOURCE_DIR}/src
