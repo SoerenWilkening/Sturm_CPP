@@ -867,12 +867,120 @@ Options, not mutually exclusive:
 > per the 2026-04-20 user decision — the corresponding bullet has
 > been removed below.
 
+> **2026-04-21:** Phase M item "Transpiler pluginization" (PM4)
+> complete. Third-party shared libraries can now register additional
+> AST rewrite matchers + uncompute rules alongside the in-tree ones
+> via two paths: runtime `dlopen` driven by a CMake `PLUGINS <abs.so>`
+> argument (primary), and link-time bake-in through the
+> `STURM_REGISTER_PLUGIN(TypeName)` macro (fallback). ABI is
+> versioned by symbol name (`sturm_register_plugin_v1`) and gated on
+> matching `CLANG_VERSION_STRING` at load time; plugins are leaked to
+> process exit (no `dlclose` in v1). Scope is matchers + uncompute
+> rules only — diagnostics (PM3) and IR passes stay host-private.
+> Dogfooded by migrating Phase B PB-1..PB-4 (`matcher_qint_const.cpp`)
+> through the Registry API with byte-identical snapshot output;
+> `docs/01_principles.md` unchanged — the PM4 surface does not touch
+> B1b (transpile-time inverse registration remains the default), B6
+> (ancilla RAII is unaffected), B9 (the one-global-transpile-time pass
+> is unchanged — plugins contribute matchers, not passes), or B10
+> (`uncompute_*` emission discipline is preserved by the new
+> `case QOpKind::PLUGIN:` renderer arm). Sub-items:
+>
+> - PM4-0 (sturm-4oyr.1): implementation plan skeleton at
+>   `docs/implementation_plan_transpiler_phase_m_pm4.md` — scope, ABI
+>   discipline, `RTLD_LOCAL | RTLD_NOW` rationale, Clang-version gate,
+>   Meyer's-singleton ordering, in-tree → runtime → link-time drain.
+> - PM4-1 (sturm-4oyr.2): public plugin header
+>   `transpiler/include/sturm/transpile/plugin_api.hpp` exposes
+>   `Registry::register_matcher` / `register_op`, `StaticRegistrar`,
+>   the `STURM_REGISTER_PLUGIN(TypeName)` macro, and the
+>   `extern "C" void sturm_register_plugin_v1(Registry&)` entry-point
+>   declaration plus the `STURM_PLUGIN_DEFINE_CLANG_VERSION()` helper.
+> - PM4-2 (sturm-4oyr.3): Registry implementation in
+>   `transpiler/src/plugin_registry.cpp`. Owned by `TranspileConsumer`
+>   (one per translation unit, not global), with collision detection
+>   on both `register_matcher` names and `register_op` kind_ids, plus
+>   Meyer's-singleton `registrars()` / `runtime_registrars()` vectors
+>   so link-time and runtime paths share a single drain order.
+> - PM4-3 (sturm-4oyr.4): `QOpKind::PLUGIN` variant and
+>   `plugin_kind_id` field added to
+>   `transpiler/include/sturm/transpile/qir.hpp`; new
+>   `case QOpKind::PLUGIN:` in `transpiler/src/uncompute_pass.cpp`'s
+>   `render_uncompute` consults `Registry::find_render_fn(kind_id)`.
+>   Registry threaded through `synthesize(unit, sm, registry)` as a
+>   non-owning reference — NOT a global singleton (conflicts with
+>   PM1-4's nested `CompilerInvocation`). Empty `plugin_kind_id` on
+>   every non-plugin op keeps 138 existing snapshot fixtures
+>   byte-identical.
+> - PM4-4 (sturm-4oyr.5): `transpiler/src/plugin.cpp` `ParseArgs`
+>   accepts `load=<path.so>` plugin-arg; on parse it
+>   `dlopen(RTLD_LOCAL | RTLD_NOW)`, reads the plugin's
+>   `sturm_plugin_clang_version_v1()` and refuses to register on
+>   mismatch with the host's `CLANG_VERSION_STRING`, resolves
+>   `sturm_register_plugin_v1`, and queues a wrapper into
+>   `runtime_registrars()`. No `dlclose` — handle leaks to process
+>   exit per plan §7.
+> - PM4-5 (sturm-4oyr.6): `cmake/SturmTranspile.cmake`
+>   `add_quantum_executable` gains a `PLUGINS <path> [<path> ...]`
+>   multi-value keyword. For each path it appends
+>   `-Xclang -plugin-arg-sturm-transpile -Xclang load=<abs-path>` per
+>   source; the `cc1` spelling is mandatory because the driver splits
+>   `-fplugin-arg-` at the first hyphen. `PLUGINS` is plugin-mode
+>   only — passing it under `-DSTURM_TRANSPILE_MODE=dump` is a
+>   configuration error.
+> - PM4-6 (sturm-4oyr.7): dogfood migration — all four Phase B
+>   matchers in `transpiler/src/matcher_qint_const.cpp` now register
+>   through `Registry::register_matcher("sturm.pb.add_assign_const",
+>   ...)` (and sub/mul/div variants) via a link-time `StaticRegistrar`
+>   instead of direct `TranspileConsumer` constructor calls in
+>   `transpile_consumer.cpp`. QOpKinds `ADD_ASSIGN_CONST`/`SUB`/`MUL`/
+>   `DIV` unchanged; snapshots stay byte-identical.
+> - PM4-7 (sturm-4oyr.8): demo plugin at
+>   `examples/plugin_demo/plugin_demo.cpp` + `CMakeLists.txt` builds
+>   as MODULE library `sturm-pm4-demo-plugin`. Implements a novel
+>   self-inverse tag op via `register_op` with kind_id
+>   `pm4.demo.tag`; render function emits
+>   `pm4_demo_tag_inverse(q)`. Exercises
+>   `register_op` + new-kind + render-fn end-to-end without touching
+>   any production matcher.
+> - PM4-8 (sturm-4oyr.9): `transpiler/tests/pm4_smoke_dlopen.{cpp,cmake}`
+>   CTest — user code compiled via
+>   `add_quantum_executable(... PLUGINS $<TARGET_FILE:sturm-pm4-demo-plugin>)`;
+>   asserts the rewritten output contains the
+>   `pm4_demo_tag_inverse(` sentinel. Pins the full
+>   dlopen → `register_op` → `render_uncompute` pipeline.
+> - PM4-9 (sturm-4oyr.10): three CTests under `transpiler/tests/`:
+>   `pm4_dogfood_snapshot.{cpp,cmake}` asserts Phase B
+>   `a += k` / `-=` / `*=` / `/=` fixtures stay byte-identical
+>   post-migration; `pm4_missing_plugin_errors.{cpp,cmake}` asserts
+>   `PLUGINS /nonexistent.so` fails with the exact
+>   `sturm-transpile plugin: failed to dlopen` stderr line;
+>   `pm4_two_plugins_independent.{cpp,cmake}` asserts that two
+>   plugins registering the same `kind_id` hard-error at the second
+>   registration.
+> - PM4-10 (sturm-4oyr.11): link-time path —
+>   `STURM_PM4_LINK_DEMO` CMake option (default OFF) in
+>   `transpiler/CMakeLists.txt` statically links the demo plugin's
+>   registrar into `sturm-transpile-plugin` via
+>   `transpiler/src/pm4_link_demo_registrar.cpp`'s
+>   `STURM_REGISTER_PLUGIN` invocation.
+>   `transpiler/tests/pm4_smoke_linktime.{cpp,cmake}` compiles the
+>   same source as smoke 1 *without* a `PLUGINS` argument against a
+>   `-DSTURM_PM4_LINK_DEMO=ON` configuration and checks the same
+>   rewritten-output sentinel, proving the Meyer's-singleton
+>   link-time path is independent of dlopen.
+> - PM4-11 (sturm-4oyr.12): this roadmap update.
+>
+> Remaining Phase M item below (peephole gate reordering, deferred
+> from PJ-2) stays open; its prerequisite alias analysis does not
+> exist yet.
+
 Lower priority, tracked for visibility.
 
 - **In-memory transpile.** *Complete — shipped in v0.1.2 (2026-04-19).* Skip the filesystem round-trip: transpile and feed directly to Clang's codegen. Keep the sibling-file emit as a `--dump-transpiled` option for debugging.
 - **Diagnostics.** Quantum-specific compile errors ("operand modified inside its own WHEN", "qbool escapes its scope without explicit measurement or uncompute"). Requires the liveness analysis from Phase H to be mature.
 - **Source maps.** *Complete — shipped 2026-04-20.* Transpiler-emitted insertions and replacements carry `#line <N> "<user-file>"` directives via the shared `format_line_directive()` helper in `transpiler/src/emitter.cpp` (PM2-1), threaded through Phase E compound decls (PM2-2), `render_uncompute` (PM2-3), `QReplacement` strings for PJ-1 fuse + Phase F WHEN-lift (PM2-4), and PJ-3 hoist attribution (PM2-5). Idempotency preserved end-to-end (PM2-6); 64 snapshot + 46 idempotency fixtures regenerated under `tests/transpiler/fixtures/*.expected.cpp` (PM2-7); user-facing guarantee pinned by the new `source_map_diagnostic` CTest with `tests/transpiler/fixtures/source_map_diagnostic_input.cpp` + `tests/transpiler/check_source_map_diagnostic.cmake` (PM2-8).
-- **Transpiler pluginization.** User-defined rewrite rules registered with the transpiler, for ecosystem libraries that introduce new quantum operations. Only after the core is stable.
+- **Transpiler pluginization.** *Complete — shipped 2026-04-21.* User-defined rewrite rules registered with the transpiler, for ecosystem libraries that introduce new quantum operations. Public header `transpiler/include/sturm/transpile/plugin_api.hpp` (PM4-1) exposes `Registry::register_matcher` / `register_op`, the `STURM_REGISTER_PLUGIN(TypeName)` link-time macro, and the `extern "C" void sturm_register_plugin_v1(Registry&)` runtime-dlopen entry point; Registry implementation in `transpiler/src/plugin_registry.cpp` (PM4-2) owns per-consumer state plus Meyer's-singleton `registrars()` / `runtime_registrars()` vectors. Core wiring: `QOpKind::PLUGIN` + `plugin_kind_id` field in `transpiler/include/sturm/transpile/qir.hpp` with dispatch in `transpiler/src/uncompute_pass.cpp` (PM4-3); `load=<path>` ParseArgs + `dlopen(RTLD_LOCAL | RTLD_NOW)` + Clang-version gate in `transpiler/src/plugin.cpp` (PM4-4); `PLUGINS` argument in `cmake/SturmTranspile.cmake`'s `add_quantum_executable` (PM4-5). Dogfooded by migrating Phase B PB-1..PB-4 matchers (`transpiler/src/matcher_qint_const.cpp`) through the Registry API (PM4-6); demo plugin at `examples/plugin_demo/plugin_demo.cpp` + CMakeLists (PM4-7); five CTests pin the surface end-to-end (`pm4_smoke_dlopen`, `pm4_dogfood_snapshot`, `pm4_missing_plugin_errors`, `pm4_two_plugins_independent`, `pm4_smoke_linktime` — PM4-8..PM4-10). ABI is unstable across sturm minor versions; rebuild plugins per release.
 - **Peephole gate reordering** *(deferred from Phase J PJ-2, 2026-04-16).* Commute commuting gates across unrelated ops to expose fusion opportunities and cancellations beyond what PJ-1's adjacent-statement peephole captures. Requires alias analysis for the value-gain ratio to pay its way; dropped from Phase J on that basis.
 
 ---
