@@ -374,3 +374,14 @@ target_sources(example_in_memory_transpile PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
 target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)
+
+# ── PM4-7: demo plugin exercising the PM4-1 / PM4-2 extension surface ───────
+# Builds `sturm-pm4-demo-plugin` as a MODULE shared library. The plugin is
+# dlopen-only — it is not wired into any `add_quantum_executable` target.
+# Consumers: the PM4-7 unit test `test_plugin_demo` (links the TU
+# directly), the PM4-8 smoke `pm4_smoke_dlopen` (dlopen's the .so), and
+# the PM4-10 link-time smoke `pm4_smoke_linktime` (bakes the TU into the
+# host binary under `STURM_PM4_LINK_DEMO=ON`). Separate subdirectory so
+# the plugin's CMake stays self-contained and the `include/link` rules
+# do not bleed into the other examples.
+add_subdirectory(plugin_demo)

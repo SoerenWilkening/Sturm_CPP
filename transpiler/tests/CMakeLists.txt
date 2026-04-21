@@ -142,6 +142,58 @@ endif()
 add_test(NAME test_plugin_registry COMMAND test_plugin_registry)
 set_tests_properties(test_plugin_registry PROPERTIES LABELS "transpiler")
 
+# ── Unit test: PM4-7 demo plugin ────────────────────────────────────────────
+# Exercises the PM4-7 demo plugin under `examples/plugin_demo/` end-to-end
+# via its `sturm_register_plugin_v1` entry point. The plugin's TU is
+# compiled directly into the test binary (no dlopen hop — PM4-4's
+# `load=<path>` is not merged yet, and per the PM4-7 issue the deliverable
+# is the Registry API contract, not the runtime-load wiring). The test
+# verifies `register_op` stores the render_fn under `"pm4.demo.tag"`,
+# `find_render_fn` returns it, and the renderer emits the exact text
+# `"    pm4_demo_tag_inverse(<q>);\n"` for a hand-built `QOperation`.
+#
+# Linkage mirrors test_plugin_registry: pulls in plugin_registry.cpp for
+# the Registry method bodies and qir.cpp for the QOperation / QValueRef
+# symbols referenced from the test's sample-op construction.
+add_executable(test_plugin_demo
+    test_plugin_demo.cpp
+    ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_plugin_demo PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_plugin_demo PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_plugin_demo PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_PLUGIN_DEMO NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_plugin_demo PRIVATE
+    ${LLVM_DEFS_LIST_PLUGIN_DEMO})
+# Same clangBasic link line as test_plugin_registry: SourceLocation's
+# ctor/dtor live in libclangBasic even though the symbol is opaque at
+# the QOperation level. Wrapped in the shared-vs-static switch every
+# transpiler-adjacent test target uses.
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_plugin_demo PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_plugin_demo PRIVATE
+        clangBasic
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN_DEMO support)
+    target_link_libraries(test_plugin_demo PRIVATE
+        ${LLVM_LIBS_PLUGIN_DEMO})
+endif()
+add_test(NAME test_plugin_demo COMMAND test_plugin_demo)
+set_tests_properties(test_plugin_demo PROPERTIES LABELS "transpiler")
+
 # ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
 # Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
 # wrapper — so the test does NOT need to link any LibTooling components. It
