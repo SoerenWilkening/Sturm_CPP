@@ -175,10 +175,18 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     sturm::transpile::register_xor_assign_matcher(finder_, unit_);
     sturm::transpile::register_xor_assign_classical_matcher(
         finder_, unit_);
-    sturm::transpile::register_add_assign_const_matcher(finder_, unit_);
-    sturm::transpile::register_sub_assign_const_matcher(finder_, unit_);
-    sturm::transpile::register_mul_assign_const_matcher(finder_, unit_);
-    sturm::transpile::register_div_assign_const_matcher(finder_, unit_);
+    // PM4-6: the Phase B (PB-1..PB-4) qint_t compound-assign matchers
+    // (ADD/SUB/MUL/DIV_ASSIGN_CONST) used to be registered here with
+    // four direct `register_*_matcher(finder_, unit_)` calls. They have
+    // been dogfood-migrated to the plugin Registry API
+    // (`STURM_REGISTER_PLUGIN(PBDogfoodPlugin)` in
+    // `matcher_qint_const.cpp`). The drain + invoke_all block below
+    // picks them up at link time and registers them against `finder_`
+    // in the same relative position (after PA-4 xor-assign-classical,
+    // before PC-1 add-assign-qint) they occupied pre-PM4-6. Byte-
+    // identical snapshot invariance is preserved — see the
+    // `STURM_REGISTER_PLUGIN` comment at the bottom of
+    // `matcher_qint_const.cpp` for the full ordering rationale.
     sturm::transpile::register_add_assign_qint_matcher(finder_, unit_);
     sturm::transpile::register_sub_assign_qint_matcher(finder_, unit_);
     sturm::transpile::register_mul_assign_qint_matcher(finder_, unit_);
@@ -204,6 +212,65 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // land alongside the Phase F / G WHEN matchers' raw insertions
     // for diagnostic clarity.
     sturm::transpile::register_brace_wrap_matcher(finder_, unit_);
+    // ── PM4-3 / PM4-6: drain plugin registrars BEFORE PH-3 ─────────────────
+    //
+    // Drain position is load-bearing. MatchFinder invokes callbacks in
+    // registration order on a matched node, and the PH-3 outer-var
+    // guard (registered immediately below) consults `unit_.scopes` for
+    // the QOperation each Phase A/B/C compound-assign matcher pushed.
+    // The Phase B matchers (PB-1..PB-4) now register through the
+    // plugin Registry API (PM4-6 dogfood — `STURM_REGISTER_PLUGIN` in
+    // `matcher_qint_const.cpp`), so the drain MUST fire before PH-3 or
+    // the PB ops will be absent when PH-3's callback runs on the same
+    // `a += C;` AST node.
+    //
+    // Plan §6 ordering within the drain: runtime-dlopen plugins first,
+    // then link-time plugins. Two reasons for this direction:
+    //
+    //   - Runtime plugins, loaded via `plugin.cpp`'s `load=<path>`
+    //     branch (PM4-4), may depend on the in-tree matcher set being
+    //     fully in place (they run AFTER all pre-drain in-tree
+    //     registrations above); they may NOT depend on any other
+    //     plugin's matcher being registered first. Draining runtime-
+    //     dlopen first gives link-time plugins a stable foundation to
+    //     sit on top of.
+    //
+    //   - Link-time plugins are baked into the binary at static-init
+    //     time (via `STURM_REGISTER_PLUGIN`) — typically custom-build
+    //     registrars like the PM4-6 PB dogfood and the PM4-10 demo
+    //     shim. Running them after runtime-dlopen plugins mirrors the
+    //     "most-specific wins" posture used elsewhere in the matcher
+    //     registration block (Phase J peepholes registered before
+    //     their Phase A/E analogues, etc.).
+    //
+    // Both drains are idempotent w.r.t. THIS Registry — the collision
+    // detection in `register_matcher` / `register_op` guarantees that
+    // re-invocation (PM1-4 nested consumer) cannot double-register
+    // within a single Registry. The Meyer vectors themselves are not
+    // cleared between consumer constructions: each consumer gets a
+    // fresh, independent view of the registrar set.
+    //
+    // `runtime_registrars()` is appended by `plugin.cpp` after a
+    // successful `dlopen` + Clang-version check + `dlsym`.
+    // `registrars()` (the link-time Meyer's singleton) is appended at
+    // static-init time by every `STURM_REGISTER_PLUGIN(TypeName)`
+    // declaration in the TUs this binary links.
+    //
+    // `invoke_all` at the tail of this block fires every registered
+    // `MatcherRegisterFn` against the shared `finder_` + `unit_`,
+    // installing the plugin matchers on the same MatchFinder the
+    // in-tree matchers are bound to. Render functions registered via
+    // `register_op` are consulted by the M8 synthesis pass below when
+    // it encounters a `QOpKind::PLUGIN` op.
+    for (const auto& fn :
+         ::sturm::transpile::plugin::runtime_registrars()) {
+        fn(plugin_registry_);
+    }
+    for (const auto& fn : ::sturm::transpile::plugin::registrars()) {
+        fn(plugin_registry_);
+    }
+    plugin_registry_.invoke_all(finder_, unit_);
+
     // Phase H PH-3: the outer-variable-mutation guard must run AFTER
     // the Phase A / B / C compound-assign matchers have populated
     // `unit_.scopes` — the callback looks up the QOperation each
@@ -212,6 +279,13 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // registration order on a given node, so placing this register
     // call LAST among the mutation matchers is the load-bearing
     // ordering invariant for PH-3.
+    //
+    // PM4-6 adds a new edge: the Phase B matchers are now registered
+    // via the plugin Registry drain immediately above, so the drain
+    // block must remain above THIS registration point. Moving PH-3
+    // earlier would re-introduce the nullity race in
+    // `matcher_outer_var_guard.cpp`'s `find_op_for_call` against any
+    // PB op.
     sturm::transpile::register_outer_var_guard_matcher(
         finder_, unit_, diag_);
     // Phase I PI-2: the user-defined-routine call matcher runs
@@ -315,47 +389,12 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     sturm::transpile::register_dropped_quantum_return_matcher(
         finder_, ci_.getDiagnostics());
 
-    // ── PM4-3: drain plugin registrars into the per-consumer Registry ───
-    //
-    // Plan §6 ordering: in-tree (above) → runtime-dlopen → link-time.
-    //
-    //   - `runtime_registrars()` is appended by `plugin.cpp`'s `load=<path>`
-    //     branch (PM4-4) after a successful dlopen + Clang-version check +
-    //     dlsym. Each entry wraps the resolved `sturm_register_plugin_v1`
-    //     pointer; invoking it against this consumer's Registry registers
-    //     the plugin's matchers + render functions.
-    //
-    //   - `registrars()` (the Meyer's singleton) is appended at static-init
-    //     time by every TU that uses `STURM_REGISTER_PLUGIN(TypeName)`.
-    //     This is the link-time fallback path (PM4-10's
-    //     `STURM_PM4_LINK_DEMO=ON` switch bakes the demo plugin in this
-    //     way).
-    //
-    // Matchers these plugin entries register are installed on the SAME
-    // `finder_` the in-tree matchers are bound to via
-    // `plugin_registry_.invoke_all`. Render functions registered via
-    // `register_op` are consulted by the M8 synthesis pass below when it
-    // encounters a `QOpKind::PLUGIN` op.
-    //
-    // Both drains are idempotent with respect to THIS Registry — the
-    // collision-detection in `register_matcher` / `register_op` guarantees
-    // that re-invocation (e.g. the PM1-4 nested consumer firing the same
-    // Meyer vector again against a fresh Registry) cannot double-register
-    // within a single Registry. The vectors themselves are not cleared
-    // between consumer constructions, which is the intended shape: each
-    // consumer gets a fresh, independent view of the registrar set.
-    for (const auto& fn :
-         ::sturm::transpile::plugin::runtime_registrars()) {
-        fn(plugin_registry_);
-    }
-    for (const auto& fn : ::sturm::transpile::plugin::registrars()) {
-        fn(plugin_registry_);
-    }
-
-    // Install every matcher the plugins registered onto `finder_` + let
-    // them observe the shared QUnit. Called once, AFTER the
-    // registrar-drain above (so every registered matcher is present).
-    plugin_registry_.invoke_all(finder_, unit_);
+    // PM4-6: the PM4-3 plugin-registry drain + `invoke_all` call is
+    // hoisted to BEFORE `register_outer_var_guard_matcher` above, so
+    // plugin matchers (including the dogfood PB-1..PB-4 family migrated
+    // in PM4-6) land in `finder_` before PH-3 and its sibling PM3
+    // diagnostics. See the drain block's comment for the full
+    // ordering rationale and the nullity-race argument.
 }
 
 void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {

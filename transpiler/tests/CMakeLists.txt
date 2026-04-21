@@ -194,6 +194,69 @@ endif()
 add_test(NAME test_plugin_demo COMMAND test_plugin_demo)
 set_tests_properties(test_plugin_demo PROPERTIES LABELS "transpiler")
 
+# ── Unit test: PM4-6 dogfood migration (PB-1..PB-4) ─────────────────────────
+# Pins the post-migration Registry API contract for the four Phase B
+# qint_t compound-assign matchers (ADD/SUB/MUL/DIV_ASSIGN_CONST). The
+# test binary links `matcher_qint_const.cpp` so its STURM_REGISTER_PLUGIN
+# static-init fires during process startup, populating the Meyer's-
+# singleton `registrars()` vector. The test drains that vector into a
+# fresh `Registry`, runs `invoke_all` against a real `MatchFinder`, and
+# asserts that four PB QOperations land in the QUnit with the identical
+# QOpKind values pre- and post-migration.
+#
+# Linkage mirrors test_transpile_matcher (for runToolOnCodeWithArgs) plus
+# plugin_registry.cpp for the Registry + Meyer's-singleton bodies. The
+# in-tree source file set is the minimum the PB matchers transitively
+# need: matcher_qint_const.cpp itself, qir.cpp for the IR types, and
+# plugin_registry.cpp for the Registry methods.
+add_executable(test_pm4_dogfood_registry
+    test_pm4_dogfood_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_pm4_dogfood_registry PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_pm4_dogfood_registry PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_pm4_dogfood_registry PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_PM4_DOGFOOD NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_pm4_dogfood_registry PRIVATE
+    ${LLVM_DEFS_LIST_PM4_DOGFOOD})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_pm4_dogfood_registry PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_pm4_dogfood_registry PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_PM4_DOGFOOD support)
+    target_link_libraries(test_pm4_dogfood_registry PRIVATE
+        ${LLVM_LIBS_PM4_DOGFOOD})
+endif()
+add_test(NAME test_pm4_dogfood_registry COMMAND test_pm4_dogfood_registry)
+set_tests_properties(test_pm4_dogfood_registry PROPERTIES LABELS "transpiler")
+
 # ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
 # Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
 # wrapper — so the test does NOT need to link any LibTooling components. It

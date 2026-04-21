@@ -22,6 +22,7 @@
 // TemplateSpecializationType, not a RecordType directly.
 
 #include "sturm/transpile/matcher.hpp"
+#include "sturm/transpile/plugin_api.hpp"
 #include "sturm/transpile/qir.hpp"
 #include "matcher_common.hpp"
 
@@ -165,4 +166,115 @@ void register_div_assign_const_matcher(
     register_qint_const<DivAssignConstCallback>(finder, unit, "/=");
 }
 
+// ── PM4-6: dogfood — migrate PB-1..PB-4 to the plugin Registry API ──────────
+//
+// Pre-PM4-6 the four Phase B matchers above were wired into the
+// transpiler via direct calls at `transpile_consumer.cpp:178-181`:
+//
+//     sturm::transpile::register_add_assign_const_matcher(finder_, unit_);
+//     sturm::transpile::register_sub_assign_const_matcher(finder_, unit_);
+//     sturm::transpile::register_mul_assign_const_matcher(finder_, unit_);
+//     sturm::transpile::register_div_assign_const_matcher(finder_, unit_);
+//
+// PM4-6 removes those four lines in favour of the new Registry API:
+// registration now flows through `STURM_REGISTER_PLUGIN(...)` at
+// namespace scope below. The macro expands to a file-local
+// `StaticRegistrar` whose ctor runs during static-init of this TU and
+// pushes a `LinkTimeRegisterFn` onto the Meyer's-singleton vector
+// returned by `::sturm::transpile::plugin::registrars()`. The host
+// `TranspileConsumer`'s constructor drains that vector (plan §6:
+// in-tree → runtime-dlopen → link-time) and invokes every entry against
+// its per-consumer `Registry&`. Each entry calls
+// `register_matcher(name, fn)` four times — one per PB kind — and
+// `Registry::invoke_all(finder, unit)` at the tail of the consumer ctor
+// fires each fn against the shared `finder_` + `unit_`.
+//
+// Implementation detail: the `register_all(Registry&)` method calls
+// through to the four existing free functions (`register_{add,sub,mul,
+// div}_assign_const_matcher`). This keeps the matcher-unit-test path
+// (which registers the free functions directly against a hand-built
+// MatchFinder in `test_matcher_qint_const.cpp`) working byte-for-byte
+// while adding the new Registry-side entrypoint. There is NO change to
+// any `QOpKind` emitted by the four matchers, and NO change to the
+// rendered uncompute text — only the registration plumbing moves.
+//
+// Ordering (happy-path, plan §6)
+// ------------------------------
+// The consumer ctor drains `registrars()` and calls `invoke_all` BEFORE
+// the Phase H PH-3 outer-variable-mutation guard is registered, so the
+// PB-1..PB-4 matchers are added to `finder_` in the same relative
+// position as before (after PA-3/PA-4 xor-assign, before PC-1..PC-5
+// qint-qint). This preserves PH-3's documented invariant that the
+// Phase A–C compound-assign matchers have already populated
+// `unit.scopes` by the time PH-3's callback fires. The four PB ops
+// therefore remain eligible for PH-3's `skip_uncompute=true` flagging
+// on outer-var mutations, identical to pre-PM4-6 behaviour. See
+// `transpile_consumer.cpp`'s PM4-3 drain block for the exact ordering
+// comment.
+//
+// Snapshot gate
+// -------------
+// All 64 byte-identical snapshot fixtures remain green post-migration
+// because the four PB matchers use the SAME `QIntAssignConstCallback<
+// Kind>` template shared with the pre-migration path — registration
+// flows through a different entrypoint, but the AST shapes matched,
+// the QOperation fields populated, and the M8 uncompute text rendered
+// are untouched.
 } // namespace sturm::transpile
+
+// STURM_REGISTER_PLUGIN must be invoked at namespace scope OUTSIDE the
+// `sturm::transpile` namespace — the macro's token-paste on `TypeName`
+// (`_sturm_reg_##TypeName`) expects an unqualified identifier. We
+// park both the registrar struct and its `STURM_REGISTER_PLUGIN` call
+// in a TU-local anonymous namespace so two PM4 dogfood TUs that each
+// bake a `PBDogfoodPlugin` cannot clash at link time. This mirrors the
+// trick `pm4_link_demo_registrar.cpp` uses for the same reason
+// (`LinkTimeDemoPluginAlias`).
+namespace {
+
+struct PBDogfoodPlugin {
+    void register_all(::sturm::transpile::plugin::Registry& r) const {
+        // Each `register_matcher` call binds a human-readable name to
+        // a `MatcherRegisterFn`. The lambda captures nothing — the
+        // host-supplied `finder` + `unit` are the two parameters
+        // `register_matcher`'s signature threads in. Delegating to the
+        // four free functions above keeps the Registry-side glue thin
+        // and makes the dogfood shape trivially inspectable: "every
+        // entry is a one-line forward to the pre-existing registrar".
+        //
+        // The matcher names use dotted prefixes to keep the dogfood
+        // family namespace-scoped — a future plugin registering its
+        // own "add" matcher cannot collide with ours, and the hard-
+        // error collision-check in `Registry::register_matcher`
+        // prints the exact key on conflict, which makes the source of
+        // the clash obvious from the build log alone.
+        r.register_matcher("sturm.pb.add_assign_const",
+            [](clang::ast_matchers::MatchFinder& finder,
+               ::sturm::transpile::QUnit& unit) {
+                ::sturm::transpile::register_add_assign_const_matcher(
+                    finder, unit);
+            });
+        r.register_matcher("sturm.pb.sub_assign_const",
+            [](clang::ast_matchers::MatchFinder& finder,
+               ::sturm::transpile::QUnit& unit) {
+                ::sturm::transpile::register_sub_assign_const_matcher(
+                    finder, unit);
+            });
+        r.register_matcher("sturm.pb.mul_assign_const",
+            [](clang::ast_matchers::MatchFinder& finder,
+               ::sturm::transpile::QUnit& unit) {
+                ::sturm::transpile::register_mul_assign_const_matcher(
+                    finder, unit);
+            });
+        r.register_matcher("sturm.pb.div_assign_const",
+            [](clang::ast_matchers::MatchFinder& finder,
+               ::sturm::transpile::QUnit& unit) {
+                ::sturm::transpile::register_div_assign_const_matcher(
+                    finder, unit);
+            });
+    }
+};
+
+} // anonymous namespace
+
+STURM_REGISTER_PLUGIN(PBDogfoodPlugin);
