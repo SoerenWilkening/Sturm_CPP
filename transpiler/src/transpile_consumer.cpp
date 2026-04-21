@@ -314,6 +314,48 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // ...)` so the user sees the Warning on stderr.
     sturm::transpile::register_dropped_quantum_return_matcher(
         finder_, ci_.getDiagnostics());
+
+    // ── PM4-3: drain plugin registrars into the per-consumer Registry ───
+    //
+    // Plan §6 ordering: in-tree (above) → runtime-dlopen → link-time.
+    //
+    //   - `runtime_registrars()` is appended by `plugin.cpp`'s `load=<path>`
+    //     branch (PM4-4) after a successful dlopen + Clang-version check +
+    //     dlsym. Each entry wraps the resolved `sturm_register_plugin_v1`
+    //     pointer; invoking it against this consumer's Registry registers
+    //     the plugin's matchers + render functions.
+    //
+    //   - `registrars()` (the Meyer's singleton) is appended at static-init
+    //     time by every TU that uses `STURM_REGISTER_PLUGIN(TypeName)`.
+    //     This is the link-time fallback path (PM4-10's
+    //     `STURM_PM4_LINK_DEMO=ON` switch bakes the demo plugin in this
+    //     way).
+    //
+    // Matchers these plugin entries register are installed on the SAME
+    // `finder_` the in-tree matchers are bound to via
+    // `plugin_registry_.invoke_all`. Render functions registered via
+    // `register_op` are consulted by the M8 synthesis pass below when it
+    // encounters a `QOpKind::PLUGIN` op.
+    //
+    // Both drains are idempotent with respect to THIS Registry — the
+    // collision-detection in `register_matcher` / `register_op` guarantees
+    // that re-invocation (e.g. the PM1-4 nested consumer firing the same
+    // Meyer vector again against a fresh Registry) cannot double-register
+    // within a single Registry. The vectors themselves are not cleared
+    // between consumer constructions, which is the intended shape: each
+    // consumer gets a fresh, independent view of the registrar set.
+    for (const auto& fn :
+         ::sturm::transpile::plugin::runtime_registrars()) {
+        fn(plugin_registry_);
+    }
+    for (const auto& fn : ::sturm::transpile::plugin::registrars()) {
+        fn(plugin_registry_);
+    }
+
+    // Install every matcher the plugins registered onto `finder_` + let
+    // them observe the shared QUnit. Called once, AFTER the
+    // registrar-drain above (so every registered matcher is present).
+    plugin_registry_.invoke_all(finder_, unit_);
 }
 
 void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
@@ -372,7 +414,8 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // the same idempotency header the M9 emit() path would.
             if (!dump_transpiled_path_.empty()) {
                 std::string body =
-                    sturm::transpile::emit_to_string(unit_, ctx);
+                    sturm::transpile::emit_to_string(unit_, ctx,
+                                                      &plugin_registry_);
                 std::string out;
                 out.reserve(body.size() + 128);
                 out.append(
@@ -402,8 +445,15 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // directive pointing at the forward op's begin loc, and
             // appends a restoring `#line` at every close-brace that
             // carries at least one uncompute insertion.
+            //
+            // PM4-3: also pass this consumer's plugin Registry so the
+            // M8 render pass's `case QOpKind::PLUGIN:` arm can dispatch
+            // to any plugin-registered render function. Pre-PM4
+            // fixtures contain no PLUGIN ops, so the Registry lookup
+            // never fires and the output is byte-identical to the
+            // pre-PM4 shape.
             auto synth = sturm::transpile::synthesize(
-                unit_, &ctx.getSourceManager());
+                unit_, &ctx.getSourceManager(), &plugin_registry_);
 
             // M9: build a Rewriter over the same
             // SourceManager/LangOptions and let emit() apply
@@ -429,7 +479,8 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // stashed on this consumer is the handle those steps need
             // to clone the parent invocation.
             rewritten_buffer_ =
-                sturm::transpile::emit_to_string(unit_, ctx);
+                sturm::transpile::emit_to_string(unit_, ctx,
+                                                  &plugin_registry_);
             (void)ci_;
             break;
         }

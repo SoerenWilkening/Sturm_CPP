@@ -152,6 +152,23 @@ enum class QOpKind {
     // forward QReplacement. The forward helper lives at
     // `include/sturm/uncompute/uncompute_api.hpp:118` (sturm-8cxd).
     CCNOT_INPLACE,
+    // Phase M PM4-3 — plugin-registered op. Seeded by a third-party AST
+    // matcher registered via `Registry::register_op(kind_id, matcher_fn,
+    // render_fn)` (see `sturm/transpile/plugin_api.hpp`). The plugin's
+    // matcher callback is responsible for populating the QOperation fields
+    // (result, operands, stmt_range, etc.) appropriate to the plugin's
+    // semantics; the only new invariant at the IR boundary is that
+    // `plugin_kind_id` MUST be set to the same string the plugin passed
+    // to `register_op`. The M8 uncompute pass's `case QOpKind::PLUGIN:`
+    // arm consults the per-consumer Registry via
+    // `Registry::find_render_fn(plugin_kind_id)` and invokes the returned
+    // `UncomputeRenderFn` to produce the inverse source text. No in-tree
+    // matcher ever constructs a `QOpKind::PLUGIN` op, so every existing
+    // snapshot fixture stays byte-identical (the default string-empty
+    // `plugin_kind_id` on non-plugin ops keeps the dump() format
+    // unchanged — PLUGIN ops are printed with an explicit `<plugin
+    // kind_id>` suffix so hand-built fixtures remain diagnosable).
+    PLUGIN,
     // ... — added per post-MVP phases.
 };
 
@@ -250,6 +267,16 @@ struct QOperation {
     // of scope. The M8 render case does not read individual bits; it
     // just iterates operands in source order.
     std::uint32_t outputs_mask = 0;
+    // Phase M PM4-3: string key identifying which plugin-registered op
+    // this is. Consulted by the M8 uncompute pass's
+    // `case QOpKind::PLUGIN:` arm via
+    // `Registry::find_render_fn(plugin_kind_id)`. Empty string for every
+    // non-PLUGIN op so every existing snapshot fixture stays
+    // byte-identical (the dump() renderer omits the suffix unless
+    // `kind == PLUGIN`). Pre-PM4 matchers leave this default-empty; the
+    // field is written only by plugin matchers that seed
+    // `kind = QOpKind::PLUGIN`.
+    std::string plugin_kind_id{};
 };
 
 /// One compound statement (curly-brace block) in the user's source.

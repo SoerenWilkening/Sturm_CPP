@@ -17,6 +17,12 @@
 // can be prefixed with a `#line` directive anchored at the user's forward
 // (compute) expression — source-map emission for every uncompute kind.
 #include "sturm/transpile/emitter.hpp"
+// PM4-3: pulls in the `Registry` full definition so `render_uncompute`'s
+// `case QOpKind::PLUGIN:` arm can call `find_render_fn(kind_id)` and
+// invoke the returned `UncomputeRenderFn`. Header-only from the .hpp
+// side uses a forward declaration, but the .cpp side needs the full
+// class to dereference the pointer.
+#include "sturm/transpile/plugin_api.hpp"
 
 #include "clang/Basic/SourceManager.h"
 
@@ -40,7 +46,15 @@ namespace {
 // free function, because there is no meaningful out-of-place inverse for
 // a single-qubit X gate — the in-place form composes to identity with
 // zero ancilla cost.
-std::string render_uncompute(const QOperation& op) {
+//
+// PM4-3: the `registry` parameter is consulted ONLY for
+// `case QOpKind::PLUGIN:` — every in-tree kind ignores it. Passed by
+// const pointer (not reference) so a hand-built test fixture without a
+// Registry can pass `nullptr`; in that case, a `QOpKind::PLUGIN` op
+// renders to an empty string (same defensive posture as every other
+// render case on malformed input).
+std::string render_uncompute(const QOperation& op,
+                             const plugin::Registry* registry) {
     std::ostringstream os;
     switch (op.kind) {
     case QOpKind::OR: {
@@ -254,6 +268,48 @@ std::string render_uncompute(const QOperation& op) {
            << op.operands[0].name << ", " << op.operands[1].name << ");\n";
         break;
     }
+    case QOpKind::PLUGIN: {
+        // Phase M PM4-3: plugin-registered op. Consult the per-consumer
+        // Registry via `find_render_fn(plugin_kind_id)` and invoke the
+        // returned `UncomputeRenderFn`. The returned string is taken
+        // verbatim — the plugin is responsible for the four-space
+        // indent + trailing '\n' invariant every in-tree renderer
+        // follows (documented in `plugin_api.hpp`'s
+        // `UncomputeRenderFn` doc).
+        //
+        // Defensive guards:
+        //
+        //   1. `registry == nullptr` — a hand-built test fixture or a
+        //      pre-PM4 caller that forgot to thread the Registry.
+        //      Emitting nothing matches the posture other kinds take on
+        //      malformed input, and the degenerate case is unreachable
+        //      from the production consumer (which always passes a
+        //      valid Registry).
+        //
+        //   2. `plugin_kind_id` empty — a hand-built op missing the
+        //      key. Skipping keeps the malformed-input posture uniform
+        //      with USER_ROUTINE's empty-routine-name guard.
+        //
+        //   3. `find_render_fn(kind_id)` returns null — the plugin's
+        //      registration was dropped (collision rejected) or never
+        //      ran. Emitting nothing lets the scope still close cleanly
+        //      and the build keep going; a missing renderer for a
+        //      claimed kind_id is a build-by-build mismatch the user
+        //      should see via the host's own dlopen-side error, not a
+        //      nested segfault inside a rewrite pass.
+        //
+        //   4. The renderer's `std::function<>` target is empty (moved
+        //      from or default-constructed) — the UncomputeRenderFn
+        //      registered was uninitialized. Same posture: emit
+        //      nothing.
+        if (registry == nullptr) return {};
+        if (op.plugin_kind_id.empty()) return {};
+        const plugin::UncomputeRenderFn* fn =
+            registry->find_render_fn(op.plugin_kind_id);
+        if (fn == nullptr) return {};
+        if (!*fn) return {};
+        return (*fn)(op);
+    }
     // No `default:` — adding a new QOpKind should fail the build here
     // until every downstream consumer is updated. (Compilers warn on
     // missing enum cases when default is absent.)
@@ -264,7 +320,8 @@ std::string render_uncompute(const QOperation& op) {
 } // namespace
 
 QSynthesisResult synthesize(const QUnit& unit,
-                            const clang::SourceManager* sm) {
+                            const clang::SourceManager* sm,
+                            const plugin::Registry* registry) {
     QSynthesisResult result;
     std::vector<UncomputeInsertion>& out = result.insertions;
 
@@ -342,7 +399,7 @@ QSynthesisResult synthesize(const QUnit& unit,
             if (op.skip_uncompute) {
                 continue;
             }
-            std::string code = render_uncompute(op);
+            std::string code = render_uncompute(op, registry);
             if (code.empty()) {
                 // Unsupported / malformed op — skip silently; see the
                 // rationale in render_uncompute(). The MVP matcher never

@@ -33,6 +33,12 @@
 #define STURM_TRANSPILE_CONSUMER_HPP
 
 #include "sturm/transpile/qir.hpp"
+// PM4-3: the consumer OWNS a per-TU plugin Registry — not a process-wide
+// singleton — so PM1-4's nested `CompilerInvocation` gets a fresh Registry
+// when it constructs a second consumer. Threading the Registry object
+// through synthesize() keeps each consumer's Registry scoped to its own
+// lifetime.
+#include "sturm/transpile/plugin_api.hpp"
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
@@ -131,6 +137,22 @@ private:
     // ASTContext-bound lifetime). Pre-Phase-I consumers leave this
     // empty; downstream PI-2..PI-7 matchers consult it.
     RoutineRegistry registry_;
+    // Phase M PM4-3: per-consumer plugin Registry. Owned by the consumer
+    // (NOT a global singleton) so the PM1-4 nested `CompilerInvocation`
+    // sees a fresh Registry when its own consumer is constructed. The
+    // ctor drains the two process-wide Meyer vectors —
+    // `runtime_registrars()` (appended by `plugin.cpp`'s `load=` branch)
+    // and `registrars()` (appended by `StaticRegistrar` at static init)
+    // — into this per-consumer Registry. The drain order follows plan §6:
+    // in-tree matcher registration (directly in the consumer ctor body
+    // below) → runtime-dlopen plugins → link-time plugins. Matchers
+    // registered by plugins are invoked against the same `finder_` /
+    // `unit_` the in-tree matchers use via `plugin_registry_.invoke_all`.
+    // During `HandleTranslationUnit`, a pointer to this member is passed
+    // to `synthesize()` so the M8 uncompute pass's
+    // `case QOpKind::PLUGIN:` arm can consult `find_render_fn(...)`
+    // against the same Registry the plugin's matcher registered against.
+    sturm::transpile::plugin::Registry plugin_registry_;
     clang::ast_matchers::MatchFinder finder_;
 
     // Plugin-mode stash — populated by HandleTranslationUnit when

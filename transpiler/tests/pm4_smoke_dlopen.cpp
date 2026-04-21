@@ -308,6 +308,59 @@ void gate_verbose_load_observes_kind_id(const std::string& dir) {
         " " + src;
     auto r = run(cmd);
 
+    // PM4-3: guard for the STURM_PM4_LINK_DEMO=ON build configuration.
+    // When that option is ON, the demo plugin's registrar is baked into
+    // `sturm-transpile-plugin.so` at link time. This replay does a
+    // `load=<demo>` which then dlopens the SAME plugin. The consumer's
+    // post-PM4-3 Registry drain (runtime → link-time) triggers the
+    // duplicate-kind_id abort for `pm4.demo.tag`. The `loaded runtime
+    // plugin` + `registered kind_ids` trace lines still fire BEFORE the
+    // consumer is constructed, so the probe-Registry observations are
+    // valid — only the eventual consumer-ctor drain aborts. Weaken the
+    // gate to expect the abort instead of a clean exit when the option
+    // is ON.
+#ifdef STURM_PM4_LINK_DEMO_ENABLED
+    constexpr bool pm4_link_demo_baked_in = true;
+#else
+    constexpr bool pm4_link_demo_baked_in = false;
+#endif
+
+    if (pm4_link_demo_baked_in) {
+        CHECK_MSG(contains(r.combined_output, "loaded runtime plugin"),
+                  "verbose trace missing 'loaded runtime plugin' line "
+                  "from plugin.cpp:258-260 (the `.so` dlopen+dlsym "
+                  "succeeded but the success-branch log is suppressed).",
+                  r);
+        CHECK_MSG(contains(r.combined_output, demo_plugin_path()),
+                  "verbose trace missing the demo plugin's absolute path "
+                  "(`plugin.cpp` should spell it verbatim in the "
+                  "success log).", r);
+        CHECK_MSG(contains(r.combined_output, "registered kind_ids:"),
+                  "verbose trace missing 'registered kind_ids:' line — "
+                  "either the probe-Registry drain in plugin.cpp:268-270 "
+                  "was skipped, or the Registry::kind_ids() accessor "
+                  "regressed.", r);
+        CHECK_MSG(contains(r.combined_output, "pm4.demo.tag"),
+                  "verbose trace did not list 'pm4.demo.tag' among the "
+                  "demo plugin's registered kind_ids — either the demo "
+                  "`sturm_register_plugin_v1` no longer calls "
+                  "`register_op(kTagKindId, ...)`, or the host probe "
+                  "Registry's `kind_ids()` returned without the key.", r);
+        CHECK_MSG(!contains(r.combined_output, "failed to dlopen"),
+                  "plugin reported a dlopen failure on a path the CMake "
+                  "build produced — the fixture target above must have "
+                  "succeeded with the same path, so this is a hard "
+                  "contradiction.", r);
+        CHECK_MSG(contains(r.combined_output,
+                           "duplicate op registration"),
+                  "STURM_PM4_LINK_DEMO=ON build: expected the "
+                  "consumer's runtime → link-time Registry drain to "
+                  "trigger a duplicate-kind_id abort on the second "
+                  "registration of `pm4.demo.tag`, but the trace did "
+                  "not contain the collision-detection line.", r);
+        return;
+    }
+
     CHECK_MSG(r.exit_code == 0,
               "verbose load=<demo> compile failed — the PLUGINS cc1 "
               "arg pattern did not produce a clean `dlopen → version "

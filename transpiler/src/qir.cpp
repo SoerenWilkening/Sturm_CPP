@@ -62,6 +62,7 @@ std::string kind_to_string(QOpKind kind) {
     case QOpKind::GE_QINT:          return "GE_QINT";
     case QOpKind::USER_ROUTINE:     return "USER_ROUTINE";
     case QOpKind::CCNOT_INPLACE:    return "CCNOT_INPLACE";
+    case QOpKind::PLUGIN:           return "PLUGIN";
     }
     // Unreachable while every enumerator above is listed, but we emit a
     // deterministic placeholder so future additions that forget to update
@@ -116,6 +117,14 @@ void dump_op(std::ostringstream& os, const QOperation& op, std::size_t idx) {
     if (op.kind == QOpKind::USER_ROUTINE) {
         os << " routine_name=\"" << op.routine_name
            << "\" outputs_mask=0x" << std::hex << op.outputs_mask << std::dec;
+    }
+    // Phase M PM4-3: surface the plugin kind_id when (and only when)
+    // kind == PLUGIN. The default-empty value is not printed for
+    // non-PLUGIN ops so every pre-PM4 snapshot fixture stays byte-
+    // identical (no in-tree matcher ever constructs a `QOpKind::PLUGIN`
+    // op, so this branch is dead for the in-tree matcher pool).
+    if (op.kind == QOpKind::PLUGIN) {
+        os << " plugin_kind_id=\"" << op.plugin_kind_id << "\"";
     }
     os << "\n";
 }

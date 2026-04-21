@@ -23,6 +23,13 @@
 
 #include "sturm/transpile/qir.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
+// PM4-3: exercise the new `case QOpKind::PLUGIN:` arm in
+// `render_uncompute`. The test hand-builds a `Registry`, registers a
+// render function under a kind_id, constructs a `QOperation` with
+// `kind = QOpKind::PLUGIN` + `plugin_kind_id = kind_id`, and asserts
+// `synthesize(unit, sm, &registry)` emits the text the registered
+// render function returns.
+#include "sturm/transpile/plugin_api.hpp"
 
 #include "clang/Basic/SourceLocation.h"
 
@@ -1722,6 +1729,265 @@ static void test_ccnot_inplace_zero_operands_emits_nothing() {
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
+// ── Phase M / PM4-3: QOpKind::PLUGIN render dispatch ────────────────────────
+//
+// The PLUGIN case in `render_uncompute` consults the per-consumer plugin
+// Registry via `find_render_fn(plugin_kind_id)` and invokes the returned
+// `UncomputeRenderFn` to produce the inverse source text. No in-tree
+// matcher ever constructs a `QOpKind::PLUGIN` op, so every existing
+// snapshot fixture stays byte-identical — the tests below are the sole
+// coverage of the new arm.
+//
+// Invariants pinned:
+//   1. When a Registry is passed AND the op carries a kind_id registered
+//      against a render fn, `synthesize()` emits exactly what the render
+//      fn returns (verbatim, no four-space re-indent on top of the
+//      plugin's own indent discipline).
+//   2. When the Registry is null — a hand-built test fixture or a
+//      pre-PM4 caller that forgot to thread it — the PLUGIN op renders
+//      to an empty string (same defensive posture as every other kind).
+//   3. When the op's `plugin_kind_id` is empty, same defensive-skip
+//      posture (equivalent to USER_ROUTINE's empty-routine-name guard).
+//   4. When the kind_id is not registered in the Registry, same skip.
+//   5. LIFO ordering is preserved when a PLUGIN op co-exists with
+//      in-tree kinds in the same scope.
+
+static void test_plugin_kind_emits_registered_render_fn_output() {
+    // Build a Registry and register a render function that emits the
+    // demo plugin's `pm4_demo_tag_inverse(<q>);\n` exact text.  This
+    // mirrors what `examples/plugin_demo/plugin_demo.cpp`'s
+    // `sturm_register_plugin_v1` wires at production runtime.
+    plugin::Registry registry;
+    registry.register_op(
+        "pm4.demo.tag",
+        // matcher-fn half: never invoked by `synthesize()`. We pass a
+        // no-op lambda so the register_op collision detection stays
+        // symmetric with the production path. `MatcherRegisterFn` is
+        // `std::function<void(MatchFinder&, QUnit&)>` — the forward
+        // declaration of MatchFinder in plugin_api.hpp is sufficient
+        // since the parameter is a reference and the body never
+        // dereferences it.
+        [](clang::ast_matchers::MatchFinder&, QUnit&) {},
+        // render-fn half: consulted by the PM4-3 `case QOpKind::PLUGIN:`
+        // arm. Returns the exact text the production plugin produces
+        // so the test pins the byte-level output contract.
+        [](const QOperation& op) -> std::string {
+            if (op.result.name.empty()) return {};
+            std::string out;
+            out.reserve(40);
+            out.append("    pm4_demo_tag_inverse(");
+            out.append(op.result.name);
+            out.append(");\n");
+            return out;
+        });
+
+    // Hand-build a QUnit representing a single PLUGIN op in a scope.
+    // The matcher + scope locations mirror the pattern every other
+    // test case in this file uses (make_loc(...) opaque ids).
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind            = QOpKind::PLUGIN;
+    op.plugin_kind_id  = "pm4.demo.tag";
+    op.result          = QValueRef{"q", make_loc(30)};
+    op.stmt_range      = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    // `sm=nullptr` to keep the test free of a SourceManager; the
+    // per-op `#line` prefix only fires when sm is non-null, so the
+    // returned `code` is the plugin's render text verbatim.
+    auto ins = synthesize(unit, /*sm=*/nullptr, &registry).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    pm4_demo_tag_inverse(q);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_plugin_kind_without_registry_emits_nothing() {
+    // Defensive: a `QOpKind::PLUGIN` op rendered with no Registry must
+    // emit nothing rather than crash. Exercises the
+    // `registry == nullptr` guard in `render_uncompute`.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind            = QOpKind::PLUGIN;
+    op.plugin_kind_id  = "pm4.demo.tag";
+    op.result          = QValueRef{"q", make_loc(30)};
+    op.stmt_range      = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    // Two equivalent call shapes: (unit) and (unit, nullptr, nullptr).
+    // The default argument on `synthesize()` gives us a null registry
+    // on the single-arg form, which is the same behaviour we want.
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_plugin_kind_without_kind_id_emits_nothing() {
+    // Defensive: empty `plugin_kind_id` triggers the same skip posture
+    // as USER_ROUTINE's empty-routine-name guard. A registry lookup
+    // with an empty key would never collide with a real registration
+    // (`register_op` rejects empty keys via the collision map, but a
+    // hand-built op could still carry an empty string).
+    plugin::Registry registry;
+    registry.register_op(
+        "pm4.demo.tag",
+        [](clang::ast_matchers::MatchFinder&, QUnit&) {},
+        [](const QOperation&) -> std::string {
+            return "    THIS_SHOULD_NOT_BE_CALLED;\n";
+        });
+
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind            = QOpKind::PLUGIN;
+    op.plugin_kind_id  = "";  // empty
+    op.result          = QValueRef{"q", make_loc(30)};
+    op.stmt_range      = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit, /*sm=*/nullptr, &registry).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_plugin_kind_unregistered_emits_nothing() {
+    // Defensive: the op's kind_id is not present in the Registry. The
+    // `find_render_fn` accessor returns null; the render case must
+    // emit nothing rather than crash or inject garbage. Mirrors the
+    // USER_ROUTINE empty-name guard posture.
+    plugin::Registry registry;
+    registry.register_op(
+        "some.other.kind",
+        [](clang::ast_matchers::MatchFinder&, QUnit&) {},
+        [](const QOperation&) -> std::string {
+            return "    THIS_SHOULD_NOT_BE_CALLED;\n";
+        });
+
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind            = QOpKind::PLUGIN;
+    op.plugin_kind_id  = "not.registered";
+    op.result          = QValueRef{"q", make_loc(30)};
+    op.stmt_range      = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit, /*sm=*/nullptr, &registry).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_plugin_kind_lifo_with_in_tree_kinds() {
+    // Invariant: LIFO ordering in a scope with mixed in-tree and
+    // PLUGIN ops. The PLUGIN op renders via the Registry; the OR op
+    // renders via the in-tree case. Both anchor at the scope's
+    // close_brace. The begin-loc sort + reverse iteration in
+    // `synthesize()` must interleave them in reverse-source order.
+    plugin::Registry registry;
+    registry.register_op(
+        "pm4.demo.tag",
+        [](clang::ast_matchers::MatchFinder&, QUnit&) {},
+        [](const QOperation& op) -> std::string {
+            std::string out;
+            out.reserve(40);
+            out.append("    pm4_demo_tag_inverse(");
+            out.append(op.result.name);
+            out.append(");\n");
+            return out;
+        });
+
+    QScope scope;
+    scope.open_brace  = make_loc(1);
+    scope.close_brace = make_loc(99);
+
+    // Forward source order: OR first (stmt_range begin=10), PLUGIN
+    // second (stmt_range begin=20).
+    QOperation op_or;
+    op_or.kind       = QOpKind::OR;
+    op_or.result     = QValueRef{"tmp", make_loc(12)};
+    op_or.operands   = { QValueRef{"a", make_loc(13)},
+                         QValueRef{"b", make_loc(14)} };
+    op_or.stmt_range = clang::SourceRange(make_loc(10), make_loc(18));
+
+    QOperation op_plugin;
+    op_plugin.kind             = QOpKind::PLUGIN;
+    op_plugin.plugin_kind_id   = "pm4.demo.tag";
+    op_plugin.result           = QValueRef{"q", make_loc(22)};
+    op_plugin.stmt_range       = clang::SourceRange(make_loc(20), make_loc(28));
+
+    scope.ops = { op_or, op_plugin };
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit, /*sm=*/nullptr, &registry).insertions;
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+
+    // LIFO: PLUGIN op is last-in (stmt_range begin=20), so its inverse
+    // emits FIRST. OR op's inverse emits SECOND.
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    pm4_demo_tag_inverse(q);\n"));
+    CHECK_EQ_STR(ins[1].code,
+                 std::string("    uncompute_or(tmp, a, b);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(make_loc(99)));
+}
+
+static void test_plugin_kind_honours_skip_uncompute() {
+    // Pinning cross-cut: the PH-3 `skip_uncompute` flag applies to
+    // PLUGIN ops too. `synthesize()`'s skip path runs before
+    // `render_uncompute` is called, so a PLUGIN op with
+    // skip_uncompute=true MUST emit nothing even if the registry has
+    // a renderer for its kind_id.
+    plugin::Registry registry;
+    registry.register_op(
+        "pm4.demo.tag",
+        [](clang::ast_matchers::MatchFinder&, QUnit&) {},
+        [](const QOperation&) -> std::string {
+            return "    THIS_SHOULD_NOT_BE_CALLED;\n";
+        });
+
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind            = QOpKind::PLUGIN;
+    op.plugin_kind_id  = "pm4.demo.tag";
+    op.result          = QValueRef{"q", make_loc(30)};
+    op.stmt_range      = clang::SourceRange(make_loc(28), make_loc(40));
+    op.skip_uncompute  = true;
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit, /*sm=*/nullptr, &registry).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
 int main() {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
@@ -1781,6 +2047,14 @@ int main() {
     test_ccnot_inplace_emits_self_adjoint_call();
     test_ccnot_inplace_wrong_operand_count_emits_nothing();
     test_ccnot_inplace_zero_operands_emits_nothing();
+
+    // PM4-3 (sturm-4oyr.4) — QOpKind::PLUGIN + render_uncompute dispatch.
+    test_plugin_kind_emits_registered_render_fn_output();
+    test_plugin_kind_without_registry_emits_nothing();
+    test_plugin_kind_without_kind_id_emits_nothing();
+    test_plugin_kind_unregistered_emits_nothing();
+    test_plugin_kind_lifo_with_in_tree_kinds();
+    test_plugin_kind_honours_skip_uncompute();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

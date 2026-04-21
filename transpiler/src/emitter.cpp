@@ -151,8 +151,18 @@ std::string apply_rewrites_and_serialize(
 // rendered uncompute insertions carry `#line` directives anchored at the
 // user's forward expression. The `emit_to_string()` contract is unchanged
 // for callers — this is purely an internal wiring step.
-std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx) {
-    auto synth = sturm::transpile::synthesize(unit, &ctx.getSourceManager());
+//
+// PM4-3: also pass through the optional plugin Registry pointer so the
+// M8 synthesis pass can dispatch `QOpKind::PLUGIN` ops through
+// `Registry::find_render_fn(kind_id)`. Null registry = no plugin
+// dispatch, which is safe: in-tree kinds ignore the Registry, and the
+// existing `test_emitter.cpp` tests (which do not carry a Registry)
+// only ever construct QUnits from in-tree QOpKinds so the insertion
+// stream is byte-identical to the pre-PM4 shape.
+std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx,
+                           const plugin::Registry* registry) {
+    auto synth = sturm::transpile::synthesize(
+        unit, &ctx.getSourceManager(), registry);
     clang::Rewriter rw(ctx.getSourceManager(), ctx.getLangOpts());
     return apply_rewrites_and_serialize(
         ctx.getSourceManager(), rw, synth.insertions, synth.replacements);

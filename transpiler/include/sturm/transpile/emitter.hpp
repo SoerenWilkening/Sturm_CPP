@@ -53,6 +53,13 @@
 #include <string_view>
 #include <vector>
 
+// PM4-3: forward-declare the plugin Registry so `emit_to_string` can
+// accept an optional pointer without dragging `plugin_api.hpp` through
+// every TU that includes this header.
+namespace sturm::transpile::plugin {
+class Registry;
+} // namespace sturm::transpile::plugin
+
 namespace sturm::transpile {
 
 /// PM2-1 — shared `#line` directive formatter for source-map emission.
@@ -117,7 +124,15 @@ std::string format_line_directive(const clang::SourceManager& sm,
 /// string is a verbatim copy of the main file's original buffer, so
 /// callers can unconditionally treat the return value as "the TU source
 /// to feed downstream" without branching on whether a rewrite occurred.
-std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx);
+///
+/// PM4-3: the optional `registry` parameter is threaded to
+/// `synthesize()` so any `QOpKind::PLUGIN` ops in `unit` can resolve
+/// their renderer via `Registry::find_render_fn(kind_id)`. When null,
+/// PLUGIN ops render to an empty string (same defensive posture every
+/// in-tree kind takes on malformed input). Every in-tree-only caller
+/// can continue to pass only `(unit, ctx)`.
+std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx,
+                           const plugin::Registry* registry = nullptr);
 
 /// PM1-2 — file emission step.
 ///

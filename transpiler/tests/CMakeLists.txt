@@ -206,6 +206,12 @@ add_executable(test_transpile_uncompute_pass
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    # PM4-3: `uncompute_pass.cpp` now calls into the plugin Registry via
+    # `find_render_fn(kind_id)` when rendering a `QOpKind::PLUGIN` op.
+    # Link `plugin_registry.cpp` so the Registry method bodies resolve at
+    # link time. The synthesize-with-PLUGIN test cases in this file
+    # construct a real Registry and call `register_op` on it.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
 )
 target_include_directories(test_transpile_uncompute_pass PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -259,6 +265,10 @@ add_executable(test_transpile_emitter
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    # PM4-3: uncompute_pass.cpp now references `Registry::find_render_fn`
+    # from the plugin TU. Link plugin_registry.cpp so the Registry method
+    # bodies resolve at link time.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
@@ -377,6 +387,12 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    # PM4-3: uncompute_pass.cpp now references `Registry::find_render_fn`
+    # from the plugin TU. Link plugin_registry.cpp so Registry method
+    # bodies resolve at link time (the in-tree matcher tests never
+    # construct a `QOpKind::PLUGIN` op, so the branch stays dead — but
+    # the symbol must still resolve).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
 )
 target_include_directories(test_transpile_matcher PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -471,6 +487,11 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
+    # and threads it into `synthesize()`. Link plugin_registry.cpp so
+    # the Registry method bodies (register_op, find_render_fn,
+    # invoke_all, runtime_registrars, registrars) resolve at link time.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
@@ -545,6 +566,17 @@ if(STURM_PLUGIN_CLANGXX_BIN)
         # plugin.{so,dylib}.
         STURM_PM4_DEMO_PLUGIN_PATH="$<TARGET_FILE:sturm-pm4-demo-plugin>"
     )
+    # PM4-3: when STURM_PM4_LINK_DEMO=ON, the demo plugin is baked into
+    # sturm-transpile-plugin.so at link-time, so the gate_load_demo_
+    # plugin_succeeds test (which does `load=<demo>`) will hit the
+    # post-PM4-3 duplicate-kind_id abort during the consumer's Registry
+    # drain. Thread the configuration into the binary so the test gate
+    # can weaken its happy-path assertion to "abort with the
+    # documented collision line" under that config.
+    if(STURM_PM4_LINK_DEMO)
+        target_compile_definitions(test_plugin_load PRIVATE
+            STURM_PM4_LINK_DEMO_ENABLED=1)
+    endif()
     add_dependencies(test_plugin_load sturm-transpile-plugin
                                        sturm-pm4-demo-plugin)
     add_test(NAME test_plugin_load COMMAND test_plugin_load)
@@ -655,7 +687,22 @@ endif()
 # `test_plugin_load` block above; if clang++ is not reachable next to
 # `LLVM_TOOLS_BINARY_DIR`, both `test_plugin_load` and
 # `pm4_smoke_dlopen` are skipped the same way.
-if(STURM_TRANSPILE_MODE STREQUAL "plugin" AND STURM_PLUGIN_CLANGXX_BIN)
+#
+# PM4-3: under `STURM_PM4_LINK_DEMO=ON`, the demo plugin's registrar is
+# baked into `sturm-transpile-plugin.so` at link-time. A `PLUGINS
+# $<TARGET_FILE:sturm-pm4-demo-plugin>` argument then requests a second
+# dlopen of the same plugin at runtime. The post-PM4-3
+# `TranspileConsumer` ctor drains BOTH `runtime_registrars()` (from the
+# dlopen) and `registrars()` (from the link-time bake), which triggers
+# the Registry's duplicate-kind_id abort for `pm4.demo.tag`. That is the
+# correct Registry behaviour, but it means the fixture compile aborts —
+# so the pm4_smoke_dlopen test cannot exercise a clean end-to-end
+# PLUGINS flow under this build config. The pm4_smoke_linktime smoke
+# (PM4-10) covers the link-time path separately. Skip this smoke when
+# STURM_PM4_LINK_DEMO=ON and log why at configure time so a reviewer
+# does not chase a phantom regression.
+if(STURM_TRANSPILE_MODE STREQUAL "plugin" AND STURM_PLUGIN_CLANGXX_BIN
+        AND NOT STURM_PM4_LINK_DEMO)
     add_quantum_executable(pm4_smoke_dlopen_fixture
         fixtures/pm4_smoke_dlopen_fixture.cpp
         PLUGINS $<TARGET_FILE:sturm-pm4-demo-plugin>)
@@ -740,6 +787,15 @@ else()
                        "STURM_TRANSPILE_MODE is '${STURM_TRANSPILE_MODE}', "
                        "not 'plugin'. PM4-8 exercises the PLUGINS cc1 "
                        "arg threading which only applies to plugin mode.")
+    elseif(STURM_PM4_LINK_DEMO)
+        message(STATUS "sturm-transpile: pm4_smoke_dlopen skipped — "
+                       "STURM_PM4_LINK_DEMO=ON bakes the demo plugin "
+                       "into sturm-transpile-plugin.so at link-time, "
+                       "so a second runtime-dlopen of the same plugin "
+                       "via PLUGINS=$<TARGET_FILE:sturm-pm4-demo-plugin> "
+                       "would hit the post-PM4-3 Registry drain's "
+                       "duplicate-kind_id abort. pm4_smoke_linktime "
+                       "(PM4-10) covers the link-time path instead.")
     else()
         message(STATUS "sturm-transpile: pm4_smoke_dlopen skipped — "
                        "clang++ not found next to "

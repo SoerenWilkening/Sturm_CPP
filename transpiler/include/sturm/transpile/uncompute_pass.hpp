@@ -58,6 +58,15 @@ namespace clang {
 class SourceManager;
 } // namespace clang
 
+// PM4-3: forward-declare the `Registry` type so the `synthesize()` overload
+// that dispatches plugin renderers can accept one by pointer without dragging
+// `plugin_api.hpp` into every TU that includes this header. Tests that
+// hand-build a QUnit with only in-tree ops (no `QOpKind::PLUGIN` ops) can
+// pass `nullptr` here and compile without linking against plugin_api.
+namespace sturm::transpile::plugin {
+class Registry;
+} // namespace sturm::transpile::plugin
+
 namespace sturm::transpile {
 
 // UncomputeInsertion and QReplacement are defined in qir.hpp (both are part
@@ -135,8 +144,29 @@ struct QSynthesisResult {
 /// `SourceLocation`s via `getFromRawEncoding` and have no
 /// `SourceManager`), no `#line` directives are emitted — the output is
 /// byte-identical to the pre-PM2-3 shape.
+///
+/// PM4-3: the optional `registry` parameter supplies the per-consumer
+/// plugin Registry whose `find_render_fn(kind_id)` backs the
+/// `case QOpKind::PLUGIN:` dispatch in `render_uncompute`. When null
+/// (the default, preserved for backward compatibility with the hand-
+/// built tests in `test_uncompute_pass.cpp` that construct QUnits with
+/// only in-tree QOpKinds), any `QOpKind::PLUGIN` op renders to an empty
+/// string (same defensive posture as other render cases on malformed
+/// input), so the insertion vector for in-tree-only fixtures is
+/// byte-identical to the pre-PM4 shape. The parameter is a raw pointer
+/// (not a reference) so existing call sites that do not carry a
+/// Registry can pass `nullptr` explicitly or omit the argument — the
+/// same ergonomics as `sm`.
+///
+/// Passing Registry& explicitly — not via a global — matches the
+/// design-doc constraint (plan §5: a nested `CompilerInvocation` from
+/// PM1-4 constructs a second consumer whose Registry is a different
+/// object). A global singleton would fire the wrong Registry when the
+/// outer and inner consumers are both alive; threading by pointer
+/// keeps each synthesize() call bound to its own consumer's Registry.
 QSynthesisResult synthesize(const QUnit& unit,
-                            const clang::SourceManager* sm = nullptr);
+                            const clang::SourceManager* sm = nullptr,
+                            const plugin::Registry* registry = nullptr);
 
 } // namespace sturm::transpile
 
