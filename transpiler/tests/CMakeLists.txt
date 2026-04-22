@@ -623,6 +623,16 @@ add_executable(test_transpile_consumer
     # the Registry method bodies (register_op, find_render_fn,
     # invoke_all, runtime_registrars, registrars) resolve at link time.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    # PM5-6: TranspileConsumer now calls register_peephole_reorder_matcher
+    # at the tail of its registration block (LAST, after
+    # register_hoist_invariant_matcher). The reorder matcher consumes
+    # the alias extractor (`sturm/transpile/alias.hpp`). Link both TUs
+    # so the callback symbols resolve at link time; the Phase J fixtures
+    # this test harness exercises stay byte-identical because the
+    # reorder matcher's Gate 1..4 guards refuse every pre-Phase-M
+    # fixture (no synthetic __stu_t / xor-assign triple matches).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_peephole_reorder.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp

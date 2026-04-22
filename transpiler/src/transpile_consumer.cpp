@@ -300,15 +300,18 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // but placing it here keeps diagnostic output grouped by phase.
     sturm::transpile::register_user_routine_matcher(
         finder_, unit_, registry_, diag_);
-    // Phase J PJ-3e: the uncompute-hoisting matcher runs LAST —
-    // after every Phase A..I per-op matcher (MVP OR, PA-1/PA-2
-    // bitwise, PA-3/PA-4 xor-assign, PB/PC qint compound-assigns,
-    // PD qint compares, PE-4 compound-qbool, PF WHEN-lift, PG
-    // WHEN-nested, PH-2 brace-wrap, PH-3 outer-var guard, PI-2
-    // user-routine), after the PJ-1f zero-ancilla fuse peephole
-    // (registered above), and after the PJ-4b dead-ancilla
-    // eliminator (registered above). The ordering invariant has
-    // two load-bearing edges:
+    // Phase J PJ-3e + Phase M PM5-6: the uncompute-hoisting matcher
+    // (PJ-3d) runs LAST among the IR-mutating matchers, immediately
+    // followed by the peephole gate-reorder matcher (PM5-5) which
+    // runs LAST overall — after every Phase A..I per-op matcher
+    // (MVP OR, PA-1/PA-2 bitwise, PA-3/PA-4 xor-assign, PB/PC qint
+    // compound-assigns, PD qint compares, PE-4 compound-qbool, PF
+    // WHEN-lift, PG WHEN-nested, PH-2 brace-wrap, PH-3 outer-var
+    // guard, PI-2 user-routine), after the PJ-1f zero-ancilla fuse
+    // peephole (registered above), after the PJ-4b dead-ancilla
+    // eliminator (registered above), AND after the PJ-3d uncompute
+    // hoist (registered on the next line). The ordering invariant
+    // has three load-bearing edges:
     //
     //   1. AFTER every per-op matcher. The PJ-3d callback is
     //      anchored on `translationUnitDecl()` and does its real
@@ -347,9 +350,79 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     //      registration order here is documentation of the
     //      happy-path schedule.
     //
-    // Downstream blocks (sturm-8cwe PJ-3f snapshot fixtures) rely
-    // on this ordering staying stable.
+    //   3. LAST — after register_hoist_invariant_matcher. The
+    //      reorder matcher observes the post-fuse / post-hoist /
+    //      post-dead-ancilla op list and reorders adjacent triples
+    //      only when all three of (A, B, C) survive the prior
+    //      passes' guards. Bails on any hoisted op, any fused
+    //      range, any eliminated range, any plugin-op boundary.
+    //
+    //      WHY reorder MUST run AFTER hoist (not before):
+    //      reorder produces NO new `QOperation`s — it only
+    //      shuffles the source-range assignments of statements
+    //      that are already in `unit_.scopes`, emitting
+    //      `QReplacement` objects that touch DISJOINT text
+    //      regions from PJ-1d's fused-pair replacement. If
+    //      reorder fired BEFORE hoist, the hoist pass could
+    //      then migrate A (the `qbool __t = a & b;` head) out
+    //      of the loop while B remains dangling past C with A
+    //      gone — the hoist invariant ("forward/uncompute pair
+    //      stays paired") would break. Running AFTER hoist
+    //      means A is either not hoisted (safe to reorder) or
+    //      hoisted (the triple bails at Gate 2's
+    //      `hoist_to_override.isInvalid()` check). Either way,
+    //      no cross-pass interaction bug.
+    //
+    //      WHY reorder MUST run AFTER fuse + dead-ancilla (as
+    //      well): PJ-1d's fuse emission and PJ-4b's elimination
+    //      BOTH mutate the op list reorder reads. A reorder
+    //      fired before either pass would see a stale op list
+    //      whose triples may already be doomed (fuse has
+    //      absorbed A+C into a CCNOT_INPLACE op, or PJ-4b has
+    //      marked A for elimination). Gate 2's
+    //      `is_range_covered_by_fused` + eliminated-range probe
+    //      is the guard, but the guard's argument vectors are
+    //      only fully populated after their producing matchers
+    //      have run — which (per the ordering block above) is
+    //      before the LAST-group matchers. Running reorder LAST
+    //      means `fused_stmt_ranges` and `eliminated_stmt_ranges`
+    //      are final by the time Gate 2 consults them.
+    //
+    //      WHY reorder produces no new fusion opportunities
+    //      that PJ-1d could absorb: reorder's single-pass
+    //      design emits `QReplacement` text in which A and C
+    //      are now adjacent, but PJ-1d's AST-anchored callback
+    //      has already fired; it does NOT re-run against the
+    //      rewritten buffer. The fuse condition reorder checks
+    //      at Gate 4 (via `detail::count_readers_in_scope`) is
+    //      therefore a PAYOFF probe — "would this pair have
+    //      fused if B weren't between them?" — not a re-entrant
+    //      call into PJ-1d. The next transpile invocation (the
+    //      user's next build) will observe the rewritten source
+    //      and let PJ-1d absorb the now-adjacent pair.
+    //
+    //      WHY running reorder AFTER hoist captures MORE
+    //      opportunities, not fewer: hoist migrates loop-
+    //      invariant ops out of the loop body, which SHRINKS
+    //      the in-body op list. When a hoisted op sat between
+    //      a surviving `(A, C)` pair inside the loop body, the
+    //      remaining in-body ops close the gap — a new
+    //      adjacency the reorder pass can now exploit at Gate
+    //      1, that did NOT exist before hoist fired. Running
+    //      peephole reorder BEFORE hoist would miss every such
+    //      newly-exposed triple, because the pre-hoist in-body
+    //      list still contained the invariant op wedged between
+    //      A and C. So the LAST ordering is not only safe (the
+    //      prior paragraph's hoist-invariant argument) but also
+    //      maximally-productive: reorder observes the final,
+    //      post-every-other-pass op list, letting it find every
+    //      adjacency opportunity hoist exposes.
+    //
+    // Downstream blocks (sturm-8cwe PJ-3f snapshot fixtures,
+    // sturm-u655.8 PM5-8 reorder snapshots) rely on this
+    // ordering staying stable.
     sturm::transpile::register_hoist_invariant_matcher(finder_, unit_);
+    sturm::transpile::register_peephole_reorder_matcher(finder_, unit_);
     // PM3-4: Class 1 — WHEN operand mutation. Pure diagnostic matcher;
     // advisory only, does NOT mutate `unit_`. Registration order is
     // irrelevant for correctness because the callback anchors on the
