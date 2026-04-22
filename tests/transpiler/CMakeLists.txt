@@ -1406,6 +1406,75 @@ set_tests_properties(transpiler_idempotent_example_uncompute_hoisting PROPERTIES
     FIXTURES_REQUIRED "example_uncompute_hoisting_built"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase M / PM5-9: end-to-end injected observability + idempotency for ──
+# the peephole gate reordering example.  Same harness pattern as the
+# PJ-3g uncompute_hoisting block above, the PJ-4d dead_ancilla block,
+# and the PJ-1h zero_ancilla_fusion block:
+#   1. build_example_peephole_reorder — SETUP fixture that builds the
+#      example_peephole_reorder target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/peephole_reorder.cpp via
+#      add_quantum_executable().
+#   2. transpiler_example_peephole_reorder_injected — reads the
+#      generated file and asserts the CURRENT pipeline emission for
+#      the canonical PM5 peephole-reorder triple-shape source inside
+#      main()'s inner scope:
+#        - PE-4 compound-flatten: `qbool r = (a & b) | c;` becomes a
+#          flat two-decl sequence — `qbool __stu_t0 = a & b;` (inner
+#          AND) + `qbool r = __stu_t0 | c;` (outer OR).
+#        - PA-3 forward path: `y ^= z;` and `x ^= r;` are preserved
+#          verbatim (no rewrite).
+#        - Phase E LIFO uncompute pair at scope close:
+#          `uncompute_or(r, __stu_t0, c);` lands BEFORE
+#          `uncompute_and(__stu_t0, a, b);` (outer-first → inner-
+#          second, reverse source order).
+#        - PM5-5 reorder conservatively refuses: no `ccnot_inplace(`
+#          call appears in main()'s body (the current MVP matcher set
+#          has PE-4 wedging the outer OR between the inner AND and
+#          the user's `^=` consumer, breaking Gate 1; Gate 3's
+#          footprint check would also refuse).  Absence of the fused
+#          call is the load-bearing "current-pipeline pin" observable
+#          — a future matcher relaxation that enables PM5 + PJ-1d on
+#          this shape would produce a visible delta here.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name in its before/after
+#      schematic prose.
+#   3. transpiler_idempotent_example_peephole_reorder — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+add_test(
+    NAME build_example_peephole_reorder
+    COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+            --target example_peephole_reorder)
+set_tests_properties(build_example_peephole_reorder PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_SETUP "example_peephole_reorder_built")
+
+add_test(
+    NAME transpiler_example_peephole_reorder_injected
+    COMMAND "${CMAKE_COMMAND}"
+            -DSOURCE=${CMAKE_SOURCE_DIR}/examples/peephole_reorder.cpp
+            -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/peephole_reorder.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_peephole_reorder.cmake)
+set_tests_properties(transpiler_example_peephole_reorder_injected PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_REQUIRED "example_peephole_reorder_built"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_example_peephole_reorder
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/peephole_reorder.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_peephole_reorder_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_example_peephole_reorder PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_REQUIRED "example_peephole_reorder_built"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── Phase M / PM1-8: end-to-end injected observability + idempotency for ──
 # the in-memory transpile tutorial.  Same harness pattern as the PJ-3g
 # uncompute_hoisting block above, but the `_injected` test reads the

@@ -343,6 +343,43 @@ target_sources(example_uncompute_hoisting PRIVATE
 )
 target_link_libraries(example_uncompute_hoisting PRIVATE orkan_headers)
 
+# ── Example: peephole gate reordering demo (Phase M PM5) ────────────────────
+# Routed through sturm-transpile so the canonical PM5 triple-shape source
+#   qbool r = (a & b) | c;    // PE-4 lifts inner AND into __stu_t0 synth
+#   y ^= z;                    // B — bit-disjoint XOR_ASSIGN
+#   x ^= r;                    // C — XOR_ASSIGN consumer
+# flows through the full pipeline (Phase E / PE-4 compound-flatten +
+# Phase A / PA-3 `^=` matcher + MVP OR / Phase E LIFO uncompute emission
+# at scope close).  PM5-5's peephole reorder matcher
+# (`register_peephole_reorder_matcher` in
+# transpiler/src/matcher_peephole_reorder.cpp) inspects the final op
+# list but conservatively refuses on the current MVP matcher set
+# because the PE-4 outer OR wedges between the inner AND and the user-
+# written `^=` consumer in `scope.ops`, breaking Gate 1's adjacent-
+# triple precondition.  This example captures the CURRENT pipeline
+# emission for the canonical triple-shape source, pinning the pre-
+# reorder layout so any future enablement (e.g. a standalone AND
+# matcher whose decl-sink emits synthetic `__stu_t*` temps without a
+# wedge OR) produces a visible delta in the generated sibling.  Same
+# helper / bypass pattern as example_uncompute_hoisting; the PM5-5
+# matcher's registration LAST in transpiler/src/transpile_consumer.cpp
+# (after every Phase A–I per-op matcher and after PJ-1/PJ-3/PJ-4) is
+# pinned by the PM5-6 ordering.
+add_quantum_executable(example_peephole_reorder
+    peephole_reorder.cpp
+)
+target_sources(example_peephole_reorder PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_peephole_reorder PRIVATE orkan_headers)
+
 # ── Example: Phase M PM1-8 in-memory transpile tutorial ─────────────────────
 # Three-phase composition demo that exercises Phase E (compound
 # qbool expressions), Phase F (compound-WHEN integration), and Phase J
