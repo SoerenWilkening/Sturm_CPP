@@ -77,6 +77,11 @@ add_executable(sturm-transpile
     src/matcher_qint_const.cpp
     src/matcher_qint_qint.cpp
     src/matcher_qint_compare.cpp
+    # Phase N PN-2: rotation compound-assign matchers (theta / phi +=/-=).
+    # Dogfooded into the pipeline via `STURM_REGISTER_PLUGIN(PNRotationPlugin)`;
+    # the `TranspileConsumer`'s Registry drain picks them up at static-init
+    # time, so there is no direct consumer-side registration call.
+    src/matcher_rotation.cpp
     src/matcher_when_lift.cpp
     src/matcher_when_nested.cpp
     src/matcher_when_operand_mutation.cpp
@@ -289,6 +294,12 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_qint_const.cpp
     src/matcher_qint_qint.cpp
     src/matcher_qint_compare.cpp
+    # Phase N PN-2: rotation compound-assign matchers. Mirror the main
+    # binary so the plugin-path consumer (same `TranspileConsumer`) links
+    # the same symbols. Registration flows through the Registry drain
+    # (`STURM_REGISTER_PLUGIN(PNRotationPlugin)` at the bottom of
+    # `matcher_rotation.cpp`); no direct consumer-side wiring.
+    src/matcher_rotation.cpp
     src/matcher_when_lift.cpp
     src/matcher_when_nested.cpp
     src/matcher_when_operand_mutation.cpp

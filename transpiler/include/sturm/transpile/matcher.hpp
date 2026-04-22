@@ -117,6 +117,51 @@ void register_mul_assign_const_matcher(
 void register_div_assign_const_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 
+/// Phase N / PN-2: Register the four `q.theta() <op>= d;` / `q.phi() <op>= d;`
+/// rotation matchers for `+=` / `-=` against a `qint_t<W>` LHS whose proxy
+/// method (`theta()` / `phi()`) returns a `ThetaProxy` / `PhiProxy` value.
+/// The AST anchor is **one level deeper** than Phase B: the LHS of the outer
+/// `cxxOperatorCallExpr` is a `cxxMemberCallExpr` whose callee is a
+/// `cxxMethodDecl(hasName("theta"))` (or `"phi"`) and whose implicit-object
+/// argument peels to a `declRefExpr` of `qint_t` type. The RHS is a plain
+/// `double`-valued `Expr` — no `CXXConstructExpr` peel is needed because the
+/// proxy's `operator+=` takes `double` by value, not a converting ctor. The
+/// RHS source text is captured verbatim via `Lexer::getSourceText` (same
+/// Phase B policy) and stored as the operand name, with `decl_loc` invalid.
+///
+/// Each matcher records one QOperation of the matching THETA/PHI
+/// _ADD/SUB_ASSIGN_CONST kind; the M8 pass (PN-4) emits the sign-flipped
+/// `q.theta() -= d;` (or `+=` for the `SUB` kinds) as the inverse, inline,
+/// with no `uncompute_api.hpp` free-function helper — the runtime's
+/// `ThetaProxy::operator-=(double)` / `PhiProxy::operator-=(double)` at
+/// `include/sturm/qtypes/qint_core.hpp:305,372` are self-dual and forward
+/// to `operator+=(-delta)` for sign-agreement on the counter-mode
+/// `GateRecord` stream.
+///
+/// Multi-control rotations are **out of scope** (depth ≥ 2 under nested
+/// `WHEN` guards). Phase G AND-fold collapses nested `WHEN` chains to
+/// depth 1 before this matcher ever sees the rotation; the example fixture
+/// (`examples/rotations.cpp`, PN-7) pins the depth-1 invariant.
+///
+/// Dogfood: these four registrars are bundled into a `PNRotationPlugin`
+/// class in an anonymous namespace at file scope in `matcher_rotation.cpp`
+/// and announced via `STURM_REGISTER_PLUGIN(PNRotationPlugin)`. The
+/// `TranspileConsumer`'s Registry drain (PM4-3 / PM4-6) picks them up at
+/// static-init time and registers them against the shared `finder_` in the
+/// same block as the PB-1..PB-4 dogfood — so no consumer-side edit is
+/// needed to wire these matchers into the pipeline.
+///
+/// See `docs/implementation_plan_transpiler_phase_n.md` §3 for the full
+/// AST-shape derivation and the registration-order contract.
+void register_theta_add_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_theta_sub_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_phi_add_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+void register_phi_sub_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
 /// Phase C / PC-1..PC-5: Register the five `a <op>= b;` matchers for
 /// `+= -= *= /= %=` against a `qint_t<W>` LHS with another `qint_t<W>` RHS
 /// (a bare DeclRefExpr — no converting constructor fires, so the RHS has

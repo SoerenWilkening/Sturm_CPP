@@ -546,6 +546,8 @@ add_executable(test_transpile_matcher
     test_matcher_ph3_outer_var.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher.
     test_matcher_pn5_qbool_prep.cpp
+    # Phase N PN-2: rotation matcher (theta / phi +=/-=).
+    test_matcher_pn_rotation.cpp
     test_routine_registry.cpp
     test_matcher_user_routine.cpp
     test_matcher_output_class.cpp
@@ -580,6 +582,15 @@ add_executable(test_transpile_matcher
     # matcher unit-test binary resolves `register_qbool_prep_matcher`
     # and the `*_for_test` counter helpers.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
+    # Phase N PN-2: rotation matcher TU. Linked so the matcher
+    # unit-test binary resolves `register_theta_add_matcher` and its
+    # three siblings. The `STURM_REGISTER_PLUGIN(PNRotationPlugin)` at
+    # the bottom of the TU also fires during static init here, which
+    # is harmless — the test harness constructs a local MatchFinder
+    # and registers the matchers through the free-function path, not
+    # through the Registry drain (mirrors the PB dogfood test pattern
+    # in `test_matcher_qint_const.cpp`).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_rotation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
@@ -705,6 +716,12 @@ add_executable(test_transpile_consumer
     # `test_transpile_consumer` resolves the symbol through the shared
     # TranspileConsumer registration path.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
+    # Phase N PN-2: rotation matcher TU. Linked here so
+    # `test_transpile_consumer` picks up the `STURM_REGISTER_PLUGIN`
+    # static-init for `PNRotationPlugin` — the consumer's Registry
+    # drain registers the four rotation matchers against its own
+    # `finder_` just like it does for the PB dogfood plugin.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_rotation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp

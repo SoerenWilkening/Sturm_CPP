@@ -21,6 +21,8 @@ int main() {
     run_ph3_outer_var_tests();
     // Phase N PN-5: qbool(p) prep diagnostic matcher.
     run_pn5_qbool_prep_tests();
+    // Phase N PN-2: rotation matcher (theta / phi +=/-=).
+    run_pn_rotation_tests();
     run_routine_registry_tests();
     run_user_routine_tests();
     run_output_class_tests();
