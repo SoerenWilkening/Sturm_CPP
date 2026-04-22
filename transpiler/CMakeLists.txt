@@ -96,6 +96,10 @@ add_executable(sturm-transpile
     # link-time registrars. Plugin-path matchers (PM4-4 dlopen, PM4-3
     # in-process Registry& threading) resolve into this TU.
     src/plugin_registry.cpp
+    # PM5-2 / PM5-3: alias-analysis extractor + overlap predicate.
+    # The peephole reorder matcher (PM5-5) consumes this TU via the
+    # public `sturm/transpile/alias.hpp` surface.
+    src/alias.cpp
 )
 target_include_directories(sturm-transpile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -288,6 +292,10 @@ add_library(sturm-transpile-plugin SHARED
     # link-time registrars. Plugin-path matchers (PM4-4 dlopen, PM4-3
     # in-process Registry& threading) resolve into this TU.
     src/plugin_registry.cpp
+    # PM5-2 / PM5-3: alias-analysis extractor + overlap predicate.
+    # Mirror the main binary so the plugin-path peephole matcher
+    # (PM5-5) resolves the same symbols at dlopen.
+    src/alias.cpp
 )
 
 # PM4-10: when `STURM_PM4_LINK_DEMO=ON`, bake the demo plugin's registrar
