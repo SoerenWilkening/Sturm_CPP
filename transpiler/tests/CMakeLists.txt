@@ -314,6 +314,74 @@ add_test(NAME test_transpile_uncompute_pass
 set_tests_properties(test_transpile_uncompute_pass PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: PM5-4 alias footprint extractor ──────────────────────────────
+# Pins the `sturm::transpile::detail::footprint()` + `may_overlap()` API
+# (declared in `sturm/transpile/alias.hpp`, implemented in
+# `transpiler/src/alias.cpp`) across the fourteen-case matrix from
+# `docs/implementation_plan_transpiler_phase_m_pm5.md` §10 (Verification):
+# bare qbool, bare qint_t<W> for W ∈ {1, 4, 8}, BitProxy constant index
+# (in-range + out-of-range fallback), BitProxy non-constant index
+# (loop-induction-variable fallback), cross-decl disjointness for both
+# qbool and qint_t<4>, same-decl partial overlap, same-decl disjoint
+# bits, two `q[k]` with identical literal index, `f(q, q)`
+# USER_ROUTINE double-reference aliasing (§12 Sharp edge 6), dependent-
+# type universal sentinel fallback (§4 ladder step 5 / §12 Sharp edge 3),
+# and universal-vs-concrete overlap wildcard reflex.
+#
+# The test drives `footprint()` through its own lightweight ASTConsumer
+# pipeline (same posture as test_matcher_reader_count / test_matcher_
+# scope_kind) rather than routing through the MVP OR matcher harness.
+# The alias extractor is independent of any matcher registration, so the
+# direct ASTConsumer path isolates the contract. Linkage mirrors
+# test_transpile_consumer: shared libclang-cpp + libLLVM when available,
+# fallback to the static per-component archives otherwise. `alias.cpp`
+# is the only project source we link — the test does not touch the
+# Registry, the matcher TUs, or the uncompute pass.
+add_executable(test_alias_footprint
+    test_alias_footprint.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_alias_footprint PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_alias_footprint PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_alias_footprint PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_ALIAS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_alias_footprint PRIVATE
+    ${LLVM_DEFS_LIST_ALIAS})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_alias_footprint PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_alias_footprint PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_ALIAS support)
+    target_link_libraries(test_alias_footprint PRIVATE ${LLVM_LIBS_ALIAS})
+endif()
+add_test(NAME test_alias_footprint COMMAND test_alias_footprint)
+set_tests_properties(test_alias_footprint PROPERTIES LABELS "transpiler")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
