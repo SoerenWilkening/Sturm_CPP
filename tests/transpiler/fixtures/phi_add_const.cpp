@@ -1,0 +1,23 @@
+// Phase N / PN-3 input for the sturm-transpile rotation snapshot test.
+//
+// Exercises the double-RHS form of PHI_ADD_ASSIGN_CONST on a qint_t:
+// `a.phi() += 0.75;` must be paired with `a.phi() -= 0.75;` injected
+// before the scope's close brace. The RHS `0.75` reaches PhiProxy's
+// `operator+=(double)` directly — no converting-constructor peel needed
+// on the PN-2 matcher. The LHS qint_t identifier `a` is bound as the IR
+// op's `result`, and the verbatim RHS source text `"0.75"` is captured
+// via `Lexer::getSourceText`.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    struct PhiProxy {
+        void operator+=(double) {}
+        void operator-=(double) {}
+    };
+    PhiProxy phi() { return PhiProxy{}; }
+};
+} // namespace sturm
+using qint = sturm::qint_t<1>;
+
+void demo(qint a) { a.phi() += 0.75; }

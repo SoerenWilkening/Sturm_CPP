@@ -170,6 +170,121 @@ set_tests_properties(snapshot_div_assign_const PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase N / PN-3: snapshot fixtures for rotation compound-assigns ─────────
+# Each of the four covers one rotation direction whose LHS is a qint_t proxy
+# member call (`q.theta()` or `q.phi()`) and whose RHS is a bare double
+# literal — no converting-constructor peel. The emitted inverse is a
+# sign-flipped compound-assign on the same proxy; the runtime's
+# `ThetaProxy::operator-=` / `PhiProxy::operator-=` are self-dual
+# (include/sturm/qtypes/qint_core.hpp:305,372) so no free-function helper
+# from uncompute_api.hpp is required — the PN-4 uncompute pass arms emit
+# the `+=`/`-=` flip inline, same precedent as the Phase B arms above.
+#
+# Test names follow the `transpiler_snapshot_(theta|phi)_(add|sub)_const`
+# pattern pinned by the PN-3 bd issue (sturm-ft5t). A sibling
+# `transpiler_idempotent_*` test re-feeds the generated `.cpp` back through
+# sturm-transpile and asserts byte-for-byte equality — the AUTO-GENERATED
+# sentinel path in main.cpp handles this trivially today, but the explicit
+# check regresses any future widening that might accidentally re-transpile
+# already-generated output.
+add_test(
+    NAME transpiler_snapshot_theta_add_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/theta_add_const.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/theta_add_const.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/theta_add_const
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_theta_add_const PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_theta_add_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/theta_add_const/theta_add_const.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/theta_add_const_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_theta_add_const PROPERTIES
+    LABELS "transpiler"
+    # Snapshot test produces the generated file the idempotency check
+    # consumes, so sequence them via DEPENDS.
+    DEPENDS "transpiler_snapshot_theta_add_const"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_theta_sub_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/theta_sub_const.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/theta_sub_const.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/theta_sub_const
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_theta_sub_const PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_theta_sub_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/theta_sub_const/theta_sub_const.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/theta_sub_const_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_theta_sub_const PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_theta_sub_const"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_phi_add_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/phi_add_const.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/phi_add_const.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/phi_add_const
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_phi_add_const PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_phi_add_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/phi_add_const/phi_add_const.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/phi_add_const_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_phi_add_const PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_phi_add_const"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_phi_sub_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/phi_sub_const.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/phi_sub_const.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/phi_sub_const
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_phi_sub_const PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_phi_sub_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/phi_sub_const/phi_sub_const.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/phi_sub_const_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_phi_sub_const PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_phi_sub_const"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── Phase C / PC-1..PC-5: snapshot fixtures for qint-qint compound assigns ──
 # Each covers one operator (+= -= *= /= %=) whose RHS is a bare DeclRefExpr
 # to a second qint_t parameter (no converting constructor fires). The
