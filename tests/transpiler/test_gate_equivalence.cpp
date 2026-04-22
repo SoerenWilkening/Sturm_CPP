@@ -254,6 +254,46 @@ namespace m12_hoist_reference {
 void demo(const sturm::qbool& a, const sturm::qbool& b);
 } // namespace m12_hoist_reference
 
+// PM5-8: Phase M peephole-reorder gate-equivalence pair.  The
+// transpiler's PM5-5 `register_peephole_reorder_matcher` runs LAST
+// over the populated scope.  For this fixture the matcher observes a
+// compound-flattened PE-4 (OR, OR) decl pair followed by two user-
+// written XOR_ASSIGN statements; no triple in scope.ops satisfies
+// Gate 1 (A must be QOpKind::AND with a synthetic `__stu_t*`
+// prefix) so the reorder does NOT fire.  The fixture therefore
+// proves the stronger property that PM5 is a TRUE NO-OP on any
+// program whose ops list does not present its trigger shape —
+// preserving the gate stream byte-for-byte regardless of whether
+// the reorder matcher is registered.
+//
+// The hand-written companion `reorder_reference.cpp` spells the
+// same circuit by hand: PE-4's flattened decl pair, the two
+// user-written `^=` statements, their LIFO self-adjoints, and the
+// MVP OR uncompute calls at scope close.  Both fixtures emit the
+// same gate stream when the harness runs each `demo` against an
+// APPEND-mode BackendContext.
+//
+// `const sturm::qbool&` inputs preserve the caller's qubit
+// indices across the demo boundary; `sturm::qbool& x / y` mirror
+// the runtime fixture's non-const `^=` targets (the MVP qbool
+// `operator^=` requires a non-const lvalue).  All qubits are
+// caller-owned; neither fixture allocates.
+namespace m12_reorder_transpiled {
+void demo(const sturm::qbool& a,
+          const sturm::qbool& b,
+          const sturm::qbool& c,
+          sturm::qbool& x,
+          sturm::qbool& y);
+} // namespace m12_reorder_transpiled
+
+namespace m12_reorder_reference {
+void demo(const sturm::qbool& a,
+          const sturm::qbool& b,
+          const sturm::qbool& c,
+          sturm::qbool& x,
+          sturm::qbool& y);
+} // namespace m12_reorder_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -511,6 +551,56 @@ run_and_capture_dead_ancilla(void (*demo)(const sturm::qbool&,
     sturm::QubitPool::instance().release(qa);
     sturm::QubitPool::instance().release(qb);
     sturm::QubitPool::instance().release(qt);
+    return stream;
+}
+
+// PM5-8: capture helper for the Phase M peephole-reorder pair.  The
+// demo takes `(const qbool& a, const qbool& b, const qbool& c,
+// qbool& x, qbool& y)`; five fresh qubits are allocated via
+// `make_non_owning` so the harness retains ownership across the demo
+// boundary.  `a`, `b`, `c` are `const qbool&` to preserve the
+// caller's qubit indices (the MVP OR's compound-flatten emission
+// references all three through the `__stu_t0 | c` outer op plus the
+// `(a | b)` inner op that PE-4 allocates `__stu_t0` for); `x` and
+// `y` are non-const `qbool&` because the runtime fixture's `^=`
+// operations require non-const lvalues (and `operator^=` mutates
+// the qbool's state via emit_CX_lifted).  Both the runtime and
+// reference captures therefore observe the SAME five caller-
+// supplied indices, which is the precondition for a byte-identical
+// gate stream comparison.
+std::vector<sturm::GateRecord>
+run_and_capture_reorder(void (*demo)(const sturm::qbool&,
+                                     const sturm::qbool&,
+                                     const sturm::qbool&,
+                                     sturm::qbool&,
+                                     sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int qa = sturm::QubitPool::instance().allocate();
+    const int qb = sturm::QubitPool::instance().allocate();
+    const int qc = sturm::QubitPool::instance().allocate();
+    const int qx = sturm::QubitPool::instance().allocate();
+    const int qy = sturm::QubitPool::instance().allocate();
+    sturm::qbool a = sturm::qbool::make_non_owning(qa);
+    a.super_mask = 1ULL;
+    sturm::qbool b = sturm::qbool::make_non_owning(qb);
+    b.super_mask = 1ULL;
+    sturm::qbool c = sturm::qbool::make_non_owning(qc);
+    c.super_mask = 1ULL;
+    sturm::qbool x = sturm::qbool::make_non_owning(qx);
+    x.super_mask = 1ULL;
+    sturm::qbool y = sturm::qbool::make_non_owning(qy);
+    y.super_mask = 1ULL;
+
+    demo(a, b, c, x, y);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(qa);
+    sturm::QubitPool::instance().release(qb);
+    sturm::QubitPool::instance().release(qc);
+    sturm::QubitPool::instance().release(qx);
+    sturm::QubitPool::instance().release(qy);
     return stream;
 }
 
@@ -859,6 +949,54 @@ int main() {
     }
     std::printf("  hoist streams match (%zu gates).\n", ref_ho.size());
 
+    // PM5-8: Phase M peephole-reorder gate-equivalence pair.  Proves the
+    // transpiler's PM5-5 `register_peephole_reorder_matcher` — which
+    // runs LAST over the populated scope and conservatively refuses to
+    // fire on any triple that does not match its (A=AND-synthetic, B,
+    // C=XOR_ASSIGN-on-A.result) shape — emits the same gate stream as
+    // a hand-written reference that spells the same compound-flatten +
+    // XOR_ASSIGN + uncompute sequence by hand.  For this fixture the
+    // PE-4 outer OR wedges between the inner AND and any subsequent
+    // XOR_ASSIGN in scope.ops, so PM5 does not fire; the transpiled
+    // and reference streams are therefore byte-identical by
+    // construction, pinning the "conservative refusal preserves the
+    // gate stream" invariant that PM5's Gate-1/2/3/4 ordering is
+    // designed to guarantee.  Stream shape: the compound-flatten
+    // produces two OR expansions (each three gates on the happy
+    // path), the two user-written `^=` contribute one gate each, and
+    // the LIFO self-adjoints + OR uncomputes add the matching reverse
+    // gate sequence — the exact per-gate accounting depends on
+    // qbool's operator| / operator^= decomposition in the live
+    // backend, but structural equivalence is the load-bearing
+    // property (not a specific gate count).
+    std::printf("PM5-8 gate-stream equivalence test (reorder pattern):\n");
+    const auto ref_ro = run_and_capture_reorder(&m12_reorder_reference::demo);
+    const auto got_ro = run_and_capture_reorder(&m12_reorder_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_ro.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_ro[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_ro.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_ro[i]).c_str());
+    }
+    if (ref_ro.empty()) {
+        std::fprintf(stderr,
+                     "reorder reference produced 0 gates — fixture not "
+                     "exercising the Phase M peephole-reorder pipeline "
+                     "(the PE-4 compound-flatten + MVP OR + PA-3 ^= "
+                     "chain may have been short-circuited — check that "
+                     "STURM_BACKEND_ENABLED is defined and `(a | b) | c` "
+                     "is not resolving to the classical short-circuit "
+                     "path).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_ro, ref_ro); rc != 0) {
+        std::fprintf(stderr, "reorder gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  reorder streams match (%zu gates).\n", ref_ro.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
@@ -868,6 +1006,7 @@ int main() {
     std::printf("pair 7: %zu gates match\n", ref_fu.size());
     std::printf("pair 8: %zu gates match\n", ref_da.size());
     std::printf("pair 9: %zu gates match\n", ref_ho.size());
+    std::printf("pair 10: %zu gates match\n", ref_ro.size());
     std::printf("PASS\n");
     return 0;
 }

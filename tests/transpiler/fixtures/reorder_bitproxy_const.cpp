@@ -1,0 +1,67 @@
+// Phase M / PM5-8 input for the sturm-transpile end-to-end snapshot
+// test — "BitProxy constant index" case.
+//
+// Mirror of reorder_disjoint_qint_bits.cpp but the B operand is a
+// qint BitProxy subscript `arr[0] = 1;` with an INTEGER LITERAL
+// index. The PM5-3 footprint extractor's bit-peel rule reduces
+// `arr[0]` to the bit-range [0,1), a one-bit slice of `arr`'s
+// footprint. When compared against a qbool's [0,1) footprint on a
+// different name, `may_overlap()` short-circuits on the name-
+// inequality branch and reports disjointness — same semantic as the
+// "disjoint qbool" case but driven by the BitProxy pattern.
+//
+// Shape exercised here:
+//   qint_t<4> arr = 0;
+//   qbool r = (a & b) | c;             // PE-4: AND(__stu_t0, ...), OR(r, ...)
+//   arr[0] = 1;                        // B  — BitProxy write with
+//                                      //       literal index (const peel)
+//   x ^= r;                            // C' — operand is `r`, Gate 1 rejects
+//   (void)r;
+//
+// Same PM5 non-fire rationale as the sibling "disjoint qbool"
+// fixture: the PE-4 outer OR wedges between the inner AND and the
+// user-written XOR_ASSIGN in scope.ops, so the PM5 triple never
+// lines up with the outer OR as B (overlap) and the user's C has
+// operand `r`, not `__stu_t0`. The snapshot captures the pipeline's
+// pre-reorder emission so a future relaxation that enables the
+// reorder on this shape produces a visible delta.
+#include <cstddef>
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+};
+inline qbool operator&(const qbool&, const qbool&) { return qbool{}; }
+inline qbool operator|(const qbool&, const qbool&) { return qbool{}; }
+
+class BitProxy {
+public:
+    BitProxy() {}
+    BitProxy& operator=(int) { return *this; }
+};
+
+template <std::size_t W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    // NOLINTNEXTLINE(google-explicit-constructor)
+    qint_t(long long) {}
+    qint_t& operator=(const qint_t&) { return *this; }
+    BitProxy operator[](std::size_t) { return BitProxy{}; }
+};
+} // namespace sturm
+using sturm::qbool;
+using qint4_t = sturm::qint_t<4>;
+
+void demo(qbool a, qbool b, qbool c, qbool x) {
+    qint4_t arr = 0;
+    qbool r = (a & b) | c;
+    arr[0] = 1;
+    x ^= r;
+    (void)r;
+    (void)arr;
+}

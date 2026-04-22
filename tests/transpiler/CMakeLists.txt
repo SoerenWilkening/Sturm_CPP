@@ -1736,6 +1736,42 @@ add_custom_command(
 set_source_files_properties("${_m12_hoist_generated}" PROPERTIES
     GENERATED TRUE)
 
+# ── PM5-8: ninth transpile step for the Phase M peephole-reorder ──────
+# gate-equivalence pair.  Same driver invocation pattern as every
+# previous m12 block — routes `fixtures/reorder_runtime.cpp` through
+# sturm-transpile so the PM5-5 `register_peephole_reorder_matcher`
+# runs LAST over the populated scope.  The matcher is a conservative
+# no-op on any program whose ops list does not present the (A=AND-
+# synthetic, B, C=XOR_ASSIGN-on-A.result) trigger shape, so the
+# transpiled output is byte-structurally equivalent to the reference
+# for this fixture — which is the property the capstone is asserting.
+# The resulting TU is compiled into the single
+# test_gate_equivalence_or_single harness binary.  One binary,
+# ten pairs: or_single, or_circuit, nested_when, if_branches,
+# for_loop, user_routine, fuse_xor_and, dead_ancilla, hoist,
+# reorder.
+set(_m12_reorder_runtime_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_runtime.cpp")
+file(RELATIVE_PATH _m12_reorder_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_m12_reorder_runtime_src}")
+set(_m12_reorder_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_reorder_rel_src}")
+get_filename_component(_m12_reorder_gen_dir
+    "${_m12_reorder_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_m12_reorder_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_m12_reorder_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_m12_reorder_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_m12_reorder_runtime_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_m12_reorder_rel_src} (PM5-8)"
+    VERBATIM)
+set_source_files_properties("${_m12_reorder_generated}" PROPERTIES
+    GENERATED TRUE)
+
 add_executable(test_gate_equivalence_or_single
     test_gate_equivalence.cpp
     "${_m12_generated}"
@@ -1764,6 +1800,10 @@ add_executable(test_gate_equivalence_or_single
     # reference.
     "${_m12_hoist_generated}"
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hoist_reference.cpp
+    # PM5-8: Phase M peephole-reorder transpiled + hand-written
+    # reference.
+    "${_m12_reorder_generated}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_reference.cpp
     # Real sturm implementation sources — the harness needs
     # uncompute_or, execute_gate and the BackendContext C ABI to
     # actually fire.  The header-only `sturm` interface target does
@@ -2473,6 +2513,127 @@ add_test(
             -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/hoist_multi_op_same_loop
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
 set_tests_properties(snapshot_hoist_multi_op_same_loop PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── Phase M / PM5-8: snapshot fixtures for the peephole reorder pass ───────
+# Six fixtures end-to-end-test the Phase M PM5-5 peephole reorder
+# matcher against the same six decision-tree cases the PM5-7 unit tests
+# cover.  Each fixture drives its snapshot through the full transpile
+# pipeline (every Phase A..I + J + M matcher, including the peephole
+# reorder registered LAST in transpile_consumer.cpp) and byte-compares
+# the result against a golden `.expected.cpp`.  The goldens pin the
+# byte-level emission produced by the current pipeline for each
+# decision-tree shape; drift in the reorder matcher — or in any
+# upstream matcher whose output the reorder observes (PE-4 compound
+# flatten, PA-3 xor-assign, PJ-1f fuse, PJ-4b dead-ancilla, PJ-3d
+# hoist invariant) — surfaces as a snapshot delta.
+#
+# Shapes mirror PM5-7 (see the matcher_peephole_reorder.cpp § Detection
+# algorithm docstring + issue sturm-u655.8 for the decision tree):
+#
+#   * reorder_disjoint_qbool        — canonical "B is a bit-disjoint
+#       qbool XOR_ASSIGN" shape. Through the current matcher set the
+#       PE-4 outer OR wedges between the inner AND and the user's
+#       XOR_ASSIGN, so PM5 does not fire — Gate 1's operand-name
+#       discriminator rejects the triple. The snapshot captures the
+#       pre-reorder layout.
+#   * reorder_disjoint_qint_bits    — same shape but B is a qint
+#       `+= 1` compound-assign. Footprint extraction reports the qint
+#       full-width range, which is bit-disjoint from a qbool's [0,1)
+#       footprint. Same Gate 1 rejection path as the sibling fixture;
+#       snapshot pins the layout.
+#   * reorder_overlap_rejected      — B's operand OVERLAPS A's result
+#       (the PE-4 outer OR reads the inner AND's `__stu_t0`). Gate 3
+#       disjointness would refuse, but Gate 1 refuses first; the
+#       snapshot captures the pipeline's pre-reorder layout.
+#   * reorder_bitproxy_const        — B is a BitProxy subscript with a
+#       compile-time index `arr[0] = 1;`. The extractor peels the
+#       subscript to a single-bit footprint. Same Gate 1 non-fire
+#       path; snapshot pins the layout.
+#   * reorder_bitproxy_nonconst     — B is a BitProxy subscript with
+#       a runtime index `arr[i] = 1;`. The extractor falls back to
+#       the full-width footprint. Same Gate 1 non-fire path; snapshot
+#       pins the layout.
+#   * reorder_plugin_op_refused     — the default transpile build has
+#       no plugin registrars installed, so no QOpKind::PLUGIN op
+#       materialises in scope.ops. The fixture locks the "no plugin
+#       in triple" emission shape so a future build that inadvertently
+#       loaded a plugin produces a visible snapshot delta.
+#
+# Driver and harness are identical to every other snapshot test
+# (run_snapshot.cmake + byte-level compare_files). No new CMake
+# infrastructure is needed for PM5-8 — the fixtures land on the
+# existing wiring unchanged.
+add_test(
+    NAME snapshot_reorder_disjoint_qbool
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_disjoint_qbool.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_disjoint_qbool.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reorder_disjoint_qbool
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reorder_disjoint_qbool PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reorder_disjoint_qint_bits
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_disjoint_qint_bits.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_disjoint_qint_bits.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reorder_disjoint_qint_bits
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reorder_disjoint_qint_bits PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reorder_overlap_rejected
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_overlap_rejected.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_overlap_rejected.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reorder_overlap_rejected
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reorder_overlap_rejected PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reorder_bitproxy_const
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_bitproxy_const.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_bitproxy_const.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reorder_bitproxy_const
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reorder_bitproxy_const PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reorder_bitproxy_nonconst
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_bitproxy_nonconst.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_bitproxy_nonconst.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reorder_bitproxy_nonconst
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reorder_bitproxy_nonconst PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reorder_plugin_op_refused
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_plugin_op_refused.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_plugin_op_refused.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reorder_plugin_op_refused
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reorder_plugin_op_refused PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
