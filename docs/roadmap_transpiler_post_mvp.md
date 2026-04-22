@@ -975,13 +975,135 @@ Options, not mutually exclusive:
 > from PJ-2) stays open; its prerequisite alias analysis does not
 > exist yet.
 
+> **2026-04-22:** Phase M item "Peephole gate reordering" (PM5)
+> complete. The last Phase M stretch item has landed, closing the
+> PJ-2 deferral from Phase J (2026-04-16): the transpiler now commutes
+> commuting gates across unrelated ops to expose additional PJ-1
+> fusion opportunities beyond what the adjacent-statement peephole
+> caught. The value-gain question is resolved by a QIR-level alias
+> footprint API (`sturm::transpile::detail::footprint()` +
+> `may_overlap()`) that gives `qbool`, `qint_t<W>`, and constant-index
+> `BitProxy` references a `{name, decl_loc, bit_range}` summary
+> precise enough to prove two ops touch disjoint qubits. A single
+> new matcher `register_peephole_reorder_matcher` walks each
+> `QScope.ops` in source order and, for every adjacent triple
+> `(A: qbool __t = a & b; B; C: x ^= __t;)` where `B` has a disjoint
+> footprint from both `A`'s result and `C`'s reads/writes, emits one
+> `QReplacement` that moves `B` past `C` — seeding PJ-1's fuse
+> condition in the same pass (no iteration-to-fixed-point). The
+> matcher is registered LAST in `transpile_consumer.cpp`, after
+> `register_hoist_invariant_matcher`, so reorder never crosses a
+> hoist boundary; it also refuses to commute across `QOpKind::PLUGIN`
+> ops (operand-opacity sharp edge) and across
+> `classify_scope_kind != {LoopBody, Function}` (WHEN/branch
+> control-flow-sensitive). `docs/01_principles.md` B9 prose
+> (PM5-10) extends the enumeration to
+> `(PJ-1 fusion, PJ-3 hoisting, PJ-4 dead-ancilla elimination, PM5
+> peephole reordering)` — count remains "one global optimization
+> pass at transpile time" because PM5 adds a fourth matcher within
+> the existing pass, not a new pass. B1b, B6, B10, and P9 unchanged:
+> reorder only shuffles existing forward rewrites and their adjoints,
+> introducing no new runtime path, no new auto-inversion, no ancilla
+> lifetime change, and no implicit adjoints. Sub-items:
+>
+> - PM5-0 (sturm-u655.1): implementation plan skeleton at
+>   `docs/implementation_plan_transpiler_phase_m_pm5.md` — scope,
+>   QubitFootprint model, API surface in `sturm::transpile::detail`,
+>   footprint extraction rules (qbool / qint_t<W> / BitProxy const
+>   peel / conservative fallback), ordering vs Phase J, sub-task
+>   table, sharp-edge enumeration.
+> - PM5-1 (sturm-u655.2): header
+>   `transpiler/include/sturm/transpile/alias.hpp` declares
+>   `struct QubitFootprint{std::string name; clang::SourceLocation
+>   decl_loc; struct{unsigned lo, hi;} bit_range;}` plus free
+>   functions `footprint(const QOperandRef&, const ASTContext&)` and
+>   `may_overlap(const QubitFootprint&, const QubitFootprint&)` in
+>   the `sturm::transpile::detail` namespace (internal matcher
+>   helper, not public plugin API).
+> - PM5-2 (sturm-u655.3): `transpiler/src/alias.cpp` implements
+>   `footprint()` for bare `qbool` DREs (width 1, `bit_range={0,1}`)
+>   and bare `qint_t<W>` DREs (W extracted via
+>   `Type::getAsCXXRecordDecl()` →
+>   `ClassTemplateSpecializationDecl::getTemplateArgs()`). Dependent
+>   types return a universal sentinel footprint (`name=""`) so
+>   `may_overlap` reports true against everything. `may_overlap()`
+>   returns false iff names differ OR decl locations differ OR
+>   bit ranges are disjoint.
+> - PM5-3 (sturm-u655.4): `transpiler/src/alias.cpp` extends
+>   `footprint()` with the `BitProxy` subscript shape: peels
+>   `operator[](k)`, calls `Expr::EvaluateAsInt(Result, ASTContext)`
+>   on the index, and on success sets
+>   `bit_range={k, k+1}`. On failure (non-constant index) falls
+>   back conservatively to `bit_range={0, W}` using the parent
+>   `qint_t<W>`'s width.
+> - PM5-4 (sturm-u655.5):
+>   `transpiler/tests/test_alias_footprint.cpp` — ten unit cases
+>   pin the API (two qbools disjoint, qbool self-overlap, `qint_t<4>`
+>   full-width vs bit-ranges, `a[0]` vs `a[1]` disjoint, dynamic
+>   `a[i]` conservative, same-const-index same-qint overlap,
+>   cross-name no overlap, `f(q, q)` same-decl overlap,
+>   dependent-type universal-footprint overlap).
+> - PM5-5 (sturm-u655.6):
+>   `transpiler/src/matcher_peephole_reorder.cpp` exports
+>   `register_peephole_reorder_matcher(MatchFinder&, QUnit&, const
+>   ASTContext&)`. Walks each `QScope.ops`, detects the
+>   `(qbool __t = a & b;) B (x ^= __t;)` triple, tests disjointness
+>   via `detail::may_overlap()`, and emits one `QReplacement` per
+>   firing. Declaration added to
+>   `transpiler/include/sturm/transpile/matcher.hpp`; source added
+>   to both `sturm-transpile` and `sturm-transpile-plugin` targets
+>   in `transpiler/CMakeLists.txt`.
+> - PM5-6 (sturm-u655.7): wired into
+>   `transpiler/src/transpile_consumer.cpp` AFTER
+>   `register_hoist_invariant_matcher`; ordering-invariant comment
+>   block amended from "LAST: hoist" to "LAST: hoist, then reorder"
+>   documenting the single-pass seed-the-fuse-condition design.
+>   Gated on `A.hoist_to_override.isInvalid() && B.* && C.*` (no
+>   commuting across hoist boundary); consults
+>   `unit.fused_stmt_ranges` / `unit.eliminated_stmt_ranges` via
+>   PJ-1e's `is_range_covered_by_fused` probe; refuses to reorder
+>   across `classify_scope_kind != {LoopBody, Function}` and across
+>   `QOpKind::PLUGIN` ops.
+> - PM5-7 (sturm-u655.8):
+>   `transpiler/tests/test_matcher_peephole_reorder.cpp` — six unit
+>   fixtures (`disjoint-qbool` fires, `disjoint-qint-bits` fires,
+>   `overlap-rejected` refused, `BitProxy-const` fires,
+>   `BitProxy-nonconst` refused, `plugin-op-refused` refused).
+> - PM5-8 (sturm-u655.9): snapshot fixtures
+>   `tests/transpiler/fixtures/reorder_*.{cpp,expected.cpp}` (six
+>   cases mirroring PM5-7) pinned by a new `pm5_reorder_snapshot`
+>   CTest; gate-equivalence `m12_reorder_transpiled` /
+>   `m12_reorder_reference` namespace pair in
+>   `tests/transpiler/test_gate_equivalence.cpp` against
+>   `tests/transpiler/fixtures/reorder_runtime.cpp` +
+>   `reorder_reference.cpp` asserts byte-identical `GateRecord`
+>   streams between matcher-driven reorder and manual reference.
+> - PM5-9 (sturm-u655.10): `examples/peephole_reorder.cpp`
+>   demonstrates the before/after — a disjoint-footprint `B`
+>   separating `qbool __t = a & b;` and `x ^= __t;` collapses to
+>   `ccnot_inplace(x, a, b); B;` under reorder+fuse. Paired CTests
+>   `transpiler_example_peephole_reorder_injected` +
+>   `transpiler_idempotent_example_peephole_reorder` via
+>   `tests/transpiler/check_example_peephole_reorder.cmake`, wired
+>   through `examples/CMakeLists.txt` mirroring the PJ-1h
+>   (`zero_ancilla_fusion.cpp`) and PJ-3g
+>   (`uncompute_hoisting.cpp`) examples.
+> - PM5-10 (sturm-u655.11): `docs/01_principles.md` B9 prose
+>   extended to enumerate `PM5 peephole reordering` alongside
+>   `PJ-1 fusion`, `PJ-3 hoisting`, and `PJ-4 dead-ancilla
+>   elimination`. B1b, B6, B10, and P9 re-read and confirmed
+>   untouched.
+> - PM5-11 (sturm-u655.12): this roadmap update.
+>
+> Phase M is now complete — no remaining stretch items below.
+
 Lower priority, tracked for visibility.
 
 - **In-memory transpile.** *Complete — shipped in v0.1.2 (2026-04-19).* Skip the filesystem round-trip: transpile and feed directly to Clang's codegen. Keep the sibling-file emit as a `--dump-transpiled` option for debugging.
 - **Diagnostics.** Quantum-specific compile errors ("operand modified inside its own WHEN", "qbool escapes its scope without explicit measurement or uncompute"). Requires the liveness analysis from Phase H to be mature.
 - **Source maps.** *Complete — shipped 2026-04-20.* Transpiler-emitted insertions and replacements carry `#line <N> "<user-file>"` directives via the shared `format_line_directive()` helper in `transpiler/src/emitter.cpp` (PM2-1), threaded through Phase E compound decls (PM2-2), `render_uncompute` (PM2-3), `QReplacement` strings for PJ-1 fuse + Phase F WHEN-lift (PM2-4), and PJ-3 hoist attribution (PM2-5). Idempotency preserved end-to-end (PM2-6); 64 snapshot + 46 idempotency fixtures regenerated under `tests/transpiler/fixtures/*.expected.cpp` (PM2-7); user-facing guarantee pinned by the new `source_map_diagnostic` CTest with `tests/transpiler/fixtures/source_map_diagnostic_input.cpp` + `tests/transpiler/check_source_map_diagnostic.cmake` (PM2-8).
 - **Transpiler pluginization.** *Complete — shipped 2026-04-21.* User-defined rewrite rules registered with the transpiler, for ecosystem libraries that introduce new quantum operations. Public header `transpiler/include/sturm/transpile/plugin_api.hpp` (PM4-1) exposes `Registry::register_matcher` / `register_op`, the `STURM_REGISTER_PLUGIN(TypeName)` link-time macro, and the `extern "C" void sturm_register_plugin_v1(Registry&)` runtime-dlopen entry point; Registry implementation in `transpiler/src/plugin_registry.cpp` (PM4-2) owns per-consumer state plus Meyer's-singleton `registrars()` / `runtime_registrars()` vectors. Core wiring: `QOpKind::PLUGIN` + `plugin_kind_id` field in `transpiler/include/sturm/transpile/qir.hpp` with dispatch in `transpiler/src/uncompute_pass.cpp` (PM4-3); `load=<path>` ParseArgs + `dlopen(RTLD_LOCAL | RTLD_NOW)` + Clang-version gate in `transpiler/src/plugin.cpp` (PM4-4); `PLUGINS` argument in `cmake/SturmTranspile.cmake`'s `add_quantum_executable` (PM4-5). Dogfooded by migrating Phase B PB-1..PB-4 matchers (`transpiler/src/matcher_qint_const.cpp`) through the Registry API (PM4-6); demo plugin at `examples/plugin_demo/plugin_demo.cpp` + CMakeLists (PM4-7); five CTests pin the surface end-to-end (`pm4_smoke_dlopen`, `pm4_dogfood_snapshot`, `pm4_missing_plugin_errors`, `pm4_two_plugins_independent`, `pm4_smoke_linktime` — PM4-8..PM4-10). ABI is unstable across sturm minor versions; rebuild plugins per release.
-- **Peephole gate reordering** *(deferred from Phase J PJ-2, 2026-04-16).* Commute commuting gates across unrelated ops to expose fusion opportunities and cancellations beyond what PJ-1's adjacent-statement peephole captures. Requires alias analysis for the value-gain ratio to pay its way; dropped from Phase J on that basis.
+- **Peephole gate reordering** *Complete — shipped 2026-04-22.* Commute commuting gates across unrelated ops to expose PJ-1 fusion opportunities beyond what the adjacent-statement peephole captures. The PJ-2 deferral (2026-04-16) is closed: the prerequisite alias analysis landed as `sturm::transpile::detail::footprint()` / `may_overlap()` in `transpiler/src/alias.cpp` (PM5-1..PM5-3), exercised by `tests/transpiler/test_alias_footprint.cpp` (PM5-4), and consumed by the new `register_peephole_reorder_matcher` in `transpiler/src/matcher_peephole_reorder.cpp` (PM5-5). The matcher is registered LAST in `transpile_consumer.cpp` (after hoist) and gated on disjoint-footprint + hoist-boundary + PLUGIN-opacity checks (PM5-6). Pinned by `tests/transpiler/test_matcher_peephole_reorder.cpp` (PM5-7), six snapshot fixtures under `tests/transpiler/fixtures/reorder_*.cpp` + the `m12_reorder_transpiled` / `m12_reorder_reference` gate-equivalence pair (PM5-8), and `examples/peephole_reorder.cpp` (PM5-9).
 
 ---
 
