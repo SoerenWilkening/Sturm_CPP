@@ -24,7 +24,17 @@
 // - `QubitFootprint footprint(const QValueRef&, const clang::ASTContext&)`
 //   : peel the underlying expression and produce a `QubitFootprint`.
 //   Returns the universal sentinel on any extraction failure; see the
-//   plan's §2 / §4 for the exact fallback ladder.
+//   plan's §2 / §4 for the exact fallback ladder. Covers bare `qbool` and
+//   bare `qint_t<W>` DeclRefExprs (PM5-2). Cannot peel `q[k]` BitProxy
+//   shapes because the `QValueRef` struct carries only name + decl_loc.
+// - `QubitFootprint footprint(const clang::Expr&, const clang::ASTContext&)`
+//   : PM5-3 addition — peel a raw operand expression, including a
+//   `CXXOperatorCallExpr` with `OO_Subscript` for BitProxy operands. A
+//   constant-index subscript yields a `{k, k+1}` bit range; a
+//   non-constant index conservatively falls back to the parent's
+//   full-width footprint. Bare DRE shapes delegate to the `QValueRef`
+//   overload so the qbool / qint_t<W> resolution logic lives in exactly
+//   one place.
 // - `bool may_overlap(const QubitFootprint&, const QubitFootprint&)`
 //   : conservative disjointness test. Returns false IFF the two
 //   footprints provably refer to disjoint bits (different names, or
@@ -33,7 +43,7 @@
 //
 // Header-only declarations; implementations land in `transpiler/src/alias.cpp`
 // (PM5-2 / PM5-3). This file has no state, no class, no inline bodies — the
-// two free functions are the entire public surface of the alias-analysis
+// three free functions are the entire public surface of the alias-analysis
 // subsystem. See the plan's §3 for the design rationale behind
 // "free-function + namespace, not class" and "return by value, not output
 // parameter."
@@ -44,6 +54,7 @@
 #include "sturm/transpile/qir.hpp"
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Expr.h"
 #include "clang/Basic/SourceLocation.h"
 
 #include <string>
@@ -111,6 +122,42 @@ struct QubitFootprint {
 /// Cost: O(1) after the Clang AST peels are cached by `ctx`. Never
 /// mutates `op` or `ctx`.
 QubitFootprint footprint(const QValueRef& op, const clang::ASTContext& ctx);
+
+/// Extract a `QubitFootprint` from a raw operand expression.
+///
+/// This overload is the entry point callers should use when they have
+/// the operand `Expr*` in hand — specifically, the PM5-5 peephole
+/// reorder matcher when it walks a `CXXOperatorCallExpr` argument list
+/// and needs a footprint for an operand that may be a `q[k]` BitProxy
+/// subscript (rather than a bare DeclRefExpr). The `QValueRef`
+/// overload above cannot peel BitProxy call shapes because the
+/// `QValueRef` struct carries only `name` + `decl_loc`; the subscript
+/// index lives in the raw Clang `Expr*` tree and must be evaluated via
+/// `Expr::EvaluateAsInt`. See the plan's §4 ladder step 3 for the
+/// BitProxy constant-index peel contract and §12 Sharp edge 1 for the
+/// non-constant-index conservative fallback.
+///
+/// Extraction ladder (mirrors the `QValueRef` overload with one extra
+/// step at the top — see PM5-3):
+///   1. `CXXOperatorCallExpr` with `OO_Subscript` whose `getArg(0)`
+///      peels to a `DeclRefExpr` naming a `qint_t<W>` VarDecl, AND
+///      `getArg(1)` evaluates via `Expr::EvaluateAsInt` to an integer
+///      `k` with `0 <= k < W` → `{name, decl_loc, {k, k+1}}`.
+///   2. Same subscript shape but `k` is non-constant, or outside
+///      `[0, W)` → fall back to the parent's full-width footprint
+///      `{name, decl_loc, {0, W}}`. This is the conservative
+///      optimism-rejection case (loop variable, out-of-range, etc.).
+///   3. Bare `DeclRefExpr` → delegate to the `QValueRef` overload
+///      using `make_ref(dre)` (bare qbool / bare qint_t<W>).
+///   4. Any other expression shape (dependent type, plugin-op
+///      operand, unrecognised sugar) → universal sentinel.
+///
+/// Cost: O(1) Clang AST peels + one `Expr::EvaluateAsInt` call on the
+/// subscript-index branch (itself O(1) for integer literals; Clang
+/// caches constant-evaluation results on `ctx`). Never mutates either
+/// argument; both are `const` references.
+QubitFootprint footprint(const clang::Expr& expr,
+                         const clang::ASTContext& ctx);
 
 /// Return true IFF `a` and `b` MAY refer to overlapping bits.
 ///
