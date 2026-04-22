@@ -469,6 +469,110 @@ static void test_dump_mod_assign_qint() {
     CHECK_EQ_STR(dump(unit), want);
 }
 
+// ── Phase N: rotation compound-assign enumerators ────────────────────────────
+//
+// Per the PN-1 pattern in docs/implementation_plan_transpiler_phase_n.md §2,
+// `q.theta() += d;`, `q.theta() -= d;`, `q.phi() += d;`, `q.phi() -= d;`
+// (with d a classical `double`-valued expression) each need their own
+// QOpKind entry. The operand shape mirrors Phase B — one result + one named
+// operand whose `name` is the verbatim RHS source text captured via
+// `Lexer::getSourceText` — but the LHS is a qint rather than a qbool and the
+// inverse is a sign-flipped inline compound-assign emitted by the PN-4
+// uncompute-pass arms (no `uncompute_api.hpp` free function). dump() must
+// stringify each new kind so the M7 matcher and M8 uncompute goldens stay
+// stable once PN-2..PN-8 land; without these cases the kinds would render as
+// "<unknown-QOpKind>" and every downstream fixture would silently break.
+
+static void test_dump_theta_add_assign_const() {
+    // `q.theta() += 0.5;` — the LHS name "q" is the qint that dispatched
+    // theta() and the operand name is the verbatim RHS source text.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::THETA_ADD_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.5", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] THETA_ADD_ASSIGN_CONST q@20 = 0.5@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_theta_sub_assign_const() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::THETA_SUB_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.1", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] THETA_SUB_ASSIGN_CONST q@20 = 0.1@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_phi_add_assign_const() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::PHI_ADD_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.7", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] PHI_ADD_ASSIGN_CONST q@20 = 0.7@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
+static void test_dump_phi_sub_assign_const() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::PHI_SUB_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.2", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    const std::string want =
+        "QUnit: 1 scope(s)\n"
+        "  Scope[0] braces=[10..50]\n"
+        "    Op[0] PHI_SUB_ASSIGN_CONST q@20 = 0.2@25  range=[28..40]\n";
+    CHECK_EQ_STR(dump(unit), want);
+}
+
 // ── Phase E: AND enumerator ──────────────────────────────────────────────────
 //
 // PE-1 adds `QOpKind::AND` as the second qbool bitwise kind. The enum sits
@@ -930,6 +1034,11 @@ int main() {
     test_dump_mul_assign_qint();
     test_dump_div_assign_qint();
     test_dump_mod_assign_qint();
+
+    test_dump_theta_add_assign_const();
+    test_dump_theta_sub_assign_const();
+    test_dump_phi_add_assign_const();
+    test_dump_phi_sub_assign_const();
 
     test_dump_and_op();
 

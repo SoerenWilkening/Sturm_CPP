@@ -103,6 +103,27 @@ enum class QOpKind {
     MUL_ASSIGN_QINT,
     DIV_ASSIGN_QINT,
     MOD_ASSIGN_QINT,
+    // Phase N — amplitude / phase rotation compound-assigns. Each op carries
+    // one result QValueRef (the qint LHS that `theta()`/`phi()` dispatched
+    // from) plus one operand QValueRef whose `.name` is the verbatim RHS
+    // source text captured via `Lexer::getSourceText` (same PN pattern used
+    // by Phase B for integer compound-assigns; the RHS is a double-valued
+    // expression at the source level, treated opaquely by the matcher /
+    // emitter). Inverses emit inline in `uncompute_pass.cpp` (Phase B style,
+    // no free-function helper) because the runtime `ThetaProxy` /
+    // `PhiProxy` `operator-=` already exists at
+    // `include/sturm/qtypes/qint_core.hpp:305,372` and is self-dual.
+    //
+    // No `QOpKind::PREP` — P5 primitive 1 (`qbool(p)` preparation) is
+    // handled via a Warning-severity diagnostic on `DiagContext` rather
+    // than a first-class IR op (see
+    // `docs/implementation_plan_transpiler_phase_n.md` §2, §5).
+    //
+    // See `docs/implementation_plan_transpiler_phase_n.md` §2-4.
+    THETA_ADD_ASSIGN_CONST,
+    THETA_SUB_ASSIGN_CONST,
+    PHI_ADD_ASSIGN_CONST,
+    PHI_SUB_ASSIGN_CONST,
     // Phase D — qint-qint comparisons producing a named qbool result
     // (`qbool c = a == b;`, etc.). Each op carries one result QValueRef
     // (the produced qbool) plus two operand QValueRefs naming the LHS/RHS

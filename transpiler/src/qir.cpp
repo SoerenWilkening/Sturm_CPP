@@ -54,6 +54,10 @@ std::string kind_to_string(QOpKind kind) {
     case QOpKind::MUL_ASSIGN_QINT:  return "MUL_ASSIGN_QINT";
     case QOpKind::DIV_ASSIGN_QINT:  return "DIV_ASSIGN_QINT";
     case QOpKind::MOD_ASSIGN_QINT:  return "MOD_ASSIGN_QINT";
+    case QOpKind::THETA_ADD_ASSIGN_CONST: return "THETA_ADD_ASSIGN_CONST";
+    case QOpKind::THETA_SUB_ASSIGN_CONST: return "THETA_SUB_ASSIGN_CONST";
+    case QOpKind::PHI_ADD_ASSIGN_CONST:   return "PHI_ADD_ASSIGN_CONST";
+    case QOpKind::PHI_SUB_ASSIGN_CONST:   return "PHI_SUB_ASSIGN_CONST";
     case QOpKind::EQ_QINT:          return "EQ_QINT";
     case QOpKind::NE_QINT:          return "NE_QINT";
     case QOpKind::LT_QINT:          return "LT_QINT";
