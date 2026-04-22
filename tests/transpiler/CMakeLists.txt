@@ -3093,3 +3093,52 @@ add_test(
 set_tests_properties(plugin_diagnostic_quantum_to_classical_cond_clean PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PN-6: plugin_diagnostic_qbool_prep_* ──────────────────────────────────
+#
+# Two CTests exercise the PN-5 Class 6 matcher (qbool(p) probabilistic
+# prep in an uncompute-eligible scope), wiring the new
+# `register_qbool_prep_matcher` through the shared `DiagContext` (PM3-0)
+# + `DiagnosticsEngine` + `TextDiagnosticPrinter` (PM3-1) path.
+#
+#   plugin_diagnostic_qbool_prep_fires — positive:
+#       WHEN(a) { qbool x(0.5); (void)x; } places a probabilistic
+#       `qbool(double)` prep inside a WHEN body; the matcher MUST fire
+#       the Warning and the driver MUST exit ZERO (Warning severity,
+#       not Error — compilation continues so every PN-5 violation in
+#       the TU is surfaced in a single pass).
+#   plugin_diagnostic_qbool_prep_clean — negative:
+#       `qbool x(0.5);` at function-body top-level scope;
+#       `classify_scope_kind` returns `ScopeKind::Function` and the
+#       matcher early-returns silently (valid P5 item 1 use). The
+#       driver MUST exit zero and stderr MUST NOT contain the PN-5
+#       format fragment.
+#
+# The positive CTest also pins source-map plumbing via -DEXPECTED_LINE
+# so stderr cites `qbool_prep_in_when.cpp:<line>:`. The `qbool x(0.5);`
+# VarDecl lives on line 73 inside the WHEN body; bump if the fixture's
+# preamble grows or shrinks.
+add_test(
+    NAME plugin_diagnostic_qbool_prep_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/qbool_prep_in_when.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_qbool_prep_fires"
+            "-DMUST_CONTAIN=preparation in uncompute-eligible scope has no adjoint"
+            "-DEXPECTED_LINE=73"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_qbool_prep_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_qbool_prep_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_qbool_prep_clean
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/qbool_prep_top_level_clean.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_qbool_prep_clean"
+            "-DMUST_NOT_CONTAIN=preparation in uncompute-eligible scope"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_qbool_prep_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_qbool_prep_clean PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
