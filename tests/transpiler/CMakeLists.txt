@@ -2019,6 +2019,42 @@ add_custom_command(
 set_source_files_properties("${_m12_reorder_generated}" PROPERTIES
     GENERATED TRUE)
 
+# ── PN-8: tenth transpile step for the Phase N rotation gate- ──────────
+# equivalence pair.  Same driver invocation pattern as every previous
+# m12 block — routes `fixtures/rotations_runtime.cpp` through
+# sturm-transpile so the PN-2 rotation matchers anchor on the four
+# compound-assign shapes (`q.theta() += d;` / `q.theta() -= d;` /
+# `q.phi() += d;` / `q.phi() -= d;`) + stage four QOperations on the
+# demo body's QScope plus one on the inner WHEN body's QScope, and the
+# PN-4 uncompute arms plant five sign-flipped inverses (one in-body
+# depth-1 WHEN guard + four LIFO duals at the demo body's close brace).
+# The resulting TU is compiled into the single
+# test_gate_equivalence_or_single harness binary.  One binary,
+# eleven pairs: or_single, or_circuit, nested_when, if_branches,
+# for_loop, user_routine, fuse_xor_and, dead_ancilla, hoist, reorder,
+# rotations.
+set(_m12_rotations_runtime_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/rotations_runtime.cpp")
+file(RELATIVE_PATH _m12_rotations_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_m12_rotations_runtime_src}")
+set(_m12_rotations_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_rotations_rel_src}")
+get_filename_component(_m12_rotations_gen_dir
+    "${_m12_rotations_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_m12_rotations_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory "${_m12_rotations_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_m12_rotations_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_m12_rotations_runtime_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_m12_rotations_rel_src} (PN-8)"
+    VERBATIM)
+set_source_files_properties("${_m12_rotations_generated}" PROPERTIES
+    GENERATED TRUE)
+
 add_executable(test_gate_equivalence_or_single
     test_gate_equivalence.cpp
     "${_m12_generated}"
@@ -2051,6 +2087,9 @@ add_executable(test_gate_equivalence_or_single
     # reference.
     "${_m12_reorder_generated}"
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reorder_reference.cpp
+    # PN-8: Phase N rotation transpiled + hand-written reference.
+    "${_m12_rotations_generated}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/rotations_reference.cpp
     # Real sturm implementation sources — the harness needs
     # uncompute_or, execute_gate and the BackendContext C ABI to
     # actually fire.  The header-only `sturm` interface target does
@@ -2089,6 +2128,25 @@ add_dependencies(test_gate_equivalence_or_single sturm-transpile)
 add_test(NAME gate_equivalence_or_single
          COMMAND test_gate_equivalence_or_single)
 set_tests_properties(gate_equivalence_or_single PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── PN-8: separate ctest entry matching `gate_equivalence.*rotations` ───
+# The single test_gate_equivalence_or_single executable exercises all
+# eleven m12 pairs (including the Phase N rotation pair) in a single
+# back-to-back main(), so the rotation-specific assertions pass/fail
+# with the other ten pairs.  This entry re-adds the same binary under
+# a name that matches the PN-8 acceptance-criterion regex
+# `gate_equivalence.*rotations` so bd-worker gating
+# (`ctest --parallel 6 -R 'gate_equivalence.*rotations'`) picks up the
+# rotation pair without running the unrelated pairs under a different
+# label.  CTest runs the binary once per matching entry — both tests
+# execute the same main() and therefore exercise the same eleven
+# pairs; the overhead is a single extra back-to-back invocation when
+# both patterns are matched.
+add_test(NAME gate_equivalence_rotations
+         COMMAND test_gate_equivalence_or_single)
+set_tests_properties(gate_equivalence_rotations PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 

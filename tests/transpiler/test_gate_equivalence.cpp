@@ -294,6 +294,35 @@ void demo(const sturm::qbool& a,
           sturm::qbool& y);
 } // namespace m12_reorder_reference
 
+// PN-8: Phase N rotation gate-equivalence pair.  The transpiler's PN-2
+// matchers fire on `q.theta() += d;` / `q.theta() -= d;` / `q.phi() += d;`
+// / `q.phi() -= d;` (each on a qint_t<W> LHS with a double-valued RHS)
+// and stage one QOperation per forward rotation on the enclosing
+// QScope — four on the demo body's QScope plus one on the inner WHEN
+// body's QScope.  The PN-4 uncompute-pass arms then plant five sign-
+// flipped inverses in LIFO order: one in-body inverse before the WHEN
+// body's close brace (preserving B5's single-control-scope invariant
+// for the depth-1 controlled rotation) and four at the demo body's
+// close brace (LIFO dual chain for the four outer rotations in
+// reverse-source order).  The hand-written reference
+// `rotations_reference.cpp` spells the same five inverses by hand so
+// the captured gate streams match byte-for-byte.  Expected stream:
+// ten gates — RY(q_a, 0.3), RY(q_a, -0.1), RZ(q_b, 0.7), RZ(q_b, -0.2),
+// CRY(q_c, q_a, 0.5), CRY(q_c, q_a, -0.5), RZ(q_b, 0.2), RZ(q_b, -0.7),
+// RY(q_a, 0.1), RY(q_a, -0.3).  The demo takes no arguments because
+// Phase N's rotation proxies auto-promote fully-classical qint_t<W>
+// registers on first rotation (M15/M16 in qint_core.hpp:256-265 /
+// 319-332), so the QubitPool-reset-then-allocate sequence in
+// ScopedAppendContext gives both fixtures identical qubit indices
+// without the harness needing to stage caller-owned qubits.
+namespace m12_rotations_transpiled {
+void demo();
+} // namespace m12_rotations_transpiled
+
+namespace m12_rotations_reference {
+void demo();
+} // namespace m12_rotations_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -602,6 +631,32 @@ run_and_capture_reorder(void (*demo)(const sturm::qbool&,
     sturm::QubitPool::instance().release(qx);
     sturm::QubitPool::instance().release(qy);
     return stream;
+}
+
+// PN-8: capture helper for the Phase N rotation fixture pair.  The
+// demo takes NO arguments because Phase N rotations auto-promote
+// fully-classical qint_t<W> registers on first rotation (M15/M16 in
+// qint_core.hpp:256-265 / 319-332) — the inner body allocates its
+// own `qbool c(0.5)`, `qint_t<1> a`, `qint_t<1> b` via QubitPool
+// straight after the ScopedAppendContext pool-reset.  Both the
+// runtime (transpiled) and reference fixtures therefore observe the
+// SAME pool state on entry, so the qbool c(0.5) prep allocates
+// c.qubits[0] = 0, the first `a.theta() += 0.3` auto-promotes with
+// a.qubits[0] = 1, and the first `b.phi() += 0.7` auto-promotes
+// with b.qubits[0] = 2.  Identical qubit indices across the two
+// captures is the precondition for the byte-identical RY / RZ /
+// CRY gate stream comparison.  Note that the qbool(double)
+// constructor calls current_sink()->prepare(qubits[0], p) (qbool.hpp
+// line 62) which writes to the CounterSink ONLY — it does NOT emit
+// a record to ctx->ir — so the captured GateRecord stream omits any
+// "prepare" entry.
+std::vector<sturm::GateRecord>
+run_and_capture_rotations(void (*demo)()) {
+    ScopedAppendContext sc;
+
+    demo();
+
+    return capture_ir(sc.ir());
 }
 
 bool gates_equal(const sturm::GateRecord& x, const sturm::GateRecord& y) {
@@ -997,6 +1052,56 @@ int main() {
     }
     std::printf("  reorder streams match (%zu gates).\n", ref_ro.size());
 
+    // PN-8: Phase N rotation gate-equivalence pair.  Proves the
+    // transpiler's PN-2 rotation matchers + PN-4 uncompute arms —
+    // which stage a QOperation per `q.theta() += d;` / `q.theta() -= d;`
+    // / `q.phi() += d;` / `q.phi() -= d;` on the enclosing QScope
+    // and emit a sign-flipped inverse (`+=` ↔ `-=`) before the scope
+    // closes — emit the same gate stream as a hand-written reference
+    // that spells the five inverses (one in-body depth-1 WHEN guard
+    // + four LIFO duals at demo body close) by hand.  The runtime's
+    // self-dual ThetaProxy::operator-= / PhiProxy::operator-= at
+    // include/sturm/qtypes/qint_core.hpp:305,372 dispatches `-delta`
+    // through the same emit_RY_lifted / emit_RZ_lifted path, so both
+    // DSL spellings of a sign-flipped rotation (`a.theta() -= 0.3`
+    // and `a.theta() += -0.3`) produce byte-identical GateRecord
+    // entries.  Expected stream: ten gates spanning RY, RZ, CRY —
+    // see rotations_runtime.cpp / rotations_reference.cpp for the
+    // per-gate accounting.  The demos take no arguments because
+    // Phase N rotations auto-promote fully-classical qint_t<W>
+    // registers on first rotation (M15/M16), so the QubitPool-
+    // reset-then-allocate sequence in ScopedAppendContext gives
+    // both fixtures identical qubit indices without the harness
+    // needing to stage caller-owned qubits.
+    std::printf("PN-8 gate-stream equivalence test (rotations pattern):\n");
+    const auto ref_rt = run_and_capture_rotations(&m12_rotations_reference::demo);
+    const auto got_rt = run_and_capture_rotations(&m12_rotations_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_rt.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_rt[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_rt.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_rt[i]).c_str());
+    }
+    if (ref_rt.empty()) {
+        std::fprintf(stderr,
+                     "rotations reference produced 0 gates — fixture not "
+                     "exercising the Phase N rotation pipeline (the four "
+                     "outer theta/phi compound-assigns plus the depth-1 "
+                     "WHEN-guarded theta rotation should collectively emit "
+                     "ten gates against the active APPEND-mode context — "
+                     "check that STURM_BACKEND_ENABLED is defined and the "
+                     "qint_t<1> + qbool includes resolve to the real "
+                     "headers, not the `__has_include` stub branch).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_rt, ref_rt); rc != 0) {
+        std::fprintf(stderr, "rotations gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  rotations streams match (%zu gates).\n", ref_rt.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
@@ -1007,6 +1112,7 @@ int main() {
     std::printf("pair 8: %zu gates match\n", ref_da.size());
     std::printf("pair 9: %zu gates match\n", ref_ho.size());
     std::printf("pair 10: %zu gates match\n", ref_ro.size());
+    std::printf("pair 11: %zu gates match\n", ref_rt.size());
     std::printf("PASS\n");
     return 0;
 }
