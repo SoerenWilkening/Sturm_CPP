@@ -867,6 +867,103 @@ Options, not mutually exclusive:
 > per the 2026-04-20 user decision — the corresponding bullet has
 > been removed below.
 
+> **2026-04-21:** Phase M item "Diagnostics" (PM3) complete. Five
+> quantum-specific compile-time diagnostic classes now flow through
+> `clang::DiagnosticsEngine` instead of raw `fprintf` / silent
+> early-returns: WHEN operand mutation (error), quantum→classical in
+> branch condition (error), missing adjoint registration (error),
+> caller drops returned qbool (warning), and PH-3 outer-var reverse-
+> loop upgrade (warning). Shared `DiagContext` scaffold in
+> `transpiler/src/diag_context.{hpp,cpp}` owns a reference to the
+> active `DiagnosticsEngine` and lazy-caches `getCustomDiagID`
+> handles; one per-consumer instance is threaded into each matcher
+> registration that emits diagnostics. The standalone
+> `bin/sturm-transpile` driver now wires a
+> `TextDiagnosticPrinter(llvm::errs(), &DiagOpts)` where it
+> previously swallowed diagnostics via `IgnoringDiagConsumer`, so
+> the five classes surface identically whether the user is building
+> through the Clang plugin (`plugin.cpp`) or the standalone driver.
+> `docs/01_principles.md` unchanged — PM3 reports on detection paths
+> that were already present at transpile time (outer-var guard) or
+> newly added as advisory AST walkers (classes 1–4); B1b, B6, B9,
+> B10, and P9 are untouched because no runtime path, no ancilla
+> lifetime, no IR pass, and no adjoint registration surface moves.
+> Sub-items:
+>
+> - PM3-0 (sturm-5btt.1): `DiagContext` scaffold at
+>   `transpiler/src/diag_context.{hpp,cpp}` — struct holds
+>   `clang::DiagnosticsEngine&`; empty `report_*` stubs for all
+>   five classes; lazy `getOrRegister(level, fmt)` helper; wired
+>   into `TranspileConsumer` via `ci.getDiagnostics()` and added to
+>   both the `sturm-transpile` executable and
+>   `sturm-transpile-plugin` library source lists.
+> - PM3-1 (sturm-5btt.2): `transpiler/src/main.cpp` swaps
+>   `IgnoringDiagConsumer` for `TextDiagnosticPrinter(llvm::errs(),
+>   &DiagOpts)` so the standalone driver surfaces the same stderr
+>   Clang-formatted lines the plugin already produces; pinned by
+>   new `transpile_diagnostic_surfaces` CTest against
+>   `tests/transpiler/fixtures/standalone_diag_surfaces_input.cpp`.
+> - PM3-2 (sturm-5btt.3): PH-3 outer-var warning routed through
+>   `DiagContext`. `transpiler/src/matcher_outer_var_guard.cpp`
+>   drops its raw `fprintf` in favour of
+>   `diag.report_outer_var_mutation(...)` with
+>   `DiagnosticIDs::Warning`; pinned by
+>   `plugin_diagnostic_outer_var_guard` CTest plus
+>   `tests/transpiler/check_outer_var_guard_diagnostic.cmake`.
+> - PM3-3 (sturm-5btt.4): Class 3 — missing adjoint registration
+>   (error). `transpiler/src/matcher_user_routine.cpp` computes
+>   `outputs_mask` from parameter types before the registry check;
+>   on miss with non-zero mask it calls
+>   `diag.report_missing_adjoint(...)` instead of silently skipping.
+>   Positive/negative fixtures
+>   `tests/transpiler/fixtures/missing_adjoint_diagnostic_input.cpp`
+>   + `missing_adjoint_clean.cpp` exercised by
+>   `plugin_diagnostic_missing_adjoint_fires` /
+>   `plugin_diagnostic_missing_adjoint_clean` CTests via
+>   `tests/transpiler/check_missing_adjoint_diagnostic.cmake`.
+> - PM3-4 (sturm-5btt.5): Class 1 — WHEN operand mutation (error).
+>   New matcher
+>   `transpiler/src/matcher_when_operand_mutation.cpp` anchors on
+>   the WHEN middle `IfStmt` (same predicate as
+>   `matcher_when_lift.cpp`), collects every DRE to a qbool/qint
+>   VarDecl in the `materialize_when` argument into a
+>   `SmallPtrSet`, then walks the body for
+>   `CXXOperatorCallExpr` (`=`, `^=`, `+=`, …) / `UnaryOperator`
+>   (`++`, `--`) hits whose LHS resolves into the set. Pinned by
+>   `plugin_diagnostic_when_operand_mutation_fires` /
+>   `plugin_diagnostic_when_operand_mutation_clean` CTests via
+>   `tests/transpiler/check_when_operand_mutation_diagnostic.cmake`.
+> - PM3-5 (sturm-5btt.6): Class 2 — quantum→classical in branch
+>   condition (error). New matcher
+>   `transpiler/src/matcher_quantum_to_classical_cond.cpp` binds
+>   explicit `cxxStaticCastExpr` / `cStyleCastExpr` /
+>   `cxxFunctionalCastExpr` from qbool/qint_t to a bool or
+>   integral target; callback walks `ASTContext::getParents`
+>   (skipping `ImplicitCastExpr` / `ParenExpr` /
+>   `ExprWithCleanups`) to confirm the cast sits in the `getCond()`
+>   slot of an `IfStmt` / `WhileStmt` / `DoStmt` /
+>   `ConditionalOperator` and is NOT itself inside a WHEN
+>   expansion (via `detail::is_expansion_of_macro`). Pinned by
+>   `plugin_diagnostic_quantum_to_classical_cond_fires` /
+>   `plugin_diagnostic_quantum_to_classical_cond_clean` CTests via
+>   `tests/transpiler/check_quantum_to_classical_cond_diagnostic.cmake`.
+> - PM3-6 (sturm-5btt.7): Class 4 — caller drops returned qbool
+>   (warning). New matcher
+>   `transpiler/src/matcher_dropped_quantum_return.cpp` binds
+>   `callExpr` returning qbool / qint_t whose parent is a
+>   `compoundStmt` (or `exprWithCleanups` whose parent is a
+>   `compoundStmt`), reporting with `DiagnosticIDs::Warning` so
+>   compilation continues. `(void)call()` survives as an explicit
+>   discard because the `CStyleCastExpr` to `void` breaks the
+>   parent chain. Pinned by
+>   `dropped_quantum_return_diagnostic` (positive) plus
+>   `dropped_quantum_return_diagnostic_bound` and
+>   `dropped_quantum_return_diagnostic_void_cast` (negatives) via
+>   `tests/transpiler/check_dropped_quantum_return_diagnostic.cmake`.
+>
+> Remaining Phase M items below (transpiler pluginization, peephole
+> gate reordering deferred from PJ-2) remain open.
+
 > **2026-04-21:** Phase M item "Transpiler pluginization" (PM4)
 > complete. Third-party shared libraries can now register additional
 > AST rewrite matchers + uncompute rules alongside the in-tree ones
@@ -1100,7 +1197,7 @@ Options, not mutually exclusive:
 Lower priority, tracked for visibility.
 
 - **In-memory transpile.** *Complete — shipped in v0.1.2 (2026-04-19).* Skip the filesystem round-trip: transpile and feed directly to Clang's codegen. Keep the sibling-file emit as a `--dump-transpiled` option for debugging.
-- **Diagnostics.** Quantum-specific compile errors ("operand modified inside its own WHEN", "qbool escapes its scope without explicit measurement or uncompute"). Requires the liveness analysis from Phase H to be mature.
+- **Diagnostics.** *Complete — shipped 2026-04-21.* Five quantum-specific compile-time diagnostic classes routed through `clang::DiagnosticsEngine`: WHEN operand mutation (error), quantum→classical in branch condition (error), missing adjoint registration (error), caller drops returned qbool (warning), and PH-3 outer-var reverse-loop upgrade (warning). Shared `DiagContext` scaffold in `transpiler/src/diag_context.{hpp,cpp}` (PM3-0) threaded into each matcher that emits diagnostics; standalone driver upgraded from `IgnoringDiagConsumer` to `TextDiagnosticPrinter` in `transpiler/src/main.cpp` (PM3-1). Detection paths: `transpiler/src/matcher_outer_var_guard.cpp` (PM3-2), `transpiler/src/matcher_user_routine.cpp` (PM3-3), `transpiler/src/matcher_when_operand_mutation.cpp` (PM3-4), `transpiler/src/matcher_quantum_to_classical_cond.cpp` (PM3-5), and `transpiler/src/matcher_dropped_quantum_return.cpp` (PM3-6). Pinned by `transpile_diagnostic_surfaces`, `plugin_diagnostic_outer_var_guard`, `plugin_diagnostic_missing_adjoint_{fires,clean}`, `plugin_diagnostic_when_operand_mutation_{fires,clean}`, `plugin_diagnostic_quantum_to_classical_cond_{fires,clean}`, and `dropped_quantum_return_diagnostic{,_bound,_void_cast}` CTests via `tests/transpiler/check_{standalone_diag_surfaces,outer_var_guard_diagnostic,missing_adjoint_diagnostic,when_operand_mutation_diagnostic,quantum_to_classical_cond_diagnostic,dropped_quantum_return_diagnostic}.cmake`.
 - **Source maps.** *Complete — shipped 2026-04-20.* Transpiler-emitted insertions and replacements carry `#line <N> "<user-file>"` directives via the shared `format_line_directive()` helper in `transpiler/src/emitter.cpp` (PM2-1), threaded through Phase E compound decls (PM2-2), `render_uncompute` (PM2-3), `QReplacement` strings for PJ-1 fuse + Phase F WHEN-lift (PM2-4), and PJ-3 hoist attribution (PM2-5). Idempotency preserved end-to-end (PM2-6); 64 snapshot + 46 idempotency fixtures regenerated under `tests/transpiler/fixtures/*.expected.cpp` (PM2-7); user-facing guarantee pinned by the new `source_map_diagnostic` CTest with `tests/transpiler/fixtures/source_map_diagnostic_input.cpp` + `tests/transpiler/check_source_map_diagnostic.cmake` (PM2-8).
 - **Transpiler pluginization.** *Complete — shipped 2026-04-21.* User-defined rewrite rules registered with the transpiler, for ecosystem libraries that introduce new quantum operations. Public header `transpiler/include/sturm/transpile/plugin_api.hpp` (PM4-1) exposes `Registry::register_matcher` / `register_op`, the `STURM_REGISTER_PLUGIN(TypeName)` link-time macro, and the `extern "C" void sturm_register_plugin_v1(Registry&)` runtime-dlopen entry point; Registry implementation in `transpiler/src/plugin_registry.cpp` (PM4-2) owns per-consumer state plus Meyer's-singleton `registrars()` / `runtime_registrars()` vectors. Core wiring: `QOpKind::PLUGIN` + `plugin_kind_id` field in `transpiler/include/sturm/transpile/qir.hpp` with dispatch in `transpiler/src/uncompute_pass.cpp` (PM4-3); `load=<path>` ParseArgs + `dlopen(RTLD_LOCAL | RTLD_NOW)` + Clang-version gate in `transpiler/src/plugin.cpp` (PM4-4); `PLUGINS` argument in `cmake/SturmTranspile.cmake`'s `add_quantum_executable` (PM4-5). Dogfooded by migrating Phase B PB-1..PB-4 matchers (`transpiler/src/matcher_qint_const.cpp`) through the Registry API (PM4-6); demo plugin at `examples/plugin_demo/plugin_demo.cpp` + CMakeLists (PM4-7); five CTests pin the surface end-to-end (`pm4_smoke_dlopen`, `pm4_dogfood_snapshot`, `pm4_missing_plugin_errors`, `pm4_two_plugins_independent`, `pm4_smoke_linktime` — PM4-8..PM4-10). ABI is unstable across sturm minor versions; rebuild plugins per release.
 - **Peephole gate reordering** *Complete — shipped 2026-04-22.* Commute commuting gates across unrelated ops to expose PJ-1 fusion opportunities beyond what the adjacent-statement peephole captures. The PJ-2 deferral (2026-04-16) is closed: the prerequisite alias analysis landed as `sturm::transpile::detail::footprint()` / `may_overlap()` in `transpiler/src/alias.cpp` (PM5-1..PM5-3), exercised by `tests/transpiler/test_alias_footprint.cpp` (PM5-4), and consumed by the new `register_peephole_reorder_matcher` in `transpiler/src/matcher_peephole_reorder.cpp` (PM5-5). The matcher is registered LAST in `transpile_consumer.cpp` (after hoist) and gated on disjoint-footprint + hoist-boundary + PLUGIN-opacity checks (PM5-6). Pinned by `tests/transpiler/test_matcher_peephole_reorder.cpp` (PM5-7), six snapshot fixtures under `tests/transpiler/fixtures/reorder_*.cpp` + the `m12_reorder_transpiled` / `m12_reorder_reference` gate-equivalence pair (PM5-8), and `examples/peephole_reorder.cpp` (PM5-9).
