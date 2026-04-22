@@ -380,6 +380,43 @@ target_sources(example_peephole_reorder PRIVATE
 )
 target_link_libraries(example_peephole_reorder PRIVATE orkan_headers)
 
+# ── Example: Phase N rotation compound-assigns (P5 items 2 & 3) ────────────
+# Routed through sturm-transpile so each of the four rotation compound-
+# assigns (`q.theta() += d;`, `q.theta() -= d;`, `q.phi() += d;`,
+# `q.phi() -= d;`) receives a sign-flipped inline inverse before the
+# enclosing scope closes (LIFO order), and the depth-1 WHEN-guarded
+# rotation receives its inverse INSIDE the WHEN body so the control
+# scope covers both directions.  Exercises the PN-2 rotation matchers
+# (`register_theta_add_matcher`, `register_theta_sub_matcher`,
+# `register_phi_add_matcher`, `register_phi_sub_matcher` in
+# transpiler/src/matcher_rotation.cpp) and the PN-4 uncompute-pass arms
+# in transpiler/src/uncompute_pass.cpp.  The example pins the B5
+# invariant (depth ≤ 1 control chains per Phase G AND-fold) by
+# construction — a depth-2 nested WHEN holding a rotation would violate
+# B5, and the single-depth construction here is the load-bearing
+# invariant.  Same helper / bypass pattern as
+# example_peephole_reorder; the PN-2 matchers register through the
+# PM4-6 `STURM_REGISTER_PLUGIN(PNRotationPlugin)` dogfood path
+# (no consumer-side edit needed), and the runtime's self-dual
+# ThetaProxy / PhiProxy `operator-=` at
+# include/sturm/qtypes/qint_core.hpp:305,372 dispatches `-delta`
+# through the existing Ry / Rz emission path so the forward + inverse
+# GateRecord stream cancels to identity.
+add_quantum_executable(example_rotations
+    rotations.cpp
+)
+target_sources(example_rotations PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_rotations PRIVATE orkan_headers)
+
 # ── Example: Phase M PM1-8 in-memory transpile tutorial ─────────────────────
 # Three-phase composition demo that exercises Phase E (compound
 # qbool expressions), Phase F (compound-WHEN integration), and Phase J

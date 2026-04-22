@@ -1590,6 +1590,69 @@ set_tests_properties(transpiler_idempotent_example_peephole_reorder PROPERTIES
     FIXTURES_REQUIRED "example_peephole_reorder_built"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase N / PN-7: end-to-end injected observability + idempotency for ──
+# the rotations example.  Same harness pattern as the PM5-9
+# peephole_reorder block above:
+#   1. build_example_rotations — SETUP fixture that builds the
+#      example_rotations target.  Transitively produces
+#      ${CMAKE_BINARY_DIR}/sturm_gen/examples/rotations.cpp via
+#      add_quantum_executable().
+#   2. transpiler_example_rotations_injected — reads the generated file
+#      and asserts the Phase N pipeline emission for the four rotation
+#      compound-assigns plus the depth-1 WHEN-guarded rotation inside
+#      main()'s inner scope:
+#        - PN-2a/b/c/d forward path: `a.theta() += 0.3;`,
+#          `a.theta() -= 0.1;`, `b.phi() += 0.7;`, `b.phi() -= 0.2;`
+#          pass through preserved verbatim.
+#        - Depth-1 WHEN body: `a.theta() += 0.5;` (forward) followed
+#          by `a.theta() -= 0.5;` (PN-4 in-body inverse) — the
+#          inverse lands INSIDE the WHEN body so the control scope
+#          covers both directions (B5 invariant — depth-1 controlled
+#          rotations have their inverse in the same controlled
+#          scope).
+#        - PN-4 LIFO inverse chain at outer scope close in reverse-
+#          source order: `b.phi() += 0.2;` → `b.phi() -= 0.7;` →
+#          `a.theta() += 0.1;` → `a.theta() -= 0.3;`.
+#      Also confirms the source is byte-identical (no injected
+#      fragment leaks into the user's hand-written main body) — the
+#      "no-leak" search anchors after `int main()` to avoid
+#      false-positives on the top-of-file comment block that
+#      discusses the rewrite shape by bare name in its before/after
+#      schematic prose.
+#   3. transpiler_idempotent_example_rotations — re-running
+#      sturm-transpile on the already-emitted sibling must yield a
+#      byte-identical copy (PRD acceptance #5).
+add_test(
+    NAME build_example_rotations
+    COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+            --target example_rotations)
+set_tests_properties(build_example_rotations PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_SETUP "example_rotations_built")
+
+add_test(
+    NAME transpiler_example_rotations_injected
+    COMMAND "${CMAKE_COMMAND}"
+            -DSOURCE=${CMAKE_SOURCE_DIR}/examples/rotations.cpp
+            -DGENERATED=${CMAKE_BINARY_DIR}/sturm_gen/examples/rotations.cpp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_example_rotations.cmake)
+set_tests_properties(transpiler_example_rotations_injected PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_REQUIRED "example_rotations_built"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_example_rotations
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_BINARY_DIR}/sturm_gen/examples/rotations.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/example_rotations_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_example_rotations PROPERTIES
+    LABELS "transpiler"
+    FIXTURES_REQUIRED "example_rotations_built"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── Phase M / PM1-8: end-to-end injected observability + idempotency for ──
 # the in-memory transpile tutorial.  Same harness pattern as the PJ-3g
 # uncompute_hoisting block above, but the `_injected` test reads the
