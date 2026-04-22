@@ -382,6 +382,91 @@ endif()
 add_test(NAME test_alias_footprint COMMAND test_alias_footprint)
 set_tests_properties(test_alias_footprint PROPERTIES LABELS "transpiler")
 
+# ── Unit test: PM5-7 peephole reorder matcher ───────────────────────────────
+# Pins `register_peephole_reorder_matcher` (PM5-5, exported from
+# `transpiler/src/matcher_peephole_reorder.cpp`) across the six
+# fixtures listed in `docs/implementation_plan_transpiler_phase_m_pm5.md`
+# §10 (Verification) / §12 (Sharp edges) / bd issue `sturm-u655.8`:
+#
+#   (1) disjoint-qbool         — reorder accepts.
+#   (2) disjoint-qint-bits     — reorder accepts (distinct qint decl).
+#   (3) overlap-rejected       — reorder refuses (B writes A's result).
+#   (4) BitProxy-const         — reorder accepts (disjoint-decl qint).
+#   (5) BitProxy-nonconst      — reorder refuses (universal sentinel).
+#   (6) plugin-op-refused      — reorder refuses (opaque plugin op).
+#
+# Plus additional gate coverage pinning the §12 sharp-edges matrix:
+# USER_ROUTINE refusal, hoist-boundary bail, fused-range bail,
+# eliminated-range bail, reader-count gate, BranchBody scope-kind
+# bail, non-AND A kind, non-synthetic A name, non-XOR_ASSIGN C kind,
+# universal-sentinel A.result, mismatched consumer (C's operand name
+# != A's result), and the <3 ops scope bail.
+#
+# The test drives the matcher through its own lightweight ASTConsumer
+# pipeline (same posture as test_alias_footprint / test_matcher_
+# reader_count): parse a tiny snippet, walk the AST for real VarDecl /
+# CompoundStmt locations, pre-populate `unit.scopes` with the
+# QOperation triple the matcher should observe, then invoke matchAST
+# to trigger the matcher's translationUnitDecl() anchor and
+# onEndOfTranslationUnit() terminal phase. This isolates the
+# matcher's decision logic from the PJ-1d / PJ-3d / PJ-4a producers
+# that would normally populate the scope; the PM5-8 end-to-end
+# snapshot exercises the producers + matcher together.
+#
+# Linkage mirrors test_alias_footprint: shared libclang-cpp + libLLVM
+# when available, fallback to the static per-component archives
+# otherwise. We link `matcher_peephole_reorder.cpp` + `alias.cpp` +
+# `source_map.cpp` (for format_line_directive) + `qir.cpp`.
+add_executable(test_matcher_peephole_reorder
+    test_matcher_peephole_reorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_peephole_reorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+)
+target_include_directories(test_matcher_peephole_reorder PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_peephole_reorder PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_peephole_reorder PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_REORDER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_peephole_reorder PRIVATE
+    ${LLVM_DEFS_LIST_REORDER})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_peephole_reorder PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_peephole_reorder PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_REORDER support)
+    target_link_libraries(test_matcher_peephole_reorder PRIVATE
+        ${LLVM_LIBS_REORDER})
+endif()
+add_test(NAME test_matcher_peephole_reorder
+         COMMAND test_matcher_peephole_reorder)
+set_tests_properties(test_matcher_peephole_reorder PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
