@@ -1204,6 +1204,130 @@ Lower priority, tracked for visibility.
 
 ---
 
+## Phase N — Rotation & preparation primitives
+
+> **2026-04-22:** Phase N complete. PN-1..PN-8 landed end-to-end,
+> closing the P5-primitives-2-and-3 gap (`q.theta += d` / `q.theta -= d`
+> and `q.phi += d` / `q.phi -= d` amplitude and phase rotations) and
+> the P5-primitive-1 diagnostic hole (`qbool(p)` preparation inside
+> uncompute-eligible scopes). Until Phase N the transpiler passed
+> `ThetaProxy::operator+=` / `PhiProxy::operator+=` through untouched
+> because no matcher anchored on them — user programs that called
+> `q.theta += 0.5` shipped un-uncomputed adjoints because no
+> QOperation was created for the M8 pass to invert. Phase N wires the
+> four new rotation QOpKinds through a matcher modeled on Phase B's
+> `QIntAssignConstCallback<Kind>` template (one AST level deeper
+> because `theta()` / `phi()` return proxy objects), with inline
+> inverse emission in `uncompute_pass.cpp` (Phase B pattern — no
+> `uncompute_api.hpp` helper needed because runtime
+> `ThetaProxy::operator-=` / `PhiProxy::operator-=` are self-dual at
+> `include/sturm/qtypes/qint_core.hpp:305,372`). The `qbool(p)` prep
+> case is handled diagnostically rather than via a new `QOpKind::PREP`:
+> preparation is a CP map whose adjoint would be a discard /
+> measurement, violating P9 ("Routines are invertible by explicit
+> adjoint"), so PN-5 raises a Warning through `DiagContext` when the
+> VarDecl sits inside a WHEN body or compound-expression intermediate.
+> Multi-control rotations stay out of scope — Phase G AND-fold
+> collapses nested WHEN chains to depth ≤ 1 before the rotation
+> matcher ever sees them, per B5's "uncontrolled and singly-controlled
+> forms only". `docs/01_principles.md` unchanged: Phase N adds
+> matchers to the one global pass (B9) but introduces no new
+> optimization layer; B1b, B6, B10, and P9 are untouched because no
+> runtime path, no ancilla lifetime, no IR pass, and no new adjoint
+> registration surface moves. Sub-items:
+>
+> - PN-1 (sturm-f8jt): four new `QOpKind` entries in
+>   `transpiler/include/sturm/transpile/qir.hpp` after the Phase C
+>   compound-assign block —
+>   `THETA_ADD_ASSIGN_CONST`, `THETA_SUB_ASSIGN_CONST`,
+>   `PHI_ADD_ASSIGN_CONST`, `PHI_SUB_ASSIGN_CONST`. Each carries one
+>   operand whose `.name` is the verbatim RHS source text captured
+>   via `Lexer::getSourceText`; `op.result` is the qint LHS.
+>   `dump()` switch in `transpiler/src/qir.cpp` extended with four
+>   new arms mirroring the `ADD_ASSIGN_CONST` format. Four golden
+>   cases in `tests/transpiler/test_qir_dump.cpp`.
+> - PN-2 (sturm-f5cz): rotation matcher
+>   `transpiler/src/matcher_rotation.cpp` exporting
+>   `register_theta_add_matcher` / `register_theta_sub_matcher` /
+>   `register_phi_add_matcher` / `register_phi_sub_matcher` via
+>   `transpiler/include/sturm/transpile/matcher.hpp`. AST anchor is
+>   one level deeper than Phase B because `theta()` / `phi()` return
+>   proxies —
+>   `cxxMemberCallExpr(on(declRefExpr(<qint_t>).bind("lhs")),
+>   callee(cxxMethodDecl(hasName("theta"))))` — and arg-1 is a plain
+>   `Expr` (no `CXXConstructExpr` peel because the RHS is `double`).
+>   Dogfooded through the PM4 Registry API via
+>   `STURM_REGISTER_PLUGIN(PNRotationPlugin)` in an anonymous
+>   namespace (PM4-6 pattern).
+> - PN-3 (sturm-ft5t): eight snapshot fixtures under
+>   `tests/transpiler/fixtures/` —
+>   `theta_add_const.{cpp,expected.cpp}`,
+>   `theta_sub_const.{cpp,expected.cpp}`,
+>   `phi_add_const.{cpp,expected.cpp}`,
+>   `phi_sub_const.{cpp,expected.cpp}`. Each pins the sign-flipped
+>   inverse (`+=` forward → `-=` inverse, symmetric for theta-sub /
+>   phi-add / phi-sub). Wired into `tests/transpiler/CMakeLists.txt`
+>   via the existing `run_snapshot.cmake` + `check_idempotent.cmake`
+>   harness. Green under
+>   `ctest -R 'transpiler_snapshot_(theta|phi)_(add|sub)_const'`.
+> - PN-4 (sturm-9c2e): four new `case` arms in
+>   `transpiler/src/uncompute_pass.cpp` after `DIV_ASSIGN_CONST`
+>   emitting the inline sign-flipped inverse (Phase B style — no
+>   `uncompute_api.hpp` free function): `THETA_ADD_ASSIGN_CONST` →
+>   `    <lhs>.theta() -= <rhs>;` and symmetric for the three
+>   siblings. Each carries a `format_line_directive()` prefix so the
+>   PM2 source-map guarantee is preserved.
+> - PN-5 (sturm-8h3r): prep-diagnostic matcher
+>   `transpiler/src/matcher_qbool_prep.cpp` anchoring on
+>   `varDecl` with qbool type + single-arg `cxxConstructExpr`
+>   initializer. Guards against classical-bool init (arg-0 is
+>   `CXXBoolLiteralExpr` or RHS type is `isBooleanType()`). Walks
+>   outward from the enclosing scope checking WHEN-macro-expansion
+>   (`detail::is_expansion_of_macro`) or
+>   compound-expression-intermediate (`unit.scopes[i].ops` owns the
+>   VarDecl); on hit calls
+>   `diag.report_prep_in_uncompute_scope(loc, name)`. Silent at
+>   top-level function body. `DiagContext` extended with a 6th
+>   `report_*` method in `transpiler/src/diag_context.{hpp,cpp}`:
+>   Warning severity, format
+>   `"qbool %0 preparation in uncompute-eligible scope has no adjoint (P9)"`.
+>   Registered in `transpile_consumer.cpp` AFTER PH-3
+>   `matcher_outer_var_guard`.
+> - PN-6 (sturm-k08h): prep-diagnostic fixtures
+>   `tests/transpiler/fixtures/qbool_prep_in_when.cpp` (must emit
+>   warning) and
+>   `tests/transpiler/fixtures/qbool_prep_top_level_clean.cpp` (must
+>   NOT emit, identical input/output). New
+>   `tests/transpiler/check_qbool_prep_diagnostic.cmake` cloned from
+>   `check_outer_var_guard_diagnostic.cmake`. Two new CTests —
+>   `plugin_diagnostic_qbool_prep_fires` and
+>   `plugin_diagnostic_qbool_prep_clean` — wired in
+>   `tests/transpiler/CMakeLists.txt`.
+> - PN-7 (sturm-uw33): `examples/rotations.cpp` exercising all four
+>   rotation directions plus one depth-1 WHEN-guarded rotation (B5
+>   multi-control guardrail — depth ≥ 2 forbidden by construction).
+>   Paired CTests `transpiler_example_rotations_injected` +
+>   `transpiler_idempotent_example_rotations` via
+>   `tests/transpiler/check_example_rotations.cmake` (cloned from
+>   `check_example_peephole_reorder.cmake`), wired through
+>   `examples/CMakeLists.txt` mirroring the PJ-1h / PJ-3g / PM5-9
+>   example pattern.
+> - PN-8 (sturm-dy1f): m12 gate-equivalence pair —
+>   `tests/transpiler/fixtures/rotations_runtime.cpp` (transpile
+>   input) + `tests/transpiler/fixtures/rotations_reference.cpp`
+>   (hand-written reference with explicit inverses in place).
+>   Namespace pair `m12_rotations_transpiled` /
+>   `m12_rotations_reference` added to
+>   `tests/transpiler/test_gate_equivalence.cpp`. Asserts
+>   byte-identical counter-mode `GateRecord` streams (Ry, Rz, CRy,
+>   CRz). Green under `ctest -R 'gate_equivalence.*rotations'`.
+> - PN-9 (sturm-qy12): this roadmap update.
+>
+> Phase N is now complete — rotation and preparation primitives land
+> the P5 items 1–3 surface end-to-end.
+
+---
+
 ## Principle Check
 
 The predicted Phase K principle revisions have landed in `docs/01_principles.md` (PK-7, 2026-04-17). Numbering is stable — existing B1..B9 citations remain valid:
