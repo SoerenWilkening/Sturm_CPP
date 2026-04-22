@@ -185,6 +185,25 @@ struct DiagContext {
                                    std::string_view name,
                                    unsigned decl_line);
 
+    /// PN-5 / Class 6: qbool(p) preparation inside an uncompute-eligible
+    /// scope. Warning severity. Format:
+    ///   "qbool %0 preparation in uncompute-eligible scope has no adjoint (P9)"
+    /// Fires when a `qbool x(p);` VarDecl whose initializer is a
+    /// probabilistic `double` (not a `bool` literal / `bool`-typed
+    /// expression) appears inside a WHEN body or a compound-expression
+    /// intermediate scope. `%0` is the VarDecl identifier; `loc` is the
+    /// VarDecl's file location. The matcher funnels the reported loc
+    /// through `SourceManager::getFileLoc(...)` before handing it over
+    /// so the diagnostic cites user source rather than the memory
+    /// buffer.
+    ///
+    /// Prep at top-level function-body scope is silent by design — the
+    /// warning only fires inside uncompute-eligible scopes where the
+    /// transpiler would otherwise try to synthesize an inverse for an
+    /// operation (the CP map `prepare`) that has no adjoint.
+    void report_prep_in_uncompute_scope(clang::SourceLocation loc,
+                                        std::string_view name);
+
 private:
     clang::DiagnosticsEngine& diag_;
 

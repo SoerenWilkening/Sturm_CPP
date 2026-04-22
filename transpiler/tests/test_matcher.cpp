@@ -19,6 +19,8 @@ int main() {
     run_ph1_scope_tests();
     run_ph2_brace_wrap_tests();
     run_ph3_outer_var_tests();
+    // Phase N PN-5: qbool(p) prep diagnostic matcher.
+    run_pn5_qbool_prep_tests();
     run_routine_registry_tests();
     run_user_routine_tests();
     run_output_class_tests();

@@ -644,6 +644,63 @@ void register_quantum_to_classical_cond_matcher(
     QUnit& unit,
     DiagContext& diag);
 
+/// Phase N / PN-5: Register the qbool(p) prep diagnostic matcher. Anchors
+/// on every `VarDecl` whose declared type resolves to `sturm::qbool` and
+/// whose initializer is a single-argument `CXXConstructExpr`. On match
+/// the callback:
+///
+///   1. Peels the init argument through `ignoringParenImpCasts`. If the
+///      peeled argument is a `CXXBoolLiteralExpr` (e.g. `qbool x(true);`)
+///      or the init expression's static type satisfies
+///      `isBooleanType()` (a `bool`-typed variable was passed through
+///      the converting constructor), the callback early-returns silently
+///      — these are classical inits, not probabilistic prep.
+///   2. Walks outward from the VarDecl via `detail::enclosing_scope` to
+///      find its lexically enclosing scope anchor, then uses
+///      `detail::classify_scope_kind` to decide whether the enclosing
+///      scope is a `Function` (top-level — silent, prep is valid at
+///      function-body scope) or something else (a WHEN body /
+///      compound-expression intermediate — the uncompute-eligible
+///      window).
+///   3. For non-Function scopes the callback walks the parent chain
+///      looking for an enclosing `IfStmt` whose begin loc is inside a
+///      `WHEN` macro expansion (via `detail::is_expansion_of_macro`) OR
+///      a scope whose `unit.scopes[i].ops` already owns the VarDecl as
+///      a synthesized intermediate (Phase E compound-expression pathway).
+///      Any hit fires `diag.report_prep_in_uncompute_scope(loc, name)`
+///      with the VarDecl's file loc and identifier spelling; the
+///      callback returns silently on no hit.
+///
+/// Registration order: in `transpile_consumer.cpp` PN-5 places this
+/// matcher AFTER `register_outer_var_guard_matcher` (PH-3). Neither
+/// depends on the other's state — they flag orthogonal error classes
+/// — so the ordering is a diagnostic-grouping convention.
+///
+/// The matcher does NOT mutate `unit` (pure diagnostic). The `diag`
+/// reference it is handed must outlive the MatchFinder's run; the
+/// consumer owns the underlying `DiagContext`.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at
+/// most once per QUnit; the QUnit and DiagContext must outlive the
+/// MatchFinder's run.
+void register_qbool_prep_matcher(
+    clang::ast_matchers::MatchFinder& finder,
+    QUnit& unit,
+    DiagContext& diag);
+
+/// Test-only instrumentation (Phase N / PN-5). PN-5 is detection-only —
+/// the callback does not mutate the `QUnit`, so the PN-5 unit tests
+/// need a separate observable to pin down "how many qbool(p) preps in
+/// uncompute-eligible scopes did the matcher detect on this TU". These
+/// two helpers expose the detection counter maintained by
+/// `register_qbool_prep_matcher`'s callback implementation;
+/// `reset_qbool_prep_detection_count_for_test` zeroes the counter
+/// between test cases so the tests do not have to thread state across
+/// invocations. Production code must not touch either helper — they
+/// are intended strictly for the unit-test harness.
+int qbool_prep_detection_count_for_test();
+void reset_qbool_prep_detection_count_for_test();
+
 /// PM3-6 / Class 4: Register the "caller drops returned qbool" diagnostic
 /// matcher. Anchors on any `CallExpr` whose return type resolves to a
 /// NamedDecl named `sturm::qbool` or `sturm::qint_t` AND whose parent

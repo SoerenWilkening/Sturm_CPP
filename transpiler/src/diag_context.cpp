@@ -178,4 +178,36 @@ void DiagContext::report_outer_var_mutation(
                           << decl_line;
 }
 
+void DiagContext::report_prep_in_uncompute_scope(
+    clang::SourceLocation loc, std::string_view name) {
+    // PN-5 / Class 6: the format string is locked down in the Phase N
+    // §5 plan. `%0` is the qbool VarDecl identifier. Warning severity
+    // — NOT Error — because compilation must continue so the user
+    // sees every preparation that would bump against the P9 "no
+    // implicit adjoint" invariant in a single pass. The user is
+    // expected to restructure (hoist the prep out of the
+    // uncompute-eligible scope, or supply a manual adjoint) without
+    // the transpiler having to halt the pipeline.
+    //
+    // Why Warning (not Error): the forward emission of a prep inside
+    // a WHEN body still produces a physically-meaningful gate stream
+    // (a conditional Ry preparation). Only the uncompute half is
+    // broken — no adjoint exists. Treating this as Error would abort
+    // compilation at the first prep the user writes inside a WHEN;
+    // treating it as Warning lets the full translation unit be
+    // surfaced so the user fixes every site at once.
+    //
+    // The `getOrRegister` cache amortises the diag-ID lookup to a
+    // single call per TU, mirroring the other PM3 report_* members.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Warning,
+        "qbool %0 preparation in uncompute-eligible scope has no "
+        "adjoint (P9)");
+    // `DiagnosticsEngine::Report(...) << arg` takes std::string by
+    // value for the `%N` slot; constructing one from a string_view
+    // is necessary because the builder's operator<< does not have a
+    // string_view overload.
+    diag_.Report(loc, id) << std::string(name);
+}
+
 } // namespace sturm::transpile

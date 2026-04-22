@@ -544,6 +544,8 @@ add_executable(test_transpile_matcher
     test_matcher_ph1_scope.cpp
     test_matcher_ph2_brace_wrap.cpp
     test_matcher_ph3_outer_var.cpp
+    # Phase N PN-5: qbool(p) prep diagnostic matcher.
+    test_matcher_pn5_qbool_prep.cpp
     test_routine_registry.cpp
     test_matcher_user_routine.cpp
     test_matcher_output_class.cpp
@@ -574,6 +576,10 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
+    # Phase N PN-5: qbool(p) prep diagnostic matcher TU. Linked so the
+    # matcher unit-test binary resolves `register_qbool_prep_matcher`
+    # and the `*_for_test` counter helpers.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
@@ -695,6 +701,10 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_operand_mutation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
+    # Phase N PN-5: qbool(p) prep diagnostic matcher TU. Linked here so
+    # `test_transpile_consumer` resolves the symbol through the shared
+    # TranspileConsumer registration path.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp

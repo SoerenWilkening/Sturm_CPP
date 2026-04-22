@@ -83,6 +83,13 @@ add_executable(sturm-transpile
     src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
+    # Phase N PN-5: qbool(p) prep diagnostic matcher. Anchors on
+    # qbool VarDecls whose initializer is a probabilistic `double`
+    # and whose lexically enclosing scope is uncompute-eligible
+    # (a WHEN body or a compound-expression intermediate). Routes
+    # through the shared `DiagContext` — same pattern as PH-3's
+    # outer-var guard (matcher_outer_var_guard.cpp above).
+    src/matcher_qbool_prep.cpp
     src/matcher_hoist_invariant.cpp
     src/matcher_ccnot_fuse.cpp
     src/matcher_dead_ancilla.cpp
@@ -288,6 +295,12 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
+    # Phase N PN-5: qbool(p) prep diagnostic matcher. Mirror the main
+    # binary so the plugin-path consumer (same `TranspileConsumer`)
+    # links the same symbols. Registration order in
+    # `transpile_consumer.cpp` (AFTER `register_outer_var_guard_matcher`)
+    # is PN-5's contract.
+    src/matcher_qbool_prep.cpp
     src/matcher_hoist_invariant.cpp
     src/matcher_ccnot_fuse.cpp
     src/matcher_dead_ancilla.cpp

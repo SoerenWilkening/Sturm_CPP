@@ -288,6 +288,24 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // PB op.
     sturm::transpile::register_outer_var_guard_matcher(
         finder_, unit_, diag_);
+    // Phase N PN-5: the qbool(p) prep diagnostic matcher is a pure
+    // diagnostic — it does NOT mutate `unit_` and does not interact
+    // with any per-op or post-processor matcher above. Registration
+    // order is irrelevant for correctness (the VarDecl anchor is
+    // structurally disjoint from every mutation-op anchor above), but
+    // parking it RIGHT AFTER `register_outer_var_guard_matcher` groups
+    // the "quantum-specific diagnostic matchers that consult the
+    // matcher IR" visually — PH-3 flags outer-scoped mutations inside
+    // loops/branches, PN-5 flags probabilistic preparation inside
+    // WHEN bodies / compound-expression intermediate scopes. Both
+    // flag P9-violation shapes; both route through the shared
+    // `DiagContext`. Downstream PM3-family diagnostic matchers
+    // (PM3-4 WHEN operand mutation, PM3-5 quantum->classical cast,
+    // PM3-6 dropped quantum return) anchor on entirely different AST
+    // shapes (IfStmt / cast / CallExpr) so their registration is
+    // commutative with PN-5.
+    sturm::transpile::register_qbool_prep_matcher(
+        finder_, unit_, diag_);
     // Phase I PI-2: the user-defined-routine call matcher runs
     // after the Phase H PH-2 brace-wrap matcher, after the Phase
     // A/B/C compound-assign matchers, and after PH-3's outer-var
