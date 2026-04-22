@@ -510,6 +510,108 @@ static void test_div_assign_const_emits_mul() {
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
 }
 
+// ── Phase N: rotation compound-assign inverses (PN-4) ───────────────────────
+//
+// `q.theta() += C;` / `q.theta() -= C;` / `q.phi() += C;` / `q.phi() -= C;`
+// where C is a verbatim source fragment captured in operands[0].name. Each
+// inverse flips the sign via the runtime's self-dual
+// ThetaProxy::operator-= / PhiProxy::operator-= at
+// include/sturm/qtypes/qint_core.hpp:305,372 — no free-function helper in
+// uncompute_api.hpp. The emitted form is
+// `    <lhs>.theta() -= <rhs>;` (for THETA_ADD_ASSIGN_CONST) and symmetric.
+
+static void test_theta_add_assign_const_emits_theta_sub() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::THETA_ADD_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.5", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    q.theta() -= 0.5;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_theta_sub_assign_const_emits_theta_add() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::THETA_SUB_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.1", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    q.theta() += 0.1;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_phi_add_assign_const_emits_phi_sub() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::PHI_ADD_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.7", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    q.phi() -= 0.7;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
+static void test_phi_sub_assign_const_emits_phi_add() {
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+
+    QOperation op;
+    op.kind   = QOpKind::PHI_SUB_ASSIGN_CONST;
+    op.result = QValueRef{"q", make_loc(20)};
+    op.operands.push_back(QValueRef{"0.2", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    auto ins = synthesize(unit).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.size() != 1) return;
+
+    CHECK_EQ_STR(ins[0].code, std::string("    q.phi() += 0.2;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(50)));
+}
+
 // ── Phase C: qint-qint compound-assign inverses ─────────────────────────────
 //
 // PC-1..PC-5: `a += b;` / `a -= b;` / `a *= b;` / `a /= b;` / `a %= b;` where
@@ -2003,6 +2105,10 @@ int main() {
     test_sub_assign_const_emits_add();
     test_mul_assign_const_emits_div();
     test_div_assign_const_emits_mul();
+    test_theta_add_assign_const_emits_theta_sub();
+    test_theta_sub_assign_const_emits_theta_add();
+    test_phi_add_assign_const_emits_phi_sub();
+    test_phi_sub_assign_const_emits_phi_add();
     test_add_assign_qint_emits_uncompute_add_qint();
     test_sub_assign_qint_emits_uncompute_sub_qint();
     test_mul_assign_qint_emits_uncompute_mul_qint();

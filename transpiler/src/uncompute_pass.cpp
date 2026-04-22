@@ -137,6 +137,47 @@ std::string render_uncompute(const QOperation& op,
            << ";\n";
         break;
     }
+    case QOpKind::THETA_ADD_ASSIGN_CONST: {
+        // Phase N PN-4: `q.theta() += C;` where C is a verbatim
+        // double-valued source fragment captured in operands[0].name (via
+        // Lexer::getSourceText on the PN-2 matcher's hasArgument(1, ...)
+        // capture). The inverse is the sign-flipped compound-assign on the
+        // same ThetaProxy, which the runtime handles via the self-dual
+        // operator-= at include/sturm/qtypes/qint_core.hpp:305
+        // (ThetaProxy::operator-=(double d) { operator+=(-d); }). Inline
+        // two-character sign flip — no free-function helper in
+        // uncompute_api.hpp — mirroring the Phase B precedent above.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << ".theta() -= "
+           << op.operands[0].name << ";\n";
+        break;
+    }
+    case QOpKind::THETA_SUB_ASSIGN_CONST: {
+        // Phase N PN-4: dual of THETA_ADD_ASSIGN_CONST — forward `q.theta()
+        // -= C;` inverts to `q.theta() += C;`.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << ".theta() += "
+           << op.operands[0].name << ";\n";
+        break;
+    }
+    case QOpKind::PHI_ADD_ASSIGN_CONST: {
+        // Phase N PN-4: phi (phase) rotation analogue of
+        // THETA_ADD_ASSIGN_CONST. The runtime's self-dual PhiProxy
+        // operator-= lives at include/sturm/qtypes/qint_core.hpp:372 and
+        // dispatches -delta through the existing Rz(θ) emission path.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << ".phi() -= "
+           << op.operands[0].name << ";\n";
+        break;
+    }
+    case QOpKind::PHI_SUB_ASSIGN_CONST: {
+        // Phase N PN-4: dual of PHI_ADD_ASSIGN_CONST — forward `q.phi() -=
+        // C;` inverts to `q.phi() += C;`.
+        if (op.operands.size() != 1) return {};
+        os << "    " << op.result.name << ".phi() += "
+           << op.operands[0].name << ";\n";
+        break;
+    }
     case QOpKind::ADD_ASSIGN_QINT: {
         // Phase C: `a += b;` where b is another qint named in source.
         // operands[0].name carries the verbatim RHS identifier. The
