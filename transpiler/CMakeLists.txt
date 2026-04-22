@@ -100,6 +100,15 @@ add_executable(sturm-transpile
     # The peephole reorder matcher (PM5-5) consumes this TU via the
     # public `sturm/transpile/alias.hpp` surface.
     src/alias.cpp
+    # PM5-5: peephole gate-reordering matcher. Post-processor that
+    # commutes a disjoint-footprint op B past a fuse-candidate pair
+    # (A, C) so the PJ-1 fuse peephole can absorb (A, C) on the next
+    # pass. Consumes `sturm/transpile/alias.hpp` for footprint
+    # extraction and `matcher_common.hpp` for the shared scope-kind /
+    # reader-count / fused-range helpers. Registration in
+    # `transpile_consumer.cpp` LAST (after `register_hoist_invariant_
+    # matcher`) is a separate issue (PM5-6).
+    src/matcher_peephole_reorder.cpp
 )
 target_include_directories(sturm-transpile PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/include
@@ -296,6 +305,12 @@ add_library(sturm-transpile-plugin SHARED
     # Mirror the main binary so the plugin-path peephole matcher
     # (PM5-5) resolves the same symbols at dlopen.
     src/alias.cpp
+    # PM5-5: peephole gate-reordering matcher. Mirror the main binary
+    # so the plugin-path consumer (same TranspileConsumer) links the
+    # same symbols. Registration order in `transpile_consumer.cpp`
+    # (LAST, after `register_hoist_invariant_matcher`) is PM5-6's
+    # concern; PM5-5 ships only the source + the header export.
+    src/matcher_peephole_reorder.cpp
 )
 
 # PM4-10: when `STURM_PM4_LINK_DEMO=ON`, bake the demo plugin's registrar

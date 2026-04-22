@@ -493,6 +493,87 @@ void register_dead_ancilla_matcher(
 void apply_eliminated_stmt_guards(QUnit& unit,
                                   const clang::SourceManager& sm);
 
+/// Phase M PM5-5: Register the peephole gate-reordering matcher. The
+/// matcher is a POST-PROCESSOR: it anchors on `translationUnitDecl()`
+/// only to capture the `ASTContext&` in `run()`, then does the real
+/// work in `onEndOfTranslationUnit()` after every other matcher's
+/// callbacks have completed. Anchoring at the TU terminal phase is
+/// the same idiom `register_hoist_invariant_matcher` uses (PJ-3d);
+/// the pass needs a fully-populated `unit.scopes` in order to reason
+/// about adjacent op triples.
+///
+/// Per-scope pass: for each `QScope` whose classify_scope_kind is
+/// `LoopBody` or `Function`, the matcher walks `QScope.ops` looking
+/// at adjacent triples `(A, B, C)` by index. A candidate triple is
+/// accepted when EVERY one of these four gates passes:
+///
+///   Gate 1 — kind shape. A is `QOpKind::AND` whose result name starts
+///     with the synthetic `__stu_t` prefix. C is `QOpKind::XOR_ASSIGN`
+///     whose FIRST operand (the RHS of the user's `x ^= __t;` stmt)
+///     has the SAME name AND decl_loc as A's result. B is any other
+///     kind except `QOpKind::PLUGIN` (fully opaque — the Registry has
+///     no footprint hook in v1) and `QOpKind::USER_ROUTINE` (the body
+///     is not re-analysed; every operand collapses to the universal
+///     sentinel via the alias extractor, which would refuse anyway).
+///
+///   Gate 2 — hoist / fuse / eliminated guards. No op in the triple
+///     has `hoist_to_override` set (PJ-3 anchors forward/uncompute
+///     halves to specific pre-loop/post-loop locations; commuting
+///     past them breaks the pairing). No op's `stmt_range` lies
+///     inside `unit.fused_stmt_ranges` (PJ-1d has already fused
+///     those pairs) or `unit.eliminated_stmt_ranges` (PJ-4a has
+///     already deleted those decls). The probe is the same
+///     `detail::is_range_covered_by_fused` helper both PJ-1e and
+///     PJ-4a's backstops consume.
+///
+///   Gate 3 — footprint disjointness. Extract `QubitFootprint`s for
+///     A's result, every operand of B, and every operand of C
+///     (minus the already-matched `__t` read). Call `may_overlap()`
+///     pairwise; any overlap between B's operand(s) and A's result
+///     OR C's operands refuses the reorder. Uses the PM5-2 / PM5-3
+///     alias extractor via `sturm/transpile/alias.hpp`.
+///
+///   Gate 4 — fuse precondition. The post-reorder `(A, C)` pair must
+///     satisfy PJ-1d's `ccnot_fuse` trigger: __t has exactly one
+///     reader in the enclosing scope (via
+///     `detail::count_readers_in_scope`). If the pair would not fuse
+///     after the reorder the reorder has no payoff, so we bail.
+///
+/// On all four gates passing the matcher emits ONE `QReplacement`
+/// covering B's statement and C's statement, replacing it with
+/// `C; B;` text (equivalently, moving B past C). B's emitted text is
+/// prefixed with a `#line` directive via `format_line_directive()`
+/// (PM2-4) so any compile-error diagnostic inside B still cites the
+/// user's original B line — the source position changes in the
+/// rewritten buffer, but the `#line` points back at the source. This
+/// leaves `(A, C)` adjacent in both the scope's op list and the
+/// rewritten source text, letting downstream fusion absorb them.
+///
+/// Single-pass design: one pass per scope; no iterate-to-fixed-point.
+/// If a reorder exposes a new triple it will land in the next
+/// transpile invocation (PM1's nested pipeline is not re-entered by
+/// PM5; the user's build runs sturm-transpile once per TU).
+///
+/// Registration in `transpile_consumer.cpp` is the PM5-6 concern
+/// (must run LAST, after `register_hoist_invariant_matcher`). PM5-5
+/// (this issue) ships only the matcher source + the export decl —
+/// the consumer-side wiring is orthogonal.
+///
+/// Contract mirrors the other `register_*_matcher` helpers — call at
+/// most once per QUnit; the QUnit must outlive the MatchFinder's run.
+void register_peephole_reorder_matcher(
+    clang::ast_matchers::MatchFinder& finder, QUnit& unit);
+
+/// Test-only instrumentation (Phase M / PM5-5). Counts the number of
+/// reorders the matcher has emitted (i.e. the number of `QReplacement`s
+/// it pushed into `unit.replacements`) since the last reset. PM5-7's
+/// unit tests use this counter to discriminate "matcher correctly
+/// refused this triple" from "matcher correctly accepted this triple
+/// and emitted a reorder replacement". Production code must not touch
+/// either helper.
+int peephole_reorder_detection_count_for_test();
+void reset_peephole_reorder_detection_count_for_test();
+
 /// PM3-4 / Class 1: Register the WHEN-operand-mutation diagnostic matcher.
 /// Anchors on the middle `IfStmt` in the three-`if` tower the `WHEN`
 /// macro expands to (same init-stmt pattern as `register_when_lift_
