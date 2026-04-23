@@ -436,6 +436,88 @@ add_test(NAME test_auto_register_emitter COMMAND test_auto_register_emitter)
 set_tests_properties(test_auto_register_emitter PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: matcher_reversible_drive (R-C / sturm-88d7.4) ────────────────
+# Phase R plan §2.3 R-C: pins the top-level driver that orchestrates R-A
+# (`emit_adjoint_for_decl`) + R-B (`emit_auto_registration_for_decl`) for
+# each `[[sturm::reversible]]` forward that passes P-C validation and
+# Q-B constness. P-C (sturm-z2e8.5) and Q-B (sturm-5kgu.3) are NOT yet
+# landed; the driver accepts swappable validator hooks so today's tests
+# can drive happy / rejection / no-op paths with stand-in lambdas. The
+# tests compile small C++ snippets via `runToolOnCodeWithArgs`, locate
+# the relevant `FunctionDecl`, seed a `SynthesisRegistry` +
+# `RoutineRegistry` by hand, and invoke `drive_reversible`.
+#
+# Linkage pulls in `matcher_reversible_drive.cpp` (module under test)
+# plus every emitter / registry / renderer the driver calls:
+# `adjoint_emitter.cpp` for R-A, `auto_register_emitter.cpp` for R-B,
+# `synthesis_registry.cpp` for the per-forward book-keeping,
+# `uncompute_pass.cpp` for `render_uncompute` (R-A's per-op
+# dispatch), `reversible_attribute.cpp` for the `is_reversible`
+# predicate, `plugin_registry.cpp` for the `plugin::Registry`
+# destructor symbol referenced via `plugin_api.hpp`, and `qir.cpp`
+# for the `QValueRef` equality operator referenced transitively
+# from `qir.hpp`. Shared libclang-cpp + libLLVM when available,
+# fallback to per-component archives otherwise — same shape every
+# other direct-ASTConsumer test in this file uses.
+add_executable(test_matcher_reversible_drive
+    test_matcher_reversible_drive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_drive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+)
+target_include_directories(test_matcher_reversible_drive PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_reversible_drive PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_reversible_drive PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_REV_DRIVE NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_reversible_drive PRIVATE
+    ${LLVM_DEFS_LIST_REV_DRIVE})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_reversible_drive PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_reversible_drive PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_REV_DRIVE support)
+    target_link_libraries(test_matcher_reversible_drive PRIVATE
+        ${LLVM_LIBS_REV_DRIVE})
+endif()
+add_test(NAME test_matcher_reversible_drive
+    COMMAND test_matcher_reversible_drive)
+set_tests_properties(test_matcher_reversible_drive PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: loop_reversal (S-A / sturm-ha2k.2) ───────────────────────────
 # Phase S plan §2.4 S-A: pins the reversed-iteration adjoint loop-header
 # synthesis for `[[sturm::reversible]]` routines. The tests compile small
