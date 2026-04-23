@@ -29,6 +29,39 @@
 # subdir'd), but guarding the add_test with a TARGET check keeps the
 # fixture resilient to a future refactor that hides the demo behind an
 # option flag.
+#
+# Interaction with STURM_PM4_LINK_DEMO (sturm-o9qz)
+# -------------------------------------------------
+# Under `STURM_PM4_LINK_DEMO=ON`, the demo plugin's registrar is baked
+# into `sturm-transpile-plugin.so` at link-time via the shim at
+# `transpiler/src/pm4_link_demo_registrar.cpp`. A subsequent runtime
+# `load=$<TARGET_FILE:sturm-pm4-demo-plugin>` then requests a second
+# registration of the same `pm4.demo.tag` kind_id, which the
+# `Registry::register_op` collision check at `plugin_registry.cpp:108-
+# 113` (correctly, per PM4-2 contract) turns into a hard `std::abort()`
+# during the clang frontend parse. That aborts the compile of
+# `glue_fixture_plugins` with exit code 134.
+#
+# The fix mirrors the posture already used by the sibling PM4 smokes
+# that load the demo plugin dynamically:
+#   - `transpiler/tests/CMakeLists.txt:957-958` skips the
+#     `pm4_smoke_dlopen_fixture` target entirely under
+#     `STURM_PM4_LINK_DEMO=ON`.
+#   - `pm4_two_plugins_independent.cpp:319-338` defers gate C under
+#     the same config.
+#   - `pm4_missing_plugin_errors.cpp` / `pm4_smoke_dlopen.cpp` guard
+#     equivalent single-plugin happy-path gates with
+#     `STURM_PM4_LINK_DEMO_ENABLED`.
+#
+# Accordingly, under `STURM_PM4_LINK_DEMO=ON` we declare the
+# `glue_fixture_plugins` target WITHOUT the PLUGINS arg (so the target
+# still builds and the `test_cmake_plugins_run` smoke still exercises
+# the transpile + link path end-to-end; the demo plugin's registration
+# still fires via the link-time bake). The PM4-5 cc1-arg-pair
+# assertion (`test_cmake_plugins_flag`) is skipped under the linked-
+# demo config because there is no `load=<path>` token to assert
+# against. The PM4-10 link-time smoke (`pm4_smoke_linktime`) covers
+# the link-time registration path separately, so no coverage is lost.
 
 cmake_minimum_required(VERSION 3.16)
 
@@ -40,65 +73,101 @@ cmake_minimum_required(VERSION 3.16)
 # been processed. We therefore do NOT gate this block on a `TARGET`
 # check; if the target genuinely goes missing, CMake's generate step
 # will fail with a clear "target not found" error naming the genex.
-add_quantum_executable(glue_fixture_plugins
-    src/fixture.cpp
-    PLUGINS $<TARGET_FILE:sturm-pm4-demo-plugin>)
+#
+# Under `STURM_PM4_LINK_DEMO=ON` the PLUGINS arg is omitted (see
+# file-level comment above): the demo plugin is baked into
+# sturm-transpile-plugin.so at link-time, so a runtime dlopen of the
+# same plugin here would trip the Registry's duplicate-kind_id abort
+# for 'pm4.demo.tag'. Dropping the PLUGINS arg keeps the
+# `glue_fixture_plugins` target compilable (the demo registration still
+# fires, via the link-time path); the PM4-5 cc1-arg-pair assertion
+# (`test_cmake_plugins_flag`) is only registered when the PLUGINS arg
+# is in play, since under STURM_PM4_LINK_DEMO=ON the expected
+# `load=<path>` token is intentionally absent from the compile line.
+if(STURM_PM4_LINK_DEMO)
+    add_quantum_executable(glue_fixture_plugins
+        src/fixture.cpp)
+    message(STATUS "sturm-transpile: glue_fixture_plugins built WITHOUT "
+                   "PLUGINS=$<TARGET_FILE:sturm-pm4-demo-plugin> because "
+                   "STURM_PM4_LINK_DEMO=ON already bakes the demo "
+                   "plugin's registrar into sturm-transpile-plugin.so. "
+                   "The PLUGINS cc1-arg-pair contract "
+                   "(test_cmake_plugins_flag) is not registered under "
+                   "this config; pm4_smoke_linktime covers the "
+                   "link-time path instead.")
+else()
+    add_quantum_executable(glue_fixture_plugins
+        src/fixture.cpp
+        PLUGINS $<TARGET_FILE:sturm-pm4-demo-plugin>)
+endif()
 
 # Make sure the demo plugin is built before the fixture compiles; its
 # MODULE file is what the `load=<path>` arg dlopens at parse time. The
 # helper's target-level add_dependencies on `sturm-transpile-plugin`
 # takes care of the in-process plugin, but not of downstream PLUGINS
-# payloads.
+# payloads. Under STURM_PM4_LINK_DEMO=ON we dropped the PLUGINS arg,
+# so the build-order edge on sturm-pm4-demo-plugin is not required —
+# but keeping the `add_dependencies` call here (guarded on the target
+# existing) costs nothing and stays consistent with the OFF path.
 if(TARGET sturm-pm4-demo-plugin)
     add_dependencies(glue_fixture_plugins sturm-pm4-demo-plugin)
 endif()
 
-# ── Build-time observation: dump the source's effective COMPILE_OPTIONS ─
-# The `set_property(SOURCE ... APPEND PROPERTY COMPILE_OPTIONS ...)` calls
-# inside add_quantum_executable produce a list property containing:
-#
-#   -Xclang ; -plugin-arg-sturm-transpile ; -Xclang ; dump-to=<path> ;
-#   -Xclang ; -plugin-arg-sturm-transpile ; -Xclang ; load=<plugin-path>
-#
-# The order between dump-to= and load= is determined by the foreach-loop
-# ordering in SturmTranspile.cmake; the PM4-5 contract does NOT pin the
-# order, only that the 4-token load= pair lands contiguously somewhere
-# in the list. verify_plugins_flags.cmake scans for a contiguous match.
-#
-# Dump the property via file(GENERATE), which evaluates any genexes
-# (including $<TARGET_FILE:sturm-pm4-demo-plugin>) before writing. The
-# fixture source's absolute path is what add_quantum_executable keyed
-# the property off of, so we regenerate the same absolute path here.
-get_filename_component(_fixture_abs_src
-    "${CMAKE_CURRENT_SOURCE_DIR}/src/fixture.cpp" ABSOLUTE)
-get_property(_fixture_opts
-    SOURCE "${_fixture_abs_src}"
-    PROPERTY COMPILE_OPTIONS)
-# file(GENERATE ... CONTENT ...) resolves any genexes still in the
-# property list at generate time. We join with `\n` so the verify
-# script can split line-by-line into argv tokens.
-string(REPLACE ";" "\n" _fixture_opts_joined "${_fixture_opts}")
-file(GENERATE
-    OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/compile_options_observed.txt"
-    CONTENT "${_fixture_opts_joined}\n")
+# The PM4-5 cc1-arg-pair assertion (`test_cmake_plugins_flag`) only
+# applies when the PLUGINS arg is actually on the compile line. Under
+# STURM_PM4_LINK_DEMO=ON we omitted that arg (see the
+# `add_quantum_executable` branch above), so skip the file(GENERATE)
+# scrape + verify_plugins_flags.cmake invocation — there is no
+# `load=<path>` token to assert against under the linked-demo
+# configuration.
+if(NOT STURM_PM4_LINK_DEMO)
+    # ── Build-time observation: dump the source's effective COMPILE_OPTIONS ─
+    # The `set_property(SOURCE ... APPEND PROPERTY COMPILE_OPTIONS ...)`
+    # calls inside add_quantum_executable produce a list property containing:
+    #
+    #   -Xclang ; -plugin-arg-sturm-transpile ; -Xclang ; dump-to=<path> ;
+    #   -Xclang ; -plugin-arg-sturm-transpile ; -Xclang ; load=<plugin-path>
+    #
+    # The order between dump-to= and load= is determined by the foreach-loop
+    # ordering in SturmTranspile.cmake; the PM4-5 contract does NOT pin the
+    # order, only that the 4-token load= pair lands contiguously somewhere
+    # in the list. verify_plugins_flags.cmake scans for a contiguous match.
+    #
+    # Dump the property via file(GENERATE), which evaluates any genexes
+    # (including $<TARGET_FILE:sturm-pm4-demo-plugin>) before writing. The
+    # fixture source's absolute path is what add_quantum_executable keyed
+    # the property off of, so we regenerate the same absolute path here.
+    get_filename_component(_fixture_abs_src
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/fixture.cpp" ABSOLUTE)
+    get_property(_fixture_opts
+        SOURCE "${_fixture_abs_src}"
+        PROPERTY COMPILE_OPTIONS)
+    # file(GENERATE ... CONTENT ...) resolves any genexes still in the
+    # property list at generate time. We join with `\n` so the verify
+    # script can split line-by-line into argv tokens.
+    string(REPLACE ";" "\n" _fixture_opts_joined "${_fixture_opts}")
+    file(GENERATE
+        OUTPUT "${CMAKE_CURRENT_BINARY_DIR}/compile_options_observed.txt"
+        CONTENT "${_fixture_opts_joined}\n")
 
-# ── Build-time invariants: cc1 arg pair landed on the compile line ────
-# The ctest driver reads the `file(GENERATE)` output produced above and
-# asserts the 4-token cc1 arg pair
-#   -Xclang -plugin-arg-sturm-transpile -Xclang load=<abs-plugin-path>
-# is present. The plugin path is taken from the same
-# $<TARGET_FILE:...> genex so the expected and observed values stay
-# byte-identical; a drift between add_quantum_executable and this test
-# means the test fails — which is exactly the PM4-5 contract.
-add_test(
-    NAME test_cmake_plugins_flag
-    COMMAND "${CMAKE_COMMAND}"
-            "-DOPTIONS_FILE=${CMAKE_CURRENT_BINARY_DIR}/compile_options_observed.txt"
-            "-DPLUGIN_FILE=$<TARGET_FILE:sturm-pm4-demo-plugin>"
-            -P "${CMAKE_CURRENT_SOURCE_DIR}/verify_plugins_flags.cmake")
-set_tests_properties(test_cmake_plugins_flag PROPERTIES
-    LABELS "transpiler"
-    REQUIRED_FILES "$<TARGET_FILE:sturm-pm4-demo-plugin>")
+    # ── Build-time invariants: cc1 arg pair landed on the compile line ────
+    # The ctest driver reads the `file(GENERATE)` output produced above and
+    # asserts the 4-token cc1 arg pair
+    #   -Xclang -plugin-arg-sturm-transpile -Xclang load=<abs-plugin-path>
+    # is present. The plugin path is taken from the same
+    # $<TARGET_FILE:...> genex so the expected and observed values stay
+    # byte-identical; a drift between add_quantum_executable and this test
+    # means the test fails — which is exactly the PM4-5 contract.
+    add_test(
+        NAME test_cmake_plugins_flag
+        COMMAND "${CMAKE_COMMAND}"
+                "-DOPTIONS_FILE=${CMAKE_CURRENT_BINARY_DIR}/compile_options_observed.txt"
+                "-DPLUGIN_FILE=$<TARGET_FILE:sturm-pm4-demo-plugin>"
+                -P "${CMAKE_CURRENT_SOURCE_DIR}/verify_plugins_flags.cmake")
+    set_tests_properties(test_cmake_plugins_flag PROPERTIES
+        LABELS "transpiler"
+        REQUIRED_FILES "$<TARGET_FILE:sturm-pm4-demo-plugin>")
+endif()
 
 # ── Smoke: binary built via PLUGINS arg must still link + exit 0 ──────
 # Independent signal from the flag-presence check above: the whole
@@ -108,6 +177,13 @@ set_tests_properties(test_cmake_plugins_flag PROPERTIES
 # smoke will carry over the "plugin actually registered an op" layer
 # on top of this; here we just pin that PLUGINS does not break the
 # happy-path build.
+#
+# Under STURM_PM4_LINK_DEMO=ON the target is built without the PLUGINS
+# arg (see `add_quantum_executable` branch above), but the run-smoke
+# contract is still meaningful: "does the transpile-then-compile
+# pipeline still exit 0 when the demo plugin is active (via link-time
+# bake) and a trivial fixture TU is pushed through?". Keep the test
+# registered under both configurations.
 add_test(NAME test_cmake_plugins_run COMMAND glue_fixture_plugins)
 set_tests_properties(test_cmake_plugins_run PROPERTIES
     LABELS "transpiler")
