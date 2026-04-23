@@ -374,6 +374,68 @@ add_test(NAME test_adjoint_emitter COMMAND test_adjoint_emitter)
 set_tests_properties(test_adjoint_emitter PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: auto_register_emitter (R-B / sturm-88d7.3) ───────────────────
+# Phase R plan §2.3 R-B: pins the TU-scope `STURM_REGISTER_ADJOINT(fn,
+# __fn_adj);` line emitted after each synthesized adjoint so PI-1's
+# matcher (which consumes hand-written `STURM_REGISTER_ADJOINT(fn,
+# adj)` invocations) picks up the synthesised pair on the second
+# transpile pass. The tests exercise the pure-string API via direct
+# golden comparisons and the FD-based API via `runToolOnCodeWithArgs`
+# snippets — same harness shape `test_adjoint_emitter` uses.
+#
+# Linkage pulls in `auto_register_emitter.cpp` (module under test) plus
+# `reversible_attribute.cpp` (the `is_reversible` predicate R-B
+# consults on every FD-based input). Shared libclang-cpp + libLLVM
+# when available, fallback to per-component archives otherwise — same
+# shape every other direct-ASTConsumer test in this file uses.
+add_executable(test_auto_register_emitter
+    test_auto_register_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+)
+target_include_directories(test_auto_register_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_auto_register_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_auto_register_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_AUTO_REG NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_auto_register_emitter PRIVATE
+    ${LLVM_DEFS_LIST_AUTO_REG})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_auto_register_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_auto_register_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_AUTO_REG support)
+    target_link_libraries(test_auto_register_emitter PRIVATE
+        ${LLVM_LIBS_AUTO_REG})
+endif()
+add_test(NAME test_auto_register_emitter COMMAND test_auto_register_emitter)
+set_tests_properties(test_auto_register_emitter PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: loop_reversal (S-A / sturm-ha2k.2) ───────────────────────────
 # Phase S plan §2.4 S-A: pins the reversed-iteration adjoint loop-header
 # synthesis for `[[sturm::reversible]]` routines. The tests compile small
