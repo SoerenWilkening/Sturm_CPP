@@ -63,22 +63,35 @@ using sturm::qbool;
 //
 //   Case 2 (in apply_rotation) — escaping output.  The helper takes
 //                             `qbool& out` as a parameter; PI-3 flags
-//                             that as `Final` (the caller owns the
-//                             uncompute policy per principle P9) and
-//                             PI-4 emits nothing.  The helper's body
-//                             is byte-identical in the generated
-//                             sibling apart from the transpile-
-//                             unrelated header preamble.
+//                             that INSIDE the helper's body as `Final`
+//                             (the caller owns the uncompute policy
+//                             per principle P9) so the inner
+//                             `rotate_by_k(out, a, 3);` call gets NO
+//                             injected `invert(...)` companion inside
+//                             the helper's body.  The helper ITSELF is
+//                             a quantum routine (non-const qbool&
+//                             output), so P9 still demands a
+//                             hand-written adjoint at TU scope — see
+//                             `STURM_REGISTER_ADJOINT(apply_rotation,
+//                             apply_rotation_adj)` below.  At main()'s
+//                             `apply_rotation(escape, a);` call-site
+//                             the output argument `escape` is a local
+//                             qbool (Intermediate class), so PI-4
+//                             plants `invert(apply_rotation)(escape,
+//                             a);` before main's inner scope closes.
 //
 // HOW TO SEE WHAT WAS INJECTED
 // ----------------------------
 // After `cmake --build build --target example_user_routine`, open:
 //     build/sturm_gen/examples/user_routine.cpp
 // main()'s inner scope contains the forward `rotate_by_k(tmp, a, 3);`
-// call followed — before the `}` — by the injected
-// `invert(rotate_by_k)(tmp, a, 3);` line.  apply_rotation's body
-// contains ONLY the forward `rotate_by_k(out, a, 3);` call — no
-// inverse is emitted because `out` is a ParmVarDecl (escapes).
+// and `apply_rotation(escape, a);` calls followed — before the `}`,
+// in LIFO order — by the injected `invert(apply_rotation)(escape,
+// a);` and `invert(rotate_by_k)(tmp, a, 3);` lines.
+// apply_rotation's body contains ONLY the forward
+// `rotate_by_k(out, a, 3);` call — no inverse is emitted THERE
+// because `out` is a ParmVarDecl (escapes); the caller's scope is
+// where the inverse lands.
 //
 // HOW TO RUN
 // ----------
@@ -90,14 +103,24 @@ using sturm::qbool;
 //     gates_after_adjoint = <N2>
 //
 // Because `rotate_by_k_adj` is the manual adjoint of `rotate_by_k`
-// (see the bodies below — each forward flip is cancelled by a
-// matching flip in the adjoint), and each routine emits exactly
-// `k` gates on `out`, the summary satisfies
-//     N2 - N1 == k
-// for the Case-1 local-intermediate injection that fires inside
-// main()'s inner scope.  The Case-2 call (apply_rotation) contributes
-// only its forward-side gates to both N1 and N2 (its output escapes;
-// no inverse is injected).
+// AND `apply_rotation_adj` is the manual adjoint of
+// `apply_rotation` (see the bodies below — each forward flip is
+// cancelled by a matching flip in the adjoint), and each routine
+// emits exactly `k` gates on its output, the summary satisfies
+//     N2 - N1 == apply_rotation.forward
+//              + invert(apply_rotation)
+//              + invert(rotate_by_k)
+//              == k + k + k
+//              == 3k
+// for k=3, that is 9.  The three contributions are:
+//   - apply_rotation's forward body (runs between the N1 sample
+//     and scope close),
+//   - the PI-4-injected `invert(apply_rotation)(escape, a);`
+//     before main's inner `}` (LIFO — runs first of the two
+//     injected inverses),
+//   - the PI-4-injected `invert(rotate_by_k)(tmp, a, 3);` before
+//     main's inner `}` (runs second, cancelling the Case-1
+//     forward).
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
@@ -155,17 +178,55 @@ void rotate_by_k_adj(qbool& out, const qbool& in, int k) {
 STURM_REGISTER_ADJOINT(rotate_by_k, rotate_by_k_adj)
 
 // ── Case 2 helper: escaping-output routine call ─────────────────────────────
-// Phase I PI-3 classifies the output-parameter `out` as `Final` (it's
-// a ParmVarDecl), so the PI-4 uncompute pass emits nothing for this
-// call.  The caller (main() below) is responsible for the adjoint
-// policy of whatever backing qbool it passed in — principle P9 in
-// docs/01_principles.md.  The helper's body is therefore transpile-
-// invariant: the generated sibling's `apply_rotation` contains only
-// the forward `rotate_by_k(out, a, 3);` call, with no injected
-// `invert(...)` companion.
+// Phase I PI-3 classifies the output-parameter `out` INSIDE this
+// function's body as `Final` (it's a ParmVarDecl), so the PI-4
+// uncompute pass emits nothing for the inner
+// `rotate_by_k(out, a, 3);` call.  The caller (main() below) is
+// responsible for the adjoint policy of whatever backing qbool it
+// passed in — principle P9 in docs/01_principles.md.  The helper's
+// body is therefore transpile-invariant: the generated sibling's
+// `apply_rotation` contains only the forward `rotate_by_k(out, a, 3);`
+// call, with no injected `invert(...)` companion.
+//
+// `apply_rotation` is itself a quantum routine with a non-const
+// `qbool&` output parameter, so principle P9 (and the PM3-3
+// missing-adjoint diagnostic that enforces it) demands a
+// hand-written adjoint at TU scope paired through
+// `STURM_REGISTER_ADJOINT(apply_rotation, apply_rotation_adj)`.
+// The adjoint below runs the same `rotate_by_k` body — a length-3
+// X-chain composes with another length-3 X-chain to identity on
+// the same qubit, so `apply_rotation` is self-inverse.
 void apply_rotation(qbool& out, const qbool& a) {
     rotate_by_k(out, a, 3);
 }
+
+// Hand-written adjoint for `apply_rotation`.  Runs the same
+// `rotate_by_k(out, a, 3)` body as the forward — `apply_rotation`
+// is self-inverse because its body is a length-3 X-chain, and
+// two length-3 X-chains on the same qubit compose to identity.
+// Calling `rotate_by_k` (rather than `rotate_by_k_adj`) on the
+// adjoint side keeps the TU free of a trivial "self-inverse
+// wrapper adjoint" register for `rotate_by_k_adj` — the inner
+// call resolves through the already-registered `rotate_by_k`
+// adjoint pair just like the forward does.  PI-3 classifies the
+// output slot `out` of the inner `rotate_by_k(out, a, 3);` call
+// as `Final` (ParmVarDecl) so the PI-4 uncompute pass emits no
+// injection inside this adjoint's body — the caller of
+// `apply_rotation_adj` owns the uncompute policy per P9.
+void apply_rotation_adj(qbool& out, const qbool& a) {
+    rotate_by_k(out, a, 3);
+}
+
+// Register `apply_rotation`'s (forward, adjoint) pair so the PI-1
+// routine-registry matcher picks up the specialization of
+// `sturm::_detail::adjoint_of<decltype(&::apply_rotation)>`.  This
+// silences the PM3-3 missing-adjoint Error that would otherwise
+// fire on the `apply_rotation(escape, a);` call in main() (where
+// the output argument `escape` is a local qbool classified as
+// `Intermediate` — from main's vantage point the output is NOT
+// Final, so P9 demands that main be able to plant the routine's
+// adjoint before its scope closes).
+STURM_REGISTER_ADJOINT(apply_rotation, apply_rotation_adj)
 
 int main() {
     constexpr uint32_t kNumQubits = 32;
@@ -200,11 +261,15 @@ int main() {
         rotate_by_k(tmp, a, 3);
         gates_after_forward = ctx->ir.size();
 
-        // Case 2: escaping-output routine call.  `apply_rotation` is
-        // called with a local qbool, but INSIDE `apply_rotation` the
-        // output backs a ParmVarDecl — so PI-3 classifies it as
-        // `Final` and PI-4 emits no inverse for that call site.  The
-        // helper's forward side still contributes gates to the IR.
+        // Case 2: `apply_rotation` is called with a local qbool
+        // `escape` — from main's vantage point the output is
+        // `Intermediate` and PI-4 plants `invert(apply_rotation)(
+        // escape, a);` before the `}` below.  Inside
+        // `apply_rotation`'s own body the `rotate_by_k(out, a, 3);`
+        // call has `out` backing a ParmVarDecl, so PI-3 classifies
+        // THAT as `Final` and PI-4 emits no inverse inside the
+        // helper itself — the caller owns the uncompute policy per
+        // principle P9.
         qbool escape;
         escape.ensure_qubit();
         apply_rotation(escape, a);
@@ -215,19 +280,14 @@ int main() {
     }
     gates_after_adjoint = ctx->ir.size();
 
-    // Gate-count summary.  The Case-1 injection runs `rotate_by_k_adj`
-    // on `(tmp, a, 3)` — three `flip()` calls, three gates — so the
-    // delta between the post-forward sample and the post-scope sample
-    // pins the adjoint firing at run time.  Case 2's forward
-    // `apply_rotation` emits between those two samples as well (it's
-    // the second forward-only call in source order), so the exact
-    // numerical delta is
-    //     gates_after_adjoint - gates_after_forward
-    //         == apply_rotation.forward + invert(rotate_by_k)
-    //         == 3 + 3
-    //         == 6
-    // assuming the destructor auto-uncompute layer adds no extra
-    // gates for `tmp` / `escape` (they're classical at this point).
+    // Gate-count summary.  Three contributions land between N1 and
+    // N2 at run time; see the top-of-file prose for the detailed
+    // per-call accounting.  The per-routine bookkeeping resolves to
+    //     gates_after_adjoint - gates_after_forward == 3k == 9
+    // for k=3, assuming the destructor auto-uncompute layer adds no
+    // extra gates for `tmp` / `escape` (they're classical at this
+    // point).  The exact emitted forms of the two PI-4 inverse
+    // injections live in build/sturm_gen/examples/user_routine.cpp.
     std::fprintf(stdout, "gates_after_forward = %zu\n",
                  gates_after_forward);
     std::fprintf(stdout, "gates_after_adjoint = %zu\n",
