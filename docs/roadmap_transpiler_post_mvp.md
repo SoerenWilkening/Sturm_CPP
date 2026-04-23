@@ -1328,6 +1328,104 @@ Lower priority, tracked for visibility.
 
 ---
 
+## Phase S — Loop reversal (automatic adjoint synthesis, B11)
+
+> **2026-04-23:** Phase S scoped. Tracked as bd epic `sturm-ha2k`
+> with sub-items S-0..S-7 (`sturm-ha2k.1`..`sturm-ha2k.8`). Parent
+> design in `docs/prd_automatic_adjoint_synthesis.md` §5.2 and
+> `docs/implementation_plan_automatic_adjoint_synthesis.md` §2.4;
+> this stub reserves the roadmap slot ahead of implementation.
+> Phase S is the final phase of the automatic-adjoint-synthesis
+> cluster (P → Q → R → S) — it depends on Phase R's
+> `adjoint_emitter` (`sturm-88d7`) because the per-iteration adjoint
+> body is produced by the straight-line emitter; Phase S only
+> reverses the loop header and schedules the descent.
+>
+> **Mission.** Replace the Phase H PH-3 `skip_uncompute=true` flag
+> set by `transpiler/src/matcher_outer_var_guard.cpp` with real
+> loop reversal for `ForStmt` nodes that live inside a
+> `[[sturm::reversible]]` routine body. Outside synthesis context
+> (ad-hoc inline uncompute), the existing PH-3 warn-and-skip
+> behavior is preserved byte-for-byte — Phase S is additive, not a
+> rewrite of PH-3.
+>
+> **Reversal table (PRD §5.2).**
+>
+> | Forward | Adjoint |
+> |---|---|
+> | `for (int i = 0; i < N; ++i) body` | `for (int i = N-1; i >= 0; --i) body_adj` |
+> | `for (int i = 0; i < N; i += s) body` | `for (int i = ((N-1)/s)*s; i >= 0; i -= s) body_adj` |
+> | `while (cond) body` | rejected — unbounded trip count is not invertible without a manual adjoint |
+>
+> Nested loops reverse innermost-first (standard LIFO lifted to
+> loop structure). Pointwise mutation tracking (plan §0 Q3):
+> each iteration un-mutates exactly, not bulk end-of-routine.
+>
+> Sub-items:
+>
+> - S-0 (sturm-ha2k.1): this roadmap stub.
+> - S-1 (sturm-ha2k.2): new module
+>   `transpiler/src/loop_reversal.{hpp,cpp}` (≤ 320 impl / 80 hdr,
+>   plan §2.4 S-A). Consumes a `ForStmt` AST node belonging to a
+>   reversible routine body; produces the reversed-iteration adjoint
+>   loop header and recursively descends into the body via Phase R's
+>   `adjoint_emitter`. Stride-aware bound computation for `i += s`.
+>   Rejects non-canonical for-shape (non-trivial init, compound
+>   condition, side-effecting increment).
+> - S-2 (sturm-ha2k.3): edit to
+>   `transpiler/src/matcher_outer_var_guard.cpp` (≤ +40 LOC, plan
+>   §2.4 S-B). Suppress `skip_uncompute=true` when the enclosing FD
+>   is `[[sturm::reversible]]` — instead mark the op for
+>   loop-reversal handling by S-1. Outside synthesis context, the
+>   current PH-3 diagnostic + skip behavior is preserved; PH-3's
+>   existing fixtures (`for_outer_xor_reject`,
+>   `for_mixed_xor_reject`) stay green.
+> - S-3 (sturm-ha2k.4): three positive loop fixtures under
+>   `tests/transpiler/fixtures/` — `reversible_loop_ripple.cpp`,
+>   `reversible_loop_bit_reversal.cpp`,
+>   `reversible_loop_adder_carry.cpp`, each paired with
+>   `.expected.cpp` goldens and wired through
+>   `run_snapshot.cmake` + `check_idempotent.cmake`.
+> - S-4 (sturm-ha2k.5): two negative loop fixtures —
+>   `reversible_while_loop.cpp` (must emit
+>   `report_reversible_while_loop` via Phase P's DiagContext
+>   extension) and `reversible_qdep_trip_count.cpp` (trip count
+>   reads a qint; diagnostic via Phase P-D). Harness via a cloned
+>   `check_reversible_diagnostic.cmake` from Phase P.
+> - S-5 (sturm-ha2k.6): three m12 gate-equivalence pairs in
+>   `tests/transpiler/test_gate_equivalence.cpp` —
+>   `m12_reversible_loop_ripple_{transpiled,reference}`,
+>   `m12_reversible_loop_bit_reversal_{transpiled,reference}`,
+>   `m12_reversible_loop_adder_{transpiled,reference}`. Each asserts
+>   byte-identical `GateRecord` streams between the synthesized
+>   adjoint and a hand-written reference (PN-8 pattern lifted to
+>   loops).
+> - S-6 (sturm-ha2k.7): three roundtrip tests in
+>   `tests/test_invert.cpp` — forward then synthesized adjoint on a
+>   prepared state equals identity; gate counter equals zero at
+>   scope exit (plan §5).
+> - S-7 (sturm-ha2k.8): roadmap completion blockquote replacing
+>   this stub.
+>
+> Unit-table coverage for `loop_reversal` (S-1): stride 1, stride 2,
+> negative stride, zero-trip-count edge case (plan §8 risk register).
+> Nested-loop innermost-first is exercised by the adder-carry
+> fixture (S-3, S-5, S-6).
+>
+> **Principles touched.** B11 is the load-bearing principle —
+> adjoint synthesis reverses statement order AND loop iteration
+> order; gate parameters reuse forward-emitted values (no drift).
+> B10 unchanged (uncomputation stays a compile-time concern). P4
+> WHEN-immutability preserved: loop reversal does not touch WHEN
+> control expressions. No new optimization layer, so B9 unchanged.
+>
+> **Out of scope.** `while` loops and quantum-dependent trip counts
+> are diagnosed, not synthesized (PRD §5.2). Recursion is deferred
+> to a follow-up epic (plan §0 Q4). Cross-TU synthesis stays in the
+> follow-up bucket (plan §9).
+
+---
+
 ## Principle Check
 
 The predicted Phase K principle revisions have landed in `docs/01_principles.md` (PK-7, 2026-04-17). Numbering is stable — existing B1..B9 citations remain valid:
