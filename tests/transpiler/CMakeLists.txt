@@ -3034,6 +3034,102 @@ set_tests_properties(snapshot_reorder_plugin_op_refused PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase S / S-3: positive loop fixtures (sturm-ha2k.4) ───────────────────
+# Three snapshot + idempotence fixture pairs pinning the canonical
+# PRD §5.2 reversible-loop shapes — ripple, bit_reversal, adder_carry.
+# Each pair follows the same snapshot+idempotence pattern established
+# by the Phase N `transpiler_snapshot_theta_add_const` / PH-4 `for_*`
+# pairs: one `snapshot_*` test runs sturm-transpile on the input and
+# byte-diffs the generated file against the checked-in `.expected.cpp`
+# golden; a sibling `transpiler_idempotent_*` test re-feeds the
+# generated file back through sturm-transpile and asserts byte-for-byte
+# equality via the `AUTO-GENERATED` sentinel path in main.cpp.
+#
+# R-2 status — PASS-THROUGH expected golden
+# -----------------------------------------
+# Per the S-3 issue description, R-2 (auto_register_emitter) is not
+# yet landed.  Today's transpile is a pass-through for these fixtures:
+# the forward loop body is left untouched (the
+# UnaryOperator(ArraySubscriptExpr) LHS in `*regs[i] ^= *regs[i-1]`
+# does not match PH-3's DeclRefExpr anchor, so no handoff fires), and
+# the emitter prepends the `AUTO-GENERATED` header.  The
+# `.expected.cpp` goldens therefore differ from the inputs only by the
+# two-line AUTO-GENERATED/Source header.  When Phase S's driver wires
+# `loop_reversal` into R-2, the same CTest wiring holds — only the
+# golden files update to carry the synthesised reversed-iteration
+# adjoint.  The fixture inputs themselves do not need to change.
+add_test(
+    NAME snapshot_reversible_loop_ripple
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_ripple.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_ripple.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_ripple
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_loop_ripple PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_loop_ripple
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_ripple/reversible_loop_ripple.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_ripple_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_loop_ripple PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_loop_ripple"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_loop_bit_reversal
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_bit_reversal.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_bit_reversal.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_bit_reversal
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_loop_bit_reversal PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_loop_bit_reversal
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_bit_reversal/reversible_loop_bit_reversal.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_bit_reversal_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_loop_bit_reversal PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_loop_bit_reversal"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_loop_adder_carry
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_adder_carry.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_adder_carry.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_adder_carry
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_loop_adder_carry PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_loop_adder_carry
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_adder_carry/reversible_loop_adder_carry.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_loop_adder_carry_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_loop_adder_carry PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_loop_adder_carry"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── PM1-7: plugin_smoke_test ───────────────────────────────────────────────
 #
 # End-to-end probe of the plugin path: drives

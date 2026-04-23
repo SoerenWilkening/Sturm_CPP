@@ -1,0 +1,73 @@
+// reversible_loop_ripple.cpp — Phase S / S-3 (sturm-ha2k.4) positive loop
+// fixture for the ripple reversed-iteration synthesis contract.
+//
+// Canonical PRD §5.2 reversible shape
+// -----------------------------------
+// The routine carries `[[clang::annotate("sturm::reversible")]]` — the
+// spelling `[[sturm::reversible]]` is surfaced to the user; the
+// clang::annotate form is the AST-level carrier the transpiler's
+// `is_reversible()` predicate matches.  The body is a single canonical
+// forward for-loop:
+//
+//     for (int i = 1; i < 4; ++i) {
+//         *regs[i] ^= *regs[i-1];
+//     }
+//
+// This is the ripple-sweep shape pinned by PRD §5.2 Table row 1: each
+// cell XORs its left neighbour, so iteration `i` depends on the value
+// regs[i-1] written by the preceding iteration.  The synthesised
+// reversed-iteration adjoint walks `i = 3..1` — same body, reversed
+// iteration order — per B11.
+//
+// Why the pointer-array indirection is load-bearing
+// -------------------------------------------------
+// `qbool::operator^=` takes `const qbool&` RHS and returns `qbool&`, so
+// a bare `q1 ^= q0` inside a for-body is a CXXOperatorCallExpr whose
+// arg0 is a DeclRefExpr on the parameter `q1`.  Phase H's PH-3 outer-
+// var-guard matcher anchors on exactly that shape and would normally
+// elide the uncompute.  S-B (sturm-ha2k.3) re-routes this to the
+// Phase S loop_reversal path when the enclosing function is
+// `[[sturm::reversible]]` — but only for the `declRefExpr` LHS shape.
+// The pointer-array indirection in this fixture (`*regs[i] ^= *regs[i-1]`)
+// gives the LHS a UnaryOperator(ArraySubscriptExpr) shape that PH-3 does
+// not match at all.  The two shapes are equivalent at the gate-stream
+// level; we pick the pointer-array form here so the fixture is
+// diagnostic-free under the current transpiler (no PH-3 handoff fires)
+// and the snapshot golden is a clean byte-for-byte copy of the input.
+//
+// R-2 status (auto_register_emitter)
+// ----------------------------------
+// Per the S-3 issue (sturm-ha2k.4) and the §2.4 S-B handoff contract,
+// R-2 (auto_register_emitter) is not yet landed.  The transpile pass
+// for this fixture is therefore a PASS-THROUGH: the emitter prepends
+// the `AUTO-GENERATED` header and copies the body verbatim.  When
+// Phase S's driver hooks `loop_reversal` into R-2, this fixture
+// upgrades in place — the golden becomes the pin for the machine-
+// emitted reversed adjoint, and the only diff will be the appended
+// `ripple_adj` companion body.  The fixture source itself does not
+// need to change.
+//
+// Stub qbool
+// ----------
+// `sturm-transpile` runs Clang with a FixedCompilationDatabase that
+// carries no include paths, so we inline a minimal qbool stub whose
+// `operator^=` overload is sufficient for the matcher to resolve the
+// compound assignment.  Same stub shape as the S-5 runtime fixtures.
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+};
+} // namespace sturm
+using sturm::qbool;
+
+[[clang::annotate("sturm::reversible")]]
+void ripple(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
+    qbool* regs[4] = {&q0, &q1, &q2, &q3};
+    for (int i = 1; i < 4; ++i) {
+        *regs[i] ^= *regs[i-1];
+    }
+}
