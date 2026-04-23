@@ -476,6 +476,26 @@ void drive_reversible_forwards(
         const ReversibleSignatureResult sig_result =
             validate_reversible_signature(def, ctx, diag);
 
+        // (1b) Phase T T-4 (sturm-xrob.5): surface Q-A's multi-return
+        // reject as a user-facing diagnostic. The Q-A classifier
+        // (`synthesize_out_param_twin`) rejects return-style forwards
+        // whose body is not a single `return <expr>;` statement —
+        // without a canonical target the adjoint emitter cannot reverse.
+        // We fire one Error-severity diagnostic at the forward's
+        // declaration site and short-circuit synthesis. Non-return-style
+        // forwards (void return) reject with `NonQuantumReturnType` and
+        // no diagnostic fires — the canonical out-param path is silent.
+        const TwinSynthesisResult early_twin =
+            synthesize_out_param_twin(def, sm, lang);
+        if (!early_twin.synthesized &&
+            early_twin.reason == TwinRejectReason::MultiStatementBody) {
+            const SourceLocation fd_loc =
+                sm.getFileLoc(def->getLocation());
+            diag.report_reversible_sig_multi_return(
+                fd_loc, std::string_view(def->getNameAsString()));
+            continue;
+        }
+
         // (2) Locate the FD's body scope in the unit. An absent scope
         // simply means the body contained no tracked quantum ops — we
         // still run drive_reversible with an empty ops vector so R-A
@@ -500,18 +520,13 @@ void drive_reversible_forwards(
                              opts);
         if (!dr.emitted) continue;
 
-        // (4a) Phase T T-1: invoke Q-A (`synthesize_out_param_twin`)
-        // speculatively for return-style forwards. A return-style
-        // forward like `qbool marked(qint x, int T) { return x >= T; }`
-        // gets a companion `__marked_out` twin injected alongside the
-        // `__marked_adj` body — matching the PRD §4.1 / §5.1 shape that
-        // T-4's flipped goldens assert against. Q-A silently rejects
-        // non-return-style forwards (`NonQuantumReturnType`,
-        // `NotReturnStatement`, ...), so canonical out-param forwards
-        // skip this emission with no output — preserving the
-        // `reversible_out_param_canonical` path.
-        const TwinSynthesisResult twin =
-            synthesize_out_param_twin(def, sm, lang);
+        // (4a) Phase T T-1: attach the Q-A twin source to the registry
+        // entry for downstream consumers. The Q-A classifier ran
+        // speculatively above (step 1b); a successful return-style
+        // synthesis is reused here. Non-return-style forwards (void
+        // return) reject with `NonQuantumReturnType` and `twin.source`
+        // is empty — the canonical out-param path is silent.
+        const TwinSynthesisResult& twin = early_twin;
         if (twin.synthesized && !twin.source.empty()) {
             synth_reg.set_twin_source(def, twin.source);
         }

@@ -57,15 +57,23 @@
 // `sturm-transpile` runs Clang with a FixedCompilationDatabase that
 // carries no include paths, so we inline a minimal qbool stub whose
 // `operator^=` overload is sufficient for the parser to accept the
-// compound assignment. Same stub shape as the Phase R / Phase S
-// positive fixtures.
+// compound assignment. `operator^=` returns `void` — the cascade at
+// the bottom of the fixture drops the `^=` return value, and the
+// diagnostic CTest registered against this file asserts `stderr` is
+// EMPTY after transpile (Phase T / T-4 sturm-xrob.5). Using the
+// production `qbool&` return spelling would trip PM3-6's
+// `report_dropped_quantum_return` warning and defeat the EMPTY_STDERR
+// contract. The production Phase R / Phase S snapshot fixtures spell
+// `qbool& operator^=(...)` because they are byte-compared on stdout
+// and ignore stderr; this diagnostic-only fixture needs the tighter
+// stderr hygiene, hence the `void` return spelling here.
 namespace sturm {
 class qbool {
 public:
     qbool() {}
     qbool(const qbool&) {}
     qbool& operator=(const qbool&) { return *this; }
-    qbool& operator^=(const qbool&) { return *this; }
+    void operator^=(const qbool&) {}
 };
 } // namespace sturm
 using sturm::qbool;

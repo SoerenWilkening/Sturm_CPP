@@ -217,6 +217,16 @@ static void test_reversible_report_is_not_dedup_swallowed() {
     CHECK_EQ_INT(h.counter->errors, 2);
 }
 
+// Phase T T-4 (sturm-xrob.5): Q-A multi-statement body reject surfaced
+// via `report_reversible_sig_multi_return` fires at Error severity.
+static void test_report_reversible_sig_multi_return_fires_error() {
+    Harness h;
+    h.ctx.report_reversible_sig_multi_return(
+        clang::SourceLocation(), "two_returns");
+    CHECK_EQ_INT(h.counter->errors, 1);
+    CHECK_EQ_INT(h.counter->warnings, 0);
+}
+
 // ── main ────────────────────────────────────────────────────────────
 
 int main() {
@@ -233,6 +243,7 @@ int main() {
     test_report_reversible_classical_cond_fires_error();
     test_all_five_reversible_reports_each_fire_once();
     test_reversible_report_is_not_dedup_swallowed();
+    test_report_reversible_sig_multi_return_fires_error();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

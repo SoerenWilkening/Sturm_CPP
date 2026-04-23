@@ -113,3 +113,9 @@ void marked(qbool& a, qint x, int T) {
     qbool __t0 = x >= T;
     *regs[0] ^= __t0;
 }
+
+void __marked_adj(qbool& a, qint x, int T) {
+}
+
+
+STURM_REGISTER_ADJOINT(marked, __marked_adj);

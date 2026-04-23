@@ -3654,25 +3654,26 @@ set_tests_properties(transpiler_idempotent_reversible_sig_multi_return PROPERTIE
     DEPENDS "transpiler_snapshot_reversible_sig_multi_return"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
-# Diagnostic-harness CTests for the two Q-B negative fixtures. They
-# use `check_reversible_diagnostic.cmake` (cloned from
+# Diagnostic-harness CTests for the two Q-B / Q-A negative fixtures.
+# They use `check_reversible_diagnostic.cmake` (cloned from
 # `check_qbool_prep_diagnostic.cmake` per the Q-3 issue description)
-# in MUST_NOT_CONTAIN mode today — the Q-B / Q-A reject paths are
-# pinned at unit-test level
-# (`transpiler/tests/test_matcher_reversible_signature.cpp` and
-# `test_return_to_out_param.cpp`) but are not yet wired into
-# `transpile_consumer.cpp`, so the Errors do not fire at the TU
-# level. The substrings the harness forbids are exactly the
-# `.expected.diag` golden fragments for each fixture — once the
-# validators wire in, the CTest argument flips to MUST_CONTAIN +
-# EXPECTED_LINE (one-line diff to this block).
+# in MUST_CONTAIN mode after Phase T T-4 (sturm-xrob.5): T-1
+# (sturm-xrob.2) wired the Q-A / Q-B validators into
+# `transpile_consumer.cpp` via `drive_reversible_forwards`, so the
+# Errors now fire at the TU level. The substrings each CTest requires
+# are exactly the `.expected.diag` golden fragments for each fixture.
+# `EXPECTED_LINE` pins the 1-based user-source line the diagnostic
+# must cite — for Q-B const-ref-mutated that is the parameter
+# declaration line; for Q-A multi-return that is the forward's
+# definition line.
 add_test(
     NAME reversible_sig_const_ref_mutated_diagnostic
     COMMAND "${CMAKE_COMMAND}"
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_const_ref_mutated.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated_diagnostic"
-            "-DMUST_NOT_CONTAIN=mutates const-qualified reference parameter"
+            "-DMUST_CONTAIN=mutates const-qualified reference parameter"
+            "-DEXPECTED_LINE=106"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_sig_const_ref_mutated_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3684,7 +3685,8 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_multi_return.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return_diagnostic"
-            "-DMUST_NOT_CONTAIN=has a multi-statement body"
+            "-DMUST_CONTAIN=has a multi-statement body"
+            "-DEXPECTED_LINE=97"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_sig_multi_return_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3760,7 +3762,7 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_oracle.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_oracle_diagnostic"
-            "-DMUST_NOT_CONTAIN=(P9d)."
+            "-DEMPTY_STDERR=1"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_oracle_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3772,7 +3774,8 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_measurement.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_measurement_diagnostic"
-            "-DMUST_NOT_CONTAIN=contains a measurement"
+            "-DMUST_CONTAIN=contains a measurement"
+            "-DEXPECTED_LINE=66"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_reject_measurement_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3784,7 +3787,8 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_io.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_io_diagnostic"
-            "-DMUST_NOT_CONTAIN=contains classical I/O"
+            "-DMUST_CONTAIN=contains classical I/O"
+            "-DEXPECTED_LINE=67"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_reject_io_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3796,7 +3800,8 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_unregistered_callee.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_unregistered_callee_diagnostic"
-            "-DMUST_NOT_CONTAIN=which has no registered or synthesized adjoint"
+            "-DMUST_CONTAIN=which has no registered or synthesized adjoint"
+            "-DEXPECTED_LINE=83"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_reject_unregistered_callee_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3808,7 +3813,8 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_while_loop.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_while_loop_diagnostic"
-            "-DMUST_NOT_CONTAIN=contains a while-loop"
+            "-DMUST_CONTAIN=contains a while-loop"
+            "-DEXPECTED_LINE=72"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_reject_while_loop_diagnostic PROPERTIES
     LABELS "transpiler"
@@ -3820,7 +3826,8 @@ add_test(
             "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
             "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_classical_cond.cpp"
             "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_classical_cond_diagnostic"
-            "-DMUST_NOT_CONTAIN=branches on a collapsed quantum value"
+            "-DMUST_CONTAIN=branches on a collapsed quantum value"
+            "-DEXPECTED_LINE=98"
             "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
 set_tests_properties(reversible_reject_classical_cond_diagnostic PROPERTIES
     LABELS "transpiler"

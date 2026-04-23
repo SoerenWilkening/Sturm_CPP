@@ -39,7 +39,21 @@
 #                                    because the validators live in
 #                                    their unit-test surface only).
 #                                    Mutually exclusive with
-#                                    MUST_CONTAIN.
+#                                    MUST_CONTAIN and EMPTY_STDERR.
+#   -DEMPTY_STDERR=<anything>      — (optional; Phase T T-4 sturm-xrob.5)
+#                                    assert stderr is EMPTY AND
+#                                    sturm-transpile exits zero. Used
+#                                    by the P-C happy-path fixture
+#                                    (`reversible_oracle.cpp`) once the
+#                                    P-C / Q-B validators are wired
+#                                    into `transpile_consumer.cpp`: a
+#                                    clean positive body must trip no
+#                                    validator, no warning, no Error.
+#                                    The defining variable's VALUE is
+#                                    ignored — its mere definition
+#                                    selects the empty-stderr branch.
+#                                    Mutually exclusive with both
+#                                    MUST_CONTAIN and MUST_NOT_CONTAIN.
 #   -DEXPECTED_LINE=<int>          — (optional; paired with MUST_CONTAIN)
 #                                    1-based user-source line the
 #                                    diagnostic MUST cite. When set,
@@ -84,16 +98,26 @@ foreach(var TRANSPILE_BIN SOURCE OUTPUT_DIR)
     endif()
 endforeach()
 
-if(NOT DEFINED MUST_CONTAIN AND NOT DEFINED MUST_NOT_CONTAIN)
-    message(FATAL_ERROR
-        "check_reversible_diagnostic: neither MUST_CONTAIN nor "
-        "MUST_NOT_CONTAIN was supplied — caller must pick exactly "
-        "one.")
+set(_mode_count 0)
+if(DEFINED MUST_CONTAIN)
+    math(EXPR _mode_count "${_mode_count} + 1")
 endif()
-if(DEFINED MUST_CONTAIN AND DEFINED MUST_NOT_CONTAIN)
+if(DEFINED MUST_NOT_CONTAIN)
+    math(EXPR _mode_count "${_mode_count} + 1")
+endif()
+if(DEFINED EMPTY_STDERR)
+    math(EXPR _mode_count "${_mode_count} + 1")
+endif()
+if(_mode_count EQUAL 0)
     message(FATAL_ERROR
-        "check_reversible_diagnostic: both MUST_CONTAIN and "
-        "MUST_NOT_CONTAIN were supplied — caller must pick exactly one.")
+        "check_reversible_diagnostic: one of MUST_CONTAIN, "
+        "MUST_NOT_CONTAIN, or EMPTY_STDERR must be supplied.")
+endif()
+if(_mode_count GREATER 1)
+    message(FATAL_ERROR
+        "check_reversible_diagnostic: MUST_CONTAIN / MUST_NOT_CONTAIN "
+        "/ EMPTY_STDERR are mutually exclusive — caller must pick "
+        "exactly one.")
 endif()
 
 foreach(path "${TRANSPILE_BIN}" "${SOURCE}")
@@ -118,14 +142,54 @@ get_filename_component(_src_name "${SOURCE}" NAME)
 # not an absolute build-tree path. Keeps the required-substring
 # assertion stable across CI runners whose workspaces sit at different
 # absolute paths.
+#
+# The trailing `--` tells LibTooling's `CommonOptionsParser` that there
+# are no additional compile arguments to follow, suppressing the
+# five-line "Could not auto-detect compilation database" preamble the
+# tool otherwise emits on stderr. The preamble is tool-boilerplate —
+# not a user-facing diagnostic — and keeping it out of the stderr
+# stream lets the EMPTY_STDERR mode below assert a genuinely-empty
+# diagnostic surface on positive fixtures.
 execute_process(
-    COMMAND "${TRANSPILE_BIN}" "${_src_name}" --output-dir "${OUTPUT_DIR}"
+    COMMAND "${TRANSPILE_BIN}" "${_src_name}" --output-dir "${OUTPUT_DIR}" --
     WORKING_DIRECTORY "${_src_dir}"
     RESULT_VARIABLE _transpile_rc
     OUTPUT_VARIABLE _transpile_out
     ERROR_VARIABLE  _transpile_err)
 
-if(DEFINED MUST_CONTAIN)
+if(DEFINED EMPTY_STDERR)
+    # Happy-path branch (Phase T T-4 sturm-xrob.5): assert stderr is
+    # EMPTY and sturm-transpile exits ZERO. Used by the P-C happy-path
+    # fixture (`reversible_oracle.cpp`) — with the P-C / Q-B
+    # validators wired into `transpile_consumer.cpp`, a clean positive
+    # body must trip no validator surface at all.
+    if(NOT _transpile_rc EQUAL 0)
+        message(FATAL_ERROR
+            "check_reversible_diagnostic: sturm-transpile exited "
+            "non-zero (rc=${_transpile_rc}) on the EMPTY_STDERR "
+            "positive fixture. A clean positive body must pass "
+            "validation without firing any diagnostic.\n"
+            "stdout:\n${_transpile_out}\n"
+            "stderr:\n${_transpile_err}")
+    endif()
+    if(NOT _transpile_err STREQUAL "")
+        message(FATAL_ERROR
+            "check_reversible_diagnostic: sturm-transpile emitted "
+            "non-empty stderr on the EMPTY_STDERR positive fixture. "
+            "A clean happy-path body must produce no validator "
+            "diagnostics AND no warnings from sibling matchers. If "
+            "an unrelated warning has become load-bearing, silence "
+            "it in the fixture's stub (the fixture is not a byte-"
+            "compare snapshot so stub hygiene is under its own "
+            "control).\n"
+            "stdout:\n${_transpile_out}\n"
+            "stderr:\n${_transpile_err}")
+    endif()
+
+    message(STATUS
+        "check_reversible_diagnostic: OK — stderr was empty and "
+        "exit code was zero.")
+elseif(DEFINED MUST_CONTAIN)
     # Positive branch: expect non-zero exit (Error severity) AND
     # substring present.
 

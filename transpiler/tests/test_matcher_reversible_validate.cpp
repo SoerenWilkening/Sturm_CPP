@@ -712,6 +712,61 @@ void bad(qbool& r, qbool a) {
     CHECK(ran);
 }
 
+void test_reject_classical_cond_on_implicit_udc() {
+    // Phase T T-4 (sturm-xrob.5): `if (q)` where qbool has a
+    // NON-EXPLICIT `operator bool()` — Clang wraps the cond in
+    // `ImplicitCastExpr<UserDefinedConversion>(CXXMemberCallExpr(
+    //  q.operator bool()))`. The classical-cond check must peel
+    // through the UDC member call to recover the quantum source
+    // and fire. Pinned by the fixture
+    // `reversible_reject_classical_cond.cpp` whose CTest flips to
+    // MUST_CONTAIN in this issue.
+    //
+    // Note: the shared test stub declares `operator bool()` as
+    // EXPLICIT, so this test needs its own qbool definition with
+    // a non-explicit conversion. We assemble the snippet inline.
+    constexpr std::string_view kImplicitStub = R"CPP(
+namespace sturm {
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    qbool& operator^=(const qbool&) { return *this; }
+    operator bool() const noexcept { return false; }
+};
+}
+using sturm::qbool;
+)CPP";
+    std::string src;
+    src.reserve(kImplicitStub.size() + 128);
+    src.append(kImplicitStub);
+    src.append(R"CPP(
+[[clang::annotate("sturm::reversible")]]
+void bad(qbool& r, qbool a) {
+    if (a) {
+        r ^= a;
+    }
+}
+)CPP");
+    bool ran = run_on(src, [](clang::ASTContext& ctx) {
+        NamedFnFinder f("bad");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+        if (f.found() == nullptr) return;
+
+        DiagHarness h;
+        RoutineRegistry reg;
+        ReversibleValidationResult r =
+            validate_reversible_body(f.found(), ctx, h.ctx, reg);
+        CHECK_FALSE(r.valid);
+        CHECK(r.reason == ReversibleRejectReason::ClassicalCond);
+        CHECK(r.diagnostics_fired >= 1);
+        CHECK(h.counter->errors >= 1);
+    });
+    CHECK(ran);
+}
+
 void test_reject_classical_cond_on_qbool_cast() {
     // `if ((bool)q)` inside a reversible body is a classical
     // condition derived from a quantum value. The cast fires the
@@ -828,6 +883,7 @@ int main() {
     // Quantum-dependent condition.
     test_reject_quantum_dependent_cond_via_measure_call();
     test_reject_classical_cond_on_qbool_cast();
+    test_reject_classical_cond_on_implicit_udc();
     // Aggregate invariants.
     test_each_diagnostic_fires_exactly_once_per_construct();
     test_to_string_enum_spellings();

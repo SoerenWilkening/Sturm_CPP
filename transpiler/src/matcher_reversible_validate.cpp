@@ -282,16 +282,57 @@ private:
 
     // Fire classical-cond if the cond's static type (post implicit-
     // cast strip) is quantum. Normal `if (i < N)` stays silent.
+    //
+    // Two shapes fire this reject:
+    //
+    //   1. Direct: `if (q)` where `q` is a quantum-typed expression
+    //      without any user-defined conversion. `IgnoreParenImpCasts`
+    //      lands on a quantum-typed node directly.
+    //
+    //   2. UDC: `if (q)` where `q` has a non-explicit
+    //      `operator bool()` — Clang wraps the cond in
+    //      `ImplicitCastExpr<UserDefinedConversion>(CXXMemberCallExpr(
+    //       q.operator bool()))`. `IgnoreParenImpCasts` strips the
+    //      UDC ImplicitCastExpr and lands on the CXXMemberCallExpr,
+    //      whose static type is `bool`. We then peel through the
+    //      member-call's implicit-object argument to recover the
+    //      quantum source — mirroring the UDC path in
+    //      `check_quantum_to_classical_cast`.
     void check_cond_is_quantum(const Expr* cond, SourceLocation anchor) {
         if (!cond) return;
         const Expr* inner = cond->IgnoreParenImpCasts();
         if (!inner) return;
+        // Direct path.
         if (is_quantum_record(inner->getType())) {
-            const SourceLocation loc = file_loc(anchor);
-            fire(ReversibleRejectReason::ClassicalCond, loc);
-            diag_.report_reversible_classical_cond(
-                loc, std::string_view(forward_name_));
+            fire_classical_cond(anchor);
+            return;
         }
+        // UDC path: the strip above landed on the
+        // `CXXMemberCallExpr(q.operator bool())`, whose method is a
+        // `CXXConversionDecl` to a classical destination. Recover the
+        // quantum source via the implicit object argument.
+        if (const auto* mce = llvm::dyn_cast<CXXMemberCallExpr>(inner)) {
+            if (const auto* method = mce->getMethodDecl()) {
+                if (llvm::isa<CXXConversionDecl>(method) &&
+                    is_classical_destination(mce->getType())) {
+                    if (const Expr* obj =
+                            mce->getImplicitObjectArgument()) {
+                        if (is_quantum_record(
+                                obj->IgnoreParenImpCasts()->getType())) {
+                            fire_classical_cond(anchor);
+                            return;
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    void fire_classical_cond(SourceLocation anchor) {
+        const SourceLocation loc = file_loc(anchor);
+        fire(ReversibleRejectReason::ClassicalCond, loc);
+        diag_.report_reversible_classical_cond(
+            loc, std::string_view(forward_name_));
     }
 
     // Load-bearing AST shape: for `static_cast<bool>(q)` with

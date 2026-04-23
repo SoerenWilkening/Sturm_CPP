@@ -609,6 +609,11 @@ set_tests_properties(test_auto_register_emitter PROPERTIES
 add_executable(test_matcher_reversible_drive
     test_matcher_reversible_drive.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_drive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_validate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp

@@ -89,3 +89,14 @@ using sturm::qint;
 // intact and adding the twin alongside it.
 [[clang::annotate("sturm::reversible")]]
 qbool marked(qint x, int T) { return x >= T; }
+
+[[clang::annotate("sturm::reversible")]]
+void __marked_out(qint x, int T, qbool& __marked_out) {
+    __marked_out ^= x >= T;
+}
+
+void __marked_adj(qint x, int T) {
+}
+
+
+STURM_REGISTER_ADJOINT(marked, __marked_adj);

@@ -87,3 +87,14 @@ using sturm::qint;
 // record does not enter the twin synthesis at all.
 [[clang::annotate("sturm::reversible")]]
 qint echo(const qint& x) { return x; }
+
+[[clang::annotate("sturm::reversible")]]
+void __echo_out(const qint& x, qint& __echo_out) {
+    __echo_out ^= x;
+}
+
+void __echo_adj(const qint& x) {
+}
+
+
+STURM_REGISTER_ADJOINT(echo, __echo_adj);

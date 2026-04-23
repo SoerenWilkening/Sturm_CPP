@@ -288,6 +288,15 @@ struct DiagContext {
                                              std::string_view fn,
                                              std::string_view param);
 
+    /// Q-A: return-style reversible routine whose body is not a single
+    /// `return <expr>;` statement — the Q-A out-param normalizer (see
+    /// `return_to_out_param.cpp`) cannot lift a multi-statement body
+    /// into the canonical `^= <expr>` out-param shape, so the adjoint
+    /// emitter has no target to reverse. Fires at Error severity per
+    /// PRD §9 / §4.1. `fn` is the reversible routine's name.
+    void report_reversible_sig_multi_return(clang::SourceLocation loc,
+                                            std::string_view fn);
+
 private:
     clang::DiagnosticsEngine& diag_;
 

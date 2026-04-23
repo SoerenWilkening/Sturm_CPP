@@ -378,4 +378,19 @@ void DiagContext::report_reversible_const_ref_mutated(
     diag_.Report(loc, id) << std::string(fn) << std::string(param);
 }
 
+void DiagContext::report_reversible_sig_multi_return(
+    clang::SourceLocation loc, std::string_view fn) {
+    // Q-A multi-statement body reject surfaced to the user. Fires at
+    // Error severity per PRD §9 / §4.1 — return-style normalization
+    // requires a single `return <expr>;` body so the Q-A emitter can
+    // lift the return expression into an `^=` out-param assignment.
+    // `%0` is the reversible routine's name.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' has a multi-statement body; "
+        "return-style normalization requires a single 'return "
+        "<expr>;' body (P9a + PRD §4.1 multi-return reject).");
+    diag_.Report(loc, id) << std::string(fn);
+}
+
 } // namespace sturm::transpile
