@@ -1328,6 +1328,166 @@ Lower priority, tracked for visibility.
 
 ---
 
+## Phase Q — Signature normalization (automatic adjoint synthesis, P9a + P9b)
+
+> **2026-04-23:** Phase Q scoped. Tracked as bd epic `sturm-5kgu`
+> with sub-items Q-0..Q-4 (`sturm-5kgu.1`..`sturm-5kgu.5`). Parent
+> design in `docs/prd_automatic_adjoint_synthesis.md` §5.1 item 1
+> (signature normalization) and §4.1 (writing a reversible user
+> routine), and `docs/implementation_plan_automatic_adjoint_synthesis.md`
+> §2.2; this stub reserves the roadmap slot ahead of implementation.
+> Phase Q is the second phase of the automatic-adjoint-synthesis
+> cluster (P → Q → R → S) — it consumes Phase P's validated
+> `[[sturm::reversible]]` routines (`sturm-z2e8`) and produces the
+> out-param-canonical shape that Phase R's `adjoint_emitter`
+> (`sturm-88d7`) targets for `__<fn>_adj` placement.
+>
+> **Mission.** Land the two passes that resolve P9a (return-style
+> vs out-param-style equivalence) and P9b (constness declares input
+> mutability) before adjoint emission runs. For every
+> `[[sturm::reversible]]` forward routine whose body is a single
+> `return <expr>;` returning a quantum type, synthesize a sibling
+> out-param twin whose source text writes into a non-const reference
+> parameter via `^=` (or the appropriate dual). For every reversible
+> routine — return-style or out-param-style — walk the parameter
+> list and reject signatures that are ambiguous about input
+> mutation (non-const by-value quantum types mutated in the body,
+> `const` references mutated in the body, pass-by-pointer shapes
+> that belong as references). Diagnostics reuse Phase P's `DiagContext`
+> extension family (P-D), so the user-visible surface stays
+> symmetric with the five `report_reversible_*` methods that
+> shipped under `sturm-z2e8.4`.
+>
+> **Normalization shape (PRD §4.1 + §5.1 item 1).** For a forward
+> routine `qbool marked(qint x, int T) { return x >= T; }`, the
+> transpiler attaches to the synthesis registry entry the
+> out-param twin's synthesized source:
+>
+> ```cpp
+> void __marked_out(qbool& __stu_out, qint x, int T) {
+>     __stu_out ^= (x >= T);
+> }
+> ```
+>
+> The original return-style function remains callable as an
+> ordinary C++ expression (unchanged at the AST level). Phase R's
+> adjoint placement targets `__marked_out` — never the return-style
+> source — so the `WHEN(marked(x, 10))` sugar (PRD §4.3) expands
+> via the out-param twin on the second PM3 pass and lifts cleanly
+> through the existing Phase F matcher. Pure string production
+> this phase: no IR mutation, no uncompute integration, no new
+> matchers against primitive kinds. The registry entry is the
+> only output artifact.
+>
+> **Constness rejects (PRD §5.3 pre-condition).** PRD §5.3's
+> parameter capture contract — "computed args from mutated inputs
+> are rejected unless the value is captured at dispatch time" —
+> requires the transpiler to know, before R runs, which parameters
+> the forward body is allowed to mutate. P9b's answer is constness:
+> `qint x` is read-only, `qint&` is mutable, `const qint&` is
+> read-only. Q-B's matcher enforces the three-way contract at the
+> definition site via Phase P's `DiagContext`:
+>
+> | Reject reason | Example | Diagnostic |
+> |---|---|---|
+> | non-const by-value of a quantum type that the body mutates | `void f(qint x) { x ^= 1; }` | `report_reversible_sig_byval_mutated` |
+> | `const` reference whose body mutates | `void f(const qint& x) { x ^= 1; }` | `report_reversible_sig_const_ref_mutated` |
+> | pass-by-pointer of a quantum type | `void f(qint* x)` | `report_reversible_sig_pointer_param` |
+>
+> Positive signatures — `qint x` read-only, `qint&` mutated,
+> `const qint&` read-only, out-param-canonical `void f(qbool& a,
+> qint x)` — pass through silently and become the input shape R-C
+> consumes.
+>
+> **Return-style restriction.** Q-A only synthesizes out-param
+> twins for single-return bodies: a `[[sturm::reversible]]` routine
+> whose body contains more than one `return` statement is rejected
+> via `report_reversible_sig_multi_return`. PRD §9 (open question 3,
+> mutation tracking granularity) locked pointwise semantics;
+> multi-return bodies violate that contract because the out-param
+> target depends on which return fires. Single-expression returns
+> of concrete quantum types are the only shape that round-trips
+> through Q-A + R-A with bit-exact adjoint byte-compare under m12
+> (plan §9 "out of scope"). `std::variant` / `std::optional` of
+> quantum types remain out of scope for P-S (plan §9), deferred
+> to a follow-up epic.
+>
+> Sub-items:
+>
+> - Q-0 (sturm-5kgu.1): this roadmap stub.
+> - Q-1 (sturm-5kgu.2): new module
+>   `transpiler/src/return_to_out_param.{hpp,cpp}` (≤ 260 impl /
+>   110 hdr, plan §2.2 Q-A). For reversible routines returning a
+>   quantum type via single `return <expr>;`, synthesize the
+>   out-param twin's source text. Pure string production — no IR
+>   mutation, no uncompute integration. Output attached to the
+>   synthesis registry entry (`sturm-z2e8.3`) for Phase R's
+>   `adjoint_emitter` to consume. Unit-tested through
+>   `transpiler/tests/test_return_to_out_param.cpp` with golden-file
+>   comparison against
+>   `tests/transpiler/fixtures/return_to_out_param_{1..4}.expected.cpp`.
+> - Q-2 (sturm-5kgu.3): new matcher
+>   `transpiler/src/matcher_reversible_signature.cpp` (≤ 240 impl,
+>   plan §2.2 Q-B). AST matcher over the parameter list of every
+>   `[[sturm::reversible]]` routine. Rejects non-const by-value
+>   quantum types mutated in the body, `const` references mutated
+>   in the body, and pass-by-pointer shapes. Emits through Phase P's
+>   `DiagContext` extension family — reuses the P-D shape so no new
+>   diagnostic harness is added. Dogfooded through the PM4 Registry
+>   API via `STURM_REGISTER_PLUGIN` in an anonymous namespace
+>   (PM4-6 pattern — same shape PN-2 and R-3 follow).
+> - Q-3 (sturm-5kgu.4): four positive + two negative fixtures
+>   under `tests/transpiler/fixtures/` —
+>   `reversible_return_style_qbool.{cpp,expected.cpp}`,
+>   `reversible_return_style_qint.{cpp,expected.cpp}`,
+>   `reversible_out_param_canonical.{cpp,expected.cpp}` (already
+>   canonical shape — Q-A twin step is a no-op),
+>   `return_to_out_param_{1..4}.expected.cpp` (golden companions
+>   for the Q-A unit test), `reversible_sig_const_ref_mutated.cpp`
+>   + `.expected.diag` (Q-B reject), `reversible_sig_multi_return.cpp`
+>   + `.expected.diag` (multi-return reject). Wired into
+>   `tests/transpiler/CMakeLists.txt` via the existing
+>   `run_snapshot.cmake` + `check_idempotent.cmake` +
+>   `check_reversible_diagnostic.cmake` harness (P-5 cloned the
+>   diagnostic harness from `check_qbool_prep_diagnostic.cmake`;
+>   Q-3 reuses it). Green under
+>   `ctest -R 'transpiler_snapshot_reversible_(return_style|out_param_canonical|sig_.*)'`
+>   and `ctest -R 'reversible_sig_.*_diagnostic'`, capped at `-j6`.
+> - Q-4 (sturm-5kgu.5): roadmap completion blockquote replacing
+>   this stub.
+>
+> **Principles touched.** P9a is the load-bearing principle —
+> return-style and out-param-style are two surfaces over the same
+> semantic shape, and the transpiler normalizes to one before
+> adjoint emission runs (out-param is canonical because R-A's
+> reverse-statement-order walk needs a mutable target to write
+> the adjoint into). P9b is the second load-bearer — constness
+> declares input mutability, so the Q-B matcher can reject
+> ambiguous signatures at the definition site rather than
+> leaving the ambiguity to propagate into R's adjoint body.
+> P9c / B11 are not touched this phase (they land in R / S).
+> P9d is touched only insofar as Q-B extends Phase P's
+> diagnostic surface with three new `report_reversible_sig_*`
+> methods — the validation pass itself (P-C) stays the source
+> of truth for body-level rejects. B10 unchanged (uncomputation
+> stays a compile-time concern). B9 unchanged: Q adds matchers
+> + a pure-string emitter to the one global pass; no new
+> optimization layer. `docs/01_principles.md` unchanged by Phase Q.
+>
+> **Out of scope.** Multi-return bodies, `std::variant` /
+> `std::optional` return types, and template reversible routines
+> are deferred to follow-up epics (plan §9). Synthesis inside
+> class member functions — `this`-capture introduces a fourth
+> parameter-capture rule beyond PRD §5.3 — is also out of scope
+> for P-S. Bodies rejected by Q-B (bad signature) never reach R
+> or S; bodies rejected by Phase P's P-C validation (measurement,
+> classical I/O, unregistered callee, `while`-loop,
+> quantum-dependent condition) never reach Q. Recursion is
+> deferred to the follow-up epic captured in plan §0 Q4.
+> Cross-TU synthesis stays in the follow-up bucket (plan §9).
+
+---
+
 ## Phase R — Straight-line adjoint emission (automatic adjoint synthesis, P9c)
 
 > **2026-04-23:** Phase R scoped. Tracked as bd epic `sturm-88d7`
