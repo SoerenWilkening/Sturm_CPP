@@ -178,6 +178,60 @@ add_test(NAME test_reversible_attribute COMMAND test_reversible_attribute)
 set_tests_properties(test_reversible_attribute PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: synthesis_registry (P-B / sturm-z2e8.3) ──────────────────────
+# Phase P plan §2.1 P-B: pins the `SynthesisRegistry` container and its
+# bridge to `RoutineRegistry` (PRD §9 Q2 — hand-registered adjoint wins).
+# The registry is a pure data structure (no AST matcher binds to it), so
+# the test is a standalone unit exerciser: it feeds synthetic
+# `const clang::FunctionDecl*` pointers into the map, asserts on
+# insert/lookup round-trip, conflict detection against `RoutineRegistry`,
+# deterministic iteration order across insertions, and the null-FD
+# guard on every public method.
+#
+# No LibTooling is required — the registry never dereferences its
+# keys. Linkage mirrors `test_transpile_diag_context` (the other
+# AST-free direct test): pull in `synthesis_registry.cpp` and
+# `routine_registry.cpp` from the transpiler source tree, link the
+# minimum LLVM / Clang needed to satisfy any transitive symbols, and
+# register under the `transpiler` ctest label.
+add_executable(test_synthesis_registry
+    test_synthesis_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
+)
+target_include_directories(test_synthesis_registry PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_synthesis_registry PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_synthesis_registry PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_SYN_REG NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_synthesis_registry PRIVATE
+    ${LLVM_DEFS_LIST_SYN_REG})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_synthesis_registry PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_synthesis_registry PRIVATE
+        clangASTMatchers
+        clangBasic
+        clangAST
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_SYN_REG support)
+    target_link_libraries(test_synthesis_registry PRIVATE
+        ${LLVM_LIBS_SYN_REG})
+endif()
+add_test(NAME test_synthesis_registry COMMAND test_synthesis_registry)
+set_tests_properties(test_synthesis_registry PROPERTIES
+    LABELS "transpiler")
+
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
 # method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke
