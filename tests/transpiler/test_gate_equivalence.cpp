@@ -323,6 +323,66 @@ namespace m12_rotations_reference {
 void demo();
 } // namespace m12_rotations_reference
 
+// S-5: Phase S reversed-iteration gate-equivalence triple pairs
+// (sturm-ha2k.6).  Three namespace pairs pinning the B11 loop-reversal
+// contract: a forward for-loop + its reversed-iteration adjoint must
+// produce a byte-identical gate stream across the transpiled and
+// reference TUs.  R-2 (auto_register_emitter) is not yet landed, so
+// both TUs are hand-written byte-for-byte twins (see each fixture's
+// top-of-file prose for the full R-2 / PH-3 pass-through rationale);
+// when Phase S's `loop_reversal` module lands, the runtime fixtures
+// shrink to just the forward loop and the adjoint becomes machine-
+// emitted — the reference twins stay as the ground-truth gate stream.
+//
+// Three scenarios, matching test_invert.cpp Test 6/7/8 (sturm-ha2k.7):
+//   ripple        — 4 qbools, 3-statement XOR sweep reading regs[i-1].
+//   bit_reversal  — 4 qbools, XOR-swap between regs[i] and regs[3-i].
+//   adder         — 3 qbools, carry-chain propagation left-to-right.
+// Each `demo` takes qbool references by non-const ref because the body
+// routes them through a local `qbool*` pointer-array alias (which
+// keeps PH-3 off; see runtime fixture prose).  The harness invokes
+// each `demo` three times per capture so each pair is exercised on
+// three independent payloads (total 18/36/36 CX records per pair).
+namespace m12_reversible_loop_ripple_transpiled {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2,
+          sturm::qbool& q3);
+} // namespace m12_reversible_loop_ripple_transpiled
+
+namespace m12_reversible_loop_ripple_reference {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2,
+          sturm::qbool& q3);
+} // namespace m12_reversible_loop_ripple_reference
+
+namespace m12_reversible_loop_bit_reversal_transpiled {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2,
+          sturm::qbool& q3);
+} // namespace m12_reversible_loop_bit_reversal_transpiled
+
+namespace m12_reversible_loop_bit_reversal_reference {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2,
+          sturm::qbool& q3);
+} // namespace m12_reversible_loop_bit_reversal_reference
+
+namespace m12_reversible_loop_adder_transpiled {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2);
+} // namespace m12_reversible_loop_adder_transpiled
+
+namespace m12_reversible_loop_adder_reference {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2);
+} // namespace m12_reversible_loop_adder_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -657,6 +717,89 @@ run_and_capture_rotations(void (*demo)()) {
     demo();
 
     return capture_ir(sc.ir());
+}
+
+// S-5: capture helper for the Phase S reversed-iteration ripple /
+// bit_reversal pair.  Each demo takes four qbool references; four
+// fresh qubits are allocated via `make_non_owning` so the harness
+// retains ownership across the demo boundary.  All four qbools are
+// passed by non-const reference because the runtime fixture's local
+// `qbool* regs[4] = {&q0, &q1, ...}` pointer-array alias captures
+// them by address, and the `*regs[i] ^= *regs[i-1]` call inside the
+// for-body needs a non-const lvalue to mutate.  Both the transpiled
+// and reference captures therefore observe the SAME four caller-
+// supplied indices, which is the precondition for a byte-identical
+// CX-stream comparison.
+//
+// 3 independent payloads: the harness invokes `demo` THREE times per
+// capture — each invocation emits the same per-invocation gate stream
+// (6 CX for ripple, 12 for bit_reversal) against the same caller-
+// supplied qubit indices.  The byte-compare pins that iteration
+// reversal produces a stable stream across repeated invocations as
+// well as across the transpiled/reference boundary.
+std::vector<sturm::GateRecord>
+run_and_capture_reversible_loop_4(void (*demo)(sturm::qbool&,
+                                               sturm::qbool&,
+                                               sturm::qbool&,
+                                               sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int q0 = sturm::QubitPool::instance().allocate();
+    const int q1 = sturm::QubitPool::instance().allocate();
+    const int q2 = sturm::QubitPool::instance().allocate();
+    const int q3 = sturm::QubitPool::instance().allocate();
+    sturm::qbool qb0 = sturm::qbool::make_non_owning(q0);
+    qb0.super_mask = 1ULL;
+    sturm::qbool qb1 = sturm::qbool::make_non_owning(q1);
+    qb1.super_mask = 1ULL;
+    sturm::qbool qb2 = sturm::qbool::make_non_owning(q2);
+    qb2.super_mask = 1ULL;
+    sturm::qbool qb3 = sturm::qbool::make_non_owning(q3);
+    qb3.super_mask = 1ULL;
+
+    // 3 independent payloads.
+    demo(qb0, qb1, qb2, qb3);
+    demo(qb0, qb1, qb2, qb3);
+    demo(qb0, qb1, qb2, qb3);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(q0);
+    sturm::QubitPool::instance().release(q1);
+    sturm::QubitPool::instance().release(q2);
+    sturm::QubitPool::instance().release(q3);
+    return stream;
+}
+
+// S-5: capture helper for the Phase S reversed-iteration adder pair.
+// Three qbool references — same mechanics as the 4-arg helper above.
+std::vector<sturm::GateRecord>
+run_and_capture_reversible_loop_3(void (*demo)(sturm::qbool&,
+                                               sturm::qbool&,
+                                               sturm::qbool&)) {
+    ScopedAppendContext sc;
+
+    const int q0 = sturm::QubitPool::instance().allocate();
+    const int q1 = sturm::QubitPool::instance().allocate();
+    const int q2 = sturm::QubitPool::instance().allocate();
+    sturm::qbool qb0 = sturm::qbool::make_non_owning(q0);
+    qb0.super_mask = 1ULL;
+    sturm::qbool qb1 = sturm::qbool::make_non_owning(q1);
+    qb1.super_mask = 1ULL;
+    sturm::qbool qb2 = sturm::qbool::make_non_owning(q2);
+    qb2.super_mask = 1ULL;
+
+    // 3 independent payloads.
+    demo(qb0, qb1, qb2);
+    demo(qb0, qb1, qb2);
+    demo(qb0, qb1, qb2);
+
+    auto stream = capture_ir(sc.ir());
+
+    sturm::QubitPool::instance().release(q0);
+    sturm::QubitPool::instance().release(q1);
+    sturm::QubitPool::instance().release(q2);
+    return stream;
 }
 
 bool gates_equal(const sturm::GateRecord& x, const sturm::GateRecord& y) {
@@ -1102,6 +1245,100 @@ int main() {
     }
     std::printf("  rotations streams match (%zu gates).\n", ref_rt.size());
 
+    // S-5: Phase S reversed-iteration gate-equivalence triple (sturm-ha2k.6).
+    // Three pairs — ripple, bit_reversal, adder — each invoking `demo` 3
+    // times per capture (3 independent payloads per pair) and asserting
+    // byte-identical gate streams between the transpiled and reference
+    // TUs.  Until Phase S's `loop_reversal` module + R-2
+    // auto_register_emitter land, both TUs are hand-written byte-for-byte
+    // twins; the test therefore pins (a) the deterministic qubit-index
+    // invariant across multi-invocation runs and (b) the reversed-
+    // iteration gate ordering that a future Phase S implementation must
+    // reproduce.  The fixtures' top-of-file prose documents the full R-2
+    // handoff contract.
+    std::printf("S-5 gate-stream equivalence test (ripple pattern):\n");
+    const auto ref_rl_r = run_and_capture_reversible_loop_4(
+        &m12_reversible_loop_ripple_reference::demo);
+    const auto got_rl_r = run_and_capture_reversible_loop_4(
+        &m12_reversible_loop_ripple_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_rl_r.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_rl_r[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_rl_r.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_rl_r[i]).c_str());
+    }
+    if (ref_rl_r.empty()) {
+        std::fprintf(stderr,
+                     "ripple reference produced 0 gates — fixture not "
+                     "exercising the Phase S reversed-iteration XOR sweep "
+                     "(the `^=` operator may be resolving to a stub "
+                     "branch — check STURM_BACKEND_ENABLED).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_rl_r, ref_rl_r); rc != 0) {
+        std::fprintf(stderr, "ripple gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  ripple streams match (%zu gates).\n", ref_rl_r.size());
+
+    std::printf("S-5 gate-stream equivalence test (bit_reversal pattern):\n");
+    const auto ref_rl_b = run_and_capture_reversible_loop_4(
+        &m12_reversible_loop_bit_reversal_reference::demo);
+    const auto got_rl_b = run_and_capture_reversible_loop_4(
+        &m12_reversible_loop_bit_reversal_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_rl_b.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_rl_b[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_rl_b.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_rl_b[i]).c_str());
+    }
+    if (ref_rl_b.empty()) {
+        std::fprintf(stderr,
+                     "bit_reversal reference produced 0 gates — fixture "
+                     "not exercising the Phase S reversed-iteration XOR "
+                     "swap (check STURM_BACKEND_ENABLED and the "
+                     "pointer-array alias in the fixture body).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_rl_b, ref_rl_b); rc != 0) {
+        std::fprintf(stderr,
+                     "bit_reversal gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  bit_reversal streams match (%zu gates).\n",
+                ref_rl_b.size());
+
+    std::printf("S-5 gate-stream equivalence test (adder pattern):\n");
+    const auto ref_rl_a = run_and_capture_reversible_loop_3(
+        &m12_reversible_loop_adder_reference::demo);
+    const auto got_rl_a = run_and_capture_reversible_loop_3(
+        &m12_reversible_loop_adder_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_rl_a.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_rl_a[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_rl_a.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_rl_a[i]).c_str());
+    }
+    if (ref_rl_a.empty()) {
+        std::fprintf(stderr,
+                     "adder reference produced 0 gates — fixture not "
+                     "exercising the Phase S reversed-iteration carry "
+                     "chain (check STURM_BACKEND_ENABLED and the "
+                     "pointer-array alias in the fixture body).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_rl_a, ref_rl_a); rc != 0) {
+        std::fprintf(stderr, "adder gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  adder streams match (%zu gates).\n", ref_rl_a.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
@@ -1113,6 +1350,9 @@ int main() {
     std::printf("pair 9: %zu gates match\n", ref_ho.size());
     std::printf("pair 10: %zu gates match\n", ref_ro.size());
     std::printf("pair 11: %zu gates match\n", ref_rt.size());
+    std::printf("pair 12: %zu gates match\n", ref_rl_r.size());
+    std::printf("pair 13: %zu gates match\n", ref_rl_b.size());
+    std::printf("pair 14: %zu gates match\n", ref_rl_a.size());
     std::printf("PASS\n");
     return 0;
 }

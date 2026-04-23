@@ -2055,6 +2055,91 @@ add_custom_command(
 set_source_files_properties("${_m12_rotations_generated}" PROPERTIES
     GENERATED TRUE)
 
+# ── S-5: Phase S reversed-iteration gate-equivalence triple ─────────────
+# Three m12 pairs pinning the B11 loop-reversal contract — ripple,
+# bit_reversal, adder.  Each pair's runtime fixture routes through
+# sturm-transpile so the pass-through is idempotent (the transpiler's
+# existing matchers do not rewrite the `*regs[i] ^= *regs[i-1]` shape —
+# PH-3's DeclRefExpr anchor does not match the
+# UnaryOperator(ArraySubscriptExpr) LHS; see each fixture's top-of-file
+# prose).  When Phase S's `loop_reversal` module + R-2
+# auto_register_emitter land, the runtime fixtures will shrink to just
+# the forward loop and the adjoint will be machine-emitted — the
+# per-fixture transpile step is the same driver invocation, so no CMake
+# changes are needed at that point.
+
+# Ripple pair.
+set(_m12_reversible_loop_ripple_runtime_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_ripple_runtime.cpp")
+file(RELATIVE_PATH _m12_reversible_loop_ripple_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_m12_reversible_loop_ripple_runtime_src}")
+set(_m12_reversible_loop_ripple_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_reversible_loop_ripple_rel_src}")
+get_filename_component(_m12_reversible_loop_ripple_gen_dir
+    "${_m12_reversible_loop_ripple_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_m12_reversible_loop_ripple_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${_m12_reversible_loop_ripple_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_m12_reversible_loop_ripple_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_m12_reversible_loop_ripple_runtime_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_m12_reversible_loop_ripple_rel_src} (S-5)"
+    VERBATIM)
+set_source_files_properties("${_m12_reversible_loop_ripple_generated}"
+    PROPERTIES GENERATED TRUE)
+
+# Bit-reversal pair.
+set(_m12_reversible_loop_bit_reversal_runtime_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_bit_reversal_runtime.cpp")
+file(RELATIVE_PATH _m12_reversible_loop_bit_reversal_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_m12_reversible_loop_bit_reversal_runtime_src}")
+set(_m12_reversible_loop_bit_reversal_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_reversible_loop_bit_reversal_rel_src}")
+get_filename_component(_m12_reversible_loop_bit_reversal_gen_dir
+    "${_m12_reversible_loop_bit_reversal_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_m12_reversible_loop_bit_reversal_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${_m12_reversible_loop_bit_reversal_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_m12_reversible_loop_bit_reversal_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_m12_reversible_loop_bit_reversal_runtime_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_m12_reversible_loop_bit_reversal_rel_src} (S-5)"
+    VERBATIM)
+set_source_files_properties("${_m12_reversible_loop_bit_reversal_generated}"
+    PROPERTIES GENERATED TRUE)
+
+# Adder pair.
+set(_m12_reversible_loop_adder_runtime_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_adder_runtime.cpp")
+file(RELATIVE_PATH _m12_reversible_loop_adder_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_m12_reversible_loop_adder_runtime_src}")
+set(_m12_reversible_loop_adder_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_reversible_loop_adder_rel_src}")
+get_filename_component(_m12_reversible_loop_adder_gen_dir
+    "${_m12_reversible_loop_adder_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_m12_reversible_loop_adder_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${_m12_reversible_loop_adder_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_m12_reversible_loop_adder_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_m12_reversible_loop_adder_runtime_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_m12_reversible_loop_adder_rel_src} (S-5)"
+    VERBATIM)
+set_source_files_properties("${_m12_reversible_loop_adder_generated}"
+    PROPERTIES GENERATED TRUE)
+
 add_executable(test_gate_equivalence_or_single
     test_gate_equivalence.cpp
     "${_m12_generated}"
@@ -2090,6 +2175,13 @@ add_executable(test_gate_equivalence_or_single
     # PN-8: Phase N rotation transpiled + hand-written reference.
     "${_m12_rotations_generated}"
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/rotations_reference.cpp
+    # S-5: Phase S reversed-iteration triple (ripple, bit_reversal, adder).
+    "${_m12_reversible_loop_ripple_generated}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_ripple_reference.cpp
+    "${_m12_reversible_loop_bit_reversal_generated}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_bit_reversal_reference.cpp
+    "${_m12_reversible_loop_adder_generated}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_adder_reference.cpp
     # Real sturm implementation sources — the harness needs
     # uncompute_or, execute_gate and the BackendContext C ABI to
     # actually fire.  The header-only `sturm` interface target does
