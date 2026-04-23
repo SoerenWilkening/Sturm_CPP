@@ -2140,6 +2140,43 @@ add_custom_command(
 set_source_files_properties("${_m12_reversible_loop_adder_generated}"
     PROPERTIES GENERATED TRUE)
 
+# ── R-5: Phase R straight-line adjoint-synthesis gate-equivalence pair ──
+# One m12 pair pinning the B10 straight-line adjoint-emission contract.
+# The runtime fixture routes through sturm-transpile so the pass-
+# through is idempotent (the transpiler's existing matchers do not
+# rewrite the `*regs[i] ^= *regs[j]` shape — PA-3's DeclRefExpr anchor
+# does not match the UnaryOperator(ArraySubscriptExpr) LHS; see the
+# fixture's top-of-file prose).  When R-3 (matcher_reversible_drive)
+# is wired into transpile_consumer.cpp and adjoint_emitter +
+# auto_register_emitter kick in, the runtime fixture will shrink to
+# just the forward cascade and the reverse-statement-order adjoint
+# will be machine-emitted as a sibling `__demo_adj` + a
+# STURM_REGISTER_ADJOINT registration — the per-fixture transpile
+# step is the same driver invocation, so no CMake changes are needed
+# at that point.
+set(_m12_reversible_synth_runtime_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_synth_runtime.cpp")
+file(RELATIVE_PATH _m12_reversible_synth_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_m12_reversible_synth_runtime_src}")
+set(_m12_reversible_synth_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_m12_reversible_synth_rel_src}")
+get_filename_component(_m12_reversible_synth_gen_dir
+    "${_m12_reversible_synth_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_m12_reversible_synth_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${_m12_reversible_synth_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_m12_reversible_synth_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_m12_reversible_synth_runtime_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_m12_reversible_synth_rel_src} (R-5)"
+    VERBATIM)
+set_source_files_properties("${_m12_reversible_synth_generated}"
+    PROPERTIES GENERATED TRUE)
+
 add_executable(test_gate_equivalence_or_single
     test_gate_equivalence.cpp
     "${_m12_generated}"
@@ -2182,6 +2219,10 @@ add_executable(test_gate_equivalence_or_single
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_bit_reversal_reference.cpp
     "${_m12_reversible_loop_adder_generated}"
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_loop_adder_reference.cpp
+    # R-5: Phase R straight-line adjoint-synthesis transpiled +
+    # hand-written reference.
+    "${_m12_reversible_synth_generated}"
+    ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_synth_reference.cpp
     # Real sturm implementation sources — the harness needs
     # uncompute_or, execute_gate and the BackendContext C ABI to
     # actually fire.  The header-only `sturm` interface target does

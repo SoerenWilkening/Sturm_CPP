@@ -383,6 +383,38 @@ void demo(sturm::qbool& q0,
           sturm::qbool& q2);
 } // namespace m12_reversible_loop_adder_reference
 
+// R-5: Phase R straight-line automatic-adjoint-synthesis gate-equivalence
+// pair (sturm-88d7.6).  One namespace pair pinning the B10 straight-
+// line adjoint-emission contract: a `[[sturm::reversible]]` forward
+// routine whose body is a loop-free sequence of compound-assignment
+// statements MUST be paired with a reverse-statement-order adjoint
+// that emits the same gate operands in the opposite order.  R-3
+// (matcher_reversible_drive) is implemented but not yet wired into
+// transpile_consumer.cpp, so BOTH TUs are hand-written byte-for-byte
+// twins (see each fixture's top-of-file prose for the full R-3 / PA-3
+// pass-through rationale); when R-3 wires in, the runtime fixture
+// shrinks to just the forward cascade and the adjoint becomes machine-
+// emitted as a sibling `__demo_adj` + STURM_REGISTER_ADJOINT — the
+// reference twin stays as the ground-truth gate stream.  Scenario:
+//   synth — 4 qbools, 4-statement XOR cascade with regs[3]^regs[0]
+//           re-touch so the gate fingerprint is distinguishable from
+//           the S-5 ripple 3-statement sweep.
+// The harness invokes `demo` three times per capture so the pair is
+// exercised on three independent payloads (total 24 CX records).
+namespace m12_reversible_synth_transpiled {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2,
+          sturm::qbool& q3);
+} // namespace m12_reversible_synth_transpiled
+
+namespace m12_reversible_synth_reference {
+void demo(sturm::qbool& q0,
+          sturm::qbool& q1,
+          sturm::qbool& q2,
+          sturm::qbool& q3);
+} // namespace m12_reversible_synth_reference
+
 namespace {
 
 // Scoped APPEND-mode BackendContext.  Construction installs the context
@@ -1339,6 +1371,54 @@ int main() {
     }
     std::printf("  adder streams match (%zu gates).\n", ref_rl_a.size());
 
+    // R-5: Phase R straight-line automatic-adjoint-synthesis gate-
+    // equivalence pair (sturm-88d7.6).  One pair — reversible_synth —
+    // invoking `demo` 3 times per capture (3 independent payloads) and
+    // asserting byte-identical gate streams between the transpiled and
+    // reference TUs.  Until R-3 (matcher_reversible_drive) is wired
+    // into transpile_consumer.cpp, both TUs are hand-written byte-for-
+    // byte twins spelling the forward 4-statement XOR cascade followed
+    // by the reverse-statement-order adjoint; the test therefore pins
+    // (a) the deterministic qubit-index invariant across multi-
+    // invocation runs and (b) the reverse-statement-order adjoint
+    // emission that Phase R's `adjoint_emitter` module must reproduce
+    // once R-3 takes over.  The fixtures' top-of-file prose documents
+    // the full R-3 handoff contract.  The capture helper reused here
+    // is `run_and_capture_reversible_loop_4` — the signature matches
+    // the S-5 ripple / bit_reversal pairs (four qbool references,
+    // three invocations per capture) but the demo body is straight-
+    // line with NO for-loop, the structural signature of Phase R.
+    std::printf("R-5 gate-stream equivalence test (reversible_synth pattern):\n");
+    const auto ref_rs = run_and_capture_reversible_loop_4(
+        &m12_reversible_synth_reference::demo);
+    const auto got_rs = run_and_capture_reversible_loop_4(
+        &m12_reversible_synth_transpiled::demo);
+    std::printf("  reference stream:\n");
+    for (std::size_t i = 0; i < ref_rs.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(ref_rs[i]).c_str());
+    }
+    std::printf("  transpiled stream:\n");
+    for (std::size_t i = 0; i < got_rs.size(); ++i) {
+        std::printf("    [%zu] %s\n", i, render_gate(got_rs[i]).c_str());
+    }
+    if (ref_rs.empty()) {
+        std::fprintf(stderr,
+                     "reversible_synth reference produced 0 gates — "
+                     "fixture not exercising the Phase R straight-line "
+                     "XOR cascade (the `^=` operator may be resolving "
+                     "to a stub branch — check STURM_BACKEND_ENABLED "
+                     "and the pointer-array alias in the fixture "
+                     "body).\n");
+        return 1;
+    }
+    if (int rc = assert_streams_equal(got_rs, ref_rs); rc != 0) {
+        std::fprintf(stderr,
+                     "reversible_synth gate-stream mismatch — see above.\n");
+        return rc;
+    }
+    std::printf("  reversible_synth streams match (%zu gates).\n",
+                ref_rs.size());
+
     std::printf("pair 1: %zu gates match\n", ref_stream.size());
     std::printf("pair 2: %zu gates match\n", ref_c.size());
     std::printf("pair 3: %zu gates match\n", ref_n.size());
@@ -1353,6 +1433,7 @@ int main() {
     std::printf("pair 12: %zu gates match\n", ref_rl_r.size());
     std::printf("pair 13: %zu gates match\n", ref_rl_b.size());
     std::printf("pair 14: %zu gates match\n", ref_rl_a.size());
+    std::printf("pair 15: %zu gates match\n", ref_rs.size());
     std::printf("PASS\n");
     return 0;
 }
