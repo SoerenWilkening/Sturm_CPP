@@ -1,0 +1,98 @@
+// reversible_body_rotation_phi.cpp — Phase R / R-4 (sturm-88d7.5)
+// positive straight-line fixture pinning the Z-rotation (phi) adjoint-
+// synthesis contract.
+//
+// Canonical PRD §5.1 / P9c reversible-body shape
+// ----------------------------------------------
+// The routine carries `[[clang::annotate("sturm::reversible")]]` and its
+// body is a straight-line (NO loops) sequence of Phase N phase-
+// rotation compound-assigns on `qint_t::PhiProxy`:
+//
+//   (*regs[0]).phi() += 0.75;  // QOpKind::PHI_ADD_ASSIGN_CONST
+//   (*regs[0]).phi() -= 0.3;   // QOpKind::PHI_SUB_ASSIGN_CONST
+//   (*regs[0]).phi() += 0.15;  // QOpKind::PHI_ADD_ASSIGN_CONST
+//
+// At the gate-stream level each statement is a single RZ(q, d) record.
+// Phase R's `adjoint_emitter` (sturm-88d7.2) will machine-emit a
+// sibling `__rotation_phi_body_adj` function whose body is the three
+// inverse statements in REVERSED statement order:
+//
+//   (*regs[0]).phi() -= 0.15;  // inverse of forward's last stmt
+//   (*regs[0]).phi() += 0.3;   // inverse of forward's middle stmt
+//   (*regs[0]).phi() -= 0.75;  // inverse of forward's first stmt
+//
+// The sign-flip pattern `+=` ↔ `-=` is the dual the Phase N inline-
+// inverse arm of `uncompute_pass.cpp:render_uncompute` already
+// produces (cases PHI_ADD_ASSIGN_CONST / PHI_SUB_ASSIGN_CONST).
+// Phase R reuses that same per-kind render dispatch, walking the
+// scope in REVERSE statement order instead of inserting inverses at
+// scope close.  This fixture is the Z-rotation mirror of
+// `reversible_body_rotation_theta.cpp` — the two fixtures pin the
+// two sign-flip families the Phase N inline-inverse arm already
+// supports.
+//
+// Why the pointer-array indirection is load-bearing
+// -------------------------------------------------
+// Phase N's `matcher_rotation` callbacks (PN-2a..PN-2d) anchor the
+// LHS `q.phi()`'s implicit-object argument on `declRefExpr(hasType(
+// hasCanonicalType(hasDeclaration(cxxRecordDecl(hasName("qint_t"))))))`
+// — a bare qint_t identifier.  A straight `a.phi() += 0.75;` would
+// fire the matcher and plant `a.phi() -= 0.75;` at scope close,
+// mutating the body.  Routing the method call through `(*regs[0]).phi()`
+// makes the implicit-object argument a `UnaryOperator(ArraySubscript
+// Expr)` that the PN-2 matcher's declRefExpr anchor does NOT match —
+// the transpiler leaves the body verbatim.  Same workaround shape as
+// the S-3 `reversible_loop_ripple.cpp` fixture uses for PA-3 / PH-3.
+//
+// R-3 status (matcher_reversible_drive)
+// -------------------------------------
+// Per the R-4 issue (sturm-88d7.5) and the plan's §2.3 R-3/R-4 handoff
+// contract, R-3 (matcher_reversible_drive) has landed but is not yet
+// wired into `transpile_consumer.cpp`.  The transpile step for this
+// fixture is therefore a PASS-THROUGH: sturm-transpile prepends the
+// AUTO-GENERATED/Source header and copies the body verbatim.  The
+// `.expected.cpp` golden differs from this input only by the two
+// header lines.  When R-3 lands, the golden upgrades in place with
+// the machine-emitted sign-flipped adjoint body + `STURM_REGISTER_
+// ADJOINT(rotation_phi_body, __rotation_phi_body_adj);`.
+//
+// Primitive coverage
+// ------------------
+// Exercises `QOpKind::PHI_ADD_ASSIGN_CONST` and
+// `QOpKind::PHI_SUB_ASSIGN_CONST` — the `_rotation_phi` slot of the
+// adjoint_emitter dispatch.  Both arms are sign-flip pairs: the
+// Phase N inline-inverse render cases at `uncompute_pass.cpp` lines
+// 172-191 emit `a.phi() -= d` and `a.phi() += d` respectively.  The
+// Phase R adjoint renderer reuses those same cases unmodified.
+//
+// Stub qint_t — same shape as `phi_add_const.cpp` with both
+// `operator+=` and `operator-=` on PhiProxy so all three statements
+// resolve.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    struct PhiProxy {
+        void operator+=(double) {}
+        void operator-=(double) {}
+    };
+    PhiProxy phi() { return PhiProxy{}; }
+};
+} // namespace sturm
+using qint = sturm::qint_t<1>;
+
+[[clang::annotate("sturm::reversible")]]
+void rotation_phi_body(qint a) {
+    qint* regs[1] = {&a};
+    // Straight-line phi-rotation cascade — NO loops.  Three RZ
+    // gates:
+    //   RZ(a, 0.75), RZ(a, -0.3), RZ(a, 0.15)
+    // Each `(*regs[0]).phi() += d` is a lonely PHI_*_ASSIGN_CONST op
+    // in the current IR; the PN-2 matchers do not fire because the
+    // LHS indirection breaks their declRefExpr anchor.  The Phase R
+    // adjoint body is the three inverse statements (sign-flipped +=/-=)
+    // in reversed source order.
+    (*regs[0]).phi() += 0.75;
+    (*regs[0]).phi() -= 0.3;
+    (*regs[0]).phi() += 0.15;
+}

@@ -3171,6 +3171,183 @@ set_tests_properties(transpiler_idempotent_reversible_loop_adder_carry PROPERTIE
     DEPENDS "snapshot_reversible_loop_adder_carry"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase R / R-4: positive straight-line body fixtures (sturm-88d7.5) ─────
+# Six snapshot + idempotence fixture pairs pinning the canonical PRD §5.1
+# / P9c reversible-body shapes — one per primitive family in the
+# `adjoint_emitter.cpp` dispatch table: XOR_ASSIGN, AND (CCNOT-like),
+# ADD/SUB/MUL/DIV_ASSIGN_CONST (compound), THETA_*_ASSIGN_CONST
+# (rotation_theta), PHI_*_ASSIGN_CONST (rotation_phi), plus a `mixed`
+# fixture interleaving three kinds in a single routine to stress the
+# reversed-statement-order walk across per-kind render dispatches.
+#
+# Each pair follows the same snapshot+idempotence pattern established by
+# the Phase S S-3 `reversible_loop_*` triple above: one `snapshot_*`
+# test runs sturm-transpile on the input and byte-diffs the generated
+# file against the checked-in `.expected.cpp` golden; a sibling
+# `transpiler_idempotent_*` test re-feeds the generated file back
+# through sturm-transpile and asserts byte-for-byte equality via the
+# `AUTO-GENERATED` sentinel path in main.cpp.
+#
+# R-3 status — PASS-THROUGH expected golden
+# -----------------------------------------
+# Per the R-4 issue description, R-3 (matcher_reversible_drive) has
+# landed but is not yet wired into transpile_consumer.cpp.  Today's
+# transpile is a pass-through for these fixtures: every body LHS goes
+# through pointer-array indirection (`*regs[i]`) so PA-3, PB-1..4,
+# PN-2a..d's declRefExpr anchors do not match (same workaround shape
+# as the S-3 loop fixtures use for PH-3), and the emitter prepends
+# the `AUTO-GENERATED` header.  The `.expected.cpp` goldens therefore
+# differ from the inputs only by the two-line AUTO-GENERATED/Source
+# header.  When Phase R's driver wires `adjoint_emitter` +
+# `auto_register_emitter` into transpile_consumer.cpp, the same CTest
+# wiring holds — only the golden files update to carry the machine-
+# emitted sibling `__<fn>_adj` companion + the matching
+# `STURM_REGISTER_ADJOINT(<fn>, __<fn>_adj);` line.  The fixture
+# inputs themselves do not need to change.
+add_test(
+    NAME snapshot_reversible_body_xor
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_xor.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_xor.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_xor
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_body_xor PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_body_xor
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_xor/reversible_body_xor.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_xor_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_body_xor PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_body_xor"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_body_and
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_and.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_and.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_and
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_body_and PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_body_and
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_and/reversible_body_and.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_and_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_body_and PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_body_and"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_body_compound
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_compound.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_compound.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_compound
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_body_compound PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_body_compound
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_compound/reversible_body_compound.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_compound_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_body_compound PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_body_compound"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_body_rotation_theta
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_rotation_theta.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_rotation_theta.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_rotation_theta
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_body_rotation_theta PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_body_rotation_theta
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_rotation_theta/reversible_body_rotation_theta.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_rotation_theta_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_body_rotation_theta PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_body_rotation_theta"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_body_rotation_phi
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_rotation_phi.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_rotation_phi.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_rotation_phi
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_body_rotation_phi PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_body_rotation_phi
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_rotation_phi/reversible_body_rotation_phi.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_rotation_phi_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_body_rotation_phi PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_body_rotation_phi"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_body_mixed
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_mixed.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_body_mixed.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_mixed
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_body_mixed PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_body_mixed
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_mixed/reversible_body_mixed.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_body_mixed_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_body_mixed PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_body_mixed"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── PM1-7: plugin_smoke_test ───────────────────────────────────────────────
 #
 # End-to-end probe of the plugin path: drives

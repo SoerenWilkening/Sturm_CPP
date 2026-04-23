@@ -1,0 +1,95 @@
+// reversible_body_rotation_theta.cpp — Phase R / R-4 (sturm-88d7.5)
+// positive straight-line fixture pinning the Y-rotation (theta) adjoint-
+// synthesis contract.
+//
+// Canonical PRD §5.1 / P9c reversible-body shape
+// ----------------------------------------------
+// The routine carries `[[clang::annotate("sturm::reversible")]]` and its
+// body is a straight-line (NO loops) sequence of Phase N amplitude-
+// rotation compound-assigns on `qint_t::ThetaProxy`:
+//
+//   (*regs[0]).theta() += 0.5;   // QOpKind::THETA_ADD_ASSIGN_CONST
+//   (*regs[0]).theta() -= 0.25;  // QOpKind::THETA_SUB_ASSIGN_CONST
+//   (*regs[0]).theta() += 0.1;   // QOpKind::THETA_ADD_ASSIGN_CONST
+//
+// At the gate-stream level each statement is a single RY(q, d) record.
+// Phase R's `adjoint_emitter` (sturm-88d7.2) will machine-emit a sibling
+// `__rotation_theta_body_adj` function whose body is the three inverse
+// statements in REVERSED statement order:
+//
+//   (*regs[0]).theta() -= 0.1;   // inverse of forward's last stmt
+//   (*regs[0]).theta() += 0.25;  // inverse of forward's middle stmt
+//   (*regs[0]).theta() -= 0.5;   // inverse of forward's first stmt
+//
+// The sign-flip pattern `+=` ↔ `-=` is the dual the Phase N inline-
+// inverse arm of `uncompute_pass.cpp:render_uncompute` already
+// produces (cases THETA_ADD_ASSIGN_CONST / THETA_SUB_ASSIGN_CONST).
+// Phase R reuses that same per-kind render dispatch, walking the
+// scope in REVERSE statement order instead of inserting inverses at
+// scope close.
+//
+// Why the pointer-array indirection is load-bearing
+// -------------------------------------------------
+// Phase N's `matcher_rotation` callbacks (PN-2a..PN-2d) anchor the
+// LHS `q.theta()`'s implicit-object argument on `declRefExpr(hasType(
+// hasCanonicalType(hasDeclaration(cxxRecordDecl(hasName("qint_t"))))))`
+// — a bare qint_t identifier.  A straight `a.theta() += 0.5;` would
+// fire the matcher and plant `a.theta() -= 0.5;` at scope close,
+// mutating the body.  Routing the method call through `(*regs[0]).theta()`
+// makes the implicit-object argument a `UnaryOperator(ArraySubscript
+// Expr)` that the PN-2 matcher's declRefExpr anchor does NOT match —
+// the transpiler leaves the body verbatim.  Same workaround shape as
+// the S-3 `reversible_loop_ripple.cpp` fixture uses for PA-3 / PH-3.
+//
+// R-3 status (matcher_reversible_drive)
+// -------------------------------------
+// Per the R-4 issue (sturm-88d7.5) and the plan's §2.3 R-3/R-4 handoff
+// contract, R-3 (matcher_reversible_drive) has landed but is not yet
+// wired into `transpile_consumer.cpp`.  The transpile step for this
+// fixture is therefore a PASS-THROUGH: sturm-transpile prepends the
+// AUTO-GENERATED/Source header and copies the body verbatim.  The
+// `.expected.cpp` golden differs from this input only by the two
+// header lines.  When R-3 lands, the golden upgrades in place with
+// the machine-emitted sign-flipped adjoint body + `STURM_REGISTER_
+// ADJOINT(rotation_theta_body, __rotation_theta_body_adj);`.
+//
+// Primitive coverage
+// ------------------
+// Exercises `QOpKind::THETA_ADD_ASSIGN_CONST` and
+// `QOpKind::THETA_SUB_ASSIGN_CONST` — the `_rotation_theta` slot of
+// the adjoint_emitter dispatch.  Both arms are sign-flip pairs: the
+// Phase N inline-inverse render cases at `uncompute_pass.cpp` lines
+// 144-171 emit `a.theta() -= d` and `a.theta() += d` respectively.
+// The Phase R adjoint renderer reuses those same cases unmodified.
+//
+// Stub qint_t — same shape as `theta_add_const.cpp` with both
+// `operator+=` and `operator-=` on ThetaProxy so all three statements
+// resolve.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    struct ThetaProxy {
+        void operator+=(double) {}
+        void operator-=(double) {}
+    };
+    ThetaProxy theta() { return ThetaProxy{}; }
+};
+} // namespace sturm
+using qint = sturm::qint_t<1>;
+
+[[clang::annotate("sturm::reversible")]]
+void rotation_theta_body(qint a) {
+    qint* regs[1] = {&a};
+    // Straight-line theta-rotation cascade — NO loops.  Three RY
+    // gates:
+    //   RY(a, 0.5), RY(a, -0.25), RY(a, 0.1)
+    // Each `(*regs[0]).theta() += d` is a lonely THETA_*_ASSIGN_CONST
+    // op in the current IR; the PN-2 matchers do not fire because the
+    // LHS indirection breaks their declRefExpr anchor.  The Phase R
+    // adjoint body is the three inverse statements (sign-flipped +=/-=)
+    // in reversed source order.
+    (*regs[0]).theta() += 0.5;
+    (*regs[0]).theta() -= 0.25;
+    (*regs[0]).theta() += 0.1;
+}
