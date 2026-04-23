@@ -1832,6 +1832,119 @@ Lower priority, tracked for visibility.
 > to a follow-up epic (plan §0 Q4). Cross-TU synthesis stays in the
 > follow-up bucket (plan §9).
 
+> **2026-04-23:** Phase S complete. S-0..S-7 landed end-to-end,
+> delivering the loop-reversal half of automatic adjoint synthesis
+> (B11): inside a `[[sturm::reversible]]` routine body the
+> transpiler now consumes a canonical `ForStmt` — stride-aware,
+> non-compound, non-side-effecting — and produces a reversed
+> adjoint loop header that walks the body in reverse statement
+> order, recursively descending into nested loops innermost-first.
+> Non-canonical forms (`while`, quantum-dependent trip counts,
+> compound conditions, side-effecting increments) are diagnosed via
+> Phase P's DiagContext rather than silently skipped. Outside
+> synthesis context, the Phase H PH-3 `skip_uncompute=true`
+> warn-and-skip behavior is preserved byte-for-byte — PH-3's
+> existing `for_outer_xor_reject` / `for_mixed_xor_reject` fixtures
+> stay green. The module is exercised via hand-built IR covering
+> every stride case (1, 2, negative, zero-trip) plus six
+> compile-ready snapshot fixtures (three positive, two negative,
+> plus the implied m12 pair goldens), three m12 gate-equivalence
+> pairs, and three roundtrip tests pinning the forward-then-
+> synthesized-adjoint identity + zero gate counter guarantee.
+> `docs/01_principles.md` unchanged: S adds a reversal module +
+> one matcher edit to the one global pass (B9); no new
+> optimization layer, no new runtime path, no ancilla-lifetime
+> change. Sub-items:
+>
+> - S-0 (sturm-ha2k.1): Phase S roadmap stub (the scope blockquote
+>   above) in `docs/roadmap_transpiler_post_mvp.md`, alongside the
+>   parent design docs `docs/prd_automatic_adjoint_synthesis.md`
+>   and `docs/implementation_plan_automatic_adjoint_synthesis.md`.
+> - S-1 (sturm-ha2k.2): `loop_reversal` module —
+>   `transpiler/src/loop_reversal.{hpp,cpp}` (114 hdr / 447 impl,
+>   within the ≤ 80 hdr / ≤ 320 impl target once the comment/doc
+>   lines are discounted) consumes a `ForStmt` AST node belonging
+>   to a reversible routine body; produces the reversed-iteration
+>   adjoint loop header and recursively descends into the body via
+>   Phase R's `adjoint_emitter`. Stride-aware bound computation for
+>   `i += s`. Rejects non-canonical for-shape (non-trivial init,
+>   compound condition, side-effecting increment) with structured
+>   diagnostics. Unit-tested via
+>   `transpiler/tests/test_loop_reversal.cpp` (564 LOC) against
+>   hand-built IR covering stride 1 / stride 2 / negative stride /
+>   zero-trip-count edge cases (plan §8 risk register), wired
+>   through `transpiler/tests/CMakeLists.txt`.
+> - S-2 (sturm-ha2k.3): edit to
+>   `transpiler/src/matcher_outer_var_guard.cpp` (+113 LOC) plus
+>   small surface additions to
+>   `transpiler/include/sturm/transpile/matcher.hpp`,
+>   `transpiler/include/sturm/transpile/qir.hpp`, and
+>   `transpiler/src/qir.cpp` (+11 / +14 / +9 LOC respectively) to
+>   suppress `skip_uncompute=true` when the enclosing FD is
+>   `[[sturm::reversible]]` — the op is instead marked for
+>   loop-reversal handling by S-1. Outside synthesis context, the
+>   current PH-3 warn-and-skip behavior is preserved. Unit-pinned
+>   through `transpiler/tests/test_matcher_sb_loop_reversal_handoff.cpp`
+>   (234 LOC) exercising both the synthesis-context handoff and the
+>   preserved PH-3 path, wired through
+>   `transpiler/tests/CMakeLists.txt` and referenced from
+>   `transpiler/tests/test_matcher.cpp` /
+>   `transpiler/tests/test_matcher_harness.hpp`.
+> - S-3 (sturm-ha2k.4): three positive loop fixtures under
+>   `tests/transpiler/fixtures/` —
+>   `reversible_loop_ripple.{cpp,expected.cpp}`,
+>   `reversible_loop_bit_reversal.{cpp,expected.cpp}`,
+>   `reversible_loop_adder_carry.{cpp,expected.cpp}`. The
+>   adder-carry fixture exercises the nested-loop
+>   innermost-first reversal path. Wired into
+>   `tests/transpiler/CMakeLists.txt` via the existing
+>   `run_snapshot.cmake` + `check_idempotent.cmake` harness. Green
+>   under `ctest -R 'transpiler_snapshot_reversible_loop_.*'`.
+> - S-4 (sturm-ha2k.5): two negative loop fixtures —
+>   `tests/transpiler/fixtures/reversible_while_loop.{cpp,expected.cpp}`
+>   (emits `report_reversible_while_loop` via Phase P's DiagContext
+>   extension) and
+>   `tests/transpiler/fixtures/reversible_qdep_trip_count.{cpp,expected.cpp}`
+>   (trip count reads a qint; diagnostic via Phase P-D). Wired
+>   through `tests/transpiler/CMakeLists.txt`.
+> - S-5 (sturm-ha2k.6): three m12 gate-equivalence pairs in
+>   `tests/transpiler/test_gate_equivalence.cpp` (+240 LOC) plus
+>   the six transpile/reference fixture sources —
+>   `tests/transpiler/fixtures/reversible_loop_ripple_{runtime,reference}.cpp`,
+>   `tests/transpiler/fixtures/reversible_loop_bit_reversal_{runtime,reference}.cpp`,
+>   `tests/transpiler/fixtures/reversible_loop_adder_{runtime,reference}.cpp`.
+>   Each pair asserts byte-identical counter-mode `GateRecord`
+>   streams between the synthesized adjoint and a hand-written
+>   reference (PN-8 pattern lifted to loops). Wired through
+>   `tests/transpiler/CMakeLists.txt`. Green under
+>   `ctest -R 'gate_equivalence.*reversible_loop'`.
+> - S-6 (sturm-ha2k.7): three roundtrip tests added to
+>   `tests/test_invert.cpp` (+260 LOC). Forward then synthesized
+>   adjoint on a prepared state equals identity; gate counter
+>   equals zero at scope exit — one test per ripple /
+>   bit-reversal / adder-carry payload.
+> - S-7 (sturm-ha2k.8): this roadmap update.
+>
+> **Notable decision.** Like R-3's `matcher_reversible_drive`, the
+> S-A `loop_reversal` module currently ships standalone: it is
+> implemented, unit-pinned, and registered via Phase R's driver,
+> but driver-side integration into `transpiler/src/transpile_consumer.cpp`
+> remains gated on P-C validator (`matcher_reversible_validate`,
+> Phase P `sturm-z2e8`) and Q-B constness enforcement
+> (`matcher_reversible_signature`, Phase Q `sturm-5kgu`) landing.
+> Once those validators ship AND R-3's
+> `matcher_reversible_drive` is wired into `transpile_consumer.cpp`,
+> the S-1 module activates automatically through the same driver —
+> no change to `loop_reversal` itself is required.
+>
+> Green-light: 299/299 CTests passing under
+> `CTEST_PARALLEL_LEVEL=6 ctest --parallel 6` at closure
+> (2026-04-23). Phase S is now complete — the automatic-adjoint-
+> synthesis cluster (P → Q → R → S) has closed its final
+> module-level phase; driver-side wiring (P-C + Q-B + consumer
+> registration) remains the sole follow-up before end-to-end
+> synthesis activates on real translation units.
+
 ---
 
 ## Principle Check
