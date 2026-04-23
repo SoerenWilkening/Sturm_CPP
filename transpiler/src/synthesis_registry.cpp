@@ -161,6 +161,14 @@ bool SynthesisRegistry::set_adjoint_name(const clang::FunctionDecl* fwd,
     return true;
 }
 
+bool SynthesisRegistry::set_twin_source(const clang::FunctionDecl* fwd,
+                                        std::string source) {
+    SynthesisEntry* entry = find_mutable_entry(map_, fwd);
+    if (entry == nullptr) return false;
+    entry->twin_source = std::move(source);
+    return true;
+}
+
 bool SynthesisRegistry::set_status(const clang::FunctionDecl* fwd,
                                    SynthesisStatus status) {
     SynthesisEntry* entry = find_mutable_entry(map_, fwd);

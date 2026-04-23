@@ -232,6 +232,75 @@ add_test(NAME test_synthesis_registry COMMAND test_synthesis_registry)
 set_tests_properties(test_synthesis_registry PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: return_to_out_param (Q-A / sturm-5kgu.2) ─────────────────────
+# Phase Q plan §2.2 Q-A: pins the out-param-twin source synthesis for
+# reversible forwards whose body is a single `return <expr>;`. The tests
+# run four positive fixtures (`return_to_out_param_{1..4}.cpp`) through
+# `runToolOnCodeWithArgs`, locate the named forward FunctionDecl, invoke
+# `synthesize_out_param_twin`, and compare the produced source text
+# byte-for-byte against the sibling `.expected.cpp` golden file. Negative
+# reject paths (NotReversible, non-quantum return, multi-statement body,
+# forward declaration, null decl) are exercised inline without a fixture.
+#
+# Fixture directory is threaded in via STURM_RETURN_TO_OUT_PARAM_FIXTURES_DIR
+# so the test reads goldens straight from the source tree — mirrors the
+# `STURM_TRANSPILE_FIXTURES_DIR` pattern used by `test_transpile_skip`.
+#
+# Linkage pulls in `return_to_out_param.cpp` (the module under test) plus
+# `reversible_attribute.cpp` (the `is_reversible` predicate Q-A consults
+# on every input). Shared libclang-cpp + libLLVM when available, fallback
+# to the per-component archives otherwise, same shape every other direct-
+# ASTConsumer test in this file uses.
+add_executable(test_return_to_out_param
+    test_return_to_out_param.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+)
+target_include_directories(test_return_to_out_param PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_return_to_out_param PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_return_to_out_param PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_R2OP NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_return_to_out_param PRIVATE
+    ${LLVM_DEFS_LIST_R2OP}
+    STURM_RETURN_TO_OUT_PARAM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_return_to_out_param PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_return_to_out_param PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_R2OP support)
+    target_link_libraries(test_return_to_out_param PRIVATE
+        ${LLVM_LIBS_R2OP})
+endif()
+add_test(NAME test_return_to_out_param COMMAND test_return_to_out_param)
+set_tests_properties(test_return_to_out_param PROPERTIES
+    LABELS "transpiler")
+
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
 # method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke

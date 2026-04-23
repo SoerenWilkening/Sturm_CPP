@@ -161,6 +161,16 @@ struct SynthesisEntry {
     const clang::FunctionDecl* forward = nullptr;
     const clang::FunctionDecl* twin = nullptr;
     std::string adjoint_name;
+    /// Q-A (sturm-5kgu.2) synthesised out-param twin source text.
+    /// The string carries a complete C++ function definition the
+    /// pipeline driver will inline into the rewritten buffer — not
+    /// an identifier. Kept separate from `adjoint_name` because the
+    /// two fields have different semantics (identifier vs. body
+    /// blob) and downstream consumers treat them differently: R-A
+    /// consumes `twin_source` as a rewrite payload, R-B consumes
+    /// `adjoint_name` as a token for the `STURM_REGISTER_ADJOINT`
+    /// expansion.
+    std::string twin_source;
     SynthesisStatus status = SynthesisStatus::Pending;
 };
 
@@ -234,6 +244,17 @@ public:
     /// Returns true on success, false if `fwd` is null or absent.
     bool set_adjoint_name(const clang::FunctionDecl* fwd,
                           std::string name);
+
+    /// Q-A (sturm-5kgu.2): attach the synthesised out-param twin
+    /// source text to the entry. The string carries a complete C++
+    /// function definition the pipeline driver will later thread
+    /// into the rewritten buffer. Empty `source` is accepted — a
+    /// canonical out-param forward (no twin needed) legitimately
+    /// records an empty body, and a Q-A reject path may want to
+    /// record "I looked at this, produced nothing". Returns true on
+    /// success, false if `fwd` is null or absent from the registry.
+    bool set_twin_source(const clang::FunctionDecl* fwd,
+                         std::string source);
 
     /// Transition the entry to a new status. Returns true on
     /// success, false if `fwd` is null or absent. The method does
