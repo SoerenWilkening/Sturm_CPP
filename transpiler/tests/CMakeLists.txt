@@ -114,6 +114,70 @@ add_test(NAME test_transpile_diag_context COMMAND test_transpile_diag_context)
 set_tests_properties(test_transpile_diag_context PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: reversible_attribute (P-A / sturm-z2e8.2) ─────────────────────
+# Phase P plan §2.1 P-A: pins `is_reversible(const FunctionDecl*)` for the
+# `[[sturm::reversible]]` opt-in marker. The detection primitive consumes
+# a `clang::AnnotateAttr` whose annotation string equals
+# `"sturm::reversible"`; the tests exercise recognition on a plain free
+# function, rejection of a typo (`"sturm::reversibel"`), and survival of
+# template instantiation.
+#
+# The test drives its own lightweight ASTConsumer via
+# `runToolOnCodeWithArgs` (same posture as test_alias_footprint / the
+# other direct-ASTConsumer tests above) rather than routing through the
+# MVP matcher harness. Linkage mirrors test_alias_footprint: shared
+# libclang-cpp + libLLVM when available, fallback to the static
+# per-component archives otherwise. Only `reversible_attribute.cpp` is
+# linked from the transpiler side — the predicate is a free function
+# over a decl and has no dependency on the matcher pool, the synthesis
+# registry (P-B), or the diag context (P-D).
+add_executable(test_reversible_attribute
+    test_reversible_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+)
+target_include_directories(test_reversible_attribute PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_reversible_attribute PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_reversible_attribute PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_REVERSIBLE NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_reversible_attribute PRIVATE
+    ${LLVM_DEFS_LIST_REVERSIBLE})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_reversible_attribute PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_reversible_attribute PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_REVERSIBLE support)
+    target_link_libraries(test_reversible_attribute PRIVATE
+        ${LLVM_LIBS_REVERSIBLE})
+endif()
+add_test(NAME test_reversible_attribute COMMAND test_reversible_attribute)
+set_tests_properties(test_reversible_attribute PROPERTIES
+    LABELS "transpiler")
+
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
 # method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke
