@@ -113,3 +113,21 @@ void bad_const_ref(const qbool& x, const qbool& y) {
     // `report_reversible_const_ref_mutated` diagnostic reports).
     const_cast<qbool&>(x) ^= y;
 }
+
+// Phase T T-2 (sturm-xrob.3): the PRD §9 Q2 error-emission gate fires
+// only when the TU contains at least one `sturm::invert(&fd)` call
+// site targeting this forward. We add the canonical `sturm::invert`
+// stub + a call site below so condition (3) holds and the Q-B
+// const-ref-mutated diagnostic is not swallowed by the silence guard.
+namespace sturm {
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+} // namespace sturm
+
+void invoke_bad_const_ref_adjoint() {
+    auto p = sturm::invert(&bad_const_ref);
+    (void)p;
+}

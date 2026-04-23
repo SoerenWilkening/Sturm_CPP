@@ -38,6 +38,7 @@
 #include "matcher_reversible_drive.hpp"
 
 #include "adjoint_emitter.hpp"
+#include "diag_context.hpp"
 #include "routine_registry.hpp"
 #include "synthesis_registry.hpp"
 
@@ -47,10 +48,14 @@
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/RecursiveASTVisitor.h"
+#include "clang/Basic/Diagnostic.h"
+#include "clang/Basic/DiagnosticIDs.h"
+#include "clang/Basic/DiagnosticOptions.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Frontend/CompilerInstance.h"
 #include "clang/Frontend/FrontendActions.h"
 #include "clang/Tooling/Tooling.h"
+#include "llvm/ADT/IntrusiveRefCntPtr.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -61,12 +66,16 @@
 #include <utility>
 #include <vector>
 
+using sturm::transpile::collect_invert_call_targets;
+using sturm::transpile::DiagContext;
+using sturm::transpile::drive_reversible;
+using sturm::transpile::drive_reversible_forwards;
 using sturm::transpile::DriveOptions;
 using sturm::transpile::DriveRejectReason;
 using sturm::transpile::DriveResult;
-using sturm::transpile::drive_reversible;
 using sturm::transpile::QOperation;
 using sturm::transpile::QOpKind;
+using sturm::transpile::QUnit;
 using sturm::transpile::QValueRef;
 using sturm::transpile::RoutineRegistry;
 using sturm::transpile::SynthesisEntry;
@@ -576,6 +585,403 @@ void noopts(qbool& r) {}
     CHECK(ran);
 }
 
+// ── Phase T T-2 (sturm-xrob.3) — error-emission gating harness ──────────────
+//
+// The gating tests need a DiagnosticsEngine they can assert against
+// (errors / warnings emitted). We construct a standalone engine backed
+// by a counting consumer so the assertions compare exact counts without
+// parsing formatted text. Mirrors the DiagHarness pattern from
+// `test_matcher_reversible_validate.cpp` — duplicated here to keep this
+// binary self-contained per the per-test-binary convention.
+
+class CountingDiagConsumer final : public clang::DiagnosticConsumer {
+public:
+    unsigned warnings = 0;
+    unsigned errors   = 0;
+
+    void HandleDiagnostic(clang::DiagnosticsEngine::Level lvl,
+                          const clang::Diagnostic& /*info*/) override {
+        if (lvl >= clang::DiagnosticsEngine::Error) {
+            ++errors;
+        } else if (lvl == clang::DiagnosticsEngine::Warning) {
+            ++warnings;
+        }
+    }
+};
+
+struct DiagHarness {
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticIDs>     ids;
+    llvm::IntrusiveRefCntPtr<clang::DiagnosticOptions> opts;
+    CountingDiagConsumer*                              counter;
+    clang::DiagnosticsEngine                           engine;
+    DiagContext                                        ctx;
+    DiagHarness()
+        : ids(new clang::DiagnosticIDs()),
+          opts(new clang::DiagnosticOptions()),
+          counter(new CountingDiagConsumer()),
+          engine(ids, opts.get(), counter, /*ShouldOwnClient=*/true),
+          ctx(engine) {}
+};
+
+// ── Phase T T-2 — collect_invert_call_targets() scanner tests ──────────────
+
+void test_collect_invert_targets_empty_tu() {
+    // A TU with no CallExprs at all → empty target set.
+    constexpr std::string_view src = R"CPP(
+int plain_helper() { return 0; }
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        auto targets = collect_invert_call_targets(ctx);
+        CHECK(targets.empty());
+    });
+    CHECK(ran);
+}
+
+void test_collect_invert_targets_one_call() {
+    // A TU with a single `sturm::invert(&fn)` call → the target set
+    // contains exactly the one FD the call references. The callee
+    // spelling must be the qualified `sturm::invert` (matches the
+    // canonical declaration in `include/sturm/routines/invert.hpp`).
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+}
+void target_fn(int) {}
+void caller() {
+    auto p = sturm::invert(&target_fn);
+    (void)p;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        NamedFnFinder f("target_fn");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+
+        auto targets = collect_invert_call_targets(ctx);
+        CHECK(targets.size() == 1);
+        if (targets.size() == 1) {
+            CHECK(targets[0] == f.found());
+        }
+    });
+    CHECK(ran);
+}
+
+void test_collect_invert_targets_multiple_deduplicated() {
+    // Multiple calls to invert targeting the SAME FD deduplicate to
+    // one entry in the returned set.
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+}
+void target_fn(int) {}
+void caller() {
+    auto p1 = sturm::invert(&target_fn);
+    auto p2 = sturm::invert(&target_fn);
+    (void)p1; (void)p2;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        NamedFnFinder f("target_fn");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+
+        auto targets = collect_invert_call_targets(ctx);
+        CHECK(targets.size() == 1);
+    });
+    CHECK(ran);
+}
+
+void test_collect_invert_targets_distinct() {
+    // Multiple calls to invert targeting different FDs → one entry
+    // per distinct target.
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+}
+void target_a(int) {}
+void target_b(int) {}
+void caller() {
+    auto p1 = sturm::invert(&target_a);
+    auto p2 = sturm::invert(&target_b);
+    (void)p1; (void)p2;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        auto targets = collect_invert_call_targets(ctx);
+        CHECK(targets.size() == 2);
+    });
+    CHECK(ran);
+}
+
+// ── Phase T T-2 — drive_reversible_forwards() gating tests ──────────────────
+
+void test_gating_silent_when_no_invert_call() {
+    // A reversible forward with an invalid body (measurement call)
+    // and NO `invert(&fd)` call site in the TU. Condition (3) fails,
+    // so the P-C validator's diagnostic must be SWALLOWED by the T-2
+    // silence gate. The validator still computes the verdict (invalid)
+    // but no diagnostic reaches the engine.
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+class qbool { public:
+    qbool() {}
+    qbool& operator^=(const qbool&) { return *this; }
+};
+int measure_qubit(int);
+}
+using sturm::qbool;
+
+[[clang::annotate("sturm::reversible")]]
+void bad_body(qbool& r, qbool a) {
+    int x = sturm::measure_qubit(0);
+    (void)x;
+    r ^= a;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        NamedFnFinder f("bad_body");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+        if (f.found() == nullptr) return;
+
+        DiagHarness h;
+        QUnit unit;
+        SynthesisRegistry synth;
+        RoutineRegistry routines;
+        synth.insert_forward(f.found());
+
+        drive_reversible_forwards(unit, synth, routines, h.ctx, ctx);
+
+        // No invert call site → no diagnostic must reach the engine,
+        // even though the P-C validator would otherwise fire a
+        // measurement Error. Warnings count must also remain zero —
+        // the gate silences every report_* in the validator family.
+        CHECK_EQ_STR(std::to_string(h.counter->errors),
+                     std::string("0"));
+        CHECK_EQ_STR(std::to_string(h.counter->warnings),
+                     std::string("0"));
+    });
+    CHECK(ran);
+}
+
+void test_gating_fires_when_invert_call_present() {
+    // Same reversible forward with the same invalid body, but the TU
+    // also contains a `sturm::invert(&bad_body)` call site. All three
+    // PRD §9 Q2 conditions now hold:
+    //   (1) reversible,
+    //   (2) no hand-registered adjoint,
+    //   (3) `invert(&fd)` call site present.
+    // The validator's diagnostic MUST fire.
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+class qbool { public:
+    qbool() {}
+    qbool& operator^=(const qbool&) { return *this; }
+};
+int measure_qubit(int);
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+}
+using sturm::qbool;
+
+[[clang::annotate("sturm::reversible")]]
+void bad_body(qbool& r, qbool a) {
+    int x = sturm::measure_qubit(0);
+    (void)x;
+    r ^= a;
+}
+
+void caller() {
+    auto p = sturm::invert(&bad_body);
+    (void)p;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        NamedFnFinder f("bad_body");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+        if (f.found() == nullptr) return;
+
+        DiagHarness h;
+        QUnit unit;
+        SynthesisRegistry synth;
+        RoutineRegistry routines;
+        synth.insert_forward(f.found());
+
+        drive_reversible_forwards(unit, synth, routines, h.ctx, ctx);
+
+        // Conditions (1-3) hold → the P-C measurement diagnostic
+        // must fire at Error severity.
+        CHECK(h.counter->errors >= 1);
+    });
+    CHECK(ran);
+}
+
+void test_gating_silent_when_hand_registered() {
+    // Even with an `invert(&fd)` call site and an invalid body, if
+    // the forward is hand-registered in the `RoutineRegistry`, the
+    // gate's condition (2) fails — the hand-written adjoint wins per
+    // PRD §9 Q2 and the validator's diagnostic must be SWALLOWED.
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+class qbool { public:
+    qbool() {}
+    qbool& operator^=(const qbool&) { return *this; }
+};
+int measure_qubit(int);
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+}
+using sturm::qbool;
+
+[[clang::annotate("sturm::reversible")]]
+void bad_body(qbool& r, qbool a) {
+    int x = sturm::measure_qubit(0);
+    (void)x;
+    r ^= a;
+}
+
+void caller() {
+    auto p = sturm::invert(&bad_body);
+    (void)p;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        NamedFnFinder f("bad_body");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+        if (f.found() == nullptr) return;
+
+        DiagHarness h;
+        QUnit unit;
+        SynthesisRegistry synth;
+        RoutineRegistry routines;
+        synth.insert_forward(f.found());
+        // Hand-register the forward/adjoint pair — condition (2)
+        // fails because the user has supplied a manual adjoint via
+        // `STURM_REGISTER_ADJOINT`.
+        routines.insert_pair(f.found(), "user_supplied_adj");
+
+        drive_reversible_forwards(unit, synth, routines, h.ctx, ctx);
+
+        // Hand-registration wins silently → no diagnostic reaches the
+        // engine even though the body would otherwise fail P-C.
+        CHECK_EQ_STR(std::to_string(h.counter->errors),
+                     std::string("0"));
+        CHECK_EQ_STR(std::to_string(h.counter->warnings),
+                     std::string("0"));
+    });
+    CHECK(ran);
+}
+
+void test_gating_silent_when_body_is_valid() {
+    // A reversible forward with a VALID body and an `invert(&fd)`
+    // call site. No validator rejects → no diagnostic regardless of
+    // the gate state. Pins that the gate is orthogonal to the
+    // validator's "valid" path: a clean forward fires nothing.
+    constexpr std::string_view src = R"CPP(
+namespace sturm {
+class qbool { public:
+    qbool() {}
+    qbool& operator^=(const qbool&) { return *this; }
+};
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+}
+using sturm::qbool;
+
+[[clang::annotate("sturm::reversible")]]
+void good_body(qbool& r, qbool a) {
+    r ^= a;
+}
+
+void caller() {
+    auto p = sturm::invert(&good_body);
+    (void)p;
+}
+)CPP";
+    bool ran = run_on(src, [&](clang::ASTContext& ctx) {
+        NamedFnFinder f("good_body");
+        f.TraverseAST(ctx);
+        CHECK(f.found() != nullptr);
+        if (f.found() == nullptr) return;
+
+        DiagHarness h;
+        QUnit unit;
+        SynthesisRegistry synth;
+        RoutineRegistry routines;
+        synth.insert_forward(f.found());
+
+        drive_reversible_forwards(unit, synth, routines, h.ctx, ctx);
+
+        // Valid body + invert call present → still zero diagnostics
+        // because the body passes P-C validation.
+        CHECK_EQ_STR(std::to_string(h.counter->errors),
+                     std::string("0"));
+        CHECK_EQ_STR(std::to_string(h.counter->warnings),
+                     std::string("0"));
+    });
+    CHECK(ran);
+}
+
+// ── Silence guard RAII smoke test ──────────────────────────────────────────
+
+void test_silence_guard_suppresses_reports() {
+    // Pin the RAII silence guard's contract: inside the guarded
+    // scope, every `report_*` is swallowed; after scope exit, the
+    // prior silenced-state is restored and subsequent reports land
+    // normally on the engine. Nesting is exercised implicitly — the
+    // inner guard captures `prior=true` (because the outer is active)
+    // and restores it on destruction.
+    bool ran = run_on("", [&](clang::ASTContext& /*ctx*/) {
+        DiagHarness h;
+        clang::SourceLocation loc;  // invalid loc is fine for
+                                     // report_* — the engine still
+                                     // registers the diag and
+                                     // HandleDiagnostic fires.
+
+        // Outside the guard: report lands.
+        h.ctx.report_reversible_measurement(loc, "fn_unguarded");
+        CHECK(h.counter->errors == 1);
+
+        {
+            DiagContext::SilenceGuard g(h.ctx);
+            h.ctx.report_reversible_measurement(loc, "fn_silenced");
+            h.ctx.report_reversible_while_loop(loc, "fn_silenced");
+            h.ctx.report_reversible_io(loc, "fn_silenced");
+        }
+        // Counts unchanged — all three reports inside the guard
+        // were swallowed.
+        CHECK(h.counter->errors == 1);
+
+        // After guard destruction: reports land again.
+        h.ctx.report_reversible_measurement(loc, "fn_post_guard");
+        CHECK(h.counter->errors == 2);
+    });
+    CHECK(ran);
+}
+
 // ── (5) Reason stringification ──────────────────────────────────────────────
 
 void test_reason_to_string_stable() {
@@ -626,6 +1032,25 @@ int main() {
 
     // (5) Reason stringification.
     test_reason_to_string_stable();
+
+    // Phase T T-2 (sturm-xrob.3) — invert call-site scanner tests.
+    test_collect_invert_targets_empty_tu();
+    test_collect_invert_targets_one_call();
+    test_collect_invert_targets_multiple_deduplicated();
+    test_collect_invert_targets_distinct();
+
+    // Phase T T-2 (sturm-xrob.3) — drive_reversible_forwards gating
+    // tests. Each of these runs the full end-of-TU driver against a
+    // snippet that exercises one PRD §9 Q2 gate-condition state and
+    // asserts on the resulting DiagnosticsEngine counts.
+    test_gating_silent_when_no_invert_call();
+    test_gating_fires_when_invert_call_present();
+    test_gating_silent_when_hand_registered();
+    test_gating_silent_when_body_is_valid();
+
+    // Phase T T-2 (sturm-xrob.3) — DiagContext silence guard smoke
+    // test.
+    test_silence_guard_suppresses_reports();
 
     std::fprintf(stderr,
                  "test_matcher_reversible_drive: %d / %d checks passed\n",

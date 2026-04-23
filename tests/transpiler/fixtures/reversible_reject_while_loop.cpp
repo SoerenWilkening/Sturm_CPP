@@ -74,3 +74,21 @@ void bad_while_reject(qbool& r, qbool a) {
         ++i;
     }
 }
+
+// Phase T T-2 (sturm-xrob.3): the PRD §9 Q2 error-emission gate fires
+// only when the TU contains at least one `sturm::invert(&fd)` call
+// site targeting this forward. We add the canonical `sturm::invert`
+// stub + a call site below so condition (3) holds and the P-C
+// while-loop diagnostic is not swallowed by the silence guard.
+namespace sturm {
+template <typename R, typename... Args>
+constexpr auto invert(R (*fn)(Args...)) noexcept {
+    (void)fn;
+    return fn;
+}
+} // namespace sturm
+
+void invoke_bad_while_reject_adjoint() {
+    auto p = sturm::invert(&bad_while_reject);
+    (void)p;
+}

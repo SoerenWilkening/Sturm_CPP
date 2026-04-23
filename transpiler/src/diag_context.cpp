@@ -71,6 +71,10 @@ unsigned DiagContext::getOrRegister(int level, std::string_view fmt) {
 
 void DiagContext::report_when_operand_mutation(
     clang::SourceLocation loc, std::string_view name) {
+    // Phase T T-2 (sturm-xrob.3): silenced-window gate. When the
+    // drive matcher has silenced this context for the PRD §9 Q2
+    // error-emission gating window, swallow the report.
+    if (silenced_) return;
     // PM3-4 / Class 1: the format string is locked down by the issue
     // description. `%0` is the mutated qbool/qint identifier. Error
     // severity per P4 ("the operands of a `WHEN` control expression
@@ -92,6 +96,7 @@ void DiagContext::report_when_operand_mutation(
 
 void DiagContext::report_quantum_to_classical_cond(
     clang::SourceLocation loc, std::string_view name) {
+    if (silenced_) return;
     // PM3-5 / Class 2: Quantum -> classical in a branch condition. Fires
     // when an explicit cast (`static_cast<bool>(q)`, `(bool)q`, or
     // `bool(q)`) from a qbool / qint_t appears in the condition slot of
@@ -118,6 +123,7 @@ void DiagContext::report_quantum_to_classical_cond(
 
 void DiagContext::report_missing_adjoint(
     clang::SourceLocation loc, std::string_view fn) {
+    if (silenced_) return;
     // PM3-3: Class 3 — missing adjoint registration. Fires when a
     // CallExpr targets a FunctionDecl that is NOT in the PI-1
     // RoutineRegistry AND has at least one quantum output parameter
@@ -141,6 +147,7 @@ void DiagContext::report_missing_adjoint(
 
 void DiagContext::report_dropped_quantum_return(
     clang::SourceLocation loc, std::string_view fn) {
+    if (silenced_) return;
     (void)loc;
     (void)fn;
     // TODO(backend): the PM3-6 matcher already routes its report
@@ -154,6 +161,7 @@ void DiagContext::report_outer_var_mutation(
     std::string_view kind,
     std::string_view name,
     unsigned decl_line) {
+    if (silenced_) return;
     // PM3-2: the format string is locked down in the issue
     // description. `%0` is the type qualifier ("qbool/qint" per the
     // matcher's current non-discriminating classification), `%1` is
@@ -180,6 +188,7 @@ void DiagContext::report_outer_var_mutation(
 
 void DiagContext::report_prep_in_uncompute_scope(
     clang::SourceLocation loc, std::string_view name) {
+    if (silenced_) return;
     // PN-5 / Class 6: the format string is locked down in the Phase N
     // §5 plan. `%0` is the qbool VarDecl identifier. Warning severity
     // — NOT Error — because compilation must continue so the user
@@ -224,6 +233,7 @@ void DiagContext::report_prep_in_uncompute_scope(
 
 void DiagContext::report_reversible_measurement(
     clang::SourceLocation loc, std::string_view name) {
+    if (silenced_) return;
     // P-D / P9d item (i): measurement inside a reversible body.
     // Format's `%0` is the reversible routine's name. The user's fix
     // is to remove the measurement (move it outside the routine) or
@@ -239,6 +249,7 @@ void DiagContext::report_reversible_measurement(
 
 void DiagContext::report_reversible_io(
     clang::SourceLocation loc, std::string_view name) {
+    if (silenced_) return;
     // P-D / P9d item (ii): classical I/O inside a reversible body.
     // Format's `%0` is the reversible routine's name. The user's fix
     // is to lift the I/O call outside the reversible routine or drop
@@ -254,6 +265,7 @@ void DiagContext::report_reversible_io(
 
 void DiagContext::report_reversible_unregistered_callee(
     clang::SourceLocation loc, std::string_view fn) {
+    if (silenced_) return;
     // P-D / P9d item (iii): unregistered callee inside a reversible
     // body. Format's `%0` is the callee's qualified name — NOT the
     // enclosing reversible routine — because the user's fix targets
@@ -273,6 +285,7 @@ void DiagContext::report_reversible_unregistered_callee(
 
 void DiagContext::report_reversible_while_loop(
     clang::SourceLocation loc, std::string_view name) {
+    if (silenced_) return;
     // P-D / P9d: while-loop inside a reversible body. Format's `%0`
     // is the reversible routine's name. The user's fix is to rewrite
     // the while-loop as a bounded `for`-loop with a compile-time
@@ -291,6 +304,7 @@ void DiagContext::report_reversible_while_loop(
 
 void DiagContext::report_reversible_classical_cond(
     clang::SourceLocation loc, std::string_view name) {
+    if (silenced_) return;
     // P-D / P9d: quantum-dependent classical branch condition inside
     // a reversible body. Format's `%0` is the reversible routine's
     // name. The user's fix is to rewrite the branch as a `WHEN(q) {
@@ -326,6 +340,7 @@ void DiagContext::report_reversible_pointer_param(
     clang::SourceLocation loc,
     std::string_view fn,
     std::string_view param) {
+    if (silenced_) return;
     // Q-B (i): quantum parameter declared with pointer type. `%0` is
     // the reversible routine's name; `%1` is the offending parameter
     // identifier. The user's fix is to switch to the canonical
@@ -344,6 +359,7 @@ void DiagContext::report_reversible_value_param_mutated(
     clang::SourceLocation loc,
     std::string_view fn,
     std::string_view param) {
+    if (silenced_) return;
     // Q-B (ii): non-const by-value quantum parameter mutated in the
     // body. `%0` is the reversible routine's name; `%1` is the
     // offending parameter identifier. The local copy's gate stream
@@ -363,6 +379,7 @@ void DiagContext::report_reversible_const_ref_mutated(
     clang::SourceLocation loc,
     std::string_view fn,
     std::string_view param) {
+    if (silenced_) return;
     // Q-B (iii): const-qualified reference-to-quantum parameter
     // mutated in the body. `%0` is the reversible routine's name;
     // `%1` is the offending parameter identifier. Normally a C++
@@ -380,6 +397,7 @@ void DiagContext::report_reversible_const_ref_mutated(
 
 void DiagContext::report_reversible_sig_multi_return(
     clang::SourceLocation loc, std::string_view fn) {
+    if (silenced_) return;
     // Q-A multi-statement body reject surfaced to the user. Fires at
     // Error severity per PRD §9 / §4.1 — return-style normalization
     // requires a single `return <expr>;` body so the Q-A emitter can

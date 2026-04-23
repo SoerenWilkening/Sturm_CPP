@@ -116,6 +116,60 @@ struct DiagContext {
     /// the reference through their call sites.
     clang::DiagnosticsEngine& engine() { return diag_; }
 
+    /// Phase T T-2 (sturm-xrob.3): the PRD §9 Q2 error-emission gate
+    /// needs a way to silence the shared `DiagContext` during per-
+    /// forward validation passes inside `drive_reversible_forwards`.
+    /// When `silenced_ == true`, every `report_*` member below
+    /// early-returns before reaching the underlying
+    /// `DiagnosticsEngine::Report` call, so the validator walk runs
+    /// its AST traversal (collecting verdicts) without firing any
+    /// diagnostics.
+    ///
+    /// The flag is transient — callers should restore it on all
+    /// code paths. `SilenceGuard` (declared below) is the RAII
+    /// helper that drives this contract; direct manipulation via
+    /// `set_silenced` should only be used when guard-construction is
+    /// inconvenient.
+    ///
+    /// This is safe to use only AFTER `MatchFinder::matchAST` has
+    /// completed because every other matcher's diagnostics have
+    /// already fired by then. Silencing during `matchAST` would lose
+    /// user-facing diagnostics from unrelated matchers — an outcome
+    /// the drive matcher is never in a position to need.
+    void set_silenced(bool s) { silenced_ = s; }
+    bool silenced() const noexcept { return silenced_; }
+
+    /// RAII guard that temporarily sets `silenced_ = true` on
+    /// construction and restores the previous value on destruction.
+    /// Safe across early `return` / exception paths. Nesting is
+    /// supported — the destructor restores the captured prior value,
+    /// not the unconditional `false`.
+    ///
+    /// Usage inside `drive_reversible_forwards`:
+    ///
+    ///     {
+    ///         DiagContext::SilenceGuard g(diag);   // silent window
+    ///         validate_reversible_body(def, ctx, diag, reg);
+    ///         validate_reversible_signature(def, ctx, diag);
+    ///     }   // diag restored to its prior state
+    class SilenceGuard {
+    public:
+        explicit SilenceGuard(DiagContext& ctx)
+            : ctx_(&ctx), prior_(ctx.silenced()) {
+            ctx.set_silenced(true);
+        }
+        ~SilenceGuard() {
+            if (ctx_ != nullptr) ctx_->set_silenced(prior_);
+        }
+        SilenceGuard(const SilenceGuard&) = delete;
+        SilenceGuard& operator=(const SilenceGuard&) = delete;
+        SilenceGuard(SilenceGuard&&) = delete;
+        SilenceGuard& operator=(SilenceGuard&&) = delete;
+    private:
+        DiagContext* ctx_;
+        bool prior_;
+    };
+
     // ── PM3 per-class report_* members ──────────────────────────────
     //
     // Each member maps 1:1 to a `report_*` call the corresponding
@@ -299,6 +353,11 @@ struct DiagContext {
 
 private:
     clang::DiagnosticsEngine& diag_;
+
+    // Phase T T-2 (sturm-xrob.3): silenced window for PRD §9 Q2
+    // error-emission gating. See `set_silenced` and `SilenceGuard`
+    // above for the contract.
+    bool silenced_ = false;
 
     // Lazy ID cache. Keyed on the format string so lookups are O(1)
     // amortised across a TU. The `int` level is folded into the key

@@ -3606,53 +3606,25 @@ set_tests_properties(transpiler_idempotent_reversible_out_param_canonical PROPER
     DEPENDS "transpiler_snapshot_reversible_out_param_canonical"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
-add_test(
-    NAME transpiler_snapshot_reversible_sig_const_ref_mutated
-    COMMAND "${CMAKE_COMMAND}"
-            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
-            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_const_ref_mutated.cpp
-            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_const_ref_mutated.expected.cpp
-            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
-set_tests_properties(transpiler_snapshot_reversible_sig_const_ref_mutated PROPERTIES
-    LABELS "transpiler"
-    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
-
-add_test(
-    NAME transpiler_idempotent_reversible_sig_const_ref_mutated
-    COMMAND "${CMAKE_COMMAND}"
-            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
-            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated/reversible_sig_const_ref_mutated.cpp
-            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated_idem
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
-set_tests_properties(transpiler_idempotent_reversible_sig_const_ref_mutated PROPERTIES
-    LABELS "transpiler"
-    DEPENDS "transpiler_snapshot_reversible_sig_const_ref_mutated"
-    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
-
-add_test(
-    NAME transpiler_snapshot_reversible_sig_multi_return
-    COMMAND "${CMAKE_COMMAND}"
-            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
-            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_multi_return.cpp
-            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_multi_return.expected.cpp
-            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
-set_tests_properties(transpiler_snapshot_reversible_sig_multi_return PROPERTIES
-    LABELS "transpiler"
-    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
-
-add_test(
-    NAME transpiler_idempotent_reversible_sig_multi_return
-    COMMAND "${CMAKE_COMMAND}"
-            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
-            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return/reversible_sig_multi_return.cpp
-            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return_idem
-            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
-set_tests_properties(transpiler_idempotent_reversible_sig_multi_return PROPERTIES
-    LABELS "transpiler"
-    DEPENDS "transpiler_snapshot_reversible_sig_multi_return"
-    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+# Phase T T-2 (sturm-xrob.3): the snapshot + idempotent CTests for the
+# two Q-A / Q-B negative fixtures
+# (`reversible_sig_const_ref_mutated`, `reversible_sig_multi_return`)
+# previously asserted the pre-wire pass-through state — a byte-diff
+# against an `.expected.cpp` golden that was effectively the input.
+# With T-2 the PRD §9 Q2 three-condition error-emission gate fires
+# the Q-A / Q-B diagnostics at Error severity whenever the gated
+# fixture contains a `sturm::invert(&fd)` call site (the fixtures now
+# carry such a call so the `*_diagnostic` CTests below can assert the
+# diagnostic actually fires). A snapshot test expects `rc=0` and a
+# produced output; a fired Error makes sturm-transpile exit non-zero
+# with no rewritten output file, so the snapshot contract is no
+# longer meaningful for these two fixtures. The diagnostic CTests
+# (`reversible_sig_const_ref_mutated_diagnostic` +
+# `reversible_sig_multi_return_diagnostic` further below) cover the
+# same fixtures with MUST_CONTAIN + EXPECTED_LINE — the proper shape
+# for a negative Q-A / Q-B test once T-2's gate lands. The snapshot
+# + idempotent CTests for these two fixtures are therefore retired
+# here.
 
 # Diagnostic-harness CTests for the two Q-B / Q-A negative fixtures.
 # They use `check_reversible_diagnostic.cmake` (cloned from

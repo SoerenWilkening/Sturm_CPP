@@ -58,12 +58,16 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/Expr.h"
+#include "clang/AST/OperationKinds.h"
+#include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/AST/Stmt.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Lex/Lexer.h"
+#include "llvm/Support/Casting.h"
 
 #include <memory>
 #include <string>
@@ -292,6 +296,83 @@ void register_reversible_drive_matcher(
 
 namespace {
 
+// Phase T T-2 (sturm-xrob.3): RecursiveASTVisitor that walks every
+// `CallExpr` in the TU looking for calls to `sturm::invert`. For each
+// match we resolve the single argument to the `FunctionDecl` it
+// references (peeling through implicit casts + `&`) and push the
+// result into `targets_`. The walker keys on the defining decl
+// (`fd->getDefinition()`) when available so the recorded set matches
+// `SynthesisRegistry`'s canonical keys.
+//
+// `invert(&fn)` is the canonical runtime spelling (see
+// `include/sturm/routines/invert.hpp` line 70). We also accept the
+// rarer `invert(fn)` (no address-of) and `invert(&ns::fn)` shapes so
+// downstream user code that expands a macro / writes a qualified
+// name still gets the gate's condition (3) to fire. Any CallExpr to
+// `sturm::invert` whose argument does not resolve to a FunctionDecl
+// is silently skipped — it is not a condition-(3) trigger under any
+// reading of PRD §9 Q2.
+class InvertCallCollector
+    : public clang::RecursiveASTVisitor<InvertCallCollector> {
+public:
+    std::vector<const FunctionDecl*> targets;
+
+    bool VisitCallExpr(CallExpr* ce) {
+        if (ce == nullptr) return true;
+        const FunctionDecl* callee = ce->getDirectCallee();
+        if (callee == nullptr) return true;
+        // Match on qualified name `sturm::invert`. The canonical
+        // declaration lives in `include/sturm/routines/invert.hpp` at
+        // namespace scope, so the qualified-name check is stable
+        // across user aliases (`using sturm::invert`) — the
+        // DirectCallee still resolves to the declaration in the
+        // `sturm` namespace. We accept the short `invert` name too so
+        // test fixtures that inline a stub helper named `invert` in
+        // the global namespace still trigger the gate; the drive
+        // matcher's scan is intentionally inclusive because the gate
+        // is a three-condition AND — over-including here only widens
+        // the set of gates condition (3) satisfies, which is a safe
+        // direction for user-facing error emission.
+        const std::string qn = callee->getQualifiedNameAsString();
+        if (qn != "sturm::invert" && qn != "invert") return true;
+        if (ce->getNumArgs() < 1) return true;
+        const Expr* arg = ce->getArg(0);
+        if (arg == nullptr) return true;
+        const FunctionDecl* target = resolve_target(arg);
+        if (target == nullptr) return true;
+        const FunctionDecl* def = target->getDefinition();
+        if (def == nullptr) def = target;
+        targets.push_back(def);
+        return true;
+    }
+
+private:
+    // Resolve the argument expression to the FunctionDecl it
+    // references. Handles these shapes:
+    //   - `invert(&fn)`           → UnaryOperator(&) over DeclRefExpr
+    //   - `invert(fn)`            → bare DeclRefExpr (function name
+    //                                 decays to pointer)
+    //   - `invert((&fn))`         → parens + casts are peeled via
+    //                                 `IgnoreParenImpCasts`
+    //   - `invert(&ns::fn)`       → the DeclRefExpr references the
+    //                                 qualified decl; we resolve
+    //                                 through it identically.
+    const FunctionDecl* resolve_target(const Expr* e) const {
+        if (e == nullptr) return nullptr;
+        const Expr* cur = e->IgnoreParenImpCasts();
+        if (const auto* uop = llvm::dyn_cast<UnaryOperator>(cur)) {
+            if (uop->getOpcode() == UO_AddrOf) {
+                cur = uop->getSubExpr();
+                if (cur != nullptr) cur = cur->IgnoreParenImpCasts();
+            }
+        }
+        if (const auto* dre = llvm::dyn_cast_or_null<DeclRefExpr>(cur)) {
+            return llvm::dyn_cast<FunctionDecl>(dre->getDecl());
+        }
+        return nullptr;
+    }
+};
+
 // Locate the QScope whose open-brace matches the FD's body LBraceLoc.
 // Returns nullptr when the FD's body is absent or contains no tracked
 // ops (for example a routine whose body is all classical / non-quantum
@@ -443,6 +524,33 @@ SourceLocation end_of_file_loc(const FunctionDecl* fd,
 
 } // namespace
 
+std::vector<const clang::FunctionDecl*>
+collect_invert_call_targets(clang::ASTContext& ctx) {
+    InvertCallCollector walker;
+    // The translation-unit decl is the root of every user + stub decl
+    // parsed into this ASTContext; RecursiveASTVisitor walks every
+    // nested CallExpr from there.
+    TranslationUnitDecl* tu = ctx.getTranslationUnitDecl();
+    if (tu != nullptr) {
+        walker.TraverseDecl(tu);
+    }
+    // De-duplicate while preserving insertion order. The gate's
+    // condition (3) is a pure membership check, so duplicates do not
+    // cause incorrect gating — but keeping the returned vector
+    // unique makes the size cheap to compare in tests.
+    std::vector<const clang::FunctionDecl*> out;
+    out.reserve(walker.targets.size());
+    for (const FunctionDecl* fd : walker.targets) {
+        if (fd == nullptr) continue;
+        bool seen = false;
+        for (const FunctionDecl* k : out) {
+            if (k == fd) { seen = true; break; }
+        }
+        if (!seen) out.push_back(fd);
+    }
+    return out;
+}
+
 void drive_reversible_forwards(
     QUnit& unit,
     SynthesisRegistry& synth_reg,
@@ -458,6 +566,18 @@ void drive_reversible_forwards(
     const SourceManager& sm = ctx.getSourceManager();
     const LangOptions& lang = ctx.getLangOpts();
 
+    // Phase T T-2 (sturm-xrob.3): scan the TU for `invert(&fd)` call
+    // sites BEFORE running any validator. The resulting target-set
+    // gates condition (3) of the PRD §9 Q2 error-emission rule: a
+    // P-C / Q-B reject fires a hard error only when the forward is
+    // reversible AND has no hand-registered adjoint AND is the target
+    // of at least one `sturm::invert(&fd)` call. Scanning upfront
+    // means the validator passes can be silenced per-forward based on
+    // a membership check (`std::find` below) without re-walking the
+    // TU for each forward.
+    const std::vector<const FunctionDecl*> invert_targets =
+        collect_invert_call_targets(ctx);
+
     for (const FunctionDecl* fd : forwards) {
         if (fd == nullptr) continue;
         // Canonicalise on the defining decl — R-A, R-B, and
@@ -467,32 +587,83 @@ void drive_reversible_forwards(
         if (def == nullptr) def = fd;
         if (!is_reversible(def)) continue;
 
+        // Phase T T-2 (sturm-xrob.3): compute the three PRD §9 Q2
+        // gate conditions for THIS forward up front.
+        //
+        //   (1) reversible — already gated by the `is_reversible(def)`
+        //       check above (every entry in `synth_reg.forwards()` was
+        //       inserted by the drive-collector matcher, which itself
+        //       tests `is_reversible`, but the defensive re-test keeps
+        //       the gate honest against a future caller that mutates
+        //       the registry via a different path).
+        //
+        //   (2) no hand-registered adjoint — consult the PI-1
+        //       RoutineRegistry via the synth-registry bridge. When
+        //       the user has hand-registered an adjoint, their binding
+        //       wins silently per PRD §9 Q2.
+        //
+        //   (3) at least one `invert(&fd)` call site — look up the
+        //       forward's canonical decl in the upfront scan's result.
+        //
+        // `emit_diags` is the conjunction; when false, we wrap the
+        // validator / twin calls in a `SilenceGuard` so every
+        // diagnostic the inner pass would fire is swallowed. The
+        // validators still compute their verdicts (both return the
+        // same `ReversibleValidationResult` shape), so downstream
+        // short-circuit logic (`drive_reversible`'s body/sig hooks)
+        // is unchanged.
+        const bool hand_registered =
+            synth_reg.conflicts_with_routine_registry(def, routine_reg);
+        bool has_invert_call = false;
+        for (const FunctionDecl* t : invert_targets) {
+            if (t == def) { has_invert_call = true; break; }
+        }
+        const bool emit_diags = !hand_registered && has_invert_call;
+
         // (1) Validate eagerly. The validators own their own diagnostic
         // surface; we capture their verdicts so drive_reversible's
         // hooks can short-circuit without re-invoking them (re-entry
-        // would double-emit every diagnostic).
-        const ReversibleValidationResult body_result =
-            validate_reversible_body(def, ctx, diag, routine_reg);
-        const ReversibleSignatureResult sig_result =
-            validate_reversible_signature(def, ctx, diag);
+        // would double-emit every diagnostic). The diagnostics emit to
+        // the shared DiagContext only when `emit_diags` is true — the
+        // silence guard (T-2) swallows every report_* call when the
+        // three-condition gate is not satisfied.
+        ReversibleValidationResult body_result;
+        ReversibleSignatureResult sig_result;
+        TwinSynthesisResult early_twin;
+        {
+            std::unique_ptr<DiagContext::SilenceGuard> maybe_guard;
+            if (!emit_diags) {
+                maybe_guard =
+                    std::make_unique<DiagContext::SilenceGuard>(diag);
+            }
+            body_result =
+                validate_reversible_body(def, ctx, diag, routine_reg);
+            sig_result =
+                validate_reversible_signature(def, ctx, diag);
 
-        // (1b) Phase T T-4 (sturm-xrob.5): surface Q-A's multi-return
-        // reject as a user-facing diagnostic. The Q-A classifier
-        // (`synthesize_out_param_twin`) rejects return-style forwards
-        // whose body is not a single `return <expr>;` statement —
-        // without a canonical target the adjoint emitter cannot reverse.
-        // We fire one Error-severity diagnostic at the forward's
-        // declaration site and short-circuit synthesis. Non-return-style
-        // forwards (void return) reject with `NonQuantumReturnType` and
-        // no diagnostic fires — the canonical out-param path is silent.
-        const TwinSynthesisResult early_twin =
-            synthesize_out_param_twin(def, sm, lang);
+            // (1b) Phase T T-4 (sturm-xrob.5): surface Q-A's multi-return
+            // reject as a user-facing diagnostic. The Q-A classifier
+            // (`synthesize_out_param_twin`) rejects return-style
+            // forwards whose body is not a single `return <expr>;`
+            // statement — without a canonical target the adjoint
+            // emitter cannot reverse. Phase T T-2 (sturm-xrob.3) gates
+            // this diagnostic through the same silence guard so it
+            // only fires when the PRD §9 Q2 three-condition AND is
+            // satisfied. Non-return-style forwards (void return)
+            // reject with `NonQuantumReturnType` and no diagnostic
+            // fires — the canonical out-param path is silent.
+            early_twin =
+                synthesize_out_param_twin(def, sm, lang);
+            if (!early_twin.synthesized &&
+                early_twin.reason == TwinRejectReason::MultiStatementBody) {
+                const SourceLocation fd_loc =
+                    sm.getFileLoc(def->getLocation());
+                diag.report_reversible_sig_multi_return(
+                    fd_loc, std::string_view(def->getNameAsString()));
+            }
+        }
         if (!early_twin.synthesized &&
             early_twin.reason == TwinRejectReason::MultiStatementBody) {
-            const SourceLocation fd_loc =
-                sm.getFileLoc(def->getLocation());
-            diag.report_reversible_sig_multi_return(
-                fd_loc, std::string_view(def->getNameAsString()));
             continue;
         }
 

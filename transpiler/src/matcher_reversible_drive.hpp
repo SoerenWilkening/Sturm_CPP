@@ -335,6 +335,24 @@ void register_reversible_drive_matcher(
 ///      BEFORE the second PM3 transpile pass, so PI-1's matcher picks
 ///      up the registration on pass two.
 ///
+/// Phase T T-2 (sturm-xrob.3): error-emission gating per PRD §9 Q2. A
+/// P-C / Q-B rejection emits a hard error ONLY when ALL THREE conditions
+/// hold:
+///
+///   1. the forward carries `[[clang::annotate("sturm::reversible")]]`,
+///      AND
+///   2. no hand-registered adjoint exists in `routine_reg`, AND
+///   3. the TU contains at least one `invert(&fd)` call site targeting
+///      this forward.
+///
+/// Otherwise the rejection is silent and the hand-registered entry (if
+/// any) wins per PRD §9 Q2's locked decision. Condition (3) is knowable
+/// at end-of-TU because this function scans the TU AST for
+/// `sturm::invert(&fd)` call sites before running the validators — the
+/// drive matcher's diagnostic emission is therefore deferred through a
+/// flush invoked here from `HandleTranslationUnit` after the invert
+/// call-site scan has completed.
+///
 /// This is strictly a collector-driven end-of-TU flush. No IR mutation
 /// beyond `unit.raw_insertions` and `synth_reg` status transitions.
 void drive_reversible_forwards(
@@ -343,6 +361,31 @@ void drive_reversible_forwards(
     const RoutineRegistry& routine_reg,
     DiagContext& diag,
     clang::ASTContext& ctx);
+
+/// Phase T T-2 (sturm-xrob.3): scan the translation unit for
+/// `sturm::invert(&fd)` call sites and return the set of canonical
+/// `FunctionDecl*` keys the calls target.
+///
+/// The scanner walks the TU's `TranslationUnitDecl` looking for
+/// `CallExpr` nodes whose callee is `sturm::invert`. For each match
+/// the scanner inspects the single argument, peels through implicit
+/// casts + `&` (UnaryOperator Addr-of), and records the `FunctionDecl`
+/// pointer the argument resolves to. `fd->getDefinition()` is used
+/// when available so the returned set keys on the defining decl —
+/// matching how `SynthesisRegistry` keys on the defining decl.
+///
+/// Returned as a `std::vector<const clang::FunctionDecl*>` (sorted
+/// insertion order) rather than a set so callers can iterate without
+/// pulling `std::set` into their headers. Callers perform membership
+/// checks via `std::find` / linear scan; the vector is always small
+/// (one entry per unique invert target in the TU).
+///
+/// The scanner is a pure function of `ctx`; it does not mutate AST
+/// state and does not consult any registry. Safe to call once per
+/// TU from `drive_reversible_forwards` (the current sole caller) or
+/// from tests.
+std::vector<const clang::FunctionDecl*>
+collect_invert_call_targets(clang::ASTContext& ctx);
 
 } // namespace sturm::transpile
 
