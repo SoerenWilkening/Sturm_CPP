@@ -1328,6 +1328,173 @@ Lower priority, tracked for visibility.
 
 ---
 
+## Phase P — Synthesis prelude (automatic adjoint synthesis, P9d)
+
+> **2026-04-23:** Phase P scoped. Tracked as bd epic `sturm-z2e8`
+> with sub-items P-0..P-6 (`sturm-z2e8.1`..`sturm-z2e8.7`). Parent
+> design in `docs/prd_automatic_adjoint_synthesis.md` §5.1 items 1–2
+> and §7 "Phase P (synthesis prelude)", and
+> `docs/implementation_plan_automatic_adjoint_synthesis.md` §2.1;
+> this stub reserves the roadmap slot ahead of implementation.
+> Phase P is the first phase of the automatic-adjoint-synthesis
+> cluster (P → Q → R → S) — it lands the opt-in surface
+> (`[[sturm::reversible]]` attribute), the per-TU registry that
+> tracks `{forward, out-param twin, adjoint}` triples, and the P9d
+> validation pass that rejects non-invertible bodies at the
+> forward-function definition site. Phase Q (`sturm-5kgu`) consumes
+> Phase P's validated attribute-marked routines and produces the
+> out-param-canonical shape that Phase R's `adjoint_emitter`
+> (`sturm-88d7`) targets for `__<fn>_adj` placement; Phase S
+> (`sturm-ha2k`) reverses loop iteration order inside that adjoint
+> body.
+>
+> **Mission.** Land the opt-in attribute parser, the synthesis
+> registry, the P9d validation pass, and the five new `DiagContext`
+> report methods that carry Phase P's diagnostic surface into Phase
+> Q / S. Phase P does not emit any adjoint source text — that work
+> belongs to Phase R. Phase P's job is to answer three questions
+> for every `[[sturm::reversible]]` forward routine: (1) does the
+> attribute parse cleanly and survive template instantiation? (P-A,
+> `reversible_attribute`), (2) is the routine tracked in a
+> deterministic per-TU registry that `RoutineRegistry` (PI-1,
+> `routine_registry.hpp`) can defer to for conflict resolution?
+> (P-B, `synthesis_registry`), (3) is the body invertible at all?
+> (P-C, `matcher_reversible_validate`). Bodies that fail P-C are
+> rejected at the definition site with a diagnostic through the
+> new P-D methods; hand-registered `STURM_REGISTER_ADJOINT` bindings
+> remain the escape hatch per PRD §9 Q2 (validation rejection is a
+> hard error **only** when the routine carries `[[sturm::reversible]]`
+> AND no manual registration exists AND `invert(fn)` is called
+> somewhere in the TU).
+>
+> **Attribute shape (PRD §4.1, §9 Q1).** Opt-in via the
+> `[[sturm::reversible]]` attribute on the forward routine —
+> consumed by the transpiler as a Clang `AnnotateAttr` with
+> annotation string `"sturm::reversible"`; runtime headers ignore
+> it. Typos (`[[sturm::reversable]]`) are silently non-matching —
+> the routine is not treated as reversible, so the synthesis
+> registry skips it. Template instantiation is supported:
+> `is_reversible(const FunctionDecl*)` walks up the redeclaration
+> chain so attribute placement on the primary template carries
+> through to each instantiation.
+>
+> **Validation reject table (PRD §5.1 item 2, P9d).**
+>
+> | Reject reason | Example | Diagnostic |
+> |---|---|---|
+> | Measurement inside the body | `int m = measure(a);` | `report_reversible_measurement` |
+> | Classical I/O call | `std::cout << ...;` | `report_reversible_io` |
+> | Call to an unregistered user routine | `helper(x);` where `helper` has no adjoint | `report_reversible_unregistered_callee` |
+> | `while`-loop (unbounded trip count) | `while (cond) { ... }` | `report_reversible_while_loop` |
+> | Quantum-dependent condition | `if (qbit_as_bool(a)) { ... }` | `report_reversible_classical_cond` |
+>
+> Positive bodies — compositions of registered primitives
+> (Phase B/C/D/E/N ops) and registered routines (PI-1 map entries)
+> — pass through silently and become the input shape Q-A
+> (`return_to_out_param`) and Q-B (`matcher_reversible_signature`)
+> consume. The P-D methods mirror the five existing
+> `report_*` methods on `DiagContext` (preparation, outer-var,
+> etc.) so the user-visible surface stays symmetric with the
+> pre-existing diagnostic family.
+>
+> Sub-items:
+>
+> - P-0 (sturm-z2e8.1): this roadmap stub.
+> - P-1 (sturm-z2e8.2): new module
+>   `transpiler/src/reversible_attribute.{hpp,cpp}` (≤ 120 impl /
+>   80 hdr, plan §2.1 P-A). Parses `[[sturm::reversible]]` via
+>   Clang `AnnotateAttr`; exposes
+>   `bool is_reversible(const FunctionDecl*)`. Typo rejection is
+>   silent (unknown annotation string → not reversible). Template
+>   instantiation walks the redeclaration chain so the attribute
+>   carries from primary template to instantiation. Unit-tested
+>   via `transpiler/tests/test_reversible_attribute.cpp` against
+>   hand-built AST covering attribute present / absent / typo /
+>   templated cases.
+> - P-2 (sturm-z2e8.3): new module
+>   `transpiler/src/synthesis_registry.{hpp,cpp}` (≤ 280 impl /
+>   150 hdr, plan §2.1 P-B). Tracks
+>   `{forward FunctionDecl*, out-param twin FunctionDecl* or null,
+>   emitted adjoint name, status enum}` for every reversible
+>   routine in a TU. Deterministic iteration order (insertion
+>   order); null-FD guard on insert/lookup; defers to
+>   `routine_registry.hpp` (PI-1) for conflict resolution per PRD
+>   §9 Q2 (hand-registered adjoints win over synthesis failures).
+>   Unit-tested via `transpiler/tests/test_synthesis_registry.cpp`
+>   exercising insert / lookup / conflict / deterministic
+>   iteration / null-FD guard.
+> - P-3 (sturm-z2e8.4): edit to
+>   `transpiler/src/diag_context.{hpp,cpp}` (+~90 LOC combined,
+>   plan §2.1 P-D). Add five new `report_reversible_*` methods
+>   mirroring the shape of the existing
+>   `report_prep_in_uncompute_scope` / `report_outer_var_*` /
+>   `report_when_*` family: `report_reversible_measurement`,
+>   `report_reversible_io`,
+>   `report_reversible_unregistered_callee`,
+>   `report_reversible_while_loop`,
+>   `report_reversible_classical_cond`. Each carries
+>   SourceLocation + Error severity; format strings pinned by
+>   Phase P's diagnostic fixtures (P-5) and reused by Phase Q-B's
+>   `matcher_reversible_signature` (`sturm-5kgu.3`) and Phase S-4's
+>   negative loop fixtures (`sturm-ha2k.5`).
+> - P-4 (sturm-z2e8.5): new matcher
+>   `transpiler/src/matcher_reversible_validate.cpp` (≤ 360 impl,
+>   plan §2.1 P-C). P9d validation pass: walks every
+>   `[[sturm::reversible]]` routine body and rejects measurement,
+>   classical I/O, unregistered callee, `while`-loop, and
+>   quantum-dependent condition. Emits through the P-D
+>   `DiagContext` family. Blocks Phase Q/R/S: no synthesis runs
+>   without validation. Dogfooded through the PM4 Registry API
+>   via `STURM_REGISTER_PLUGIN` in an anonymous namespace (PM4-6
+>   pattern — same shape PN-2, Q-2, R-3 follow).
+> - P-5 (sturm-z2e8.6): one positive + five negative fixtures
+>   under `tests/transpiler/fixtures/` —
+>   `reversible_oracle.cpp` (XOR oracle, passes validation),
+>   `reversible_reject_measurement.{cpp,expected.diag}`,
+>   `reversible_reject_io.{cpp,expected.diag}`,
+>   `reversible_reject_unregistered_callee.{cpp,expected.diag}`,
+>   `reversible_reject_while_loop.{cpp,expected.diag}`,
+>   `reversible_reject_classical_cond.{cpp,expected.diag}`. New
+>   harness `tests/transpiler/check_reversible_diagnostic.cmake`
+>   cloned from `check_qbool_prep_diagnostic.cmake` (PN-6 prior
+>   art); compares diagnostic stream byte-for-byte. Wired into
+>   `tests/transpiler/CMakeLists.txt` via the existing
+>   `run_snapshot.cmake` + `check_idempotent.cmake` harness plus
+>   the new `check_reversible_diagnostic.cmake`. Green under
+>   `ctest -R 'transpiler_snapshot_reversible_oracle'` and
+>   `ctest -R 'reversible_reject_.*_diagnostic'`, capped at
+>   `--parallel 6`.
+> - P-6 (sturm-z2e8.7): roadmap completion blockquote replacing
+>   this stub.
+>
+> **Principles touched.** P9d is the load-bearing principle —
+> non-invertible bodies must be diagnosed at the definition site,
+> not at the `invert(fn)` call site, so the user gets the error
+> as close to the authoring moment as possible. P9 (routines are
+> invertible by explicit adjoint) is preserved via PRD §9 Q2's
+> escape hatch — hand-registered adjoints remain valid even when
+> validation rejects the body. P9a / P9b / P9c / B11 are not
+> touched this phase (they land in Q / R / S). B10 unchanged
+> (uncomputation stays a compile-time concern). B9 unchanged:
+> Phase P adds matchers + a registry to the one global pass;
+> no new optimization layer, no new runtime path, no ancilla-
+> lifetime change. `docs/01_principles.md` unchanged by Phase P.
+>
+> **Out of scope.** Adjoint emission (`__<fn>_adj` bodies) belongs
+> to Phase R. Signature normalization (return-style → out-param)
+> belongs to Phase Q. Loop reversal belongs to Phase S. Recursion
+> inside reversible routines is deferred to a follow-up epic (plan
+> §0 Q4 / PRD §9 Q4) — a recursive `[[sturm::reversible]]` body
+> triggers a P9d diagnostic at the recursive call site via
+> `report_reversible_unregistered_callee`. Cross-TU synthesis
+> stays in the follow-up bucket (plan §9). `std::variant` /
+> `std::optional` return types and template reversible routines
+> are deferred (plan §9). Synthesis inside class member functions
+> — `this`-capture introduces a fourth parameter-capture rule
+> beyond PRD §5.3 — is out of scope for P-S.
+
+---
+
 ## Phase Q — Signature normalization (automatic adjoint synthesis, P9a + P9b)
 
 > **2026-04-23:** Phase Q scoped. Tracked as bd epic `sturm-5kgu`
