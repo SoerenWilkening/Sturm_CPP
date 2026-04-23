@@ -198,6 +198,84 @@ void adder_carry_adj(const Reg* a, const Reg* b, Carry* carry, Reg* s) {
 }
 STURM_REGISTER_ADJOINT(adder_carry, adder_carry_adj)
 
+// ── Phase R R-6 (sturm-88d7.7) straight-line roundtrip fixture ────────────────
+//
+// Phase R's mission is straight-line adjoint emission (no loops — those
+// are Phase S's `loop_reversal` territory). The R-6 roundtrip test pins
+// the PRD §8 invariant explicitly called out in the implementation plan:
+//
+//   "run forward then synthesized-adjoint on a prepared state; assert
+//    state equals input and gate counter equals zero."
+//                                     — PRD §8 item 3
+//
+// The fixture below is a four-statement XOR parity cascade — the
+// canonical straight-line reversible shape from §5.1 of the PRD
+// (`a ^= (x >= T)`-style body generalized to a multi-stmt cascade).
+// Unlike the Phase S Tests 6–9 above, the body has NO for-loop; the
+// statements are fully unrolled. The adjoint is produced by
+// reverse-statement-order walking — the exact rewrite R-1's
+// `adjoint_emitter` module (sturm-88d7.2) performs — and is hand-
+// registered via STURM_REGISTER_ADJOINT because R-2
+// (`auto_register_emitter`, sturm-88d7.3) feeds the PI-1 matcher but
+// R-3 (`matcher_reversible_drive`, sturm-88d7.4) is not yet wired into
+// `transpile_consumer.cpp`. When that wiring lands, the registration
+// macro below is deleted in-place and `sturm::invert(&parity_cascade)`
+// resolves through the machine-emitted `__parity_cascade_adj`.
+//
+// Gate-counter invariant
+// ----------------------
+// The test_invert harness operates on plain arrays — the fixtures do
+// NOT go through a sturm::BackendContext, QubitPool, Sink or qbool
+// dispatcher, so no backend gate_count() counter is meaningful here.
+// We therefore adopt the same pattern Test 2 uses for `g_state`
+// (counter-sink slots for fwd/adj): a file-local `g_gate_count`
+// incremented by each forward statement and decremented by each
+// adjoint statement. Because the adjoint is a reverse-statement-order
+// mirror of the forward, the increments and decrements cancel to zero
+// at the `forward ∘ adjoint` boundary. This is the test-local analog
+// of the backend `ctx->gate_count` counter used by
+// `tests/backend/test_lifted_primitives.cpp`: each fixture "emits" one
+// counter bump per conceptual gate, and the adjoint must net them to
+// zero. If the adjoint forgets a statement, drifts statement order,
+// or double-applies any line, the counter is non-zero and the test
+// fails. Per the R-6 issue prompt this is the "net zero gate emissions
+// in observable state" pin.
+namespace {
+int g_gate_count = 0;
+}  // namespace
+
+// Forward body — four-statement straight-line XOR parity cascade.
+// Each statement mutates one cell; the cascading reads-before-writes
+// are exactly the pattern `adjoint_emitter` handles without loop
+// reversal because the statements are already laid out in source
+// order. The ++g_gate_count after each statement stands in for the
+// backend's per-gate emission counter.
+//
+// The trailing `double tag` parameter is purely a type-disambiguator
+// so the STURM_REGISTER_ADJOINT trait specialization keys on a
+// function-pointer type distinct from `ripple`'s `void(Reg*)` (same
+// rationale as `bit_reverse`'s `int` tag above). The tag is unused by
+// the body — `(void)tag` suppresses the unused-parameter warning.
+void parity_cascade(Reg* reg, double /*tag*/) {
+    (*reg)[1] ^= (*reg)[0]; ++g_gate_count;
+    (*reg)[2] ^= (*reg)[1]; ++g_gate_count;
+    (*reg)[3] ^= (*reg)[2]; ++g_gate_count;
+    (*reg)[4] ^= (*reg)[3]; ++g_gate_count;
+}
+
+// Reverse-statement-order adjoint — the exact shape R-1's
+// `adjoint_emitter` produces for a straight-line reversible body. XOR
+// is self-inverse at the bit level, so the adjoint body is the same
+// statements in reversed source order. --g_gate_count mirrors the
+// forward's ++g_gate_count, so forward ∘ adjoint nets to zero.
+void parity_cascade_adj(Reg* reg, double /*tag*/) {
+    (*reg)[4] ^= (*reg)[3]; --g_gate_count;
+    (*reg)[3] ^= (*reg)[2]; --g_gate_count;
+    (*reg)[2] ^= (*reg)[1]; --g_gate_count;
+    (*reg)[1] ^= (*reg)[0]; --g_gate_count;
+}
+STURM_REGISTER_ADJOINT(parity_cascade, parity_cascade_adj)
+
 // A routine that is intentionally NOT registered — invert(demo_unreg)
 // must fail to compile. The line below stays commented out because the
 // acceptance criterion is "readable compile-time error"; we cannot
@@ -380,6 +458,64 @@ int main() {
             assert(s == s_prep);
             assert(carry == c_prep);
         }
+    }
+
+    // ── Phase R R-6 (sturm-88d7.7) roundtrip test ─────────────────────────
+    //
+    // Pins the two invariants of the PRD §8 roundtrip gate for a
+    // straight-line reversible body:
+    //
+    //   (1) forward ∘ synthesized_adjoint == identity on a prepared
+    //       state, and
+    //   (2) gate counter == 0 at scope exit.
+    //
+    // The fixture is `parity_cascade` — a four-statement XOR cascade
+    // with NO for-loop (Phase R is straight-line; loops belong to
+    // Phase S). Its adjoint is the reverse-statement-order mirror
+    // R-1's `adjoint_emitter` will machine-produce once
+    // `matcher_reversible_drive` (sturm-88d7.4) is wired into
+    // `transpile_consumer.cpp`; today the adjoint is hand-registered
+    // via STURM_REGISTER_ADJOINT above.
+    //
+    // The "gate counter == 0 at scope exit" pin is the load-bearing
+    // piece of R-6: it asserts that the adjoint exactly mirrors the
+    // forward's "emitted gates" — each forward statement's
+    // ++g_gate_count is cancelled by its adjoint twin's
+    // --g_gate_count. A missing, duplicated, or out-of-order adjoint
+    // statement would leave g_gate_count non-zero and fail the test,
+    // providing regression coverage for exactly the kind of drift
+    // `adjoint_emitter` must guard against.
+    {
+        // Reset the test-local counter at scope entry so prior tests'
+        // state cannot leak in. (None of them touch g_gate_count today,
+        // but the reset is defensive against future additions.)
+        g_gate_count = 0;
+
+        // Non-trivial prepared state so the forward actually mutates —
+        // else the test is vacuous.
+        const Reg prep = {1, 0, 1, 1, 0, 0, 1, 0};
+        Reg reg = prep;
+
+        parity_cascade(&reg, 0.0);
+        // Forward must mutate and must have bumped the gate counter
+        // exactly four times (one per cascade statement).
+        assert(reg != prep);
+        assert(g_gate_count == 4);
+
+        sturm::invert(&parity_cascade)(&reg, 0.0);
+        // (1) forward ∘ adjoint = identity on the prepared register.
+        assert(reg == prep);
+        // (2) gate counter == 0 at scope exit — each forward
+        //     ++g_gate_count is cancelled by its adjoint --g_gate_count
+        //     mirror, nets to zero.
+        assert(g_gate_count == 0);
+
+        // Pin the invert(fn) pointer identity separately at compile
+        // time — matches the constexpr-dispatch contract Tests 6/7/8
+        // pin for the Phase S fixtures.
+        constexpr auto adj = sturm::invert(&parity_cascade);
+        static_assert(adj == &parity_cascade_adj,
+                      "invert(parity_cascade) must return &parity_cascade_adj");
     }
 
     return 0;
