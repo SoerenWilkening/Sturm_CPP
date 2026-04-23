@@ -22,7 +22,9 @@
 
 #include "sturm/routines/invert.hpp"
 
+#include <array>
 #include <cassert>
+#include <cstddef>
 
 // ── Shared counter sink — each call bumps a specific slot ────────────────────
 //
@@ -55,6 +57,146 @@ int demo_fn_b_adj(int a, int b) { return a - b; }
 // Register both pairs.
 STURM_REGISTER_ADJOINT(demo_fwd, demo_adj)
 STURM_REGISTER_ADJOINT(demo_fn_b, demo_fn_b_adj)
+
+// ── Phase S S-6 (sturm-ha2k.7) roundtrip fixtures ────────────────────────────
+//
+// Three in-place sweep routines whose adjoints are constructed by
+// reversing the forward loop's iteration order (B11). Full end-to-end
+// auto-registration of a synthesized adjoint (R-2 / auto_register_emitter)
+// is NOT yet landed, so per the S-6 issue and the `sturm-ha2k.7` worker
+// prompt we follow the prevailing test_invert convention: hand-write
+// each adjoint as the byte-for-byte reversed-iteration twin of the
+// forward, then register it via STURM_REGISTER_ADJOINT. The test
+// asserts `forward(prep); invert(forward)(prep);` is the identity on
+// the prepared state, which pins the Phase S loop-reversal contract
+// and provides regression coverage against iteration-order drift.
+//
+// The three scenarios are the same ones covered by the S-3 positive
+// loop fixtures (sturm-ha2k.4) and the S-5 m12 gate-equivalence
+// pairs (sturm-ha2k.6):
+//
+//   1. ripple         — a ripple-style sweep reading its left neighbor.
+//   2. bit_reverse    — swap bits i and n-1-i.
+//   3. adder_carry    — classical ripple-carry adder whose carry
+//                       propagates left-to-right on the forward pass
+//                       and must be unwound right-to-left on the
+//                       adjoint pass.
+
+// Common register width for all three fixtures. Kept at 8 so the
+// fixtures execute in O(1) per iteration and each loop body is small
+// enough for the reversal contract to be obvious by inspection.
+static constexpr std::size_t kN = 8;
+using Reg = std::array<int, kN>;
+using Carry = std::array<int, kN + 1>;
+
+// Routines take their state registers by pointer so each fixture has
+// a distinct function-pointer TYPE — STURM_REGISTER_ADJOINT keys on
+// `decltype(&fn)`, and three `void()` functions would otherwise
+// collide at the trait level. Passing pointers also keeps the
+// fixtures reentrant (no hidden shared-globals coupling) which is
+// important for Test 9's repeated-roundtrip pin.
+
+// ── Fixture 1: ripple — in-place sweep, a[i] ^= a[i-1] ──────────────────
+//
+// Forward iterates i=1..N-1 and XORs each cell with its left
+// neighbor. Because the neighbor itself is mutated by earlier
+// iterations, the adjoint MUST walk i=N-1..1 — same XOR op (self-
+// inverse at the bit level), reversed iteration order. This is the
+// canonical B11 reversal contract.
+void ripple(Reg* reg) {
+    for (std::size_t i = 1; i < kN; ++i) {
+        (*reg)[i] ^= (*reg)[i - 1];
+    }
+}
+
+// Hand-written reversed-iteration adjoint. Iterating down via
+// `std::size_t` requires a guard against wrap-around at zero; the
+// body mirrors the forward body exactly.
+void ripple_adj(Reg* reg) {
+    for (std::size_t i = kN - 1; i >= 1; --i) {
+        (*reg)[i] ^= (*reg)[i - 1];
+    }
+}
+STURM_REGISTER_ADJOINT(ripple, ripple_adj)
+
+// ── Fixture 2: bit_reverse — swap bits i and N-1-i via XOR triple ───────
+//
+// Forward iterates i=0..N/2-1 and swaps the i-th and (N-1-i)-th
+// cells using the standard XOR-swap identity. Swaps are self-inverse
+// and pairwise disjoint, so the adjoint is the same set of swaps in
+// reversed iteration order — mirroring the B11 contract even though
+// order is not strictly load-bearing here. The test pins that the
+// reversed-loop adjoint is correct regardless.
+//
+// Distinct parameter list (`Reg*, int`) from `ripple` so the trait
+// specialization keys on a different type.
+void bit_reverse(Reg* reg, int /*tag*/) {
+    for (std::size_t i = 0; i < kN / 2; ++i) {
+        const std::size_t j = kN - 1 - i;
+        (*reg)[i] ^= (*reg)[j];
+        (*reg)[j] ^= (*reg)[i];
+        (*reg)[i] ^= (*reg)[j];
+    }
+}
+
+void bit_reverse_adj(Reg* reg, int /*tag*/) {
+    // Reversed iteration via the standard unsigned-safe "post-
+    // decrement pre-test" idiom. Statement order within the
+    // iteration is also reversed — mirrors the B11 "reverse
+    // statement order AND loop iteration order" contract. (XOR-swap
+    // is symmetric, so either direction lands the same result, but
+    // the adjoint emitter still reverses statements; we do the same
+    // here so the test pins the contract end-to-end.)
+    for (std::size_t i = kN / 2; i-- > 0; ) {
+        const std::size_t j = kN - 1 - i;
+        (*reg)[i] ^= (*reg)[j];
+        (*reg)[j] ^= (*reg)[i];
+        (*reg)[i] ^= (*reg)[j];
+    }
+}
+STURM_REGISTER_ADJOINT(bit_reverse, bit_reverse_adj)
+
+// ── Fixture 3: adder_carry — classical ripple-carry propagation ──────────
+//
+// Models the inner loop of a classical ripple-carry adder where the
+// carry propagates left-to-right: each iteration reads `carry[i]`
+// (which was written by iteration i-1) and writes `carry[i+1]`.
+// That inter-iteration data dependency is exactly what forces the
+// adjoint to walk the loop in reversed order. The adjoint also
+// reverses the intra-iteration statement order (B11).
+//
+// Forward body (per iteration):
+//     carry[i+1] ^= (a[i] & b[i])
+//     carry[i+1] ^= (a[i] & carry[i])
+//     carry[i+1] ^= (b[i] & carry[i])
+//     s[i]       ^= a[i] ^ b[i] ^ carry[i]
+//
+// All ops are XOR-based and self-inverse at the bit level, so the
+// adjoint body is the same four statements in reversed order, with
+// the loop iterating i=N-1..0.
+void adder_carry(const Reg* a, const Reg* b, Carry* carry, Reg* s) {
+    for (std::size_t i = 0; i < kN; ++i) {
+        (*carry)[i + 1] ^= ((*a)[i] & (*b)[i]);
+        (*carry)[i + 1] ^= ((*a)[i] & (*carry)[i]);
+        (*carry)[i + 1] ^= ((*b)[i] & (*carry)[i]);
+        (*s)[i]         ^= (*a)[i] ^ (*b)[i] ^ (*carry)[i];
+    }
+}
+
+void adder_carry_adj(const Reg* a, const Reg* b, Carry* carry, Reg* s) {
+    // Reversed statement order within the reversed iteration —
+    // B11 end-to-end. XORs are self-inverse bitwise, so applying
+    // the same four lines in reversed order undoes the forward
+    // step exactly IFF the outer loop also runs in reverse — which
+    // it does.
+    for (std::size_t i = kN; i-- > 0; ) {
+        (*s)[i]         ^= (*a)[i] ^ (*b)[i] ^ (*carry)[i];
+        (*carry)[i + 1] ^= ((*b)[i] & (*carry)[i]);
+        (*carry)[i + 1] ^= ((*a)[i] & (*carry)[i]);
+        (*carry)[i + 1] ^= ((*a)[i] & (*b)[i]);
+    }
+}
+STURM_REGISTER_ADJOINT(adder_carry, adder_carry_adj)
 
 // A routine that is intentionally NOT registered — invert(demo_unreg)
 // must fail to compile. The line below stays commented out because the
@@ -120,6 +262,124 @@ int main() {
     {
         void (*p)(int) = sturm::invert(&demo_fwd);
         assert(p == &demo_adj);
+    }
+
+    // ── Phase S S-6 roundtrip tests (sturm-ha2k.7) ───────────────────────
+    //
+    // For each fixture we:
+    //   (a) capture a prepared (non-trivial) input state,
+    //   (b) run the forward, confirming it actually mutated the state,
+    //   (c) run the synthesized adjoint via `sturm::invert(&fwd)()`,
+    //   (d) assert the state has returned to the prepared value —
+    //       this is the `forward ∘ adjoint == identity` contract of B11.
+    //
+    // Per the S-6 issue (sturm-ha2k.7) and the worker prompt, R-2
+    // (auto_register_emitter) is not yet landed, so `invert(&fwd)`
+    // resolves via the hand-registered STURM_REGISTER_ADJOINT macros
+    // above. The adjoint bodies are byte-for-byte reversed-iteration
+    // twins of the forward bodies — the same shape the Phase S
+    // `loop_reversal` module will emit automatically.
+
+    // ── Test 6: ripple — roundtrip identity on a prepared register ────────
+    {
+        const Reg prep = {1, 0, 1, 1, 0, 0, 1, 0};
+        Reg reg = prep;
+
+        ripple(&reg);
+        // Forward must mutate — else the test is vacuous.
+        assert(reg != prep);
+
+        sturm::invert(&ripple)(&reg);
+        // forward ∘ adjoint = identity.
+        assert(reg == prep);
+
+        // Pin the invert(fn) pointer identity separately — the
+        // result should be the registered adj at compile time.
+        constexpr auto adj = sturm::invert(&ripple);
+        static_assert(adj == &ripple_adj,
+                      "invert(ripple) must return &ripple_adj");
+    }
+
+    // ── Test 7: bit_reverse — roundtrip identity on a prepared register ──
+    {
+        // Asymmetric payload so the swap is observable.
+        const Reg prep = {7, 3, 5, 1, 2, 4, 6, 0};
+        Reg reg = prep;
+
+        bit_reverse(&reg, 0);
+        // After the swap, the reg is literally the reverse of prep.
+        Reg reversed{};
+        for (std::size_t i = 0; i < kN; ++i) {
+            reversed[i] = prep[kN - 1 - i];
+        }
+        assert(reg == reversed);
+
+        sturm::invert(&bit_reverse)(&reg, 0);
+        assert(reg == prep);
+
+        constexpr auto adj = sturm::invert(&bit_reverse);
+        static_assert(adj == &bit_reverse_adj,
+                      "invert(bit_reverse) must return &bit_reverse_adj");
+    }
+
+    // ── Test 8: adder_carry — roundtrip identity on a prepared state ─────
+    //
+    // Pack two small numbers (a=0b10110101, b=0b11001010) into the
+    // per-bit arrays. `s` and `carry` start at zero. Forward should
+    // populate a non-zero sum; adjoint must return everything to the
+    // prepared state (including the carry chain and the sum).
+    {
+        const Reg a_prep = {1, 0, 1, 0, 1, 1, 0, 1};  // a[0]=LSB
+        const Reg b_prep = {0, 1, 0, 1, 0, 0, 1, 1};
+        const Reg s_prep = {0, 0, 0, 0, 0, 0, 0, 0};
+        const Carry c_prep{};                          // all zero
+
+        Reg a = a_prep;
+        Reg b = b_prep;
+        Reg s = s_prep;
+        Carry carry = c_prep;
+
+        adder_carry(&a, &b, &carry, &s);
+        // Sum or carry must be mutated — else the test is vacuous.
+        assert(s != s_prep || carry != c_prep);
+
+        sturm::invert(&adder_carry)(&a, &b, &carry, &s);
+        // forward ∘ adjoint = identity on all four buffers.
+        assert(a == a_prep);
+        assert(b == b_prep);
+        assert(s == s_prep);
+        assert(carry == c_prep);
+
+        constexpr auto adj = sturm::invert(&adder_carry);
+        static_assert(adj == &adder_carry_adj,
+                      "invert(adder_carry) must return &adder_carry_adj");
+    }
+
+    // ── Test 9: adder_carry — repeated roundtrips preserve state ─────────
+    //
+    // A second pin for B11: running forward+adjoint in a loop must
+    // leave all four buffers at their prepared values after every
+    // iteration (not just the first). Guards against the class of
+    // bugs where a hand-rolled adjoint leaks one bit per cycle.
+    {
+        const Reg a_prep = {0, 1, 1, 0, 1, 0, 0, 1};
+        const Reg b_prep = {1, 1, 0, 0, 0, 1, 1, 0};
+        const Reg s_prep = {0, 0, 0, 0, 0, 0, 0, 0};
+        const Carry c_prep{};
+
+        Reg a = a_prep;
+        Reg b = b_prep;
+        Reg s = s_prep;
+        Carry carry = c_prep;
+
+        for (int k = 0; k < 5; ++k) {
+            adder_carry(&a, &b, &carry, &s);
+            sturm::invert(&adder_carry)(&a, &b, &carry, &s);
+            assert(a == a_prep);
+            assert(b == b_prep);
+            assert(s == s_prep);
+            assert(carry == c_prep);
+        }
     }
 
     return 0;
