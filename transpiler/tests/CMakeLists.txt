@@ -249,6 +249,82 @@ add_test(NAME test_matcher_reversible_validate
 set_tests_properties(test_matcher_reversible_validate PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: matcher_reversible_signature (Q-B / sturm-5kgu.3) ────────────
+# Phase Q plan §2.2 Q-B: pins the parameter-list signature enforcement
+# pass for `[[sturm::reversible]]` forwards. The matcher rejects three
+# classes per PRD §5.3 / §9 P9b:
+#   1. PointerParam         — `qbool*` / `qint*` pointer-to-quantum.
+#   2. ValueParamMutated    — non-const by-value quantum parameter
+#                             mutated in the body.
+#   3. ConstRefParamMutated — `const`-qualified reference-to-quantum
+#                             parameter mutated in the body.
+# Each reject fires through the Phase P-D `DiagContext`
+# `report_reversible_*_param*` family added by sturm-5kgu.3.
+#
+# The test compiles small C++ snippets via `runToolOnCodeWithArgs`,
+# locates the named reversible forward, wraps a `DiagnosticsEngine`
+# that is fronted by a counting consumer (mirrors
+# `test_matcher_reversible_validate.cpp`), wraps it in a `DiagContext`,
+# and invokes `validate_reversible_signature`. Each rejection reason
+# is exercised with its own happy / negative pair.
+#
+# Linkage pulls in `matcher_reversible_signature.cpp` (the module
+# under test) plus its read-side dependencies:
+# `reversible_attribute.cpp` for `is_reversible`, and
+# `diag_context.cpp` for the `report_reversible_*_param*` surface.
+# Shared libclang-cpp + libLLVM when available, fallback to the
+# per-component archives otherwise — same shape every other direct-
+# ASTConsumer test in this file uses.
+add_executable(test_matcher_reversible_signature
+    test_matcher_reversible_signature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+)
+target_include_directories(test_matcher_reversible_signature PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_reversible_signature PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_reversible_signature PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_REV_SIG NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_reversible_signature PRIVATE
+    ${LLVM_DEFS_LIST_REV_SIG})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_reversible_signature PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_reversible_signature PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_REV_SIG support)
+    target_link_libraries(test_matcher_reversible_signature PRIVATE
+        ${LLVM_LIBS_REV_SIG})
+endif()
+add_test(NAME test_matcher_reversible_signature
+    COMMAND test_matcher_reversible_signature)
+set_tests_properties(test_matcher_reversible_signature PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: synthesis_registry (P-B / sturm-z2e8.3) ──────────────────────
 # Phase P plan §2.1 P-B: pins the `SynthesisRegistry` container and its
 # bridge to `RoutineRegistry` (PRD §9 Q2 — hand-registered adjoint wins).

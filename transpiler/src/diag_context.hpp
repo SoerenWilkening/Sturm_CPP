@@ -244,6 +244,50 @@ struct DiagContext {
     void report_reversible_classical_cond(clang::SourceLocation loc,
                                           std::string_view name);
 
+    // ── Q-B / Phase Q signature-normalization diagnostics ──────────
+    //
+    // The Q-B signature enforcement matcher
+    // (`matcher_reversible_signature.cpp`, sturm-5kgu.3) rejects three
+    // parameter shapes on `[[sturm::reversible]]` routines that the
+    // adjoint emitter cannot honour. Every method fires at Error
+    // severity per P9d — a reversible signature the transpiler cannot
+    // rewrite is a hard compile error at the forward-function
+    // definition site. The `%0` slot is the enclosing routine name,
+    // the `%1` slot is the offending parameter identifier; macro-
+    // expansion `loc` values must be funneled through
+    // `SourceManager::getFileLoc(...)` first.
+
+    /// Q-B (i): a parameter has pointer type to a quantum record
+    /// (`qbool*`, `qint*`, `qint_t*`). The user's fix is to switch
+    /// to the canonical `qbool&` / `qint&` spelling. `fn` is the
+    /// reversible routine's name; `param` is the offending parameter
+    /// identifier.
+    void report_reversible_pointer_param(clang::SourceLocation loc,
+                                         std::string_view fn,
+                                         std::string_view param);
+
+    /// Q-B (ii): a non-const by-value quantum parameter is mutated
+    /// inside the body. The local copy's gate stream cannot be
+    /// undone by the synthesized adjoint (there is no out slot). The
+    /// user's fix is to declare the parameter `const`, pass by
+    /// reference (`qbool&`), or remove the mutation. `fn` is the
+    /// reversible routine's name; `param` is the offending parameter
+    /// identifier.
+    void report_reversible_value_param_mutated(clang::SourceLocation loc,
+                                               std::string_view fn,
+                                               std::string_view param);
+
+    /// Q-B (iii): a `const`-qualified reference-to-quantum parameter
+    /// is mutated inside the body. Normally a C++ error, but we
+    /// defend against user-defined conversion / overload shapes that
+    /// could make the mutation syntactically valid. The user's fix
+    /// is to drop the `const` qualifier or remove the mutation. `fn`
+    /// is the reversible routine's name; `param` is the offending
+    /// parameter identifier.
+    void report_reversible_const_ref_mutated(clang::SourceLocation loc,
+                                             std::string_view fn,
+                                             std::string_view param);
+
 private:
     clang::DiagnosticsEngine& diag_;
 

@@ -309,4 +309,73 @@ void DiagContext::report_reversible_classical_cond(
     diag_.Report(loc, id) << std::string(name);
 }
 
+// ── Q-B (Phase Q / signature normalization) report_* members ───────
+//
+// All three mirror the existing P-D report_* pattern:
+//   - Resolve a custom diag-ID via `getOrRegister(Error, fmt)` so the
+//     DenseMap lookup amortises to a single cache miss per TU.
+//   - Stream the `std::string(fn)` + `std::string(param)` arguments
+//     into the builder — the builder's operator<< has no string_view
+//     overload.
+// Every body is locked at Error severity per P9b / P9d — a reversible
+// signature the transpiler cannot rewrite is a hard compile error at
+// the forward-function definition site so the user can find the
+// offending parameter at the canonical audit anchor.
+
+void DiagContext::report_reversible_pointer_param(
+    clang::SourceLocation loc,
+    std::string_view fn,
+    std::string_view param) {
+    // Q-B (i): quantum parameter declared with pointer type. `%0` is
+    // the reversible routine's name; `%1` is the offending parameter
+    // identifier. The user's fix is to switch to the canonical
+    // reference spelling (`qbool&` / `qint&`). Pointers would force
+    // the transpiler to reason about aliasing / nullness — out of
+    // scope for the MVP reversible surface.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' parameter '%1' uses pointer-"
+        "to-quantum type; declare it by reference (e.g. 'qbool&') so "
+        "the synthesized adjoint can track mutation (P9b).");
+    diag_.Report(loc, id) << std::string(fn) << std::string(param);
+}
+
+void DiagContext::report_reversible_value_param_mutated(
+    clang::SourceLocation loc,
+    std::string_view fn,
+    std::string_view param) {
+    // Q-B (ii): non-const by-value quantum parameter mutated in the
+    // body. `%0` is the reversible routine's name; `%1` is the
+    // offending parameter identifier. The local copy's gate stream
+    // cannot be undone by the synthesized adjoint (there is no out
+    // slot). The user's fix is to declare the parameter `const`,
+    // pass by reference (`qbool&`), or remove the mutation.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' mutates by-value quantum "
+        "parameter '%1'; the local copy has no adjoint slot. Declare "
+        "'%1' as 'const', pass by reference, or remove the mutation "
+        "(P9b).");
+    diag_.Report(loc, id) << std::string(fn) << std::string(param);
+}
+
+void DiagContext::report_reversible_const_ref_mutated(
+    clang::SourceLocation loc,
+    std::string_view fn,
+    std::string_view param) {
+    // Q-B (iii): const-qualified reference-to-quantum parameter
+    // mutated in the body. `%0` is the reversible routine's name;
+    // `%1` is the offending parameter identifier. Normally a C++
+    // error, but we defend against user-defined conversion /
+    // overload shapes that make the mutation syntactically valid.
+    // The user's fix is to drop the `const` qualifier or remove the
+    // mutation.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' mutates const-qualified "
+        "reference parameter '%1'; drop the 'const' qualifier or "
+        "remove the mutation so the adjoint can un-mutate it (P9b).");
+    diag_.Report(loc, id) << std::string(fn) << std::string(param);
+}
+
 } // namespace sturm::transpile
