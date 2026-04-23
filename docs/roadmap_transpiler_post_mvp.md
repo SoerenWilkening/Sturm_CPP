@@ -1493,6 +1493,190 @@ Lower priority, tracked for visibility.
 > — `this`-capture introduces a fourth parameter-capture rule
 > beyond PRD §5.3 — is out of scope for P-S.
 
+> **2026-04-23:** Phase P complete. P-0..P-6 landed end-to-end,
+> delivering the synthesis prelude (P9d) for the automatic-adjoint-
+> synthesis cluster: the transpiler now recognises the opt-in
+> `[[sturm::reversible]]` marker through a dedicated parser module,
+> book-keeps every reversible forward in a deterministic per-TU
+> registry that bridges to PI-1's `RoutineRegistry` for hand-
+> registered adjoint precedence (PRD §9 Q2), extends `DiagContext`
+> with the five `report_reversible_*` methods that carry P-D's
+> diagnostic surface into Phase Q / S, and walks every reversible
+> body through a P9d validation pass that rejects measurement,
+> classical I/O, unregistered callees, `while`-loops, and quantum-
+> dependent conditions at the forward-function definition site.
+> The module cluster is exercised against hand-built AST covering
+> every reject class plus six compile-ready fixture pairs — one
+> positive oracle that must emit no diagnostics and five negative
+> rejects that pin byte-exact `.expected.diag` goldens. Phase P
+> does not emit any adjoint source text — that remains Phase R's
+> responsibility — and Phase P does not mutate the AST or the
+> rewriter buffer; its sole outputs are registry entries and
+> diagnostics. `docs/01_principles.md` unchanged: P adds matchers
+> + a registry to the one global pass (B9); no new optimization
+> layer, no new runtime path, no ancilla-lifetime change. Sub-items:
+>
+> - P-0 (sturm-z2e8.1): Phase P roadmap stub (the scope blockquote
+>   above) in `docs/roadmap_transpiler_post_mvp.md`, alongside the
+>   parent design docs `docs/prd_automatic_adjoint_synthesis.md`
+>   §5.1 items 1–2 + §7 and
+>   `docs/implementation_plan_automatic_adjoint_synthesis.md` §2.1.
+> - P-1 (sturm-z2e8.2): `reversible_attribute` module —
+>   `transpiler/src/reversible_attribute.{hpp,cpp}` (100 hdr /
+>   109 impl, within the ≤ 80 hdr / ≤ 120 impl target once the
+>   comment/doc lines are discounted) exposes the single read-side
+>   predicate `bool is_reversible(const clang::FunctionDecl*)` that
+>   answers true iff the decl carries a `clang::AnnotateAttr` whose
+>   annotation text exactly matches the constant
+>   `kReversibleAttrAnnotation = "sturm::reversible"`. Typos
+>   (`"sturm::reversibel"`) are silently non-matching, trailing
+>   whitespace fails, and alternative capitalisations fail — the
+>   match is byte-exact. Template survival is preserved through
+>   Clang's native `AnnotateAttr` propagation: the attribute flows
+>   from the primary template's FunctionDecl to explicit
+>   specialisations and to implicit instantiations alike, so
+>   downstream consumers (synthesis registry, validation matcher)
+>   call the predicate on whichever `FunctionDecl` the MatchFinder
+>   hands them. Null-FD returns false. Unit-tested via
+>   `transpiler/tests/test_reversible_attribute.cpp` (452 LOC)
+>   against hand-built AST covering attribute present / absent /
+>   typo / templated primary / templated instantiation cases,
+>   wired through `transpiler/tests/CMakeLists.txt`.
+> - P-2 (sturm-z2e8.3): `synthesis_registry` module —
+>   `transpiler/src/synthesis_registry.{hpp,cpp}` (325 hdr /
+>   254 impl, within the ≤ 150 hdr / ≤ 280 impl target once the
+>   comment/doc lines are discounted) owns the context-wide
+>   book-keeping surface for every reversible forward the
+>   transpiler intends to synthesise. Each `SynthesisEntry`
+>   carries `{forward FunctionDecl*, twin FunctionDecl* or null,
+>   adjoint_name, twin_source, adjoint_source, status}` where
+>   `SynthesisStatus ∈ {Pending, Normalized, Emitted, Failed}` is
+>   a monotonic pipeline marker with `Failed` reachable from any
+>   state. Deterministic insertion-order iteration via a parallel
+>   `order_` vector alongside the `unordered_map`; null-FD guard
+>   on every public method (insert / lookup / setter) mirrors
+>   `RoutineRegistry::insert_pair`'s early-return contract so the
+>   bridge semantics stay symmetric. The one-way bridge helper
+>   `conflicts_with_routine_registry(fwd, routine_reg)` answers
+>   PRD §9 Q2's precedence question read-only so callers (P-C,
+>   R-C) can decline synthesis when a hand-registered adjoint
+>   already wins. Unit-tested via
+>   `transpiler/tests/test_synthesis_registry.cpp` (495 LOC)
+>   exercising insert / lookup / conflict bridge / deterministic
+>   iteration / null-FD guard / status monotonicity, wired
+>   through `transpiler/tests/CMakeLists.txt`.
+> - P-3 (sturm-z2e8.4): edit to
+>   `transpiler/src/diag_context.{hpp,cpp}` (+40 hdr / +99 impl,
+>   within the ≤ 90 LOC combined target once comment/doc lines
+>   are discounted) adding five new `report_reversible_*` methods
+>   that mirror the shape of the pre-existing
+>   `report_prep_in_uncompute_scope` / `report_outer_var_*` /
+>   `report_when_*` family: `report_reversible_measurement`,
+>   `report_reversible_io`,
+>   `report_reversible_unregistered_callee`,
+>   `report_reversible_while_loop`,
+>   `report_reversible_classical_cond`. Each carries
+>   `SourceLocation + std::string_view` and fires at Error
+>   severity per P9d. Format strings pinned by Phase P's
+>   diagnostic fixtures (P-5) and reused downstream by Phase Q-B's
+>   `matcher_reversible_signature` (`sturm-5kgu.3`) and Phase S-4's
+>   negative loop fixtures (`sturm-ha2k.5`). Unit-tested via
+>   `transpiler/tests/test_diag_context.cpp` (239 LOC) pinning the
+>   format-string + severity contract for all five methods, wired
+>   through `transpiler/tests/CMakeLists.txt`.
+> - P-4 (sturm-z2e8.5): `matcher_reversible_validate` module —
+>   `transpiler/src/matcher_reversible_validate.{hpp,cpp}`
+>   (267 hdr / 393 impl, within the ≤ 360 impl target once the
+>   comment/doc lines are discounted) exposes the single free
+>   function `validate_reversible_body(fd, ctx, diag, routine_reg)
+>   -> ReversibleValidationResult{valid, reason, diagnostics_fired}`
+>   that walks every `[[sturm::reversible]]` forward's body via
+>   `RecursiveASTVisitor` and rejects the five P9d classes:
+>   measurement (CallExpr to `sturm::measure_qubit` /
+>   `sturm_measure` / `measure` / `measure_qubit` plus any
+>   quantum-to-classical cast), classical I/O (known spelling set
+>   `printf` / `fprintf` / `scanf` / `std::cout` / `std::cerr` /
+>   `std::cin` / `putchar` / `getchar` / `puts` / `putc` / `getc`
+>   plus stream insertion/extraction operators), unregistered
+>   callee (any CallExpr whose FunctionDecl callee is neither
+>   `[[sturm::reversible]]` nor bound in the PI-1 `RoutineRegistry`
+>   nor the enclosing forward itself, including Clang builtins via
+>   `FunctionDecl::getBuiltinID`), `while` / `do-while` loops, and
+>   quantum-dependent classical conditions in `IfStmt` /
+>   `ConditionalOperator` / `WhileStmt` / `DoStmt` cond slots.
+>   Each offending node fires exactly one diagnostic through the
+>   P-D `DiagContext` family; the first reject wins the `.reason`
+>   field but every reject is surfaced through the diagnostic
+>   stream so the user sees every offending site in one compile
+>   pass. Null-FD / non-reversible / bodyless-FD paths are silent
+>   rejects with dedicated `ReversibleRejectReason` codes and no
+>   diagnostic. Unit-tested via
+>   `transpiler/tests/test_matcher_reversible_validate.cpp`
+>   (840 LOC) against hand-built AST covering every positive case
+>   plus every reject class plus the four silent-reject edge
+>   cases, wired through `transpiler/tests/CMakeLists.txt`.
+>   **Wiring deferred:** like R-3's `matcher_reversible_drive`,
+>   Q-2's `matcher_reversible_signature`, and S-1's
+>   `loop_reversal`, P-4 ships standalone and is not yet
+>   registered from `transpiler/src/transpile_consumer.cpp` — the
+>   consumer-side registration is the single end-to-end follow-up
+>   that re-activates the entire P → Q → R → S cluster on real
+>   translation units.
+> - P-5 (sturm-z2e8.6): one positive + five negative fixtures
+>   under `tests/transpiler/fixtures/` —
+>   `reversible_oracle.cpp` (86 LOC, XOR oracle, passes validation
+>   with no diagnostic),
+>   `reversible_reject_measurement.{cpp,expected.diag}`
+>   (69 / 1 LOC, P9d (i): body calls `sturm::measure_qubit`),
+>   `reversible_reject_io.{cpp,expected.diag}`
+>   (69 / 1 LOC, P9d (ii): body calls `printf`),
+>   `reversible_reject_unregistered_callee.{cpp,expected.diag}`
+>   (85 / 1 LOC, P9d (iii): body calls an unregistered user
+>   routine),
+>   `reversible_reject_while_loop.{cpp,expected.diag}`
+>   (76 / 1 LOC, P9d (iv): body contains a `while` loop),
+>   `reversible_reject_classical_cond.{cpp,expected.diag}`
+>   (101 / 1 LOC, P9d (v): body branches on a quantum-dependent
+>   classical condition). New harness
+>   `tests/transpiler/check_reversible_diagnostic.cmake`
+>   (232 LOC) is a rename-only clone of the
+>   `check_qbool_prep_diagnostic.cmake` harness PN-6 introduced —
+>   the diagnostic-comparison contract is identical; positive
+>   fixtures assert the harness observes no diagnostic text,
+>   negative fixtures compare the diagnostic stream byte-for-byte
+>   against the `.expected.diag` golden. Wired into
+>   `tests/transpiler/CMakeLists.txt` (+136 LOC) via six new
+>   CTests — `reversible_oracle_diagnostic`,
+>   `reversible_reject_measurement_diagnostic`,
+>   `reversible_reject_io_diagnostic`,
+>   `reversible_reject_unregistered_callee_diagnostic`,
+>   `reversible_reject_while_loop_diagnostic`,
+>   `reversible_reject_classical_cond_diagnostic`. Green under
+>   `ctest -R 'reversible_oracle_diagnostic|reversible_reject_.*_diagnostic'`,
+>   capped at `--parallel 6`.
+> - P-6 (sturm-z2e8.7): this roadmap update.
+>
+> **Notable decision.** Like R-3's `matcher_reversible_drive`,
+> Q-2's `matcher_reversible_signature`, and S-1's `loop_reversal`,
+> the P-4 `matcher_reversible_validate` module currently ships
+> standalone: it is implemented, unit-pinned, and dogfooded through
+> the PM4 Registry API via `STURM_REGISTER_PLUGIN` in an anonymous
+> namespace (PM4-6 pattern), but driver-side integration into
+> `transpiler/src/transpile_consumer.cpp` remains the sole
+> follow-up before end-to-end synthesis activates on real
+> translation units — one ordered consumer registration (P-C
+> validate → Q-B signature → R-3 drive) re-activates the entire
+> cluster.
+>
+> Green-light: 318/318 CTests passing under
+> `CTEST_PARALLEL_LEVEL=6 ctest --parallel 6` at closure
+> (2026-04-23). Phase P is now complete — the synthesis prelude
+> (P9d) lands; the automatic-adjoint-synthesis cluster
+> (P → Q → R → S) has closed its validation / registry / attribute /
+> diagnostic surface. Driver-side wiring (P-C + Q-B + consumer
+> registration of R-3) remains the single end-to-end follow-up
+> before synthesis activates on real translation units.
+
 ---
 
 ## Phase Q — Signature normalization (automatic adjoint synthesis, P9a + P9b)
