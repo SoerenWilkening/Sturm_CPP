@@ -1328,6 +1328,153 @@ Lower priority, tracked for visibility.
 
 ---
 
+## Phase R — Straight-line adjoint emission (automatic adjoint synthesis, P9c)
+
+> **2026-04-23:** Phase R scoped. Tracked as bd epic `sturm-88d7`
+> with sub-items R-0..R-7 (`sturm-88d7.1`..`sturm-88d7.8`). Parent
+> design in `docs/prd_automatic_adjoint_synthesis.md` §5.1 and
+> `docs/implementation_plan_automatic_adjoint_synthesis.md` §2.3;
+> this stub reserves the roadmap slot ahead of implementation.
+> Phase R is the third phase of the automatic-adjoint-synthesis
+> cluster (P → Q → R → S) — it consumes Phase P's validated
+> `[[sturm::reversible]]` routines (`sturm-z2e8`) and Phase Q's
+> normalized out-param shape (`sturm-5kgu`), and it produces the
+> straight-line adjoint body that Phase S (`sturm-ha2k`) later
+> wraps in reversed-iteration loop headers for `ForStmt` nodes.
+>
+> **Mission.** For every `[[sturm::reversible]]` forward routine
+> that passes P-C validation (P9d) and Q-B constness enforcement,
+> emit a sibling function `__<fn>_adj` whose body is the reverse
+> statement-order adjoint of the forward body, and append a
+> `STURM_REGISTER_ADJOINT(fn, __<fn>_adj)` line so the PI-1
+> matcher picks up the new pair on the two-pass transpile's
+> second pass (PM3 slot). Loops are out of scope — they retain
+> Phase H PH-3's `skip_uncompute=true` diagnostic until Phase S
+> replaces it with real reversal. Phase R is the "straight-line"
+> subset: every statement that Phase B/C/D/E/N can already invert
+> inline in `uncompute_pass.cpp` is now invertible at the
+> routine-definition site as a named, registered adjoint.
+>
+> **Emission shape (PRD §5.1 item 3).** For a forward routine
+> `void marked(qbool& a, qint x, int T) { a ^= (x >= T); }`, the
+> transpiler appends to the same TU:
+>
+> ```cpp
+> void __marked_adj(qbool& a, qint x, int T) {
+>     a ^= (x >= T);   // self-dual; distinct symbol preserves
+>                      // the audit trail per P9c.
+> }
+> STURM_REGISTER_ADJOINT(marked, __marked_adj);
+> ```
+>
+> P9c guarantees the distinct `__<fn>_adj` symbol even for
+> self-inverse bodies — this keeps the PI-4 audit name-match
+> complete and survives future refactors that may promote a
+> self-dual body to a non-self-dual one.
+>
+> **Parameter capture (PRD §5.3).** Literal and const args
+> (`theta += 0.3`) reuse the same literal in the adjoint
+> (`theta -= 0.3`) so gate-stream byte-compare holds. Computed
+> args from unchanged inputs re-evaluate in the adjoint; computed
+> args from mutated inputs are rejected unless Phase Q-A/Q-B has
+> already hoisted the expression into a `const` local before the
+> forward op. B11 is load-bearing: forward-emitted values are
+> reused verbatim, so no floating-point drift appears between
+> synthesized and hand-written adjoints.
+>
+> Sub-items:
+>
+> - R-0 (sturm-88d7.1): this roadmap stub.
+> - R-1 (sturm-88d7.2): new module
+>   `transpiler/src/adjoint_emitter.{hpp,cpp}` (≤ 370 impl / 130
+>   hdr, plan §2.3 R-A). Walks a validated, normalized routine
+>   body in reverse statement order; for each statement, calls
+>   the existing `render_uncompute` from `uncompute_pass.cpp:429`
+>   to produce adjoint source text. Emits as a sibling function
+>   `__<fn>_adj` into the rewriter's buffer, not inline. Reuses
+>   the Phase B/C/D/E/N inline-inverse arms — no new per-kind
+>   code paths. Unit-tested through `test_matcher_harness.hpp`
+>   against hand-built IR covering each primitive kind's adjoint
+>   render.
+> - R-2 (sturm-88d7.3): new module
+>   `transpiler/src/auto_register_emitter.{hpp,cpp}` (≤ 120 impl
+>   / 60 hdr, plan §2.3 R-B). Appends
+>   `STURM_REGISTER_ADJOINT(fn, __<fn>_adj);` after each
+>   synthesized adjoint. Must produce the exact AST shape PI-1's
+>   matcher already consumes, so the second PM3 transpile pass
+>   picks up the registration without a new matcher. Golden-file
+>   test pins the emitted text.
+> - R-3 (sturm-88d7.4): top-level driver matcher
+>   `transpiler/src/matcher_reversible_drive.cpp` (≤ 180 impl,
+>   plan §2.3 R-C). Orchestrates R-1 + R-2 for each
+>   `[[sturm::reversible]]` FD that passed Phase P's P-C
+>   validation and Phase Q's Q-B constness. Single entry point
+>   callable from `transpile_consumer.cpp`. Dogfooded through
+>   the PM4 Registry API via `STURM_REGISTER_PLUGIN` in an
+>   anonymous namespace (PM4-6 pattern — same shape PN-2
+>   followed).
+> - R-4 (sturm-88d7.5): six snapshot fixtures under
+>   `tests/transpiler/fixtures/` —
+>   `reversible_body_xor.{cpp,expected.cpp}`,
+>   `reversible_body_and.{cpp,expected.cpp}`,
+>   `reversible_body_compound.{cpp,expected.cpp}`,
+>   `reversible_body_rotation_theta.{cpp,expected.cpp}`,
+>   `reversible_body_rotation_phi.{cpp,expected.cpp}`,
+>   `reversible_body_mixed.{cpp,expected.cpp}`. Each pairs a
+>   forward routine marked `[[sturm::reversible]]` with the
+>   expected synthesized adjoint + `STURM_REGISTER_ADJOINT`
+>   line, compile-ready. Wired into
+>   `tests/transpiler/CMakeLists.txt` via the existing
+>   `run_snapshot.cmake` + `check_idempotent.cmake` harness.
+>   Green under
+>   `ctest -R 'transpiler_snapshot_reversible_body_.*'`.
+> - R-5 (sturm-88d7.6): m12 gate-equivalence pair —
+>   `tests/transpiler/fixtures/reversible_synth_transpiled.cpp`
+>   (uses `[[sturm::reversible]]`) and
+>   `tests/transpiler/fixtures/reversible_synth_reference.cpp`
+>   (hand-written adjoint via existing `STURM_REGISTER_ADJOINT`).
+>   Namespace pair `m12_reversible_synth_transpiled` /
+>   `m12_reversible_synth_reference` added to
+>   `tests/transpiler/test_gate_equivalence.cpp`. Asserts
+>   byte-identical counter-mode `GateRecord` streams between
+>   synthesized and hand-written adjoints (PN-8 pattern lifted
+>   to synthesized routines). Green under
+>   `ctest -R 'gate_equivalence.*reversible_synth'`.
+> - R-6 (sturm-88d7.7): roundtrip test in
+>   `tests/test_invert.cpp`. Forward then synthesized adjoint on
+>   a prepared state equals identity; gate counter equals zero
+>   at scope exit (plan §5). Covers the P9c audit guarantee that
+>   the generated buffer name-matches `__<fn>_adj`.
+> - R-7 (sturm-88d7.8): roadmap completion blockquote replacing
+>   this stub.
+>
+> **Principles touched.** P9c is the load-bearing principle —
+> the transpiler always emits a distinct `__<fn>_adj` even for
+> self-inverse bodies (preserves the PI-4 audit trail, survives
+> refactors, costs nothing at runtime because the call is
+> name-matched and inlined by the host compiler). B11 is
+> reused at the statement level (reverse statement order,
+> forward-emitted values reused) but loop-iteration reversal is
+> deferred to Phase S. P9a/P9b interact through Phase Q's
+> normalization — R consumes the out-param twin, not the
+> return-style source. B10 unchanged (uncomputation stays a
+> compile-time concern). `docs/01_principles.md` unchanged: R
+> adds matchers + emitters to the one global pass (B9) but
+> introduces no new optimization layer.
+>
+> **Out of scope.** `ForStmt` bodies retain the Phase H PH-3
+> `skip_uncompute=true` diagnostic until Phase S (`sturm-ha2k`)
+> ships; any `[[sturm::reversible]]` routine containing a loop
+> passes P-C validation but its Phase R adjoint body carries the
+> same diagnostic the inline uncompute path emits today. Bodies
+> rejected by Phase P validation (measurement, classical I/O,
+> unregistered callee, `while`-loop, quantum-dependent condition)
+> never reach R. Recursion is deferred to a follow-up epic (plan
+> §0 Q4). Cross-TU synthesis stays in the follow-up bucket
+> (plan §9).
+
+---
+
 ## Phase S — Loop reversal (automatic adjoint synthesis, B11)
 
 > **2026-04-23:** Phase S scoped. Tracked as bd epic `sturm-ha2k`
