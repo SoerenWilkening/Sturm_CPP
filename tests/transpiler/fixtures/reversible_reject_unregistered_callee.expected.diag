@@ -1,0 +1,1 @@
+STURM: reversible routine body calls 'helper', which has no registered or synthesized adjoint. Use STURM_REGISTER_ADJOINT(helper, <adjoint_fn>) at TU scope, or annotate 'helper' with [[sturm::reversible]] so the transpiler synthesizes one (P9d).

@@ -1,0 +1,1 @@
+STURM: reversible routine 'bad_classical_cond' branches on a collapsed quantum value; use WHEN(q) { ... } to schedule the body conditionally on the quantum state without measurement (P9d).

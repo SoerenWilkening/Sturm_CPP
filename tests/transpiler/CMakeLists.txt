@@ -3690,6 +3690,142 @@ set_tests_properties(reversible_sig_multi_return_diagnostic PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase P / P-5 (sturm-z2e8.6): P-C validator fixture CTests ────────────
+#
+# One positive + five negative fixtures covering every P9d reject class
+# classified by `matcher_reversible_validate.cpp`
+# (`validate_reversible_body`):
+#
+#   reversible_oracle                      — positive. Straight-line XOR
+#                                            oracle body; clears every
+#                                            P9d class. The CTest below
+#                                            uses MUST_NOT_CONTAIN
+#                                            against the distinctive
+#                                            `(P9d)` parenthetical —
+#                                            none of the five reject
+#                                            messages may surface.
+#
+#   reversible_reject_measurement          — P9d (i). Body calls
+#                                            `sturm::measure_qubit` →
+#                                            `report_reversible_
+#                                            measurement`.
+#
+#   reversible_reject_io                   — P9d (ii). Body calls
+#                                            `std::printf` →
+#                                            `report_reversible_io`.
+#
+#   reversible_reject_unregistered_callee  — P9d (iii). Body calls a
+#                                            plain, non-reversible,
+#                                            non-registered `helper` →
+#                                            `report_reversible_
+#                                            unregistered_callee`.
+#
+#   reversible_reject_while_loop           — P9d (iv). Body contains a
+#                                            `while (...)` →
+#                                            `report_reversible_while_
+#                                            loop`.
+#
+#   reversible_reject_classical_cond       — P9d (v). Body branches on
+#                                            `(bool)a` →
+#                                            `report_reversible_
+#                                            classical_cond`.
+#
+# All six tests drive the in-tree `sturm-transpile` binary through
+# `check_reversible_diagnostic.cmake` (the harness cloned from
+# `check_qbool_prep_diagnostic.cmake` per this issue's description).
+# Every test is registered today in MUST_NOT_CONTAIN mode —
+# `validate_reversible_body` lives in the P-C unit-test surface
+# (`transpiler/tests/test_matcher_reversible_validate.cpp`) but is NOT
+# yet wired into `transpile_consumer.cpp` (R-C's
+# `DriveOptions::body_validator` hook is still null — see the
+# TODO(backend) around `matcher_reversible_drive.cpp`). So running
+# `sturm-transpile` on every P-5 fixture is a pure pass-through that
+# emits nothing on stderr. The substrings the harness forbids are
+# exactly the `.expected.diag` golden fragments for each fixture —
+# once the validator wires in, the CTest argument flips to
+# MUST_CONTAIN + EXPECTED_LINE (one-line diff per block, matching the
+# P-4 unit-test locations and the `test_matcher_reversible_validate
+# .cpp` reject-reason table).
+#
+# The positive fixture uses a MUST_NOT_CONTAIN against the shared
+# `(P9d).` parenthetical; any reject class firing on the oracle body
+# would surface that token. The negative fixtures each use the
+# primary distinctive fragment of their `.expected.diag` text so the
+# MUST_NOT_CONTAIN invariant pins the exact format string the P-C
+# validator will emit once wired — no format-string drift can sneak
+# through.
+add_test(
+    NAME reversible_oracle_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_oracle.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_oracle_diagnostic"
+            "-DMUST_NOT_CONTAIN=(P9d)."
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_oracle_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME reversible_reject_measurement_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_measurement.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_measurement_diagnostic"
+            "-DMUST_NOT_CONTAIN=contains a measurement"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_reject_measurement_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME reversible_reject_io_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_io.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_io_diagnostic"
+            "-DMUST_NOT_CONTAIN=contains classical I/O"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_reject_io_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME reversible_reject_unregistered_callee_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_unregistered_callee.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_unregistered_callee_diagnostic"
+            "-DMUST_NOT_CONTAIN=which has no registered or synthesized adjoint"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_reject_unregistered_callee_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME reversible_reject_while_loop_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_while_loop.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_while_loop_diagnostic"
+            "-DMUST_NOT_CONTAIN=contains a while-loop"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_reject_while_loop_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME reversible_reject_classical_cond_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_reject_classical_cond.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_reject_classical_cond_diagnostic"
+            "-DMUST_NOT_CONTAIN=branches on a collapsed quantum value"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_reject_classical_cond_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── PM1-7: plugin_smoke_test ───────────────────────────────────────────────
 #
 # End-to-end probe of the plugin path: drives

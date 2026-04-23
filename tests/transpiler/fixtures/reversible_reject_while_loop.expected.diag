@@ -1,0 +1,1 @@
+STURM: reversible routine 'bad_while_reject' contains a while-loop; unbounded trip counts are not invertible by B11 loop reversal — rewrite as a bounded for-loop or supply a manual adjoint (P9d).
