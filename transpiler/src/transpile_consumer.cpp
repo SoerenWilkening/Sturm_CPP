@@ -16,6 +16,7 @@
 #include "sturm/transpile/skip.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
 
+#include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
 
 #include "clang/AST/ASTContext.h"
@@ -57,6 +58,24 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // the first `adjoint_of<...>` specialization is visited during
     // the AST walk.
     sturm::transpile::register_routine_registry_matcher(finder_, registry_);
+    // Phase T T-1 (sturm-xrob.2): the reversible-drive collector
+    // matcher records every `[[clang::annotate("sturm::reversible")]]`
+    // FunctionDecl into `synth_registry_` so the end-of-TU driver
+    // (`drive_reversible_forwards`, invoked from
+    // `HandleTranslationUnit`) can iterate the forwards and emit
+    // auto-synthesised `__fn_adj` + `STURM_REGISTER_ADJOINT` lines.
+    // Registered immediately after the routine-registry matcher
+    // because the drive-phase consults the PI-1 `registry_` for the
+    // PRD §9 Q2 hand-registration precedence gate — the collector's
+    // pattern (FunctionDecl anchor) is structurally disjoint from the
+    // routine-registry matcher's anchor
+    // (ClassTemplateSpecializationDecl), so callback-invocation order
+    // is irrelevant for correctness; the placement is documentation-
+    // level grouping with the other "synthesis-registry populating"
+    // callbacks.
+    sturm::transpile::register_reversible_drive_matcher(
+        finder_, synth_registry_, registry_, diag_,
+        ci.getSourceManager(), ci.getLangOpts());
     // Phase J PJ-4b: the dead-ancilla elimination matcher runs
     // BEFORE every matcher whose AST anchor could overlap an
     // eliminated qbool VarDecl. The ordering invariant has three
@@ -526,6 +545,24 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
     // VarDecl.
     sturm::transpile::apply_eliminated_stmt_guards(
         unit_, ctx.getSourceManager());
+
+    // Phase T T-1 (sturm-xrob.2): drive the reversible-adjoint
+    // synthesis pipeline for every `[[sturm::reversible]]` forward
+    // collected during `matchAST`. For each forward that passes P-C
+    // validation + Q-B constness, this helper appends one
+    // `UncomputeInsertion` to `unit_.raw_insertions` carrying the
+    // emitted `__fn_adj` body + `STURM_REGISTER_ADJOINT` line anchored
+    // just after the forward's body close brace. The M8 synthesis
+    // pass below then folds the raw insertion into the rewritten
+    // buffer so PI-1's matcher picks up the registration on the
+    // second PM3 transpile pass.
+    //
+    // Runs AFTER the fuse / eliminated-range backstops so the scope's
+    // op list is stable before we read it, and BEFORE the emit step
+    // below so the raw insertion is visible to `synthesize()` /
+    // `emit_to_string`.
+    sturm::transpile::drive_reversible_forwards(
+        unit_, synth_registry_, registry_, diag_, ctx);
 
     // Mode-specific emit step. StandaloneFile preserves the pre-PM1
     // `emit()` call shape for byte-identical output; Plugin stashes

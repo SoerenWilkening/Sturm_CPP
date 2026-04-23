@@ -383,24 +383,36 @@ void demo(sturm::qbool& q0,
           sturm::qbool& q2);
 } // namespace m12_reversible_loop_adder_reference
 
-// R-5: Phase R straight-line automatic-adjoint-synthesis gate-equivalence
-// pair (sturm-88d7.6).  One namespace pair pinning the B10 straight-
-// line adjoint-emission contract: a `[[sturm::reversible]]` forward
-// routine whose body is a loop-free sequence of compound-assignment
-// statements MUST be paired with a reverse-statement-order adjoint
-// that emits the same gate operands in the opposite order.  R-3
-// (matcher_reversible_drive) is implemented but not yet wired into
-// transpile_consumer.cpp, so BOTH TUs are hand-written byte-for-byte
-// twins (see each fixture's top-of-file prose for the full R-3 / PA-3
-// pass-through rationale); when R-3 wires in, the runtime fixture
-// shrinks to just the forward cascade and the adjoint becomes machine-
-// emitted as a sibling `__demo_adj` + STURM_REGISTER_ADJOINT — the
-// reference twin stays as the ground-truth gate stream.  Scenario:
+// R-5 / T-5: Phase R/T straight-line automatic-adjoint-synthesis gate-
+// equivalence pair (sturm-88d7.6 / sturm-xrob.6).  One namespace pair
+// pinning the B10 straight-line adjoint-emission contract: a
+// `[[sturm::reversible]]` forward routine whose body is a loop-free
+// sequence of compound-assignment statements MUST be paired with a
+// reverse-statement-order adjoint that is auto-synthesised by the
+// transpiler (T-1) and registered via `STURM_REGISTER_ADJOINT` at
+// global scope.
+//
+// Post T-1 wiring (sturm-xrob.2) matcher_reversible_drive is active
+// in the consumer: the runtime fixture's `demo()` body contains ONLY
+// the forward cascade, and the sibling `__demo_adj` function +
+// global-scope `STURM_REGISTER_ADJOINT` line are auto-emitted by the
+// transpiler at end-of-TU.  The reference fixture mirrors the same
+// emission shape by hand (forward-only `demo()`, hand-written
+// `__demo_adj`, hand-written global-scope `STURM_REGISTER_ADJOINT`)
+// so the two TUs produce byte-identical forward gate streams when
+// the harness captures `demo()` three times per capture.  Scenario:
 //   synth — 4 qbools, 4-statement XOR cascade with regs[3]^regs[0]
 //           re-touch so the gate fingerprint is distinguishable from
 //           the S-5 ripple 3-statement sweep.
 // The harness invokes `demo` three times per capture so the pair is
-// exercised on three independent payloads (total 24 CX records).
+// exercised on three independent payloads — four CX records per
+// invocation, for a total of 12 CX records per capture.  The auto-
+// synthesised `__demo_adj` is NOT invoked by this harness; the
+// forward-only byte-compare pins the B10 per-statement emission
+// ordering plus the stable qubit-index invariant across multi-
+// invocation runs.  T-3's roundtrip test in tests/test_invert.cpp
+// (sturm-xrob.4) is the companion harness that exercises the
+// `invert(&demo)` lookup path via the registered adjoint.
 namespace m12_reversible_synth_transpiled {
 void demo(sturm::qbool& q0,
           sturm::qbool& q1,
@@ -1371,24 +1383,28 @@ int main() {
     }
     std::printf("  adder streams match (%zu gates).\n", ref_rl_a.size());
 
-    // R-5: Phase R straight-line automatic-adjoint-synthesis gate-
-    // equivalence pair (sturm-88d7.6).  One pair — reversible_synth —
-    // invoking `demo` 3 times per capture (3 independent payloads) and
-    // asserting byte-identical gate streams between the transpiled and
-    // reference TUs.  Until R-3 (matcher_reversible_drive) is wired
-    // into transpile_consumer.cpp, both TUs are hand-written byte-for-
-    // byte twins spelling the forward 4-statement XOR cascade followed
-    // by the reverse-statement-order adjoint; the test therefore pins
-    // (a) the deterministic qubit-index invariant across multi-
-    // invocation runs and (b) the reverse-statement-order adjoint
-    // emission that Phase R's `adjoint_emitter` module must reproduce
-    // once R-3 takes over.  The fixtures' top-of-file prose documents
-    // the full R-3 handoff contract.  The capture helper reused here
-    // is `run_and_capture_reversible_loop_4` — the signature matches
-    // the S-5 ripple / bit_reversal pairs (four qbool references,
-    // three invocations per capture) but the demo body is straight-
-    // line with NO for-loop, the structural signature of Phase R.
-    std::printf("R-5 gate-stream equivalence test (reversible_synth pattern):\n");
+    // R-5 / T-5: Phase R/T straight-line automatic-adjoint-synthesis
+    // gate-equivalence pair (sturm-88d7.6 / sturm-xrob.6).  One pair —
+    // reversible_synth — invoking `demo` 3 times per capture (3
+    // independent payloads) and asserting byte-identical gate streams
+    // between the transpiled and reference TUs.  Post T-1 wiring
+    // matcher_reversible_drive is active in the consumer: the runtime
+    // fixture's `demo()` body contains ONLY the forward cascade, and
+    // the transpiler auto-emits the sibling `__demo_adj` function +
+    // global-scope `STURM_REGISTER_ADJOINT` line.  The reference
+    // fixture mirrors this emission by hand.  The test therefore
+    // pins (a) the deterministic qubit-index invariant across multi-
+    // invocation runs and (b) the forward-cascade gate ordering that
+    // auto-synthesis must leave untouched on both sides.  The auto-
+    // synthesised `__demo_adj` body is NOT invoked by this harness —
+    // the T-3 roundtrip test in tests/test_invert.cpp (sturm-xrob.4)
+    // is the companion that exercises the `invert(&demo)` lookup
+    // path.  The capture helper reused here is
+    // `run_and_capture_reversible_loop_4` — the signature matches the
+    // S-5 ripple / bit_reversal pairs (four qbool references, three
+    // invocations per capture) but the demo body is straight-line
+    // with NO for-loop, the structural signature of Phase R.
+    std::printf("R-5 / T-5 gate-stream equivalence test (reversible_synth pattern):\n");
     const auto ref_rs = run_and_capture_reversible_loop_4(
         &m12_reversible_synth_reference::demo);
     const auto got_rs = run_and_capture_reversible_loop_4(

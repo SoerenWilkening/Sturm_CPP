@@ -45,6 +45,7 @@
 
 #include "diag_context.hpp"
 #include "routine_registry.hpp"
+#include "synthesis_registry.hpp"
 
 #include <string>
 
@@ -153,6 +154,15 @@ private:
     // `case QOpKind::PLUGIN:` arm can consult `find_render_fn(...)`
     // against the same Registry the plugin's matcher registered against.
     sturm::transpile::plugin::Registry plugin_registry_;
+    // Phase T T-1 (sturm-xrob.2): context-wide synthesis registry
+    // populated by the reversible-drive collector matcher. Lives
+    // alongside `unit_` and `registry_` so the three AST-bound
+    // containers are destroyed together with the ASTContext their
+    // matchers ran under. `drive_reversible_forwards` reads this
+    // registry at end-of-TU to stitch auto-synthesised `__fn_adj` +
+    // `STURM_REGISTER_ADJOINT` text into `unit_.raw_insertions`,
+    // ahead of the second PM3 transpile pass.
+    SynthesisRegistry synth_registry_;
     clang::ast_matchers::MatchFinder finder_;
 
     // Plugin-mode stash — populated by HandleTranslationUnit when

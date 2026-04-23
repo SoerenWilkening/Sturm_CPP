@@ -2417,6 +2417,115 @@ Lower priority, tracked for visibility.
 
 ---
 
+## Phase T — Transpiler integration of automatic adjoint synthesis
+
+> **2026-04-23:** Phase T scoped. Tracked as bd epic `sturm-xrob`
+> with sub-items T-0..T-6 (`sturm-xrob.1`..`sturm-xrob.7`). Parent
+> design in `docs/prd_automatic_adjoint_synthesis.md` §9 and
+> `docs/implementation_plan_automatic_adjoint_synthesis.md` §3
+> (dependency DAG); this stub reserves the roadmap slot ahead of
+> implementation. Phase T is the integration capstone for the
+> automatic-adjoint-synthesis cluster (P → Q → R → S → T) — it
+> wires the already-landed Phase P/Q/R/S standalone modules into
+> `transpiler/src/transpile_consumer.cpp` so that end-to-end
+> synthesis activates on real translation units.
+>
+> **Mission.** Terminate the plan §3 dependency DAG at R-C / S-B
+> by consuming the `SynthesisRegistry` +
+> `matcher_reversible_drive` +
+> `matcher_reversible_validate` +
+> `matcher_reversible_signature` + `loop_reversal` modules from
+> inside the transpiler's `ASTConsumer`. Every user forward
+> carrying `[[clang::annotate("sturm::reversible")]]` that passes
+> P-C validation (P9d) and Q-B constness enforcement gets an
+> auto-synthesised sibling `__fn_adj` + `STURM_REGISTER_ADJOINT`
+> line flushed into the rewriter buffer BEFORE the second PM3
+> transpile pass picks up the registration via PI-1's existing
+> matcher. No new synthesis modules are introduced — Phase T is
+> the driver-side integration Phase R's R-7 and Phase S's S-7
+> blockquotes explicitly flagged as deferred ("driver-side
+> wiring remains the sole follow-up before end-to-end synthesis
+> activates on real translation units").
+>
+> **Error-emission gating (PRD §9 Q2).** A P-C / Q-B rejection
+> emits a hard error ONLY when all three conditions hold:
+>
+>   1. the forward carries `[[clang::annotate("sturm::reversible")]]`, AND
+>   2. no hand-registered adjoint exists in the PI-1
+>      `RoutineRegistry`, AND
+>   3. the TU contains at least one `invert(&fd)` call site.
+>
+> Otherwise the rejection is silent and the hand-registered entry
+> (if any) wins per the PRD §9 Q2 locked decision. Condition (3)
+> is knowable at end-of-TU because PI-1 already scans
+> `invert(...)` call sites; the drive-matcher's diagnostic
+> emission is therefore deferred and flushed from
+> `HandleTranslationUnit` after the invert call-site scan has
+> completed.
+>
+> Sub-items:
+>
+> - T-0 (sturm-xrob.1): this roadmap stub.
+> - T-1 (sturm-xrob.2): `TranspileConsumer` wiring
+>   (`transpiler/src/transpile_consumer.{hpp,cpp}`). Add a
+>   `SynthesisRegistry` member; register a reversible-drive
+>   matcher that walks every `[[sturm::reversible]]` FunctionDecl,
+>   records it in the registry, and drives the Phase R `R-A`
+>   (`adjoint_emitter`) + `R-B` (`auto_register_emitter`)
+>   pipeline via `drive_reversible`. `HandleTranslationUnit`
+>   flushes any pending `__fn_adj` + `STURM_REGISTER_ADJOINT`
+>   text into the rewriter buffer before the second PM3 pass so
+>   PI-1's matcher picks up the macro.
+> - T-2 (sturm-xrob.3): error-emission gating per PRD §9 Q2 —
+>   defer the drive-matcher's diagnostic emission through a
+>   flush invoked in `HandleTranslationUnit` after the
+>   `invert(...)` call-site scan has completed. Only emit hard
+>   errors when the three-condition gate fires.
+> - T-3 (sturm-xrob.4): four end-to-end runtime roundtrips in
+>   `tests/test_invert.cpp` — a straight-line XOR oracle
+>   (based on `reversible_body_xor`) plus the three loop
+>   shapes (`reversible_loop_ripple`,
+>   `reversible_loop_bit_reversal`,
+>   `reversible_loop_adder_carry`). Each forward is declared
+>   `[[clang::annotate("sturm::reversible")]]` with NO
+>   hand-written adjoint and NO `STURM_REGISTER_ADJOINT` macro;
+>   each asserts the gate counter is zero at scope exit.
+> - T-4 (sturm-xrob.5): flip existing fixtures from
+>   pass-through / `MUST_NOT_CONTAIN` to real goldens — the
+>   three Q-positive `expected.cpp` files
+>   (`reversible_return_style_qbool`,
+>   `reversible_return_style_qint`,
+>   `reversible_out_param_canonical`) become real post-synthesis
+>   output, and seven diagnostic tests flip from
+>   `MUST_NOT_CONTAIN` to `MUST_CONTAIN` +
+>   `EXPECTED_LINE=<basename>:<line>:` consuming the
+>   `.expected.diag` goldens that already exist.
+> - T-5 (sturm-xrob.6): m12 straight-line pair in
+>   `tests/transpiler/test_gate_equivalence.cpp` —
+>   `m12_reversible_synth_{transpiled,reference}` namespaces.
+>   Transpiled side uses `[[clang::annotate("sturm::reversible")]]`
+>   + relies on auto-synthesis; reference side has a hand-written
+>   adjoint via `STURM_REGISTER_ADJOINT`. Byte-identical
+>   `GateRecord` streams prove the synthesized adjoint matches
+>   the hand-written reference at the gate-stream level.
+> - T-6 (sturm-xrob.7): roadmap completion blockquote replacing
+>   this stub.
+>
+> **Principles touched.** No new principles — Phase T is strictly
+> integration work. P9d, P9a-c, B10, B11 all remain load-bearing
+> and are honoured by the already-landed modules; Phase T simply
+> threads them together. `docs/01_principles.md` unchanged.
+>
+> **Out of scope.** Recursion, cross-TU synthesis, member-fn
+> synthesis, and template synthesis remain deferred per plan §9.
+> These are roadmap notes only — no bd issues filed per the
+> locked decision at Phase T scoping. Phase T is the narrowest
+> possible integration surface: it activates end-to-end synthesis
+> for the shapes P-C / Q-B / R-A / R-B / S-A already accept, and
+> nothing else.
+
+---
+
 ## Principle Check
 
 The predicted Phase K principle revisions have landed in `docs/01_principles.md` (PK-7, 2026-04-17). Numbering is stable — existing B1..B9 citations remain valid:

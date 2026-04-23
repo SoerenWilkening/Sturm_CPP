@@ -1,6 +1,6 @@
-// reversible_synth_runtime.cpp — Phase R / R-5 transpiler INPUT fixture
-// for the straight-line automatic-adjoint-synthesis gate-stream
-// equivalence pair.
+// reversible_synth_runtime.cpp — Phase R / R-5 + Phase T / T-5 transpiler
+// INPUT fixture for the straight-line automatic-adjoint-synthesis
+// gate-stream equivalence pair.
 //
 // Fifteenth gate-equivalence pair.  Whereas the S-5 triple
 // (reversible_loop_{ripple,bit_reversal,adder}_runtime.cpp) pins down
@@ -8,35 +8,41 @@
 // earlier Phase R (B10) STRAIGHT-LINE adjoint-emission contract: a
 // `[[sturm::reversible]]` forward routine whose body is a sequence of
 // compound-assignment statements (no for/while loops, no if/WHEN) MUST
-// be paired with a reverse-statement-order adjoint that emits the same
-// gate operands in the opposite order.  The one pair in this batch
-// (reversible_synth) mirrors the R-6 roundtrip test's `parity_cascade`
-// fixture in `tests/test_invert.cpp` — same four-statement XOR cascade
-// shape, but operating on `sturm::qbool` references so the PA-3 matcher
-// surface and the M12 gate-stream byte-compare can observe the
-// synthesised adjoint end-to-end.
+// be paired with a reverse-statement-order adjoint that T-1's wiring
+// auto-synthesises into a sibling `__demo_adj` + STURM_REGISTER_ADJOINT
+// binding.  The one pair in this batch (reversible_synth) mirrors the
+// R-6 roundtrip test's `parity_cascade` fixture in
+// `tests/test_invert.cpp` — same four-statement XOR cascade shape,
+// but operating on `sturm::qbool` references so the M12 gate-stream
+// byte-compare can observe the synthesised adjoint end-to-end.
 //
-// R-3 status (matcher_reversible_drive)
-// -------------------------------------
-// Per the R-5 issue (sturm-88d7.6) and the plan's §2.3 R-3/R-5 handoff
-// contract, R-3 (matcher_reversible_drive) has landed but is not yet
-// wired into transpile_consumer.cpp.  The transpile step for this
-// fixture is therefore a PASS-THROUGH: the forward straight-line
-// cascade AND its hand-written reverse-statement-order adjoint are
-// both spelled verbatim in the demo body, and sturm-transpile's
-// existing matchers leave the body untouched (see the "Why the
-// pointer-array indirection is load-bearing" section below for why
-// PA-3 does not fire).  When R-3 is wired into transpile_consumer.cpp
-// and auto_register_emitter + adjoint_emitter kick in, this fixture
-// upgrades in place: the forward cascade alone will be the transpiler's
-// input, and the reverse-statement-order adjoint will be machine-
-// emitted as a sibling `__demo_adj` function registered via
-// STURM_REGISTER_ADJOINT(demo, __demo_adj) — the captured gate stream
-// must remain byte-identical to the reference fixture's hand-written
-// twin.
+// Auto-synthesis status (post T-1 wiring)
+// ---------------------------------------
+// T-1 (sturm-xrob.2) has wired matcher_reversible_drive into
+// TranspileConsumer.  For every `[[clang::annotate("sturm::reversible")]]`
+// forward the transpiler now auto-emits:
 //
-// Demo shape (forward + hand-cloned reverse-statement-order adjoint)
-// ------------------------------------------------------------------
+//   * a sibling `__demo_adj` function (inside the same namespace as
+//     the forward), whose body is the reverse-statement-order adjoint
+//     produced by R-A `adjoint_emitter`,
+//
+//   * a `STURM_REGISTER_ADJOINT(<qualified fn>, <qualified adj>)`
+//     line at END-OF-FILE (global scope), using fully-qualified
+//     names so the macro expansion lands in `::sturm::_detail::
+//     adjoint_of` — the template the runtime `invert(fn)` helper
+//     keys on.
+//
+// T-5 (sturm-xrob.6) is the m12 gate-equivalence harness for this
+// pair.  The demo body here contains ONLY the forward cascade;
+// auto-synthesis injects the adjoint as a separate function + global-
+// scope registration.  The harness's `run_and_capture_reversible_loop_4`
+// captures three independent invocations of `demo()` and compares the
+// resulting gate stream against the reference fixture's — byte-
+// identical per-invocation streams (4 CX records each) is the test's
+// pass/fail signal.
+//
+// Demo shape (forward only; adjoint auto-synthesised)
+// ---------------------------------------------------
 // [[clang::annotate("sturm::reversible")]]
 // void demo(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
 //     qbool* regs[4] = {&q0, &q1, &q2, &q3};
@@ -45,15 +51,12 @@
 //     *regs[2] ^= *regs[1];   // CX(q1, q2)
 //     *regs[3] ^= *regs[2];   // CX(q2, q3)
 //     *regs[3] ^= *regs[0];   // CX(q0, q3)
-//     // Reverse-statement-order adjoint (what adjoint_emitter would
-//     // machine-produce once R-3 wires in).  XOR is self-inverse at
-//     // the bit level, so the adjoint body is the same four statements
-//     // in reversed source order.
-//     *regs[3] ^= *regs[0];   // CX(q0, q3)
-//     *regs[3] ^= *regs[2];   // CX(q2, q3)
-//     *regs[2] ^= *regs[1];   // CX(q1, q2)
-//     *regs[1] ^= *regs[0];   // CX(q0, q1)
 // }
+// // Auto-synthesised by matcher_reversible_drive:
+// // void __demo_adj(qbool& q0, qbool& q1, qbool& q2, qbool& q3) { ... }
+// // (outside the namespace, at global scope, via end-of-file anchor)
+// // STURM_REGISTER_ADJOINT(m12_reversible_synth_transpiled::demo,
+// //                        m12_reversible_synth_transpiled::__demo_adj);
 //
 // Why the `[[clang::annotate("sturm::reversible")]]` attribute
 // ------------------------------------------------------------
@@ -61,12 +64,10 @@
 // adjoint synthesis (the `[[sturm::reversible]]` spelling is the
 // surface syntax; `[[clang::annotate("sturm::reversible")]]` is the
 // low-level portable form the matchers anchor on — see
-// transpiler/src/reversible_attribute.cpp).  Before R-3 is wired into
-// transpile_consumer.cpp the attribute is a NO-OP at transpile time
-// (no matcher consumes it yet for this shape).  Today the attribute
-// serves only as a forward-compatibility marker and as documentation
-// that this fixture is the straight-line analogue of the S-5 loop
-// triple.
+// transpiler/src/reversible_attribute.cpp).  T-1 wires
+// matcher_reversible_drive into the consumer so the attribute now
+// drives the R-A / R-B emitters end-of-TU, producing the sibling
+// `__demo_adj` body + `STURM_REGISTER_ADJOINT` line described above.
 //
 // Why the pointer-array indirection is load-bearing
 // -------------------------------------------------
@@ -77,21 +78,21 @@
 // exact shape (`declRefExpr().bind("lhs")` at PH-3 matcher_outer_var_-
 // guard.cpp:456 and PA-3 matcher_qbool_assign.cpp:54) — so PA-3 would
 // register a QOperation on the enclosing QScope for every one of our
-// forward + adjoint statements and the uncompute pass would plant
-// inverses at `demo`'s close brace, doubling the gate stream.
-// Routing the mutation through a local pointer array
-// (`*regs[i] ^= *regs[j]`) changes the LHS AST node from DeclRefExpr
-// to UnaryOperator(ArraySubscriptExpr), which does NOT match PA-3's
-// DeclRefExpr anchor — the transpiler passes the body through
-// unchanged.  This is the same portable workaround the S-5 loop
-// fixtures use (see reversible_loop_ripple_runtime.cpp's "Why the
-// pointer-array indirection is load-bearing" section for the fuller
-// PH-3 story — the PA-3 story is structurally identical because the
-// LHS binding pattern is shared).  When R-3 wires in AND the auto-
-// uncompute pass learns to defer to adjoint_emitter inside
-// `[[sturm::reversible]]` routines (the remaining piece of the
-// Phase R handoff), the pointer-array indirection can be removed and
-// the demo body becomes the more idiomatic `q1 ^= q0;` form.
+// forward statements and the uncompute pass would plant inverses at
+// `demo`'s close brace, inflating the gate stream.  Routing the
+// mutation through a local pointer array (`*regs[i] ^= *regs[j]`)
+// changes the LHS AST node from DeclRefExpr to UnaryOperator(
+// ArraySubscriptExpr), which does NOT match PA-3's DeclRefExpr
+// anchor — the transpiler passes the body through unchanged.  This
+// is the same portable workaround the S-5 loop fixtures use (see
+// reversible_loop_ripple_runtime.cpp's "Why the pointer-array
+// indirection is load-bearing" section for the fuller PH-3 story —
+// the PA-3 story is structurally identical because the LHS binding
+// pattern is shared).  When Phase S's matcher_outer_var_guard edit
+// (sturm-ha2k.3) wires the PA-3 handoff to adjoint_emitter under
+// `[[sturm::reversible]]` routines (the remaining integration
+// detail), the pointer-array indirection can be removed and the
+// demo body becomes the more idiomatic `q1 ^= q0;` form.
 //
 // Gate-stream witness
 // -------------------
@@ -99,19 +100,23 @@
 // `qbool::operator^=` emits `emit_CX_lifted(ctx, other.qubits[0],
 // qubits[0])` — a single CX record per `^=`.  The demo's forward
 // cascade emits four CX records — CX(q0,q1), CX(q1,q2), CX(q2,q3),
-// CX(q0,q3) — in that order; the reverse-statement-order adjoint
-// cascade emits the same four CX records in reversed order —
-// CX(q0,q3), CX(q2,q3), CX(q1,q2), CX(q0,q1).  Per `demo()` invocation:
-// 8 gates.
+// CX(q0,q3) — in that order.  Per `demo()` invocation: 4 gates.
 //
 // The M12 harness runs `demo()` 3 times per capture (3 independent
 // payloads per pair), each against the same caller-supplied qubit
 // indices (the harness's `make_non_owning` qbool views hold qubit IDs
 // stable across invocations within a capture).  Total captured stream:
-// 24 CX records per capture — the reference fixture's hand-written
-// twin produces an identical stream.  The byte-compare therefore pins
-// BOTH (a) reverse-statement-order emission per B10 and (b) the
-// stable qubit-index invariant across multi-invocation runs.
+// 12 CX records per capture — the reference fixture (which likewise
+// contains only the forward cascade in `demo`) produces an identical
+// stream.  The byte-compare therefore pins the forward gate sequence
+// plus the stable qubit-index invariant across multi-invocation runs.
+//
+// The auto-synthesised `__demo_adj` body is a sibling function the
+// test does NOT invoke — it exists so downstream `invert(demo)` call
+// sites (e.g. the T-3 roundtrip test in tests/test_invert.cpp) can
+// look it up via the global-scope `STURM_REGISTER_ADJOINT` line.  The
+// present M12 test does not exercise that lookup path; it pins only
+// the forward gate stream.
 //
 // ODR note
 // --------
@@ -120,7 +125,15 @@
 // `demo(qbool&, qbool&, qbool&, qbool&)` function; wrapping each in a
 // dedicated namespace avoids ODR collision.  Inside the namespace a
 // `using sturm::qbool;` brings the qbool type into local scope so the
-// DSL pattern reads as it would to the end user.
+// DSL pattern reads as it would to the end user.  The auto-
+// synthesised `STURM_REGISTER_ADJOINT` emission lands at END-OF-FILE
+// (global scope, outside the namespace) per the T-5 emission split —
+// placing it inside the namespace would (a) fail to parse because
+// `::demo` and `::__demo_adj` do not exist at the global scope the
+// `::` prefix in the macro resolves to, and (b) land the
+// specialization in `m12_reversible_synth_transpiled::sturm::_detail::
+// adjoint_of` rather than `::sturm::_detail::adjoint_of`, which is
+// the template `invert(fn)` consults.
 //
 // Why the `__has_include` guard
 // -----------------------------
@@ -157,17 +170,17 @@ using sturm::qbool;
 // a UnaryOperator(ArraySubscriptExpr) on the LHS — see top-of-file
 // prose on why this matters for PA-3 pass-through.  The
 // `[[clang::annotate("sturm::reversible")]]` attribute is the user-
-// facing opt-in for automatic adjoint synthesis; today it is a
-// forward-compatibility marker because R-3 is not yet wired into
-// transpile_consumer.cpp.
+// facing opt-in for automatic adjoint synthesis; T-1's wiring drives
+// R-A + R-B off this attribute to emit the sibling `__demo_adj` +
+// global-scope `STURM_REGISTER_ADJOINT` registration.
 //
-// Per-invocation gate stream (eight CX records):
+// Per-invocation gate stream (four CX records):
 //   Forward:  CX(q0,q1), CX(q1,q2), CX(q2,q3), CX(q0,q3)
-//   Adjoint:  CX(q0,q3), CX(q2,q3), CX(q1,q2), CX(q0,q1)
 //
-// The reverse-statement-order adjoint cancels the forward pass bitwise
-// at the state level.  At the gate-stream level, the reversal is the
-// load-bearing invariant the byte-compare pins.
+// The reverse-statement-order adjoint is emitted as a separate
+// `__demo_adj` function by matcher_reversible_drive; the present M12
+// test does not invoke it.  See the "Gate-stream witness" section in
+// the top-of-file prose for the full accounting.
 [[clang::annotate("sturm::reversible")]]
 void demo(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
     qbool* regs[4] = {&q0, &q1, &q2, &q3};
@@ -183,22 +196,6 @@ void demo(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
     *regs[2] ^= *regs[1];
     *regs[3] ^= *regs[2];
     *regs[3] ^= *regs[0];
-
-    // Reverse-statement-order adjoint (B10).  The body is the same
-    // four statements in reversed source order — `^=` is self-inverse
-    // at the bit level, so no sign flip is required (unlike the Phase
-    // N rotation pair, where `+=` ↔ `-=`).  This is the shape
-    // Phase R's `adjoint_emitter` module will machine-emit once R-3
-    // wires into transpile_consumer.cpp; until then the hand-written
-    // clone serves the same role.  When R-3 lands, the four statements
-    // below are deleted in place and replaced by a sibling
-    // `__demo_adj` function + STURM_REGISTER_ADJOINT registration at
-    // namespace scope — the captured gate stream must stay byte-
-    // identical to the reference fixture's twin.
-    *regs[3] ^= *regs[0];
-    *regs[3] ^= *regs[2];
-    *regs[2] ^= *regs[1];
-    *regs[1] ^= *regs[0];
 }
 
 } // namespace m12_reversible_synth_transpiled

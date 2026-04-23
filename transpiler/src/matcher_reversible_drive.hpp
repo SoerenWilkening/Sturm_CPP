@@ -110,13 +110,16 @@
 #include <vector>
 
 namespace clang {
+class ASTContext;
 class FunctionDecl;
 class LangOptions;
 class SourceManager;
+namespace ast_matchers { class MatchFinder; }
 } // namespace clang
 
 namespace sturm::transpile {
 
+class DiagContext;
 class RoutineRegistry;
 class SynthesisRegistry;
 
@@ -278,6 +281,68 @@ DriveResult drive_reversible(
     const clang::SourceManager& sm,
     const clang::LangOptions& lang,
     const DriveOptions& options = {});
+
+/// Phase T T-1 (sturm-xrob.2): register a Clang AST matcher that records
+/// every `[[clang::annotate("sturm::reversible")]]` FunctionDecl into
+/// `synth_reg` so `drive_reversible_forwards` can drive the R-A + R-B
+/// emission pipeline at end-of-TU.
+///
+/// The matcher is a *collector*, not an emitter — it only records the
+/// forwards it sees. `drive_reversible_forwards` (below) is the
+/// companion function the consumer calls from `HandleTranslationUnit`
+/// after `matchAST` completes.
+///
+/// The `routine_registry`, `diag`, `sm`, and `lang` references are
+/// captured for the end-of-TU drive phase; the match callback itself
+/// only uses `synth_reg`. All references must outlive the MatchFinder's
+/// run.
+void register_reversible_drive_matcher(
+    clang::ast_matchers::MatchFinder& finder,
+    SynthesisRegistry& synth_reg,
+    const RoutineRegistry& routine_reg,
+    DiagContext& diag,
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang);
+
+/// Phase T T-1 (sturm-xrob.2): end-of-TU driver for the reversible
+/// synthesis pipeline. Called from `TranspileConsumer::HandleTranslationUnit`
+/// AFTER `matchAST` + the backstop cleanups, so the per-op matchers have
+/// fully populated `unit.scopes` and every `[[sturm::reversible]]` FD
+/// has been collected into `synth_reg` by the matcher above.
+///
+/// For each forward recorded in `synth_reg`, the function:
+///
+///   1. Locates the forward's body QScope in `unit` by matching the
+///      forward's body CompoundStmt LBraceLoc against each scope's
+///      `open_brace`. A missing scope means the forward's body
+///      contained no quantum ops (stub / empty body) — the drive still
+///      runs, producing an empty adjoint body.
+///
+///   2. Runs `validate_reversible_body` and
+///      `validate_reversible_signature` to collect per-forward
+///      validator verdicts.
+///
+///   3. Invokes `drive_reversible` with bool-returning lambdas that
+///      short-circuit on the captured verdicts. The real validators
+///      only fire once per forward — re-running them inside the hook
+///      would double-emit diagnostics.
+///
+///   4. On successful emission, appends one `UncomputeInsertion`
+///      record to `unit.raw_insertions` whose `insert_before` is the
+///      SourceLocation immediately after the forward's body close
+///      brace. The M8 emitter stitches the adjoint body +
+///      `STURM_REGISTER_ADJOINT` line into the rewritten buffer
+///      BEFORE the second PM3 transpile pass, so PI-1's matcher picks
+///      up the registration on pass two.
+///
+/// This is strictly a collector-driven end-of-TU flush. No IR mutation
+/// beyond `unit.raw_insertions` and `synth_reg` status transitions.
+void drive_reversible_forwards(
+    QUnit& unit,
+    SynthesisRegistry& synth_reg,
+    const RoutineRegistry& routine_reg,
+    DiagContext& diag,
+    clang::ASTContext& ctx);
 
 } // namespace sturm::transpile
 

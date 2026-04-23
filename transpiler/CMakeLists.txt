@@ -95,6 +95,24 @@ add_executable(sturm-transpile
     # small predicate whose only Clang deps (AnnotateAttr) are already
     # on the link line via clangAST / clangBasic.
     src/reversible_attribute.cpp
+    # Phase T T-1 (sturm-xrob.2): the Phase P/Q/R/S synthesis modules
+    # land in the main sturm-transpile binary here. Before T-1 these
+    # TUs were only compiled under `transpiler/tests/` for their
+    # individual unit tests; the consumer wiring now activates them
+    # end-to-end — every `[[clang::annotate("sturm::reversible")]]`
+    # forward is collected by `register_reversible_drive_matcher` and
+    # driven by `drive_reversible_forwards` from
+    # `transpile_consumer.cpp`. Link order is irrelevant because each
+    # TU declares its symbols in `sturm::transpile` and the public
+    # headers forward-declare the pieces the consumer needs.
+    src/synthesis_registry.cpp
+    src/matcher_reversible_validate.cpp
+    src/matcher_reversible_signature.cpp
+    src/return_to_out_param.cpp
+    src/adjoint_emitter.cpp
+    src/auto_register_emitter.cpp
+    src/matcher_reversible_drive.cpp
+    src/loop_reversal.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher. Anchors on
     # qbool VarDecls whose initializer is a probabilistic `double`
     # and whose lexically enclosing scope is uncompute-eligible
@@ -317,6 +335,17 @@ add_library(sturm-transpile-plugin SHARED
     # path build needs `is_reversible()` resolved for the S-B opt-in
     # in `matcher_outer_var_guard.cpp`.
     src/reversible_attribute.cpp
+    # Phase T T-1 (sturm-xrob.2): mirror the main binary so the plugin
+    # build links the same synthesis pipeline the consumer now drives
+    # via `drive_reversible_forwards`. See the equivalent block above.
+    src/synthesis_registry.cpp
+    src/matcher_reversible_validate.cpp
+    src/matcher_reversible_signature.cpp
+    src/return_to_out_param.cpp
+    src/adjoint_emitter.cpp
+    src/auto_register_emitter.cpp
+    src/matcher_reversible_drive.cpp
+    src/loop_reversal.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher. Mirror the main
     # binary so the plugin-path consumer (same `TranspileConsumer`)
     # links the same symbols. Registration order in
