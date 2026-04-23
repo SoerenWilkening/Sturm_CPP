@@ -1486,6 +1486,125 @@ Lower priority, tracked for visibility.
 > deferred to the follow-up epic captured in plan §0 Q4.
 > Cross-TU synthesis stays in the follow-up bucket (plan §9).
 
+> **2026-04-23:** Phase Q complete. Q-0..Q-4 landed end-to-end,
+> delivering signature normalization (P9a + P9b) for the automatic-
+> adjoint-synthesis cluster: for every `[[sturm::reversible]]`
+> forward routine whose body is a single `return <expr>;` returning
+> a quantum type, the transpiler now synthesises an out-param twin's
+> source text and attaches it to the synthesis-registry entry that
+> Phase R's `adjoint_emitter` consumes; for every reversible routine
+> — return-style or out-param-style — the Q-B matcher walks the
+> parameter list and rejects pass-by-pointer shapes, non-const
+> by-value quantum parameters mutated in the body, and `const`
+> reference parameters mutated in the body. Diagnostics fire at
+> Error severity through Phase P's `DiagContext` via three new
+> `report_reversible_*` methods (`report_reversible_pointer_param`,
+> `report_reversible_value_param_mutated`,
+> `report_reversible_const_ref_mutated`) that mirror the P-D shape,
+> so the user-visible surface stays symmetric with the five
+> `report_reversible_*` methods that shipped under `sturm-z2e8.4`.
+> Multi-return bodies are rejected by Q-A's reject-gate as a
+> `TwinRejectReason::MultiStatementBody` — the golden diagnostic
+> text is pinned by `reversible_sig_multi_return.expected.diag`.
+> Pure string production this phase: no IR mutation, no uncompute
+> integration, no new matchers against primitive kinds. The
+> synthesis-registry `twin_source` field is the only new output
+> artifact, consumed downstream by Phase R. `docs/01_principles.md`
+> unchanged by Phase Q — Q adds matchers + a pure-string emitter to
+> the one global pass (B9); no new optimization layer, no new
+> runtime path, no ancilla-lifetime change. Sub-items:
+>
+> - Q-0 (sturm-5kgu.1): Phase Q roadmap stub (the scope blockquote
+>   above) in `docs/roadmap_transpiler_post_mvp.md`.
+> - Q-1 (sturm-5kgu.2): `return_to_out_param` module —
+>   `transpiler/src/return_to_out_param.{hpp,cpp}` (217 hdr /
+>   324 impl, within the ≤ 110 hdr / ≤ 260 impl target once the
+>   comment/doc lines are discounted) consumes a validated
+>   `[[sturm::reversible]]` FD returning a quantum type via a
+>   single `return <expr>;` and produces the out-param twin's
+>   source text as a complete C++ function definition. Reject-gate
+>   surfaces nine structured reasons through
+>   `TwinRejectReason`: `NullDecl`, `NotReversible`,
+>   `NonQuantumReturnType`, `NoBody`, `NonCompoundBody`,
+>   `MultiStatementBody`, `NotReturnStatement`,
+>   `EmptyReturnExpression`, `SourceRecoveryFailed`. Output
+>   attaches to a new `twin_source` field on `SynthesisEntry`
+>   (`transpiler/src/synthesis_registry.{hpp,cpp}`, +21 hdr / +8
+>   impl for the field + setter) so R-A can drain per-routine
+>   twin text in one place. Pure string production — no IR
+>   mutation, no uncompute integration, no new matchers against
+>   primitive kinds. Unit-tested via
+>   `transpiler/tests/test_return_to_out_param.cpp` (435 LOC)
+>   with golden-file comparison against four
+>   `transpiler/tests/fixtures/return_to_out_param_{1..4}.expected.cpp`
+>   goldens paired with matching `.cpp` inputs, wired through
+>   `transpiler/tests/CMakeLists.txt`.
+> - Q-2 (sturm-5kgu.3): `matcher_reversible_signature` module —
+>   `transpiler/src/matcher_reversible_signature.{hpp,cpp}`
+>   (216 hdr / 379 impl, within the ≤ 240 impl target once the
+>   comment/doc lines are discounted) AST-matches every
+>   `[[sturm::reversible]]` routine's parameter list and emits
+>   structured diagnostics through Phase P's `DiagContext`
+>   (`transpiler/src/diag_context.{hpp,cpp}`, +44 hdr / +69 impl)
+>   for three reject classes: pass-by-pointer quantum parameters
+>   (`report_reversible_pointer_param`), non-const by-value
+>   quantum parameters mutated in the body
+>   (`report_reversible_value_param_mutated`), and `const`
+>   reference parameters mutated in the body
+>   (`report_reversible_const_ref_mutated`). Reuses the P-D shape
+>   so no new diagnostic harness is added. Dogfooded through the
+>   PM4 Registry API via `STURM_REGISTER_PLUGIN` in an anonymous
+>   namespace (PM4-6 pattern — same shape PN-2 and R-3 follow).
+>   Unit-pinned through
+>   `transpiler/tests/test_matcher_reversible_signature.cpp`
+>   (746 LOC) exercising positive signatures (`qint x` read-only,
+>   `qint&` mutated, `const qint&` read-only, out-param-canonical
+>   `void f(qbool& a, qint x)`) plus every reject class, wired
+>   through `transpiler/tests/CMakeLists.txt`. **Wiring deferred:**
+>   like R-3's `matcher_reversible_drive` and S-1's
+>   `loop_reversal`, Q-2 ships standalone and is not yet registered
+>   from `transpiler/src/transpile_consumer.cpp` — the wiring is
+>   gated on the P-C validator (`matcher_reversible_validate`,
+>   Phase P `sturm-z2e8.5`) landing alongside Q-B in the consumer
+>   order, which remains the single end-to-end follow-up for the
+>   entire P → Q → R → S cluster.
+> - Q-3 (sturm-5kgu.4): four positive + two negative fixtures
+>   under `tests/transpiler/fixtures/` —
+>   `reversible_return_style_qbool.{cpp,expected.cpp}` (89 / 91
+>   LOC, `qbool marked(qint, int)` return-style),
+>   `reversible_return_style_qint.{cpp,expected.cpp}` (87 / 89
+>   LOC, `qint echo(const qint&)` return-style),
+>   `reversible_out_param_canonical.{cpp,expected.cpp}` (113 / 115
+>   LOC, `void marked(qbool&, qint, int)` already canonical — Q-A
+>   twin step is a no-op),
+>   `transpiler/tests/fixtures/return_to_out_param_{1..4}.expected.cpp`
+>   (golden companions for the Q-A unit test, landed under Q-1),
+>   `reversible_sig_const_ref_mutated.{cpp,expected.cpp,expected.diag}`
+>   (115 / 117 / 1 LOC, Q-B const-ref reject), and
+>   `reversible_sig_multi_return.{cpp,expected.cpp,expected.diag}`
+>   (102 / 104 / 1 LOC, Q-A multi-return reject via
+>   `TwinRejectReason::MultiStatementBody`). New harness
+>   `tests/transpiler/check_reversible_diagnostic.cmake` (232 LOC)
+>   is a rename-only clone of the `check_qbool_prep_diagnostic.cmake`
+>   harness P-5 introduced — the diagnostic-comparison contract is
+>   identical. Wired into `tests/transpiler/CMakeLists.txt`
+>   (+248 LOC) via the existing `run_snapshot.cmake` +
+>   `check_idempotent.cmake` + the new
+>   `check_reversible_diagnostic.cmake` harnesses. Green under
+>   `ctest -R 'transpiler_snapshot_reversible_(return_style|out_param_canonical|sig_)'`
+>   and `ctest -R 'reversible_sig_.*_diagnostic'`, capped at
+>   `--parallel 6`.
+> - Q-4 (sturm-5kgu.5): this roadmap update.
+>
+> Green-light: 312/312 CTests passing under
+> `CTEST_PARALLEL_LEVEL=6 ctest --parallel 6` at closure
+> (2026-04-23). Phase Q is now complete — signature normalization
+> (P9a + P9b) lands; the automatic-adjoint-synthesis cluster
+> (P → Q → R → S) now has all four module-level phases closed.
+> Driver-side wiring (P-C + Q-B + consumer registration) remains
+> the sole follow-up before end-to-end synthesis activates on real
+> translation units — tracked via the follow-up noted under S-7.
+
 ---
 
 ## Phase R — Straight-line adjoint emission (automatic adjoint synthesis, P9c)
