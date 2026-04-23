@@ -210,4 +210,103 @@ void DiagContext::report_prep_in_uncompute_scope(
     diag_.Report(loc, id) << std::string(name);
 }
 
+// ── P-D (Phase P / automatic adjoint synthesis) report_* members ────
+//
+// All five mirror the existing report_* pattern:
+//   - Resolve a custom diag-ID via `getOrRegister(Error, fmt)` so the
+//     DenseMap lookup amortises to a single cache miss per TU.
+//   - Stream the `std::string(name|fn)` argument into the builder —
+//     the builder's operator<< has no string_view overload.
+// Every body is locked at Error severity per P9d — a reversible
+// routine whose body cannot be inverted is a hard compile error at
+// the forward-function definition site (NOT at the `invert(fn)` use
+// site, so the diagnostic points at the code the user would fix).
+
+void DiagContext::report_reversible_measurement(
+    clang::SourceLocation loc, std::string_view name) {
+    // P-D / P9d item (i): measurement inside a reversible body.
+    // Format's `%0` is the reversible routine's name. The user's fix
+    // is to remove the measurement (move it outside the routine) or
+    // drop the `[[sturm::reversible]]` attribute so the routine is
+    // not subjected to synthesis.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' contains a measurement "
+        "(quantum -> classical conversion); measurement is not "
+        "invertible (P9d).");
+    diag_.Report(loc, id) << std::string(name);
+}
+
+void DiagContext::report_reversible_io(
+    clang::SourceLocation loc, std::string_view name) {
+    // P-D / P9d item (ii): classical I/O inside a reversible body.
+    // Format's `%0` is the reversible routine's name. The user's fix
+    // is to lift the I/O call outside the reversible routine or drop
+    // `[[sturm::reversible]]` — I/O is an observable classical side
+    // effect and cannot be undone by gate reversal.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' contains classical I/O or an "
+        "observable classical side effect; I/O is not invertible "
+        "(P9d).");
+    diag_.Report(loc, id) << std::string(name);
+}
+
+void DiagContext::report_reversible_unregistered_callee(
+    clang::SourceLocation loc, std::string_view fn) {
+    // P-D / P9d item (iii): unregistered callee inside a reversible
+    // body. Format's `%0` is the callee's qualified name — NOT the
+    // enclosing reversible routine — because the user's fix targets
+    // the callee (register an adjoint for it, or mark it
+    // `[[sturm::reversible]]` so P-C validates it transitively). The
+    // suggested fix text mirrors `report_missing_adjoint` so the two
+    // surfaces are user-consistent.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine body calls '%0', which has no "
+        "registered or synthesized adjoint. Use "
+        "STURM_REGISTER_ADJOINT(%0, <adjoint_fn>) at TU scope, or "
+        "annotate '%0' with [[sturm::reversible]] so the transpiler "
+        "synthesizes one (P9d).");
+    diag_.Report(loc, id) << std::string(fn);
+}
+
+void DiagContext::report_reversible_while_loop(
+    clang::SourceLocation loc, std::string_view name) {
+    // P-D / P9d: while-loop inside a reversible body. Format's `%0`
+    // is the reversible routine's name. The user's fix is to rewrite
+    // the while-loop as a bounded `for`-loop with a compile-time
+    // trip count (Phase S B11 reverses the iteration order), or to
+    // hand-register an adjoint and drop `[[sturm::reversible]]`.
+    // Pinned by PRD §5.2 ("while(cond) body — rejected — unbounded
+    // trip count is not invertible without a manual adjoint").
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' contains a while-loop; "
+        "unbounded trip counts are not invertible by B11 loop "
+        "reversal — rewrite as a bounded for-loop or supply a manual "
+        "adjoint (P9d).");
+    diag_.Report(loc, id) << std::string(name);
+}
+
+void DiagContext::report_reversible_classical_cond(
+    clang::SourceLocation loc, std::string_view name) {
+    // P-D / P9d: quantum-dependent classical branch condition inside
+    // a reversible body. Format's `%0` is the reversible routine's
+    // name. The user's fix is to rewrite the branch as a `WHEN(q) {
+    // ... }` block so the body is scheduled conditionally on the
+    // quantum state rather than collapsing it. Mirrors
+    // `report_quantum_to_classical_cond` but is emitted by the P-C
+    // validation pass (not the PM3-5 matcher), so the diagnostic
+    // text cites the reversible routine the offending branch is
+    // embedded in.
+    const unsigned id = getOrRegister(
+        clang::DiagnosticsEngine::Error,
+        "STURM: reversible routine '%0' branches on a collapsed "
+        "quantum value; use WHEN(q) { ... } to schedule the body "
+        "conditionally on the quantum state without measurement "
+        "(P9d).");
+    diag_.Report(loc, id) << std::string(name);
+}
+
 } // namespace sturm::transpile

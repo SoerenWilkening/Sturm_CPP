@@ -66,6 +66,54 @@ target_compile_definitions(test_transpile_qir PRIVATE ${LLVM_DEFS_LIST_QIR})
 add_test(NAME test_transpile_qir COMMAND test_transpile_qir)
 set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 
+# ── Unit test: DiagContext (PM3-0 + P-D) ────────────────────────────────────
+# Pins the DiagContext public surface: the `getOrRegister` cache plus every
+# `report_*` member. Drives a standalone `clang::DiagnosticsEngine` fronted
+# by a counting `DiagnosticConsumer` so each report_* call is observed as a
+# diagnostic landing in the sink at the expected severity. No MatchFinder,
+# no AST — DiagContext talks only to DiagnosticsEngine, so the test binary
+# links just `diag_context.cpp` plus `clangBasic` (for the engine's
+# `Report` / `getCustomDiagID` out-of-line bodies) and `LLVMSupport` (for
+# `IntrusiveRefCntPtr` / `StringRef` statics). Mirrors the shared-vs-static
+# split every transpiler-adjacent test target uses.
+#
+# sturm-z2e8.4 / P-D extends the `report_*` family with five
+# reversible-synthesis diagnostics; the test's `test_report_reversible_*`
+# cases pin each new method as firing exactly one Error-severity report.
+add_executable(test_transpile_diag_context
+    test_diag_context.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+)
+target_include_directories(test_transpile_diag_context PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_transpile_diag_context PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_transpile_diag_context PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_DIAG NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_transpile_diag_context PRIVATE
+    ${LLVM_DEFS_LIST_DIAG})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_transpile_diag_context PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_transpile_diag_context PRIVATE
+        clangBasic
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_DIAG support)
+    target_link_libraries(test_transpile_diag_context PRIVATE
+        ${LLVM_LIBS_DIAG})
+endif()
+add_test(NAME test_transpile_diag_context COMMAND test_transpile_diag_context)
+set_tests_properties(test_transpile_diag_context PROPERTIES
+    LABELS "transpiler")
+
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
 # method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke

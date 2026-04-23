@@ -204,6 +204,46 @@ struct DiagContext {
     void report_prep_in_uncompute_scope(clang::SourceLocation loc,
                                         std::string_view name);
 
+    // ── P-D / Phase P automatic adjoint synthesis diagnostics ──────
+    //
+    // All five mirror the existing report_* family for the P9d "body
+    // cannot be inverted" rejection set (plan §2.1 row P-D; validated
+    // by §2.1 row P-C). Every method fires at Error severity — P9d
+    // treats a non-invertible reversible body as a hard compile error
+    // at the forward-function definition site (not at the
+    // `invert(fn)` call site). The `%0` slot is the offending
+    // identifier (enclosing routine name, or callee name for the
+    // unregistered-callee case); macro-expansion `loc` values must be
+    // funneled through `SourceManager::getFileLoc(...)` first.
+
+    /// P-D / P9d (i): measurement inside a reversible routine.
+    /// `name` is the reversible routine's name.
+    void report_reversible_measurement(clang::SourceLocation loc,
+                                       std::string_view name);
+
+    /// P-D / P9d (ii): classical I/O or observable side-effect inside
+    /// a reversible routine. `name` is the reversible routine's name.
+    void report_reversible_io(clang::SourceLocation loc,
+                              std::string_view name);
+
+    /// P-D / P9d (iii): call to an unregistered routine inside a
+    /// reversible body. `fn` is the callee's qualified name (NOT the
+    /// enclosing routine — the fix targets the callee).
+    void report_reversible_unregistered_callee(clang::SourceLocation loc,
+                                               std::string_view fn);
+
+    /// P-D / P9d: `while`-loop inside a reversible routine. Rejected
+    /// because unbounded trip counts are not invertible by B11 loop
+    /// reversal (PRD §5.2). `name` is the reversible routine's name.
+    void report_reversible_while_loop(clang::SourceLocation loc,
+                                      std::string_view name);
+
+    /// P-D / P9d: classical branch condition derived from a quantum
+    /// value inside a reversible routine. User should rewrite as
+    /// `WHEN(q) { ... }`. `name` is the reversible routine's name.
+    void report_reversible_classical_cond(clang::SourceLocation loc,
+                                          std::string_view name);
+
 private:
     clang::DiagnosticsEngine& diag_;
 
