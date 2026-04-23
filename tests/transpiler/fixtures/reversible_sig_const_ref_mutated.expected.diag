@@ -1,0 +1,1 @@
+STURM: reversible routine 'bad_const_ref' mutates const-qualified reference parameter 'x'; drop the 'const' qualifier or remove the mutation so the adjoint can un-mutate it (P9b).

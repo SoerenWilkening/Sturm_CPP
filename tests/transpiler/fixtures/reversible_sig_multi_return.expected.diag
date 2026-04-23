@@ -1,0 +1,1 @@
+STURM: reversible routine 'two_returns' has a multi-statement body; return-style normalization requires a single 'return <expr>;' body (P9a + PRD §4.1 multi-return reject).

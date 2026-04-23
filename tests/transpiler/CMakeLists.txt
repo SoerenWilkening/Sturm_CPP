@@ -3442,6 +3442,254 @@ set_tests_properties(transpiler_idempotent_reversible_body_mixed PROPERTIES
     DEPENDS "snapshot_reversible_body_mixed"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase Q / Q-3: signature-normalization fixtures (sturm-5kgu.4) ─────────
+#
+# Three positive snapshot+idempotence fixture pairs pin the canonical
+# return-style / out-param-style shapes Phase Q's Q-A
+# (`return_to_out_param.cpp`, sturm-5kgu.2) normalizes into a shared
+# out-param canonical form that Phase R's adjoint emitter consumes:
+#
+#   reversible_return_style_qbool        — `qbool marked(qint, int)
+#                                           { return x >= T; }` (PRD
+#                                           §4.1 canonical example).
+#                                           Q-A's `synthesize_out_param
+#                                           _twin` produces the sibling
+#                                           `__marked_out` body —
+#                                           pinned at unit level by
+#                                           `transpiler/tests/fixtures/
+#                                           return_to_out_param_1.
+#                                           expected.cpp`.
+#   reversible_return_style_qint         — `qint echo(const qint&)
+#                                           { return x; }`. Widens
+#                                           the Q-A normalization
+#                                           contract to the qint
+#                                           return surface; unit
+#                                           golden is
+#                                           `return_to_out_param_3.
+#                                           expected.cpp`.
+#   reversible_out_param_canonical       — `void marked(qbool&, qint,
+#                                           int) { a ^= (x >= T); }`
+#                                           in pointer-array-indirected
+#                                           form. Q-A classifies this
+#                                           shape as
+#                                           `NonQuantumReturnType`
+#                                           (already canonical — twin
+#                                           is a no-op); R-A proceeds
+#                                           straight from the forward
+#                                           body.
+#
+# Two negative fixture pairs pin the Q-B (sturm-5kgu.3) reject classes
+# for signatures the R-A adjoint emitter cannot honour:
+#
+#   reversible_sig_const_ref_mutated     — `void f(const qbool& x,
+#                                           const qbool& y)
+#                                           { const_cast<qbool&>(x)
+#                                             ^= y; }`. Q-B (iii)
+#                                           `report_reversible_const_
+#                                           ref_mutated` matches at the
+#                                           parameter declaration.
+#   reversible_sig_multi_return          — `qbool two_returns(int)
+#                                           { ...; if (c) return a;
+#                                             return b; }`. Q-A's
+#                                           multi-return classifier
+#                                           returns
+#                                           `MultiStatementBody` —
+#                                           the downstream
+#                                           `report_reversible_sig_
+#                                           multi_return` diagnostic
+#                                           will fire once the Q-A
+#                                           reject path wires into
+#                                           `transpile_consumer.cpp`.
+#
+# Each pair follows the snapshot+idempotence pattern established by
+# the Phase R / R-4 body fixtures above: one `snapshot_*` test runs
+# sturm-transpile on the input and byte-diffs the generated file
+# against the checked-in `.expected.cpp` golden; a sibling
+# `transpiler_idempotent_*` test re-feeds the generated file back
+# through sturm-transpile and asserts byte-for-byte equality via the
+# `AUTO-GENERATED` sentinel path in main.cpp.
+#
+# Q-3 status — PASS-THROUGH expected golden
+# -----------------------------------------
+# Per the Q-3 issue description (sturm-5kgu.4), Q-A / Q-B have landed
+# as standalone modules + unit tests but are NOT yet wired into
+# transpile_consumer.cpp (the R-C `DriveOptions::body_validator` /
+# `signature_validator` hooks are still null callers per the
+# TODO(backend) around `matcher_reversible_drive.cpp`). Today's
+# transpile is a pass-through for these fixtures: every body uses
+# PA-3-safe syntax (pointer-array indirection for the out-param
+# canonical; return-style bodies that PA-3 ignores because the LHS is
+# a return expression not a parameter DeclRefExpr) and the emitter
+# prepends the `AUTO-GENERATED` header. The `.expected.cpp` goldens
+# therefore differ from the inputs only by the two-line AUTO-GENERATED/
+# Source header.
+#
+# TODO(backend): when Q-A / Q-B wire into transpile_consumer, the
+# expected goldens for the three positive fixtures upgrade in place to
+# carry the synthesized out-param twin (`__<fn>_out`) + the matching
+# `__<fn>_adj` companion + `STURM_REGISTER_ADJOINT(<fn>, __<fn>_adj);`
+# line. The fixture inputs do not change. At the same time the two
+# negative CTests below flip their `check_reversible_diagnostic.cmake`
+# harness argument from MUST_NOT_CONTAIN to MUST_CONTAIN with the
+# `.expected.diag` substring, and the accompanying `EXPECTED_LINE`
+# bumps to the parameter-declaration / function-definition line the
+# respective diagnostic cites.
+add_test(
+    NAME transpiler_snapshot_reversible_return_style_qbool
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_return_style_qbool.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_return_style_qbool.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_return_style_qbool
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_reversible_return_style_qbool PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_return_style_qbool
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_return_style_qbool/reversible_return_style_qbool.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_return_style_qbool_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_return_style_qbool PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_reversible_return_style_qbool"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_reversible_return_style_qint
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_return_style_qint.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_return_style_qint.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_return_style_qint
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_reversible_return_style_qint PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_return_style_qint
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_return_style_qint/reversible_return_style_qint.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_return_style_qint_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_return_style_qint PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_reversible_return_style_qint"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_reversible_out_param_canonical
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_out_param_canonical.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_out_param_canonical.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_out_param_canonical
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_reversible_out_param_canonical PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_out_param_canonical
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_out_param_canonical/reversible_out_param_canonical.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_out_param_canonical_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_out_param_canonical PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_reversible_out_param_canonical"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_reversible_sig_const_ref_mutated
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_const_ref_mutated.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_const_ref_mutated.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_reversible_sig_const_ref_mutated PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_sig_const_ref_mutated
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated/reversible_sig_const_ref_mutated.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_sig_const_ref_mutated PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_reversible_sig_const_ref_mutated"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_snapshot_reversible_sig_multi_return
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_multi_return.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_multi_return.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(transpiler_snapshot_reversible_sig_multi_return PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_sig_multi_return
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return/reversible_sig_multi_return.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_sig_multi_return PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "transpiler_snapshot_reversible_sig_multi_return"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# Diagnostic-harness CTests for the two Q-B negative fixtures. They
+# use `check_reversible_diagnostic.cmake` (cloned from
+# `check_qbool_prep_diagnostic.cmake` per the Q-3 issue description)
+# in MUST_NOT_CONTAIN mode today — the Q-B / Q-A reject paths are
+# pinned at unit-test level
+# (`transpiler/tests/test_matcher_reversible_signature.cpp` and
+# `test_return_to_out_param.cpp`) but are not yet wired into
+# `transpile_consumer.cpp`, so the Errors do not fire at the TU
+# level. The substrings the harness forbids are exactly the
+# `.expected.diag` golden fragments for each fixture — once the
+# validators wire in, the CTest argument flips to MUST_CONTAIN +
+# EXPECTED_LINE (one-line diff to this block).
+add_test(
+    NAME reversible_sig_const_ref_mutated_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_const_ref_mutated.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_const_ref_mutated_diagnostic"
+            "-DMUST_NOT_CONTAIN=mutates const-qualified reference parameter"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_sig_const_ref_mutated_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME reversible_sig_multi_return_diagnostic
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_sig_multi_return.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_sig_multi_return_diagnostic"
+            "-DMUST_NOT_CONTAIN=has a multi-statement body"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_reversible_diagnostic.cmake")
+set_tests_properties(reversible_sig_multi_return_diagnostic PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── PM1-7: plugin_smoke_test ───────────────────────────────────────────────
 #
 # End-to-end probe of the plugin path: drives
