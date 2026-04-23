@@ -171,6 +171,17 @@ struct SynthesisEntry {
     /// `adjoint_name` as a token for the `STURM_REGISTER_ADJOINT`
     /// expansion.
     std::string twin_source;
+    /// R-A (sturm-88d7.2) synthesised sibling-adjoint source text.
+    /// The string carries a complete C++ function definition for
+    /// `__<fwd>_adj` whose body is the reverse-statement-order
+    /// inverse of the forward routine. Kept separate from both
+    /// `twin_source` (Q-A's out-param companion) and `adjoint_name`
+    /// (R-B's registration token) because the three fields carry
+    /// semantically distinct blobs. The pipeline driver (R-C)
+    /// inlines this text into the rewritten buffer; R-B then
+    /// appends a `STURM_REGISTER_ADJOINT(fwd, __fwd_adj);` line so
+    /// the second PM3 transpile pass picks up the pair.
+    std::string adjoint_source;
     SynthesisStatus status = SynthesisStatus::Pending;
 };
 
@@ -255,6 +266,17 @@ public:
     /// success, false if `fwd` is null or absent from the registry.
     bool set_twin_source(const clang::FunctionDecl* fwd,
                          std::string source);
+
+    /// R-A (sturm-88d7.2): attach the synthesised sibling-adjoint
+    /// source text to the entry. The string carries a complete C++
+    /// function definition for `__<fwd>_adj` whose body is the
+    /// reverse-statement-order inverse of the forward routine.
+    /// Empty `source` is accepted — a Phase-P validation reject may
+    /// want to record "I looked at this, produced nothing".
+    /// Returns true on success, false if `fwd` is null or absent
+    /// from the registry.
+    bool set_adjoint_source(const clang::FunctionDecl* fwd,
+                            std::string source);
 
     /// Transition the entry to a new status. Returns true on
     /// success, false if `fwd` is null or absent. The method does

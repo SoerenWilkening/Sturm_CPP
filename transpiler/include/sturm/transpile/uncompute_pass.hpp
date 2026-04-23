@@ -168,6 +168,31 @@ QSynthesisResult synthesize(const QUnit& unit,
                             const clang::SourceManager* sm = nullptr,
                             const plugin::Registry* registry = nullptr);
 
+/// Render a single op's inverse source-text snippet.
+///
+/// Exposed for Phase R (sturm-88d7.2) `adjoint_emitter`, which walks a
+/// validated + normalized routine body in reverse statement order and
+/// needs to call the per-kind inverse renderer without pulling in the
+/// scope / insertion-anchor bookkeeping that `synthesize()` does.
+///
+/// Returns the same text `synthesize()` would place in an
+/// `UncomputeInsertion.code`:
+///   - Four-space leading indent, trailing '\n'.
+///   - Free-function form (`uncompute_or(...)`, `uncompute_and(...)`,
+///     `uncompute_*_qint(...)`) or inline self-dual form (`x = ~x;`,
+///     `x ^= y;`, `q.theta() -= C;`) depending on the op kind.
+///   - `USER_ROUTINE` renders `invert(<name>)(<args>);` — the audit-
+///     trail form PI-4 fixed.
+///   - `PLUGIN` dispatches through `registry->find_render_fn(kind_id)`.
+/// Returns an empty string on malformed input (operand-count mismatch,
+/// empty `routine_name` / `plugin_kind_id`, null registry for PLUGIN).
+///
+/// `registry` is only consulted for `QOpKind::PLUGIN`; every in-tree
+/// kind ignores it, so tests that hand-build non-plugin ops can pass
+/// `nullptr`.
+std::string render_uncompute(const QOperation& op,
+                             const plugin::Registry* registry = nullptr);
+
 } // namespace sturm::transpile
 
 #endif // STURM_TRANSPILE_UNCOMPUTE_PASS_HPP

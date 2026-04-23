@@ -33,8 +33,6 @@
 
 namespace sturm::transpile {
 
-namespace {
-
 // Build the source-text snippet for a single forward op's inverse. The
 // exact format is locked down by the M8 tests and the PRD's output
 // contract: four-space indent, `uncompute_or(<result>, <op0>, <op1>);\n`
@@ -53,6 +51,12 @@ namespace {
 // Registry can pass `nullptr`; in that case, a `QOpKind::PLUGIN` op
 // renders to an empty string (same defensive posture as every other
 // render case on malformed input).
+//
+// Phase R R-1 (sturm-88d7.2): promoted from file-local to namespace-
+// scope so the `adjoint_emitter` module can reuse it at the statement
+// level (walking a routine body in reverse and emitting one
+// rendered-inverse line per statement). See `uncompute_pass.hpp` for
+// the exposed contract.
 std::string render_uncompute(const QOperation& op,
                              const plugin::Registry* registry) {
     std::ostringstream os;
@@ -357,8 +361,6 @@ std::string render_uncompute(const QOperation& op,
     }
     return os.str();
 }
-
-} // namespace
 
 QSynthesisResult synthesize(const QUnit& unit,
                             const clang::SourceManager* sm,

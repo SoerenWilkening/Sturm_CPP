@@ -301,6 +301,79 @@ add_test(NAME test_return_to_out_param COMMAND test_return_to_out_param)
 set_tests_properties(test_return_to_out_param PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: adjoint_emitter (R-1 / sturm-88d7.2) ─────────────────────────
+# Phase R plan §2.3 R-A: pins the straight-line adjoint emission that
+# walks a validated + normalized reversible forward body in reverse
+# statement order and produces a sibling `__<fn>_adj` function. The
+# tests hand-build `QOperation` vectors (no LibTooling needed for the
+# pure-string entry point) and also exercise `emit_adjoint_for_decl`
+# on a handful of `runToolOnCodeWithArgs` snippets to pin FD-based
+# reject paths.
+#
+# Linkage pulls in `adjoint_emitter.cpp` (module under test) plus the
+# dependencies it calls directly: `uncompute_pass.cpp` for
+# `render_uncompute`, `reversible_attribute.cpp` for `is_reversible`,
+# `plugin_registry.cpp` for the plugin::Registry destructor symbol
+# referenced via `plugin_api.hpp`, and `qir.cpp` for the `QValueRef`
+# equality operator referenced transitively from `qir.hpp`. Shared
+# libclang-cpp + libLLVM when available, fallback to per-component
+# archives otherwise — same shape every other direct-ASTConsumer
+# test in this file uses.
+add_executable(test_adjoint_emitter
+    test_adjoint_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+)
+target_include_directories(test_adjoint_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_adjoint_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_adjoint_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_ADJ_EMIT NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_adjoint_emitter PRIVATE
+    ${LLVM_DEFS_LIST_ADJ_EMIT})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_adjoint_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_adjoint_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_ADJ_EMIT support)
+    target_link_libraries(test_adjoint_emitter PRIVATE
+        ${LLVM_LIBS_ADJ_EMIT})
+endif()
+add_test(NAME test_adjoint_emitter COMMAND test_adjoint_emitter)
+set_tests_properties(test_adjoint_emitter PROPERTIES
+    LABELS "transpiler")
+
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
 # method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke
