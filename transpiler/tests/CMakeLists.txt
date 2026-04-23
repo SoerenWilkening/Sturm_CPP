@@ -374,6 +374,67 @@ add_test(NAME test_adjoint_emitter COMMAND test_adjoint_emitter)
 set_tests_properties(test_adjoint_emitter PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: loop_reversal (S-A / sturm-ha2k.2) ───────────────────────────
+# Phase S plan §2.4 S-A: pins the reversed-iteration adjoint loop-header
+# synthesis for `[[sturm::reversible]]` routines. The tests compile small
+# C++ snippets via `runToolOnCodeWithArgs`, locate the first ForStmt
+# inside a named enclosing function, and invoke `reverse_for_header`;
+# stride 1 / 2 / negative cases assert the exact emitted header text,
+# and the zero-stride / non-canonical cases assert the matching
+# `LoopRejectReason`.
+#
+# Linkage pulls in `loop_reversal.cpp` (module under test). The module
+# only depends on Clang's public AST + Lexer API (no other STURM
+# translation units are needed). Shared libclang-cpp + libLLVM when
+# available, fallback to per-component archives otherwise — same shape
+# every other direct-ASTConsumer test in this file uses.
+add_executable(test_loop_reversal
+    test_loop_reversal.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/loop_reversal.cpp
+)
+target_include_directories(test_loop_reversal PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_loop_reversal PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_loop_reversal PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_LOOP_REV NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_loop_reversal PRIVATE
+    ${LLVM_DEFS_LIST_LOOP_REV})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_loop_reversal PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_loop_reversal PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_LOOP_REV support)
+    target_link_libraries(test_loop_reversal PRIVATE
+        ${LLVM_LIBS_LOOP_REV})
+endif()
+add_test(NAME test_loop_reversal COMMAND test_loop_reversal)
+set_tests_properties(test_loop_reversal PROPERTIES
+    LABELS "transpiler")
+
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
 # method bodies are deferred to PM4-2's plugin_registry.cpp. This smoke
