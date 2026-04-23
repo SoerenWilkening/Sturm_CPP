@@ -1633,6 +1633,107 @@ Lower priority, tracked for visibility.
 > §0 Q4). Cross-TU synthesis stays in the follow-up bucket
 > (plan §9).
 
+> **2026-04-23:** Phase R complete. R-0..R-7 landed end-to-end,
+> delivering the straight-line half of automatic adjoint synthesis
+> (P9c): the transpiler can now walk a validated, normalized
+> `[[sturm::reversible]]` routine body in reverse statement order,
+> call `render_uncompute` for each primitive, emit the result as a
+> sibling `__<fn>_adj` function into the rewriter buffer, and append
+> a `STURM_REGISTER_ADJOINT(fn, __<fn>_adj);` line in the exact AST
+> shape PI-1's matcher consumes on the PM3 second pass. The
+> emitter-pair is exercised against hand-built IR covering every
+> primitive kind (Phase B/C/D/E/N) plus six compile-ready snapshot
+> fixtures and an m12 gate-equivalence pair; a dedicated roundtrip
+> test pins the forward-then-synthesized-adjoint identity + zero
+> gate counter guarantee. Loops retain the Phase H PH-3
+> `skip_uncompute=true` diagnostic — Phase S (`sturm-ha2k`) replaces
+> that with real loop reversal. `docs/01_principles.md` unchanged:
+> R adds matchers + emitters to the one global pass (B9); no new
+> optimization layer, no new runtime path, no ancilla-lifetime
+> change. Sub-items:
+>
+> - R-0 (sturm-88d7.1): Phase R roadmap stub (the scope blockquote
+>   above) in `docs/roadmap_transpiler_post_mvp.md`.
+> - R-1 (sturm-88d7.2): `adjoint_emitter` module —
+>   `transpiler/src/adjoint_emitter.{hpp,cpp}` walks the normalized
+>   routine body in reverse statement order and calls
+>   `render_uncompute` (via a new 25-line declaration block added to
+>   `transpiler/include/sturm/transpile/uncompute_pass.hpp`) to
+>   produce adjoint source for each primitive; emits the result as a
+>   sibling `__<fn>_adj` into the rewriter buffer. Output attaches
+>   to a new synthesis-registry entry in
+>   `transpiler/src/synthesis_registry.{hpp,cpp}` so R-3's driver can
+>   drain per-routine adjoint text in one place. Unit-tested via
+>   `transpiler/tests/test_adjoint_emitter.cpp` (720 LOC) against
+>   hand-built IR covering each Phase B/C/D/E/N primitive kind's
+>   adjoint render, wired through
+>   `transpiler/tests/CMakeLists.txt`.
+> - R-2 (sturm-88d7.3): `auto_register_emitter` module —
+>   `transpiler/src/auto_register_emitter.{hpp,cpp}` appends
+>   `STURM_REGISTER_ADJOINT(fn, __<fn>_adj);` after each synthesized
+>   adjoint in the exact AST shape PI-1's matcher already consumes
+>   on the PM3 second transpile pass (no new matcher needed on the
+>   registration side). Golden-file tested via
+>   `transpiler/tests/test_auto_register_emitter.cpp`, wired through
+>   `transpiler/tests/CMakeLists.txt`.
+> - R-3 (sturm-88d7.4): top-level driver matcher —
+>   `transpiler/src/matcher_reversible_drive.{hpp,cpp}` orchestrates
+>   R-1 + R-2 per `[[sturm::reversible]]` FD, exposing a single
+>   entry point callable from `transpile_consumer.cpp`. Dogfooded
+>   through the PM4 Registry API via `STURM_REGISTER_PLUGIN` in an
+>   anonymous namespace (PM4-6 pattern). Unit-tested through
+>   `transpiler/tests/test_matcher_reversible_drive.cpp` (634 LOC).
+>   **Wiring deferred:** the matcher is implemented and unit-pinned
+>   but NOT yet registered from
+>   `transpiler/src/transpile_consumer.cpp` — R-3 intentionally
+>   stops at the driver layer because it must gate on P-C validation
+>   (Phase P `sturm-z2e8`) and Q-B constness enforcement (Phase Q
+>   `sturm-5kgu`), neither of which has landed yet. Once those
+>   validators ship, a follow-up task registers the driver in the
+>   consumer after Phase P's `matcher_reversible_validate` and Phase
+>   Q's `matcher_reversible_signature` have run — no change to the
+>   R-3 module itself is required.
+> - R-4 (sturm-88d7.5): six snapshot fixtures under
+>   `tests/transpiler/fixtures/` —
+>   `reversible_body_xor.{cpp,expected.cpp}`,
+>   `reversible_body_and.{cpp,expected.cpp}`,
+>   `reversible_body_compound.{cpp,expected.cpp}`,
+>   `reversible_body_rotation_theta.{cpp,expected.cpp}`,
+>   `reversible_body_rotation_phi.{cpp,expected.cpp}`,
+>   `reversible_body_mixed.{cpp,expected.cpp}`. Each pairs a forward
+>   `[[sturm::reversible]]` routine with the expected synthesized
+>   adjoint + `STURM_REGISTER_ADJOINT` line, compile-ready. Wired
+>   into `tests/transpiler/CMakeLists.txt` via the existing
+>   `run_snapshot.cmake` + `check_idempotent.cmake` harness. Green
+>   under
+>   `ctest -R 'transpiler_snapshot_reversible_body_.*'`.
+> - R-5 (sturm-88d7.6): m12 gate-equivalence pair —
+>   `tests/transpiler/fixtures/reversible_synth_runtime.cpp`
+>   (transpile input using `[[sturm::reversible]]`) +
+>   `tests/transpiler/fixtures/reversible_synth_reference.cpp`
+>   (hand-written reference with explicit adjoint via
+>   `STURM_REGISTER_ADJOINT`). Namespace pair
+>   `m12_reversible_synth_transpiled` /
+>   `m12_reversible_synth_reference` added to
+>   `tests/transpiler/test_gate_equivalence.cpp`, asserting
+>   byte-identical counter-mode `GateRecord` streams between
+>   synthesized and hand-written adjoints (PN-8 pattern lifted to
+>   synthesized routines). Wired through
+>   `tests/transpiler/CMakeLists.txt`. Green under
+>   `ctest -R 'gate_equivalence.*reversible_synth'`.
+> - R-6 (sturm-88d7.7): roundtrip test added to
+>   `tests/test_invert.cpp`. Forward then synthesized adjoint on a
+>   prepared state equals identity; gate counter equals zero at
+>   scope exit. Covers the P9c audit guarantee that the generated
+>   buffer name-matches `__<fn>_adj`.
+> - R-7 (sturm-88d7.8): this roadmap update.
+>
+> Green-light: 294/294 CTests passing under
+> `CTEST_PARALLEL_LEVEL=6 ctest --parallel 6` at closure
+> (2026-04-23). Phase R is now complete — straight-line adjoint
+> emission lands; loop reversal continues in Phase S
+> (`sturm-ha2k`).
+
 ---
 
 ## Phase S — Loop reversal (automatic adjoint synthesis, B11)
