@@ -3171,6 +3171,100 @@ set_tests_properties(transpiler_idempotent_reversible_loop_adder_carry PROPERTIE
     DEPENDS "snapshot_reversible_loop_adder_carry"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# ── Phase S / S-4: negative loop fixtures (sturm-ha2k.5) ───────────────────
+#
+# Two negative fixture pairs pin the P9d rejection contract for loop
+# shapes that Phase S's B11 loop reversal cannot honour:
+#
+#   reversible_while_loop         — `[[sturm::reversible]]` routine
+#                                   containing a `while (cond) body`.
+#                                   The P-C validator's VisitWhileStmt
+#                                   fires `report_reversible_while_loop`
+#                                   (diag_context.cpp line 274 onward) on
+#                                   this node.
+#   reversible_qdep_trip_count    — `[[sturm::reversible]]` routine whose
+#                                   for-loop cond reads a `qint_t` via
+#                                   `static_cast<int>(q_bound)`. The P-C
+#                                   validator's VisitCXXStaticCastExpr
+#                                   classifies the cast as a quantum ->
+#                                   classical conversion and fires
+#                                   `report_reversible_measurement`
+#                                   (the nearest pre-existing
+#                                   `report_reversible_*` method for a
+#                                   qdep trip count — follow-up widening
+#                                   may introduce a dedicated surface).
+#
+# TODO(backend): flip from snapshot mode to diagnostic mode once R-3's
+# `DriveOptions::body_validator` hook is populated by
+# `transpile_consumer.cpp`. The P-C validator is already implemented
+# (see `transpiler/src/matcher_reversible_validate.cpp` and the unit
+# tests in `transpiler/tests/test_matcher_reversible_validate.cpp` —
+# `test_reject_while_loop`, `test_reject_do_while_loop`, and
+# `test_reject_measurement_cast_qbool_to_bool` pin the validator-side
+# behaviour already). The glue-in is a follow-up roadmap item: today
+# `sturm-transpile` does not instantiate `validate_reversible_body` on
+# every reversible FD surfaced by the driver, so the two fixtures below
+# parse as a clean byte-for-byte pass-through (AUTO-GENERATED header
+# + source copy, exit zero, no diagnostic on stderr).
+#
+# When the glue lands, replace the snapshot CTests below with a
+# `check_reversible_diagnostic.cmake` call (pattern cloned from
+# `check_missing_adjoint_diagnostic.cmake`) passing
+# MUST_CONTAIN=<fragment-of-report_reversible_while_loop-text> for
+# `reversible_while_loop` and
+# MUST_CONTAIN=<fragment-of-report_reversible_measurement-text> for
+# `reversible_qdep_trip_count`, both with EXPECTED_LINE pointing at the
+# offending WhileStmt / static_cast source line. The expected .cpp
+# files can then be deleted (or kept as a reference of the
+# pre-diagnostic pass-through state, flagged with a comment).
+add_test(
+    NAME snapshot_reversible_while_loop
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_while_loop.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_while_loop.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_while_loop
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_while_loop PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_while_loop
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_while_loop/reversible_while_loop.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_while_loop_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_while_loop PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_while_loop"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_reversible_qdep_trip_count
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_qdep_trip_count.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_qdep_trip_count.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_qdep_trip_count
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_reversible_qdep_trip_count PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_reversible_qdep_trip_count
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_qdep_trip_count/reversible_qdep_trip_count.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/reversible_qdep_trip_count_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_reversible_qdep_trip_count PROPERTIES
+    LABELS "transpiler"
+    DEPENDS "snapshot_reversible_qdep_trip_count"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── Phase R / R-4: positive straight-line body fixtures (sturm-88d7.5) ─────
 # Six snapshot + idempotence fixture pairs pinning the canonical PRD §5.1
 # / P9c reversible-body shapes — one per primitive family in the
