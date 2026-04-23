@@ -396,6 +396,17 @@ void register_outer_var_guard_matcher(
 int outer_var_guard_detection_count_for_test();
 void reset_outer_var_guard_detection_count_for_test();
 
+/// Test-only instrumentation (Phase S / S-B, sturm-ha2k.3). Counts the
+/// number of outer-variable for-loop mutations the guard matcher has
+/// handed off to Phase S's loop-reversal synthesis path (i.e. the
+/// number of ops whose `needs_loop_reversal=true` was set because the
+/// enclosing FunctionDecl carries `[[sturm::reversible]]`) since the
+/// last reset. Disjoint from `outer_var_guard_detection_count_for_test`
+/// — the S-B tests assert that the handoff counter bumps AND that the
+/// PH-3 counter stays at zero when the reversible opt-in fires.
+int loop_reversal_handoff_count_for_test();
+void reset_loop_reversal_handoff_count_for_test();
+
 /// Phase J PJ-3d: Register the uncompute-hoisting matcher. Iterates
 /// `unit.scopes` and, for every scope that `detail::classify_scope_kind`
 /// identifies as a `LoopBody` (PJ-3a), scans decl-producing ops (OR, AND,

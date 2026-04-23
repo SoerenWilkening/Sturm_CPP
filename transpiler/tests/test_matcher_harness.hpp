@@ -59,6 +59,9 @@ void run_when_nested_tests();
 void run_ph1_scope_tests();
 void run_ph2_brace_wrap_tests();
 void run_ph3_outer_var_tests();
+// Phase S S-B (sturm-ha2k.3): outer-var guard routes reversible
+// routines' for-loop mutations to Phase S loop reversal.
+void run_sb_loop_reversal_handoff_tests();
 void run_pn5_qbool_prep_tests();
 // Phase N PN-2: rotation matcher (theta / phi +=/-=).
 void run_pn_rotation_tests();

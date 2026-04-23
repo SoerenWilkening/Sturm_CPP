@@ -913,6 +913,9 @@ add_executable(test_transpile_matcher
     test_matcher_ph1_scope.cpp
     test_matcher_ph2_brace_wrap.cpp
     test_matcher_ph3_outer_var.cpp
+    # Phase S S-B (sturm-ha2k.3): outer-var guard routes reversible
+    # routines' for-loop mutations to Phase S loop reversal.
+    test_matcher_sb_loop_reversal_handoff.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher.
     test_matcher_pn5_qbool_prep.cpp
     # Phase N PN-2: rotation matcher (theta / phi +=/-=).
@@ -947,6 +950,13 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
+    # Phase S S-B (sturm-ha2k.3): matcher_outer_var_guard.cpp now calls
+    # `is_reversible()` from reversible_attribute.cpp to gate the
+    # loop-reversal handoff. Link the TU so the matcher unit-test binary
+    # resolves the symbol. reversible_attribute.cpp is a pure-string
+    # predicate whose only Clang deps (AnnotateAttr) are already on the
+    # link line via clangAST / clangBasic.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher TU. Linked so the
     # matcher unit-test binary resolves `register_qbool_prep_matcher`
     # and the `*_for_test` counter helpers.
@@ -1081,6 +1091,12 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_operand_mutation.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
+    # Phase S S-B (sturm-ha2k.3): matcher_outer_var_guard.cpp now calls
+    # `is_reversible()` from reversible_attribute.cpp to gate the
+    # loop-reversal handoff. Link the TU so the consumer test binary
+    # resolves the symbol (clangAST / clangBasic already on the link
+    # line cover AnnotateAttr).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher TU. Linked here so
     # `test_transpile_consumer` resolves the symbol through the shared
     # TranspileConsumer registration path.

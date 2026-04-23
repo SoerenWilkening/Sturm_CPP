@@ -275,6 +275,20 @@ struct QOperation {
     // snapshots byte-identical — no pre-Phase-J matcher sets this.
     clang::SourceLocation hoist_to_override{};
     bool skip_uncompute = false;
+    // Phase S S-B (sturm-ha2k.3): Phase S marker the Phase H PH-3
+    // outer-var-guard matcher sets when the enclosing `FunctionDecl`
+    // carries `[[sturm::reversible]]` AND the outer-scoped mutation
+    // sits inside a `for` body. Unlike `skip_uncompute`, this flag
+    // does NOT suppress emission — it hands the op off to Phase S's
+    // `loop_reversal` module (sturm-ha2k.2) so the driver (R-C) can
+    // emit a reversed-iteration adjoint loop around the op's
+    // reverse-render. The PH-3 matcher never sets both flags on the
+    // same op: in a reversible context it sets `needs_loop_reversal`
+    // instead of `skip_uncompute`, preserving the PH-3 diagnostic
+    // path bit-for-bit outside synthesis. Pre-Phase-S matchers leave
+    // the flag false, so every prior snapshot fixture stays byte-
+    // identical.
+    bool needs_loop_reversal = false;
     // Phase I PI-2: source-level identifier of the callee FunctionDecl when
     // `kind == USER_ROUTINE`. Empty string for every other kind so existing
     // snapshot fixtures stay byte-identical (the dump() renderer omits the

@@ -88,6 +88,13 @@ add_executable(sturm-transpile
     src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
+    # Phase S S-B (sturm-ha2k.3): matcher_outer_var_guard.cpp now calls
+    # `is_reversible()` from reversible_attribute.cpp to gate the Phase
+    # S loop-reversal handoff on `[[sturm::reversible]]`. Link the TU so
+    # the main binary resolves the symbol. reversible_attribute.cpp is a
+    # small predicate whose only Clang deps (AnnotateAttr) are already
+    # on the link line via clangAST / clangBasic.
+    src/reversible_attribute.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher. Anchors on
     # qbool VarDecls whose initializer is a probabilistic `double`
     # and whose lexically enclosing scope is uncompute-eligible
@@ -306,6 +313,10 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
+    # Phase S S-B (sturm-ha2k.3): mirror the main binary — the plugin-
+    # path build needs `is_reversible()` resolved for the S-B opt-in
+    # in `matcher_outer_var_guard.cpp`.
+    src/reversible_attribute.cpp
     # Phase N PN-5: qbool(p) prep diagnostic matcher. Mirror the main
     # binary so the plugin-path consumer (same `TranspileConsumer`)
     # links the same symbols. Registration order in

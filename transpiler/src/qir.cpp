@@ -114,6 +114,15 @@ void dump_op(std::ostringstream& os, const QOperation& op, std::size_t idx) {
     if (op.skip_uncompute) {
         os << " [skip_uncompute]";
     }
+    // Phase S S-B (sturm-ha2k.3): surface the needs_loop_reversal flag
+    // when it is set. The default-false value prints nothing so every
+    // Phase A..R snapshot fixture stays byte-identical; pre-Phase-S
+    // matchers never set it. Rendered AFTER `[skip_uncompute]` so the
+    // two tags, when both land on mixed op streams, print in a
+    // deterministic order.
+    if (op.needs_loop_reversal) {
+        os << " [needs_loop_reversal]";
+    }
     // Phase I PI-2: surface the user-routine routine_name and outputs_mask
     // when (and only when) kind == USER_ROUTINE. The default-empty /
     // default-zero values are not printed for non-USER_ROUTINE ops so

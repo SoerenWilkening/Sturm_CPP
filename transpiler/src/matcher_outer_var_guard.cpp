@@ -12,6 +12,16 @@
 // diagnostic pointing the user at the precise line + column so they can
 // either supply a manual adjoint or restructure.
 //
+// Phase S S-B opt-in
+// ------------------
+// When the enclosing `FunctionDecl` carries `[[sturm::reversible]]`
+// (detected via `is_reversible()`) AND the outer mutation's scoping
+// barrier is a `ForStmt`, the matcher sets `needs_loop_reversal=true`
+// on the op and skips the diagnostic — the op is handed to Phase S's
+// `loop_reversal` synthesis path instead. For every other shape
+// (non-reversible FD, or while/if/WHEN/else barrier even inside a
+// reversible routine), the PH-3 default path above runs unchanged.
+//
 // Shapes covered (the operator-call kinds that mutate a named LHS):
 //
 //   - `a ^= b;` / `a ^= <classical>;` (QOpKind::XOR_ASSIGN)
@@ -64,6 +74,7 @@
 #include "sturm/transpile/qir.hpp"
 #include "diag_context.hpp"
 #include "matcher_common.hpp"
+#include "reversible_attribute.hpp"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
@@ -95,6 +106,15 @@ using namespace clang::ast_matchers;
 // transpiler is single-threaded so a plain int is fine.
 static int g_outer_var_guard_detection_count = 0;
 
+// Phase S S-B (sturm-ha2k.3) test-only counter. Incremented once per
+// QOperation whose `needs_loop_reversal` we just set to true (i.e. per
+// for-loop outer mutation that was handed off to Phase S synthesis
+// because the enclosing FD carries `[[sturm::reversible]]`). Disjoint
+// from `g_outer_var_guard_detection_count` so the S-B test can assert
+// that a reversible routine's in-for mutation is routed to synthesis
+// AND that PH-3's legacy counter stays at zero.
+static int g_loop_reversal_handoff_count = 0;
+
 // Return the innermost user-declared VarDecl the `lhs` DeclRefExpr
 // references. Returns nullptr if the bound node does not point at a
 // VarDecl (e.g. a synthetic / template-dependent reference) — the
@@ -106,15 +126,32 @@ static const VarDecl* var_decl_of(const DeclRefExpr* lhs) {
 
 // Classification result for the parent walk.
 enum class MutationKind {
-    // The mutation sits inside a user for/while/if/WHEN body, BEFORE the
-    // walk reached the CompoundStmt that contains the LHS's declaration.
-    OuterMutation,
+    // The mutation sits inside a `for` body, BEFORE the walk reached
+    // the CompoundStmt that contains the LHS's declaration. This
+    // subclass exists so Phase S S-B can route the op to the loop-
+    // reversal synthesis path when the enclosing FD is reversible.
+    OuterMutationInForLoop,
+    // The mutation sits inside a `while` / `if` / `WHEN` body, BEFORE
+    // the walk reached the CompoundStmt that contains the LHS's
+    // declaration. Phase S's S-A loop-reversal module does NOT cover
+    // these shapes; the existing PH-3 behaviour (skip_uncompute +
+    // diagnostic) applies unchanged, even inside a reversible
+    // routine — the P-C validation pass owns the separate "reject
+    // non-for control-flow in a reversible routine" diagnostic.
+    OuterMutationOther,
     // The walk reached the CompoundStmt that contains the LHS's
     // declaration (or the top of the translation unit) without passing
     // through any control-flow barrier — the variable is mutated within
     // its own declaring scope, which is fine for auto-uncompute.
     LocalMutation,
 };
+
+// Convenience predicate: "did the classifier find an outer mutation?"
+// — either subclass counts. Keeps the top-level callback body readable.
+inline bool is_outer_mutation(MutationKind k) {
+    return k == MutationKind::OuterMutationInForLoop ||
+           k == MutationKind::OuterMutationOther;
+}
 
 // Walk up the parent chain of `call` and decide whether the mutation
 // is OuterMutation or LocalMutation. The `decl_stmt_scope` parameter
@@ -164,13 +201,21 @@ static MutationKind classify_mutation(
         // body (i.e. `prev_stmt` is the body Stmt). A mutation sitting
         // in the `init` or `cond` position runs once, not per-iteration,
         // so it does not trigger the reverse-loop-synthesis issue.
+        //
+        // Phase S S-B refinement: ForStmt is the one barrier shape that
+        // Phase S S-A's `loop_reversal` module can reverse; every other
+        // outer-mutation barrier (while/if/WHEN) stays on the legacy
+        // PH-3 path. We therefore distinguish the two subclasses here so
+        // the callback can choose between `needs_loop_reversal = true`
+        // (reversible routine + for-loop barrier) and `skip_uncompute
+        // = true` (every other outer-mutation shape).
         if (const auto* fs = node.get<ForStmt>()) {
             if (fs->getBody() == prev_stmt) {
-                return MutationKind::OuterMutation;
+                return MutationKind::OuterMutationInForLoop;
             }
         } else if (const auto* ws = node.get<WhileStmt>()) {
             if (ws->getBody() == prev_stmt) {
-                return MutationKind::OuterMutation;
+                return MutationKind::OuterMutationOther;
             }
         } else if (const auto* is = node.get<IfStmt>()) {
             // User-written if AND WHEN-expanded if both qualify. We
@@ -184,7 +229,7 @@ static MutationKind classify_mutation(
                 // Both cases require a manual adjoint.
                 (void)detail::is_expansion_of_macro(is->getIfLoc(), sm, lang,
                                                     "WHEN");
-                return MutationKind::OuterMutation;
+                return MutationKind::OuterMutationOther;
             }
         }
 
@@ -219,6 +264,29 @@ static const CompoundStmt* enclosing_compound_of_decl(const VarDecl* vd,
         node = parents[0];
         if (const auto* cs = node.get<CompoundStmt>()) {
             return cs;
+        }
+    }
+    return nullptr;
+}
+
+// Phase S S-B helper: find the innermost enclosing `FunctionDecl` for a
+// statement / expression node. Walks the parent chain via ASTContext::
+// getParents until it lands on a FunctionDecl. Returns nullptr if the
+// walk exits the TU without encountering one (e.g. top-level decls the
+// matcher should not have matched in the first place — defensive).
+//
+// Exists as a standalone helper so the Phase S S-B opt-in check in the
+// callback body is a single line: `is_reversible(enclosing_function(call, ctx))`.
+static const FunctionDecl* enclosing_function(const Stmt* stmt,
+                                              ASTContext& ctx) {
+    if (!stmt) return nullptr;
+    DynTypedNode node = DynTypedNode::create(*stmt);
+    for (int hops = 0; hops < 512; ++hops) {
+        const auto parents = ctx.getParents(node);
+        if (parents.empty()) return nullptr;
+        node = parents[0];
+        if (const auto* fd = node.get<FunctionDecl>()) {
+            return fd;
         }
     }
     return nullptr;
@@ -318,7 +386,7 @@ public:
 
         const MutationKind kind =
             classify_mutation(call, decl_scope, ctx, sm, lang);
-        if (kind != MutationKind::OuterMutation) return;
+        if (!is_outer_mutation(kind)) return;
 
         // Outer mutation: only act if the Phase A/B/C matcher already
         // pushed a corresponding QOperation onto `unit.scopes`. That
@@ -338,6 +406,24 @@ public:
         QOperation* op = find_op_for_call(*unit_, call);
         if (!op) return;
 
+        // Phase S S-B (sturm-ha2k.3): for-loop outer mutations inside
+        // a `[[sturm::reversible]]` routine are handed to Phase S's
+        // `loop_reversal` module instead of being elided + diagnosed.
+        // Both guards must hold — non-for barriers stay on the PH-3
+        // path so the P-C validation pass retains sole ownership of
+        // the "reject non-for control-flow in a reversible routine"
+        // diagnostic family.
+        if (kind == MutationKind::OuterMutationInForLoop &&
+            is_reversible(enclosing_function(call, ctx))) {
+            op->needs_loop_reversal = true;
+            ++g_loop_reversal_handoff_count;
+            return;
+        }
+
+        // Legacy PH-3 path — preserved bit-for-bit for every other
+        // shape. Outside a reversible routine, or inside one with a
+        // non-for barrier, the original skip_uncompute + diagnostic
+        // behaviour runs unchanged.
         emit_diagnostic(sm, vd, call, *diag_);
         op->skip_uncompute = true;
         ++g_outer_var_guard_detection_count;
@@ -409,6 +495,19 @@ int outer_var_guard_detection_count_for_test() {
 
 void reset_outer_var_guard_detection_count_for_test() {
     g_outer_var_guard_detection_count = 0;
+}
+
+// Phase S S-B (sturm-ha2k.3): test-only read / reset for the
+// loop-reversal handoff counter. The tests that pin the S-B contract
+// assert BOTH that a reversible routine's in-for mutation bumps this
+// counter AND that it leaves the PH-3 legacy counter at zero, so the
+// two surfaces must be independently inspectable.
+int loop_reversal_handoff_count_for_test() {
+    return g_loop_reversal_handoff_count;
+}
+
+void reset_loop_reversal_handoff_count_for_test() {
+    g_loop_reversal_handoff_count = 0;
 }
 
 } // namespace sturm::transpile
