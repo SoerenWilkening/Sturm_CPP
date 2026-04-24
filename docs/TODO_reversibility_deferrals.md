@@ -95,12 +95,23 @@ Because both branches must coexist coherently, neither register can be released 
 
 Every CSWAP-and-leak site in `qint_bitwise_v3.hpp` and `qint_arith_v3.hpp` pushes a record (with an `op_id` scoped to the current WHEN scope) before returning. Consumers can iterate the registry at WHEN scope exit to discover exactly which qubits leaked and which op produced them.
 
-**Required work.** Tracked by the two deferred bd issues below.
+**Required work.** Tracked by the remaining deferred bd issue below.
+
+**Status update (sturm-njul, 2026-04-24).** A WHEN scope-exit consumer now exists (`include/sturm/control/when_scope_garbage.hpp`). It is a **diagnostic-only** pass: `sturm::detail::WhenScopeGarbage` is an RAII member of `WhenGuard` that captures the `garbage_registry` size at scope entry and, at scope exit, consumes (pops) every record registered during the scope body so the registry's footprint stays bounded by the depth of the WHEN nest rather than growing unboundedly with every controlled lossy op. When the compile-time macro `STURM_GARBAGE_REPORT` is defined, or the env var `STURM_GARBAGE_REPORT` is set to a non-empty value at runtime, the pass additionally emits a one-line report per scope exit to stderr listing per-tag counts:
+
+```
+[STURM garbage] WHEN scope exit: N records leaked (tags: AND=1 MUL=2 ...)
+```
+
+The pass emits **no gates** — gate-level in-place uncomputation is impossible after the CSWAP tail has fired, because the pre-op inputs needed to reverse the forward op have been destroyed (AND/OR: the pre-op A is now in the leaked register, not in any state the current WHEN scope can address; MUL/DIV/MOD: the lossy forward step itself destroyed the classical input). A Bennett-style with-saved-copy approach (save A before the lossy op, uncompute the result register after the scope) would be reversible but doubles the per-op qubit cost — that is tracked separately as the "Bennett-style reversible lossy ops" follow-up below.
+
+A TLS opt-out flag (`sturm::detail::ScopedGarbageConsumeGuard`) lets the existing `sturm-h5it.*` / `sturm-pqs0` discoverability tests continue to observe post-WHEN registry state; production code leaves the consumer enabled by default.
 
 **Follow-up issues.**
 
-- bd `sturm-njul` (P3) — **Transpiler pass to consume `garbage_registry` and emit uncomputation at WHEN scope exit.** Walks the per-scope records registered during the WHEN body and emits an appropriate uncomputation sequence so the garbage qubits return to `|0>` and can be released cleanly. Needs per-op-tag uncomputation schemes (AND/OR self-inverse XOR via retained inputs; MUL/DIV/MOD via reverse DSLs or Bennett-style saved copies).
+- bd `sturm-njul` (P3) — *Closed by the diagnostic-only pass described above. The impossibility of in-place gate-level uncomputation is now the documented answer; a new issue below covers the only remaining direction (Bennett-style with-copy reversibility).*
 - bd `sturm-pqs0` (P3) — **Correct handling of `*=` upper-W bits and `/=` discarded remainder under superposition inputs.** In `qint_arith_v3.hpp` the upper W bits of the 2W Cuccaro product (around line 113) and the `/=` remainder register (around line 141) are released unconditionally. That is safe only when `A` and `B` are in computational-basis states; with superposition inputs those registers are entangled with `A`/`B` and releasing them silently discards quantum information. Fix is either Bennett-style uncomputation or explicit documentation that `*=` / `/=` require classical operands.
+- bd `sturm-t5b3` (P4) — **Bennett-style with-copy reversibility of controlled lossy ops.** The only path to genuine gate-level uncomputation of the garbage registers recorded by AND_ASSIGN / OR_ASSIGN / MUL_ASSIGN / DIV_ASSIGN / MOD_ASSIGN / MUL_UPPER_W / DIV_REMAINDER. Requires saving a copy of A (and possibly B) before each lossy op, running the op forward, CSWAP'ing in the result, then running the op backward against the saved copy to restore the auxiliary register to |0>. Doubles the per-op qubit cost but restores reversibility — file when a concrete use case motivates the trade-off.
 
 **References.**
 
@@ -133,13 +144,13 @@ After this change, a controlled `*=` under WHEN registers **two** records — on
 
 **Follow-up issues.**
 
-- bd `sturm-njul` (P3) — the transpiler pass that will walk `garbage_registry` at WHEN scope exit (and eventually at op scope for the uncontrolled path) and emit per-tag uncomputation. `MUL_UPPER_W` and `DIV_REMAINDER` join the existing five tags as consumers of that pass.
-- bd `sturm-pqs0` (this issue) — closes once the discoverability hook plus documentation are in place; the actual Bennett uncomputation ships under `sturm-njul`.
+- bd `sturm-njul` (P3) — now **landed as a diagnostic-only scope-exit consumer** (`include/sturm/control/when_scope_garbage.hpp`; see Section 5 above). The consumer pops per-scope `MUL_UPPER_W` / `DIV_REMAINDER` records alongside the five `h5it` tags so the registry does not grow unboundedly. It emits **no gates**: gate-level in-place uncomputation of these leaks is impossible because the forward lossy step has already destroyed the inputs needed to reverse it. Bennett-style with-saved-copy reversibility (the only remaining direction) is tracked as a separate P4 follow-up listed in Section 5.
+- bd `sturm-pqs0` (this issue) — closes once the discoverability hook plus documentation are in place; Bennett-style uncomputation ships separately.
 
 **References.**
 
-- Headers: `include/sturm/qtypes/qint_arith_v3.hpp` (release sites), `include/sturm/control/garbage_registry.hpp` (new tags).
-- Test: `tests/backend/test_mul_div_upperw_garbage.cpp` (label `backend;pqs0`).
+- Headers: `include/sturm/qtypes/qint_arith_v3.hpp` (release sites), `include/sturm/control/garbage_registry.hpp` (new tags), `include/sturm/control/when_scope_garbage.hpp` (sturm-njul consumer).
+- Test: `tests/backend/test_mul_div_upperw_garbage.cpp` (label `backend;pqs0`), `tests/test_when_scope_garbage_consume.cpp` (label `njul`).
 
 ---
 

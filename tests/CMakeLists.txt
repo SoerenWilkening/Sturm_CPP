@@ -31,6 +31,9 @@ set(STURM_TEST_SOURCES
 
     # sturm-h5it.5: garbage_registry (controlled lossy compound-assign leak).
     test_garbage_registry.cpp
+
+    # sturm-njul: WHEN scope-exit consumer for the garbage_registry.
+    test_when_scope_garbage_consume.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
@@ -43,6 +46,9 @@ foreach(src ${STURM_TEST_SOURCES})
     target_link_libraries(${test_name} PRIVATE Threads::Threads)
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+# sturm-njul: label the scope-garbage consumer test for targeted ctest runs.
+set_tests_properties(test_when_scope_garbage_consume PROPERTIES LABELS "njul")
 
 # ── Phase I PI-0 + Phase T T-3 (sturm-xrob.4): test_invert ─────────────────
 #

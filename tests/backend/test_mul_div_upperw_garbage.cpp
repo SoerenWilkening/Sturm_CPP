@@ -29,6 +29,7 @@
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/control/garbage_registry.hpp"
+#include "sturm/control/when_scope_garbage.hpp"  // sturm-njul ScopedGarbageConsumeGuard
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
@@ -235,6 +236,11 @@ static void test_div_controlled_registers_both_tags() {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 int main() {
+    // sturm-njul: disable the scope-exit consumer so the controlled-path
+    // tests in this file can still observe MUL_UPPER_W / DIV_REMAINDER +
+    // MUL_ASSIGN / DIV_ASSIGN records post-WHEN.
+    sturm::detail::ScopedGarbageConsumeGuard _njul_off(false);
+
     std::printf("sturm-pqs0 *= upper-W / /= remainder garbage-registry tests:\n");
     test_mul_uncontrolled_upper_w_registered();
     test_div_uncontrolled_remainder_registered();

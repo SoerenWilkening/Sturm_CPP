@@ -25,6 +25,7 @@
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/control/garbage_registry.hpp"
+#include "sturm/control/when_scope_garbage.hpp"  // sturm-njul ScopedGarbageConsumeGuard
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
@@ -610,6 +611,11 @@ static void test_garbage_accounting_two_ops() {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 int main() {
+    // sturm-njul: disable the scope-exit consumer so this file's post-WHEN
+    // registry observations still hold. See test_when_and_or_lossy.cpp for
+    // the rationale.
+    sturm::detail::ScopedGarbageConsumeGuard _njul_off(false);
+
     std::printf("sturm-h5it.4 /= and %%= WHEN CSWAP-and-leak tail tests:\n");
     test_div_uncontrolled_fast_path();
     test_mod_uncontrolled_fast_path();

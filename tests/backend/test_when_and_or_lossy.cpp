@@ -23,6 +23,7 @@
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/control/garbage_registry.hpp"
+#include "sturm/control/when_scope_garbage.hpp"  // sturm-njul ScopedGarbageConsumeGuard
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
@@ -587,6 +588,13 @@ static void test_garbage_accounting_and_or() {
 
 // ── main ─────────────────────────────────────────────────────────────────────
 int main() {
+    // sturm-njul: this file's assertions observe the garbage_registry AFTER
+    // the WHEN scope has ended, which is the state *before* the sturm-njul
+    // scope-exit consumer was introduced. Disable the consumer for this
+    // whole process so the discoverability invariants this file locks down
+    // remain observable. Product builds run with the consumer enabled.
+    sturm::detail::ScopedGarbageConsumeGuard _njul_off(false);
+
     std::printf("sturm-h5it.2 &= and |= WHEN CSWAP-and-leak tail tests:\n");
     test_and_uncontrolled_fast_path();
     test_or_uncontrolled_fast_path();
