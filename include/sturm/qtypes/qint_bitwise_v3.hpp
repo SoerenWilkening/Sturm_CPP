@@ -17,6 +17,8 @@
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
+#include "sturm/control/when_fwd.hpp"
+#include "sturm/control/garbage_registry.hpp"
 #include <cstddef>
 
 namespace sturm {
@@ -82,15 +84,42 @@ qint_t<W>& qint_t<W>::operator&=(const qint_t<W>& b) {
         res_bits[i] ^= (a_bit & b_bit);
     }
     detail_bw::release_temp_qubits(b_mut, b);
-    // Remap result qubits and rebuild super_mask (per-bit lazy promotion).
-    super_mask = 0;
-    for (std::size_t i = 0; i < W; ++i) {
-        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-        qubits[i] = res_idx[i];
-        bool a_q = (orig_super >> i) & 1, b_q = (b.super_mask >> i) & 1;
-        bool cl = ((orig_value >> i) & 1) && ((b.value >> i) & 1);
-        if (a_q || b_q || (detail::current_control != nullptr && cl))
-            super_mask |= (1ULL << i);
+    if (detail::current_control == nullptr) {
+        // Uncontrolled fast path: release old A, pointer-relabel to result,
+        // rebuild super_mask per-bit (classical-both-sides bits stay classical).
+        super_mask = 0;
+        for (std::size_t i = 0; i < W; ++i) {
+            if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+            qubits[i] = res_idx[i];
+            bool a_q = (orig_super >> i) & 1, b_q = (b.super_mask >> i) & 1;
+            if (a_q || b_q) super_mask |= (1ULL << i);
+        }
+    } else {
+        // Controlled path: per-bit Fredkin (CSWAP) between this->qubits[i]
+        // and res_idx[i] via the a^=b; b^=a; a^=b idiom. BitProxy lifts these
+        // CXs to controlled form under the current WHEN scope. After the
+        // swap, this->qubits[i] physically holds (old_a & b) iff ctrl=1 and
+        // res_idx[i] holds garbage (ctrl·old_A). Leak res_idx[] — never
+        // release. (void)orig_super / (void)orig_value to silence unused
+        // warnings on the controlled path.
+        (void)orig_super; (void)orig_value;
+        for (std::size_t i = 0; i < W; ++i) {
+            BitProxy a_bit(*this, i);
+            qbool r_q = qbool::make_non_owning(res_idx[i]);
+            BitProxy r_bit(r_q);
+            a_bit ^= r_bit;
+            r_bit ^= a_bit;
+            a_bit ^= r_bit;
+        }
+        // All W bits now live on physical qubits — force super_mask to all-ones.
+        super_mask = (W >= 64) ? ~0ULL : ((1ULL << W) - 1ULL);
+        // Register the leaked result register with the garbage registry so a
+        // future transpiler pass can emit proper uncomputation.
+        detail::garbage_registry::register_garbage(
+            detail::garbage_registry::source_op_tag::AND_ASSIGN,
+            detail::current_control_qubit,
+            static_cast<int>(W),
+            res_idx);
     }
     value &= b.value;
     return *this;
@@ -117,15 +146,36 @@ qint_t<W>& qint_t<W>::operator|=(const qint_t<W>& b) {
         res_bits[i] ^= (a_bit | b_bit);
     }
     detail_bw::release_temp_qubits(b_mut, b);
-    // Remap result qubits and rebuild super_mask (per-bit lazy promotion).
-    super_mask = 0;
-    for (std::size_t i = 0; i < W; ++i) {
-        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-        qubits[i] = res_idx[i];
-        bool a_q = (orig_super >> i) & 1, b_q = (b.super_mask >> i) & 1;
-        bool cl = ((orig_value >> i) & 1) || ((b.value >> i) & 1);
-        if (a_q || b_q || (detail::current_control != nullptr && cl))
-            super_mask |= (1ULL << i);
+    if (detail::current_control == nullptr) {
+        // Uncontrolled fast path: release old A, pointer-relabel to result,
+        // rebuild super_mask per-bit.
+        super_mask = 0;
+        for (std::size_t i = 0; i < W; ++i) {
+            if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+            qubits[i] = res_idx[i];
+            bool a_q = (orig_super >> i) & 1, b_q = (b.super_mask >> i) & 1;
+            if (a_q || b_q) super_mask |= (1ULL << i);
+        }
+    } else {
+        // Controlled path: per-bit Fredkin (CSWAP) between this->qubits[i]
+        // and res_idx[i] via the a^=b; b^=a; a^=b idiom. Leak res_idx[] —
+        // never release (it now holds ctrl·old_A garbage).
+        (void)orig_super; (void)orig_value;
+        for (std::size_t i = 0; i < W; ++i) {
+            BitProxy a_bit(*this, i);
+            qbool r_q = qbool::make_non_owning(res_idx[i]);
+            BitProxy r_bit(r_q);
+            a_bit ^= r_bit;
+            r_bit ^= a_bit;
+            a_bit ^= r_bit;
+        }
+        // All W bits now live on physical qubits — force super_mask to all-ones.
+        super_mask = (W >= 64) ? ~0ULL : ((1ULL << W) - 1ULL);
+        detail::garbage_registry::register_garbage(
+            detail::garbage_registry::source_op_tag::OR_ASSIGN,
+            detail::current_control_qubit,
+            static_cast<int>(W),
+            res_idx);
     }
     value |= b.value;
     return *this;

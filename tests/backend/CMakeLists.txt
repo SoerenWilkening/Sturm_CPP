@@ -934,6 +934,28 @@ set_source_files_properties(
 add_test(NAME test_when_mul_lossy COMMAND test_when_mul_lossy)
 set_tests_properties(test_when_mul_lossy PROPERTIES LABELS "backend;h5it")
 
+# sturm-h5it.2 — CSWAP-and-leak tail for operator&= and operator|= under WHEN
+add_executable(test_when_and_or_lossy
+    test_when_and_or_lossy.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_when_and_or_lossy PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_and_or_lossy PRIVATE cxx_std_20)
+target_compile_definitions(test_when_and_or_lossy PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_and_or_lossy PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_when_and_or_lossy COMMAND test_when_and_or_lossy)
+set_tests_properties(test_when_and_or_lossy PROPERTIES LABELS "backend;h5it")
+
 # ── M20: Cleanup guard — no SimState refs outside tests/ ─────────────────────
 add_executable(test_no_simstate_refs
     test_no_simstate_refs.cpp
