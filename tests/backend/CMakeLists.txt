@@ -1652,3 +1652,30 @@ set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")
 # retired along with tests/test_destructor_gate.cpp. Under B10 the destructor
 # is unconditionally release-only, so the flag-gated branch contract disappears.
 # Note: test_destructor_gate.cpp is explicitly retired in Phase K PK-4.
+
+# sturm-0j3a LO-0.4 — WHEN-lifted lossy-op gate-equivalence under superposed
+# control. Pins the PRD §5 contract that the LO-2 desugar relies on:
+# per-bit Fredkin via BitProxy for the swap, controlled CCX sweep for
+# invert(lib_c_AND_dsl). LO-2 is not yet landed; this test exercises the
+# constituent primitives directly.
+add_executable(test_when_lossy_gate_equiv
+    test_when_lossy_gate_equiv.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_when_lossy_gate_equiv PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_lossy_gate_equiv PRIVATE cxx_std_20)
+target_compile_definitions(test_when_lossy_gate_equiv PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_lossy_gate_equiv PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_when_lossy_gate_equiv COMMAND test_when_lossy_gate_equiv)
+set_tests_properties(test_when_lossy_gate_equiv
+    PROPERTIES LABELS "backend;lossy-reversibility")

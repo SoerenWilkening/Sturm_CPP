@@ -1,0 +1,47 @@
+// LO-0.4 (sturm-0j3a): WHEN-lifted lossy `&=` desugar fixture (input).
+//
+// Exercises the PRD §2.2 / §5.1 desugar inside `WHEN(ctrl) { a &= b; }`.
+// After LO-2 lands, the transpiler must emit `qint __sturm_tmp_and_0;
+// and_oop(a, b, __sturm_tmp_and_0); swap(a, __sturm_tmp_and_0);` plus the
+// matching scope-exit cleanup `swap(a, __sturm_tmp_and_0);
+// sturm::invert<&::sturm::lib_c_AND_dsl>()(a, b, __sturm_tmp_and_0);`. The
+// lifted `swap` becomes per-bit Fredkin under the active WHEN control, and
+// `invert(lib_c_AND_dsl)` becomes a controlled CCX sweep — both via the
+// existing BitProxy lifting path (PRD §5.2). LO-2 (sturm-9254 / sturm-yxxa
+// / sturm-hbwr) is not yet landed; the snapshot test for this fixture
+// remains RED until LO-2 emits this shape. See plan §2 and PRD §5.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qint_t& operator&=(const qint_t&) { return *this; }
+};
+class qbool {
+public:
+    qbool() {}
+    qbool(const qbool&) {}
+    qbool& operator=(const qbool&) { return *this; }
+    bool should_run() const { return true; }
+};
+namespace detail {
+inline qbool& materialize_when(qbool& q) { return q; }
+inline qbool  materialize_when(qbool&& q) { return static_cast<qbool&&>(q); }
+struct WhenCapture { WhenCapture() = default; };
+inline qbool& make_when_guard(qbool& q) { return q; }
+} // namespace detail
+} // namespace sturm
+using qint = sturm::qint_t<2>;
+using sturm::qbool;
+#define WHEN(expr) \
+    if (::sturm::detail::WhenCapture _when_capture_{}; true) \
+    if (decltype(auto) _when_val_ = ::sturm::detail::materialize_when(expr); true) \
+    if (auto& _when_guard_ = ::sturm::detail::make_when_guard(_when_val_); \
+        _when_guard_.should_run())
+
+void demo(qbool ctrl, qint a, qint b) {
+    WHEN(ctrl) {
+        a &= b;
+    }
+}
