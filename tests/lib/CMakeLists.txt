@@ -40,3 +40,21 @@ set_source_files_properties(
 add_test(NAME test_or_dsl_adjoint COMMAND test_or_dsl_adjoint)
 set_tests_properties(test_or_dsl_adjoint
     PROPERTIES LABELS "lib;lossy-reversibility")
+
+# sturm-eum8 LO-1c -- lib_c_AND_dsl adjoint roundtrip (CCX self-inverse).
+add_executable(test_c_and_dsl_adjoint
+    test_c_and_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_c_and_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_c_and_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_c_and_dsl_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_c_and_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_c_and_dsl_adjoint COMMAND test_c_and_dsl_adjoint)
+set_tests_properties(test_c_and_dsl_adjoint
+    PROPERTIES LABELS "lib;lossy-reversibility")
