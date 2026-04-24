@@ -109,10 +109,24 @@ qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
     }
     lib_mul_dsl<BitProxy>(ab, W, bb, W, rb, RW);
     detail_arith::release_temp_qubits(b_mut, b);
-    // Upper W bits of the 2W Cuccaro result are leaked unconditionally here —
-    // pre-existing behavior, out of scope for this issue (tracked via
-    // sturm-pqs0). Only the lower-W result-register relabel tail is fixed
-    // by this child.
+    // Upper W bits of the 2W Cuccaro result are released unconditionally.
+    // Safe only when both A and B are in computational-basis states; with
+    // superposition inputs those qubits are entangled with A/B and the
+    // release discards quantum information. Rather than do that silently,
+    // we register the leak with the garbage registry (source_op_tag
+    // MUL_UPPER_W) so a future transpiler pass / audit can discover it.
+    // ctrl_qubit is propagated from the active WHEN scope (or -1 when
+    // uncontrolled). See docs/TODO_reversibility_deferrals.md §6 and bd
+    // sturm-njul for the planned uncomputation pass.
+    {
+        int upper_idx[W];
+        for (std::size_t i = 0; i < W; ++i) upper_idx[i] = ri[W + i];
+        detail::garbage_registry::register_garbage(
+            detail::garbage_registry::source_op_tag::MUL_UPPER_W,
+            detail::current_control_qubit,
+            static_cast<int>(W),
+            upper_idx);
+    }
     for (std::size_t i = W; i < RW; ++i) QubitPool::instance().release(ri[i]);
     if (detail::current_control == nullptr) {
         // Uncontrolled fast path: release old A, pointer-relabel to lower-W
@@ -169,9 +183,19 @@ qint_t<W>& qint_t<W>::operator/=(const qint_t<W>& b) {
     }
     lib_div_dsl<BitProxy>(ab, W, bm, W, qb, rb);
     detail_arith::release_temp_qubits(b_mut, b);
-    // Discarded remainder register ri[] keeps unconditional release
-    // (pre-existing lossy leak in the ctrl=|0> branch, out of scope for
-    // this issue — tracked separately).
+    // Remainder register ri[] is released unconditionally. Safe only when
+    // A and B are in computational-basis states; with superposition inputs
+    // the remainder is entangled with A/B and the release discards quantum
+    // information. Register the leak with the garbage registry
+    // (source_op_tag DIV_REMAINDER) before releasing so a future transpiler
+    // pass / audit can discover it. ctrl_qubit is propagated from the
+    // active WHEN scope (or -1 when uncontrolled). See
+    // docs/TODO_reversibility_deferrals.md §6 and bd sturm-njul.
+    detail::garbage_registry::register_garbage(
+        detail::garbage_registry::source_op_tag::DIV_REMAINDER,
+        detail::current_control_qubit,
+        static_cast<int>(W),
+        ri);
     for (std::size_t i = 0; i < W; ++i) QubitPool::instance().release(ri[i]);
     if (detail::current_control == nullptr) {
         // Uncontrolled fast path: release old A, pointer-relabel to quotient.

@@ -166,8 +166,18 @@ static void test_mul_ctrl_one() {
     }
 
     const std::size_t reg_after = sturm::detail::garbage_registry::snapshot().size();
-    assert(reg_after == reg_before + 1 && "one record per controlled *=");
-    const auto& rec = sturm::detail::garbage_registry::snapshot().back();
+    // Post sturm-pqs0: controlled *= registers TWO records per op — the
+    // pre-existing MUL_ASSIGN lower-W leak (from sturm-h5it.3) and the
+    // MUL_UPPER_W upper-W leak of the 2W Cuccaro result. Ordering: the
+    // upper-W record is pushed first (before its release), the MUL_ASSIGN
+    // tail record last.
+    assert(reg_after == reg_before + 2 &&
+           "controlled *=: one MUL_UPPER_W record plus one MUL_ASSIGN record");
+    const auto& snap_mul1 = sturm::detail::garbage_registry::snapshot();
+    const auto& rec_upper = snap_mul1[reg_before + 0];
+    const auto& rec       = snap_mul1[reg_before + 1];
+    assert(rec_upper.tag == sturm::detail::garbage_registry::source_op_tag::MUL_UPPER_W);
+    assert(rec_upper.W == static_cast<int>(W));
     assert(rec.tag == sturm::detail::garbage_registry::source_op_tag::MUL_ASSIGN);
     assert(rec.W == static_cast<int>(W));
     assert(rec.qubit_indices.size() == W);
@@ -310,8 +320,8 @@ static void test_mul_nested_when_both_one() {
     uint32_t got = read_reg(sc.sv(), a.qubits, 17u);
     assert(got == 1u && "nested (x=1,y=1): a must equal (1*1) mod 2 = 1");
 
-    // Exactly one garbage record emitted by the inner *=.
-    assert(sturm::detail::garbage_registry::snapshot().size() == 1u);
+    // Post sturm-pqs0: two garbage records per inner *= — MUL_UPPER_W + MUL_ASSIGN.
+    assert(sturm::detail::garbage_registry::snapshot().size() == 2u);
 
     for (int& q : a.qubits) q = -1;
     for (int& q : b.qubits) q = -1;
@@ -377,11 +387,10 @@ static void test_mul_nested_when_x_one_y_zero_noop() {
     uint32_t got = read_reg(sc.sv(), a.qubits, 17u);
     assert(got == 1u && "nested (x=1,y=0): *= must leave a unchanged (old value 1)");
 
-    // Garbage record still emitted at the gate-emission level (the tail
-    // doesn't know that y=|0> — it trusts the control stack). One record
-    // is registered whether or not the physical control is satisfied at
-    // simulation time; this mirrors the div/mod accounting contract.
-    assert(sturm::detail::garbage_registry::snapshot().size() == 1u);
+    // Garbage records still emitted at the gate-emission level (the tail
+    // doesn't know that y=|0> — it trusts the control stack). Post
+    // sturm-pqs0 this is two records per inner *=: MUL_UPPER_W + MUL_ASSIGN.
+    assert(sturm::detail::garbage_registry::snapshot().size() == 2u);
 
     for (int& q : a.qubits) q = -1;
     for (int& q : b.qubits) q = -1;
@@ -430,19 +439,31 @@ static void test_garbage_accounting_two_ops() {
     }
 
     const auto& snap = sturm::detail::garbage_registry::snapshot();
-    assert(snap.size() == 2u && "two controlled *= ops register two records");
-    assert(snap[0].tag == sturm::detail::garbage_registry::source_op_tag::MUL_ASSIGN);
+    // Post sturm-pqs0: each controlled *= registers TWO records
+    // (MUL_UPPER_W then MUL_ASSIGN), so two ops register four total.
+    // Ordering per op: snap[0+2k] = MUL_UPPER_W, snap[1+2k] = MUL_ASSIGN.
+    assert(snap.size() == 4u && "two controlled *= ops now register four records");
+    assert(snap[0].tag == sturm::detail::garbage_registry::source_op_tag::MUL_UPPER_W);
     assert(snap[1].tag == sturm::detail::garbage_registry::source_op_tag::MUL_ASSIGN);
-    assert(snap[0].W == static_cast<int>(W));
-    assert(snap[1].W == static_cast<int>(W));
-    assert(snap[0].ctrl_qubit == ctrl.qubits[0]);
-    assert(snap[1].ctrl_qubit == ctrl.qubits[0]);
+    assert(snap[2].tag == sturm::detail::garbage_registry::source_op_tag::MUL_UPPER_W);
+    assert(snap[3].tag == sturm::detail::garbage_registry::source_op_tag::MUL_ASSIGN);
+    for (const auto& r : snap) {
+        assert(r.W == static_cast<int>(W));
+        assert(r.ctrl_qubit == ctrl.qubits[0]);
+    }
 
-    // The two leaks must be distinct registers.
-    for (int q0 : snap[0].qubit_indices) {
-        for (int q1 : snap[1].qubit_indices) {
+    // The lower-W leaks of the two ops (MUL_ASSIGN records) must be
+    // disjoint registers; likewise the upper-W leaks.
+    for (int q0 : snap[1].qubit_indices) {
+        for (int q1 : snap[3].qubit_indices) {
             assert(q0 != q1 &&
-                   "distinct controlled ops must leak disjoint registers");
+                   "distinct controlled ops must leak disjoint MUL_ASSIGN registers");
+        }
+    }
+    for (int q0 : snap[0].qubit_indices) {
+        for (int q1 : snap[2].qubit_indices) {
+            assert(q0 != q1 &&
+                   "distinct controlled ops must leak disjoint MUL_UPPER_W registers");
         }
     }
 

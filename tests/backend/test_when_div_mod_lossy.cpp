@@ -181,8 +181,17 @@ static void test_div_ctrl_one() {
     }
 
     const std::size_t reg_after = sturm::detail::garbage_registry::snapshot().size();
-    assert(reg_after == reg_before + 1 && "one record per controlled /=");
-    const auto& rec = sturm::detail::garbage_registry::snapshot().back();
+    // Post sturm-pqs0: controlled /= registers TWO records — DIV_REMAINDER
+    // (new: the pre-existing remainder-register leak, now discoverable)
+    // pushed first, then DIV_ASSIGN (from sturm-h5it.4) pushed by the
+    // CSWAP-and-leak tail.
+    assert(reg_after == reg_before + 2 &&
+           "controlled /=: one DIV_REMAINDER record plus one DIV_ASSIGN record");
+    const auto& snap_div1 = sturm::detail::garbage_registry::snapshot();
+    const auto& rec_rem = snap_div1[reg_before + 0];
+    const auto& rec     = snap_div1[reg_before + 1];
+    assert(rec_rem.tag == sturm::detail::garbage_registry::source_op_tag::DIV_REMAINDER);
+    assert(rec_rem.W == static_cast<int>(W));
     assert(rec.tag == sturm::detail::garbage_registry::source_op_tag::DIV_ASSIGN);
     assert(rec.W == static_cast<int>(W));
     assert(rec.qubit_indices.size() == W);
@@ -445,8 +454,8 @@ static void test_div_nested_when_both_one() {
     uint32_t got = read_reg(sc.sv(), a.qubits, 17u);
     assert(got == 1u && "nested (x=1,y=1): a must equal 1/1 = 1");
 
-    // Exactly one garbage record emitted by the inner /=.
-    assert(sturm::detail::garbage_registry::snapshot().size() == 1u);
+    // Post sturm-pqs0: inner /= emits TWO records — DIV_REMAINDER + DIV_ASSIGN.
+    assert(sturm::detail::garbage_registry::snapshot().size() == 2u);
 
     for (int& q : a.qubits) q = -1;
     for (int& q : b.qubits) q = -1;
@@ -567,19 +576,27 @@ static void test_garbage_accounting_two_ops() {
     }
 
     const auto& snap = sturm::detail::garbage_registry::snapshot();
-    assert(snap.size() == 2u && "two controlled ops register two records");
-    assert(snap[0].tag == sturm::detail::garbage_registry::source_op_tag::DIV_ASSIGN);
-    assert(snap[1].tag == sturm::detail::garbage_registry::source_op_tag::MOD_ASSIGN);
-    assert(snap[0].W == static_cast<int>(W));
-    assert(snap[1].W == static_cast<int>(W));
-    assert(snap[0].ctrl_qubit == ctrl.qubits[0]);
-    assert(snap[1].ctrl_qubit == ctrl.qubits[0]);
+    // Post sturm-pqs0: controlled /= emits TWO records (DIV_REMAINDER then
+    // DIV_ASSIGN); controlled %= emits one (MOD_ASSIGN, unchanged). Total = 3.
+    assert(snap.size() == 3u && "controlled /= + %= register three records");
+    assert(snap[0].tag == sturm::detail::garbage_registry::source_op_tag::DIV_REMAINDER);
+    assert(snap[1].tag == sturm::detail::garbage_registry::source_op_tag::DIV_ASSIGN);
+    assert(snap[2].tag == sturm::detail::garbage_registry::source_op_tag::MOD_ASSIGN);
+    for (const auto& r : snap) {
+        assert(r.W == static_cast<int>(W));
+        assert(r.ctrl_qubit == ctrl.qubits[0]);
+    }
 
-    // The two leaks must be distinct registers.
-    for (int q0 : snap[0].qubit_indices) {
-        for (int q1 : snap[1].qubit_indices) {
+    // The DIV_ASSIGN (quotient) and MOD_ASSIGN (remainder of %=) leaks must
+    // be distinct registers — both are truly leaked (never released back to
+    // the pool), so the pool cannot hand out the same indices twice.
+    // DIV_REMAINDER is RECORDED before its release, so its indices may be
+    // re-allocated to MOD_ASSIGN by the pool — we do NOT assert disjointness
+    // for that pair.
+    for (int q0 : snap[1].qubit_indices) {
+        for (int q1 : snap[2].qubit_indices) {
             assert(q0 != q1 &&
-                   "distinct controlled ops must leak disjoint registers");
+                   "DIV_ASSIGN and MOD_ASSIGN registers must be disjoint");
         }
     }
 

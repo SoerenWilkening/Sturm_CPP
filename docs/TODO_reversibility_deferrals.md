@@ -109,6 +109,40 @@ Every CSWAP-and-leak site in `qint_bitwise_v3.hpp` and `qint_arith_v3.hpp` pushe
 
 ---
 
+## 6. `*=` upper-W bits and `/=` remainder are unconditionally released
+
+Source issue: bd `sturm-pqs0` (P3). Pre-existing hazard noticed while planning the sturm-h5it epic, now made *discoverable* (not fixed).
+
+**Current behaviour.** In `include/sturm/qtypes/qint_arith_v3.hpp`:
+
+- `qint_t::operator*=` uses a 2W Cuccaro multiplier and keeps the lower W bits as the product. The upper W bits of the result register are released back to the qubit pool unconditionally, in both the uncontrolled fast path and the controlled CSWAP-and-leak tail (after h5it.3).
+- `qint_t::operator/=` allocates a W-qubit remainder register alongside the quotient, then releases the remainder unconditionally after the DSL emits the division gates — again in both the uncontrolled and controlled paths.
+
+Both releases are **safe only when the operands are in computational-basis states**. With superposition inputs, the upper-W bits of the product and the division remainder are entangled with `A` and `B`, so releasing them silently discards quantum information (pool-released qubits may be re-allocated and re-used, scrambling the amplitudes they were entangled with).
+
+**Why it is deferred.** A correct fix is Bennett-style uncomputation: keep a saved copy of the inputs, run the op forward, copy out the answer, run the op backward to restore the ancillas to `|0>`, then release. That is a substantial DSL design lift — the same ground that bd `sturm-njul` covers at the WHEN level — and out of scope for the spot-fix this issue delivers.
+
+**Discoverability (what this issue DID ship).** Two new `source_op_tag` values extend the registry in `include/sturm/control/garbage_registry.hpp`:
+
+- `MUL_UPPER_W` — registered by `operator*=` immediately before releasing the upper W bits of the 2W Cuccaro result. Fires in both the uncontrolled and controlled paths; `ctrl_qubit` is `-1` outside WHEN and the active control qubit otherwise. The recorded `qubit_indices` are the W upper-half indices of the result register.
+- `DIV_REMAINDER` — registered by `operator/=` immediately before releasing the remainder register. Same control-qubit convention. The recorded `qubit_indices` are the W remainder-register indices.
+
+After this change, a controlled `*=` under WHEN registers **two** records — one `MUL_UPPER_W` (the pre-existing upper-W leak, now visible) and one `MUL_ASSIGN` (the lower-W result-register leak from sturm-h5it.3). A controlled `/=` similarly registers one `DIV_REMAINDER` plus one `DIV_ASSIGN` (the quotient-register leak from sturm-h5it.4). Uncontrolled calls register only the new `MUL_UPPER_W` / `DIV_REMAINDER` record (no h5it record, because the uncontrolled fast path uses release+relabel rather than CSWAP-and-leak).
+
+**Required work.** Bennett-style uncomputation of the upper-W product bits and the division remainder, consumed by the same transpiler pass that `sturm-njul` will introduce for the h5it-era leaks.
+
+**Follow-up issues.**
+
+- bd `sturm-njul` (P3) — the transpiler pass that will walk `garbage_registry` at WHEN scope exit (and eventually at op scope for the uncontrolled path) and emit per-tag uncomputation. `MUL_UPPER_W` and `DIV_REMAINDER` join the existing five tags as consumers of that pass.
+- bd `sturm-pqs0` (this issue) — closes once the discoverability hook plus documentation are in place; the actual Bennett uncomputation ships under `sturm-njul`.
+
+**References.**
+
+- Headers: `include/sturm/qtypes/qint_arith_v3.hpp` (release sites), `include/sturm/control/garbage_registry.hpp` (new tags).
+- Test: `tests/backend/test_mul_div_upperw_garbage.cpp` (label `backend;pqs0`).
+
+---
+
 ## Cross-references
 
 - **PRD:** `docs/prd_automatic_adjoint_synthesis.md` §9 (locked reversibility-scope decisions).

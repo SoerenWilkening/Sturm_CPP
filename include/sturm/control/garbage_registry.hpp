@@ -17,7 +17,8 @@
 //
 // API (namespace sturm::detail::garbage_registry):
 //   enum class source_op_tag { AND_ASSIGN, OR_ASSIGN, MUL_ASSIGN,
-//                              DIV_ASSIGN, MOD_ASSIGN };
+//                              DIV_ASSIGN, MOD_ASSIGN,
+//                              MUL_UPPER_W, DIV_REMAINDER };
 //   struct record { uint64_t op_id; int ctrl_qubit; int W;
 //                   std::vector<int> qubit_indices; source_op_tag tag; };
 //   void register_garbage(source_op_tag tag, int ctrl_qubit, int W,
@@ -38,11 +39,17 @@ namespace sturm::detail::garbage_registry {
 // ── source_op_tag ────────────────────────────────────────────────────────────
 // Identifies which lossy compound operator produced a garbage register.
 enum class source_op_tag : unsigned {
-    AND_ASSIGN = 0,
-    OR_ASSIGN  = 1,
-    MUL_ASSIGN = 2,
-    DIV_ASSIGN = 3,
-    MOD_ASSIGN = 4,
+    AND_ASSIGN    = 0,
+    OR_ASSIGN     = 1,
+    MUL_ASSIGN    = 2,
+    DIV_ASSIGN    = 3,
+    MOD_ASSIGN    = 4,
+    // sturm-pqs0: the two pre-existing unconditional-release leaks in
+    // qint_t::operator*= and operator/=. Registered with ctrl_qubit = -1
+    // when outside WHEN (no control). Distinct from MUL_ASSIGN / DIV_ASSIGN
+    // which describe the controlled-result-register leak from sturm-h5it.
+    MUL_UPPER_W   = 5,   // upper W bits of the 2W Cuccaro product in *=
+    DIV_REMAINDER = 6,   // discarded remainder register in /=
 };
 
 // ── record ───────────────────────────────────────────────────────────────────
