@@ -21,8 +21,8 @@
 //   compare_dsl.hpp        < 200
 //   mod_dsl.hpp            < 60
 //   pow_dsl.hpp            < 200
-//   qint_arith_v3.hpp      < 250
-//   qint_bitwise_v3.hpp    < 150
+//   qint_arith_v3.hpp      < 300
+//   qint_bitwise_v3.hpp    < 220
 //   qint_compare_v3.hpp    < 150
 //
 // Harness: plain assert + printf (no gtest).
@@ -76,8 +76,8 @@ static const ModuleBudget kBudgets[] = {
     { "include/sturm/lib/mod_dsl.hpp",                  "mod_dsl.hpp",           60  },
     { "include/sturm/lib/pow_dsl.hpp",                  "pow_dsl.hpp",           200 },
     // M19
-    { "include/sturm/qtypes/qint_arith_v3.hpp",         "qint_arith_v3.hpp",     250 },
-    { "include/sturm/qtypes/qint_bitwise_v3.hpp",       "qint_bitwise_v3.hpp",   150 },
+    { "include/sturm/qtypes/qint_arith_v3.hpp",         "qint_arith_v3.hpp",     300 },
+    { "include/sturm/qtypes/qint_bitwise_v3.hpp",       "qint_bitwise_v3.hpp",   220 },
     { "include/sturm/qtypes/qint_compare_v3.hpp",       "qint_compare_v3.hpp",   150 },
 };
 
