@@ -28,6 +28,9 @@ set(STURM_TEST_SOURCES
     test_qint_owning.cpp
     test_qbool_unified.cpp
     test_qbool_acceptance.cpp
+
+    # sturm-h5it.5: garbage_registry (controlled lossy compound-assign leak).
+    test_garbage_registry.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
