@@ -1190,6 +1190,59 @@ add_test(NAME test_matcher_lossy_op
 set_tests_properties(test_matcher_lossy_op PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: LO-2b lossy_rewrite_emitter (sturm-yxxa) ─────────────────────
+# Forward-only emitter consuming `LossyOpHit` records produced by LO-2a.
+# Mirrors the matcher_lossy_op linkage: pure-string AST-driven harness, no
+# QUnit / Rewriter dependency. Links the matcher_lossy_op TU because the
+# AST-driven half of the test runs the matcher to produce live hits.
+add_executable(test_lossy_rewrite_emitter
+    test_lossy_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+)
+target_include_directories(test_lossy_rewrite_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_lossy_rewrite_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_lossy_rewrite_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_LOSSY_EMIT NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_lossy_rewrite_emitter PRIVATE
+    ${LLVM_DEFS_LIST_LOSSY_EMIT})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_lossy_rewrite_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_lossy_rewrite_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_EMIT support)
+    target_link_libraries(test_lossy_rewrite_emitter PRIVATE
+        ${LLVM_LIBS_LOSSY_EMIT})
+endif()
+add_test(NAME test_lossy_rewrite_emitter
+         COMMAND test_lossy_rewrite_emitter)
+set_tests_properties(test_lossy_rewrite_emitter PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
