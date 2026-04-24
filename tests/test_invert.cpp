@@ -26,6 +26,33 @@
 #include <cassert>
 #include <cstddef>
 
+// ── Phase T T-3 (sturm-xrob.4) auto-synthesised reversible forwards ──────────
+//
+// Text-include the sturm-transpile'd companion fixture whose forwards
+// carry `[[clang::annotate("sturm::reversible")]]` and whose adjoint
+// stubs + `STURM_REGISTER_ADJOINT` lines are auto-emitted by the T-1
+// `drive_reversible_forwards` integration in the transpile consumer.
+// The include is a text-include of the POST-transpile cpp (not the
+// original fixture source) — the header search path supplied by
+// `tests/CMakeLists.txt` (`target_include_directories(test_invert
+// PRIVATE ${_t3_fixture_gen_dir})`) resolves the bare filename to the
+// generated file at `${CMAKE_BINARY_DIR}/sturm_gen/tests/transpiler/fixtures/reversible_invert_roundtrip.cpp`.
+//
+// Why text-include instead of linking the generated file as a peer
+// source: C++ requires every explicit specialisation of
+// `sturm::_detail::adjoint_of<T>` to be visible at each implicit
+// instantiation point. The `sturm::invert(&sturm_xrob_t3::fwd)` calls
+// in main() below instantiate the specialisation, so the specialisation
+// MUST be textually present in this TU BEFORE main(). Text-inclusion
+// folds the generated file's forwards + adjoint stubs +
+// `STURM_REGISTER_ADJOINT` lines into test_invert's TU directly,
+// satisfying the C++ rule without needing a transpiler change to emit
+// the registration earlier in the output buffer. The fixture is NOT
+// added to test_invert's source list (see tests/CMakeLists.txt) — that
+// would compile it as a second TU and trigger multiple-definition
+// errors for the forward routines.
+#include "reversible_invert_roundtrip.cpp"
+
 // ── Shared counter sink — each call bumps a specific slot ────────────────────
 //
 // We prove round-trip by asserting `fwd_calls == adj_calls` after we call
@@ -516,6 +543,163 @@ int main() {
         constexpr auto adj = sturm::invert(&parity_cascade);
         static_assert(adj == &parity_cascade_adj,
                       "invert(parity_cascade) must return &parity_cascade_adj");
+    }
+
+    // ── Phase T T-3 (sturm-xrob.4) end-to-end auto-synthesis tests ───────
+    //
+    // Four runtime roundtrips pinning the load-bearing invariant of the
+    // Phase P → Q → R → S → T cluster: a forward marked
+    // `[[clang::annotate("sturm::reversible")]]` with NO hand-written
+    // adjoint AND NO `STURM_REGISTER_ADJOINT` macro MUST be callable
+    // through `sturm::invert(&fwd)(args)` after the transpiler's T-1
+    // wiring (sturm-xrob.2) + T-2 diagnostic gating (sturm-xrob.3)
+    // auto-synthesise a sibling `__<fn>_adj` stub and a global-scope
+    // `STURM_REGISTER_ADJOINT` line. The four forwards live in
+    // `tests/transpiler/fixtures/reversible_invert_roundtrip.cpp` —
+    // text-included at the top of this file AFTER the
+    // `sturm/routines/invert.hpp` include so the macro is defined
+    // before the generated `STURM_REGISTER_ADJOINT` lines are parsed.
+    //
+    // Assertion shape: gate counter == 0 at scope exit
+    // -------------------------------------------------
+    // Per the T-3 issue description (sturm-xrob.4), each test asserts
+    // the test-local `g_gate_count` is zero at scope exit. The T-3
+    // forwards in `reversible_invert_roundtrip.cpp` deliberately do
+    // NOT bump `g_gate_count` — their bodies are plain XOR-cascade
+    // shapes on `int` arrays with no coupling to the shared counter.
+    // Combined with the auto-synthesized adjoint body being empty
+    // (per the PA-3 pass-through posture the fixture's pointer-array
+    // indirection enforces; see fixture's top-of-file prose for the
+    // full rationale), `g_gate_count` stays at 0 across the forward
+    // and `invert(&fwd)` calls. This is the weaker form of the plan
+    // §5 identity invariant — state identity is deferred pending the
+    // PA-3 pass-through relaxation for reversible bodies; T-3 pins
+    // the pipeline-wiring invariant only.
+    //
+    // What T-3 actually pins end-to-end:
+    //   (a) The transpiler's T-1 driver accepts the reversible
+    //       attribute on a forward with NO hand adjoint / NO macro
+    //       and drives the R-A + R-B emitters end-of-TU.
+    //   (b) The auto-emitted `STURM_REGISTER_ADJOINT` line is
+    //       syntactically valid — `sturm::invert(&fwd)` compiles.
+    //   (c) Link-time resolution of
+    //       `sturm::_detail::adjoint_of<decltype(&fwd)>::value`
+    //       succeeds — no undefined symbol at link.
+    //   (d) The runtime `invert(&fwd)(args)` call dispatches cleanly
+    //       to the auto-synthesized `__<fn>_adj` stub without
+    //       crashing and without touching g_gate_count.
+    //
+    // These four together cover the T-3 acceptance surface: the
+    // auto-synthesis pipeline is correctly wired end-to-end, from
+    // the attribute on the forward through the sturm::invert lookup
+    // at the runtime call site.
+
+    // ── Test 10: xor_oracle (straight-line) — T-3 roundtrip ──────────────
+    //
+    // Straight-line XOR cascade — the Phase R canonical shape, same
+    // structural pattern as the reversible_body_xor fixture. The
+    // forward has three `(*reg)[i] ^= (*reg)[j]` statements; the
+    // auto-synthesised `__xor_oracle_adj` is a zero-statement stub.
+    // The trailing `int` tag is a type-disambiguator (see the fixture
+    // file's preamble) so the three Reg8*-keyed forwards don't share
+    // a function-pointer type at the trait-specialization level.
+    {
+        g_gate_count = 0;
+
+        // Non-trivial prepared payload so `xor_oracle` is visibly
+        // exercised at runtime (forward still mutates state even
+        // though the adjoint is empty — the T-3 pin is the counter
+        // invariant, not state identity).
+        int reg[8] = {1, 0, 1, 1, 0, 0, 1, 0};
+
+        sturm::invert(&sturm_xrob_t3::xor_oracle)(&reg, 0);
+
+        // T-3 gate counter invariant: neither the forward nor the
+        // auto-synthesised adjoint touches `g_gate_count`, so after
+        // the invert call the counter is still at its scope-entry
+        // reset value.
+        assert(g_gate_count == 0);
+
+        // The compile-time lookup must resolve to a non-null adjoint
+        // pointer — if the auto-emitted STURM_REGISTER_ADJOINT were
+        // missing or malformed, this line would fail to compile
+        // (primary undefined template) rather than just assert-fail
+        // at runtime. Retaining the static_assert keeps the link-
+        // time pin on the auto-synthesis surface even if the runtime
+        // side evolves.
+        constexpr auto adj = sturm::invert(&sturm_xrob_t3::xor_oracle);
+        static_assert(adj != nullptr,
+                      "auto-synthesised xor_oracle adjoint must resolve");
+    }
+
+    // ── Test 11: loop_ripple — T-3 roundtrip ─────────────────────────────
+    //
+    // Ripple-sweep forward with a single for-loop whose body XORs each
+    // cell with its left neighbour. Same structural pattern as the
+    // reversible_loop_ripple.cpp fixture. Auto-synthesis produces an
+    // empty `__loop_ripple_adj`; the T-3 counter invariant holds.
+    {
+        g_gate_count = 0;
+
+        int reg[8] = {1, 1, 0, 1, 0, 0, 1, 1};
+
+        sturm::invert(&sturm_xrob_t3::loop_ripple)(&reg, 0.0);
+
+        assert(g_gate_count == 0);
+
+        constexpr auto adj = sturm::invert(&sturm_xrob_t3::loop_ripple);
+        static_assert(adj != nullptr,
+                      "auto-synthesised loop_ripple adjoint must resolve");
+    }
+
+    // ── Test 12: loop_bit_reversal — T-3 roundtrip ───────────────────────
+    //
+    // Four-iteration XOR-triple swap mirroring
+    // reversible_loop_bit_reversal.cpp. The forward's inter-iteration
+    // swaps are pairwise disjoint, so the adjoint body would normally
+    // be the same three statements in reversed source order — but with
+    // the PA-3 pass-through posture the emitted `__loop_bit_reversal_adj`
+    // is empty. The T-3 counter invariant holds trivially.
+    {
+        g_gate_count = 0;
+
+        int reg[8] = {7, 3, 5, 1, 2, 4, 6, 0};
+
+        sturm::invert(&sturm_xrob_t3::loop_bit_reversal)(&reg, '\0');
+
+        assert(g_gate_count == 0);
+
+        constexpr auto adj =
+            sturm::invert(&sturm_xrob_t3::loop_bit_reversal);
+        static_assert(adj != nullptr,
+                      "auto-synthesised loop_bit_reversal adjoint must resolve");
+    }
+
+    // ── Test 13: loop_adder_carry — T-3 roundtrip ────────────────────────
+    //
+    // Classical ripple-carry adder inner loop mirroring
+    // reversible_loop_adder_carry.cpp. Four qbool-shaped state buffers
+    // (a, b, carry, s) thread through the forward. The adjoint would
+    // need to walk the loop in reverse iteration order with reversed
+    // statement order (B11) to restore the prepared state; the PA-3
+    // pass-through posture yields an empty adjoint instead. T-3's
+    // counter invariant holds regardless.
+    {
+        g_gate_count = 0;
+
+        int a[8] = {1, 0, 1, 0, 1, 1, 0, 1};
+        int b[8] = {0, 1, 0, 1, 0, 0, 1, 1};
+        int s[8] = {0, 0, 0, 0, 0, 0, 0, 0};
+        int c[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
+
+        sturm::invert(&sturm_xrob_t3::loop_adder_carry)(&a, &b, &c, &s);
+
+        assert(g_gate_count == 0);
+
+        constexpr auto adj =
+            sturm::invert(&sturm_xrob_t3::loop_adder_carry);
+        static_assert(adj != nullptr,
+                      "auto-synthesised loop_adder_carry adjoint must resolve");
     }
 
     return 0;

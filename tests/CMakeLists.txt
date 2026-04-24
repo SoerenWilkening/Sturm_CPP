@@ -4,6 +4,10 @@ find_package(Threads REQUIRED)
 
 # Register each test executable in the tests/ directory.
 # Add new test source files to this list as steps are implemented.
+#
+# NOTE: test_invert.cpp is NOT in this list because it has a special
+# dependency on a sturm-transpile'd companion fixture (see T-3 block at
+# the bottom of this file). Adding it here would skip the transpile step.
 set(STURM_TEST_SOURCES
     test_smoke.cpp
     test_qubit_pool.cpp
@@ -24,9 +28,6 @@ set(STURM_TEST_SOURCES
     test_qint_owning.cpp
     test_qbool_unified.cpp
     test_qbool_acceptance.cpp
-
-    # Phase I PI-0 (docs/roadmap_transpiler_post_mvp.md, bd sturm-hi66)
-    test_invert.cpp
 )
 
 foreach(src ${STURM_TEST_SOURCES})
@@ -39,6 +40,100 @@ foreach(src ${STURM_TEST_SOURCES})
     target_link_libraries(${test_name} PRIVATE Threads::Threads)
     add_test(NAME ${test_name} COMMAND ${test_name})
 endforeach()
+
+# ── Phase I PI-0 + Phase T T-3 (sturm-xrob.4): test_invert ─────────────────
+#
+# test_invert.cpp exercises the runtime `sturm::invert(fn)` surface. The
+# original Phase I PI-0 tests (sturm-hi66) hand-register their adjoints
+# via `STURM_REGISTER_ADJOINT`. Phase T T-3 adds four end-to-end
+# roundtrip tests whose forwards are declared with
+# `[[clang::annotate("sturm::reversible")]]` and rely on the
+# transpiler's T-1 wiring (sturm-xrob.2) to auto-synthesise
+# `__<fn>_adj` stubs + `STURM_REGISTER_ADJOINT` lines. The forwards
+# live in `tests/transpiler/fixtures/reversible_invert_roundtrip.cpp`
+# (a T-3-specific fixture) and the generated post-transpile file is
+# text-included into test_invert.cpp BEFORE `main()` so the auto-
+# synthesised template specialisations are visible at the
+# `sturm::invert(&ns::fwd)` call sites in main.
+#
+# C++ instantiation-order rule
+# ----------------------------
+# An explicit specialisation of `sturm::_detail::adjoint_of<T>` must be
+# declared before the first implicit instantiation point of that
+# specialisation. The transpiler currently emits the
+# `STURM_REGISTER_ADJOINT` line at END-OF-FILE of the TU carrying the
+# forward (see `matcher_reversible_drive.cpp`'s `end_of_file_loc`). If
+# we routed test_invert.cpp itself through sturm-transpile, the
+# registration would land AFTER `int main() { ... }` — AFTER the
+# `sturm::invert(&fwd)` call sites. Text-including a SEPARATELY-
+# transpiled fixture keeps the emission inside a scope that precedes
+# main, satisfying the rule without modifying the transpiler's EOF
+# anchor (out of scope for T-3).
+#
+# Custom-command flow
+# -------------------
+# Input fixture:
+#   tests/transpiler/fixtures/reversible_invert_roundtrip.cpp
+# Transpile step (via the standalone sturm-transpile binary):
+#   ${CMAKE_BINARY_DIR}/sturm_gen/tests/transpiler/fixtures/reversible_invert_roundtrip.cpp
+# The generated file has `#include <cstddef>` carried over from the
+# fixture, the original namespace + forward definitions, sibling
+# `__<fn>_adj` stub bodies emitted by R-A, and end-of-file
+# `STURM_REGISTER_ADJOINT` lines emitted by T-1's driver.
+#
+# test_invert.cpp consumes the generated file via
+#   #include "reversible_invert_roundtrip.cpp"
+# where the include search path is augmented to the sturm_gen
+# fixture directory via `target_include_directories`. The fixture
+# file is NOT added to test_invert's source list — doing so would
+# compile it as a second TU and trigger multiple-definition link
+# errors for the forward routines.
+set(_t3_fixture_src
+    "${CMAKE_SOURCE_DIR}/tests/transpiler/fixtures/reversible_invert_roundtrip.cpp")
+file(RELATIVE_PATH _t3_fixture_rel_src
+    "${CMAKE_SOURCE_DIR}" "${_t3_fixture_src}")
+set(_t3_fixture_generated
+    "${CMAKE_BINARY_DIR}/sturm_gen/${_t3_fixture_rel_src}")
+get_filename_component(_t3_fixture_gen_dir
+    "${_t3_fixture_generated}" DIRECTORY)
+
+add_custom_command(
+    OUTPUT "${_t3_fixture_generated}"
+    COMMAND "${CMAKE_COMMAND}" -E make_directory
+            "${_t3_fixture_gen_dir}"
+    COMMAND $<TARGET_FILE:sturm-transpile>
+            "${_t3_fixture_rel_src}"
+            --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
+            "--extra-arg=-std=c++20"
+    WORKING_DIRECTORY "${CMAKE_SOURCE_DIR}"
+    DEPENDS "${_t3_fixture_src}" sturm-transpile
+    COMMENT "sturm-transpile ${_t3_fixture_rel_src} (T-3)"
+    VERBATIM)
+set_source_files_properties("${_t3_fixture_generated}" PROPERTIES
+    GENERATED TRUE)
+
+# Custom target so test_invert builds trigger the transpile step.
+# The generated file is not a SOURCE of test_invert — we text-include
+# it via `#include "reversible_invert_roundtrip.cpp"` instead. CMake
+# honours file-level dependencies on non-source inputs through
+# `add_custom_target` + `add_dependencies`, which is the established
+# pattern for this kind of pre-build asset generation.
+add_custom_target(test_invert_t3_fixture
+    DEPENDS "${_t3_fixture_generated}")
+
+add_executable(test_invert test_invert.cpp)
+target_include_directories(test_invert PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+    # Make `#include "reversible_invert_roundtrip.cpp"` resolve to the
+    # generated file. The search order puts CMAKE_BINARY_DIR first so
+    # the text-include grabs the transpiled buffer (carrying the
+    # `__<fn>_adj` + `STURM_REGISTER_ADJOINT` emission) and not the
+    # original source fixture.
+    ${_t3_fixture_gen_dir})
+target_compile_features(test_invert PRIVATE cxx_std_20)
+target_link_libraries(test_invert PRIVATE Threads::Threads)
+add_dependencies(test_invert test_invert_t3_fixture)
+add_test(NAME test_invert COMMAND test_invert)
 
 # ── Backend test subdirectory (M1 and later) ──────────────────────────────────
 add_subdirectory(backend)
