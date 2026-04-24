@@ -1243,6 +1243,62 @@ add_test(NAME test_lossy_rewrite_emitter
 set_tests_properties(test_lossy_rewrite_emitter PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: LO-2c lossy_scope_exit_emitter (sturm-hbwr) ──────────────────
+# Cleanup-only emitter. Pairs LO-2a `LossyOpHit` with LO-2b `LossyEmission`
+# to produce the §2.3 scope-exit `swap + invert` cleanup in LIFO order per
+# enclosing CompoundStmt. Linkage matches the LO-2b test: pure-string AST-
+# driven harness, no QUnit / Rewriter dependency. Links the LO-2a matcher
+# TU AND the LO-2b emitter TU because the AST-driven half of the test runs
+# both to produce live hits + matching forward emissions.
+add_executable(test_lossy_scope_exit_emitter
+    test_lossy_scope_exit_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+)
+target_include_directories(test_lossy_scope_exit_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_lossy_scope_exit_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_lossy_scope_exit_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_LOSSY_SCOPE NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_lossy_scope_exit_emitter PRIVATE
+    ${LLVM_DEFS_LIST_LOSSY_SCOPE})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_lossy_scope_exit_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_lossy_scope_exit_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_SCOPE support)
+    target_link_libraries(test_lossy_scope_exit_emitter PRIVATE
+        ${LLVM_LIBS_LOSSY_SCOPE})
+endif()
+add_test(NAME test_lossy_scope_exit_emitter
+         COMMAND test_lossy_scope_exit_emitter)
+set_tests_properties(test_lossy_scope_exit_emitter PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
