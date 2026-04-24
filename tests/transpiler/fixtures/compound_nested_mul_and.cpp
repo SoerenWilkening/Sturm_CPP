@@ -1,0 +1,39 @@
+// LO-0.3 (sturm-z8pl): nested lossy-op desugar fixture (input).
+//
+// Exercises the PRD §11 "nested lossy ops" bullet and plan §2 LO-0.3
+// row: source `a *= (b & c);` triggers two cascaded rewrites — the
+// inner bare `&` produces a fresh OOP qint via lib_c_AND_dsl, and the
+// outer `*=` consumes that ancilla through the §2.1 multiplicative
+// shape. Depth-first means the inner rewrite is emitted lexically
+// first, so its tmp gets the lower fresh-name suffix
+// (__sturm_tmp_and_0), and the outer rewrite's tmp follows
+// (__sturm_tmp_mul_1). The matching scope-exit cleanups fire in LIFO
+// order at the enclosing block's closing brace: outer mul reverse-
+// swap + invert(lib_mul_dsl) first, inner invert(lib_c_AND_dsl) last
+// (no inner reverse swap — bare `&` did not swap on the way in).
+//
+// LO-2e (sturm-rry6) is the consumer of this fixture; LO-2a/2b/2c
+// (sturm-9254 / sturm-yxxa / sturm-hbwr) provide the matcher and
+// emitter that LO-2e composes for the depth-first traversal. Until
+// those land, any snapshot test wired against this fixture would be
+// RED, so the fixture is intentionally NOT registered in
+// tests/transpiler/CMakeLists.txt — LO-2e flips it green and wires
+// it then.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qint_t& operator*=(const qint_t&) { return *this; }
+};
+template <int W>
+inline qint_t<W> operator&(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+} // namespace sturm
+using qint = sturm::qint_t<2>;
+
+void demo(qint a, qint b, qint c) {
+    a *= (b & c);
+}
