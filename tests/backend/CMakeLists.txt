@@ -912,6 +912,33 @@ set_source_files_properties(
 add_test(NAME test_when_div_mod_lossy COMMAND test_when_div_mod_lossy)
 set_tests_properties(test_when_div_mod_lossy PROPERTIES LABELS "backend;h5it")
 
+# sturm-qoq0 LO-0.5 — end-to-end pool-drain invariant for every lossy compound
+# assignment (`*=`, `/=`, `%=`, `&=`, `|=`).  Asserts that, inside an inner
+# block, after the block exits the qubit pool has zero in-use allocations.
+# This is the runtime observable that the LO-2 transpiler auto-desugar pass
+# must preserve (replacement for the h5it registry-snapshot tests).
+add_executable(test_lossy_ancilla_cleaned
+    test_lossy_ancilla_cleaned.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_lossy_ancilla_cleaned PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_lossy_ancilla_cleaned PRIVATE cxx_std_20)
+target_compile_definitions(test_lossy_ancilla_cleaned PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_lossy_ancilla_cleaned PRIVATE orkan_headers)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_lossy_ancilla_cleaned COMMAND test_lossy_ancilla_cleaned)
+set_tests_properties(test_lossy_ancilla_cleaned
+    PROPERTIES LABELS "backend;lossy-reversibility")
+
 # sturm-pqs0 — *= upper-W bits and /= remainder register discoverable leaks
 add_executable(test_mul_div_upperw_garbage
     test_mul_div_upperw_garbage.cpp
