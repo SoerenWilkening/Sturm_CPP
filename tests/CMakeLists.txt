@@ -147,6 +147,9 @@ add_test(NAME test_invert COMMAND test_invert)
 # ── Backend test subdirectory (M1 and later) ──────────────────────────────────
 add_subdirectory(backend)
 
+# ── Qtypes test subdirectory (sturm-lo LO-1e and later) ───────────────────────
+add_subdirectory(qtypes)
+
 # ── Transpiler-MVP Group C tests (M10+) ───────────────────────────────────────
 # Holds consumer-facing tests that exercise the transpiler toolchain from the
 # outside (add_quantum_executable, snapshot fixtures, gate-stream equivalence).
