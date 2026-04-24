@@ -1,7 +1,11 @@
 // test_lossy_scope_exit_emitter.cpp — LO-2c (sturm-hbwr) unit tests.
 // Pure-string per-opcode goldens + AST-driven LIFO/scope-grouping
-// covering all five lossy operators. Main-outer-scope suppression is
-// LO-2d's concern.
+// covering all five lossy operators. LO-2d (sturm-wva7) extends with
+// main-outer-scope suppression: `group_cleanups_by_block` consults the
+// `is_main_outer_block` predicate when an ASTContext is supplied and
+// emits an empty cleanup string for blocks that ARE main's outermost
+// body. Lambdas inside main, nested CompoundStmts, and free functions
+// remain unaffected — only the literal `int main()` body is suppressed.
 
 #include "lossy_scope_exit_emitter.hpp"
 
@@ -9,10 +13,14 @@
 #include "lossy_rewrite_emitter.hpp"
 #include "matcher_lossy_op.hpp"
 
+#include "clang/AST/ASTConsumer.h"
+#include "clang/AST/ASTContext.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
+#include "clang/Frontend/FrontendAction.h"
 #include "clang/Tooling/Tooling.h"
 
 #include <cstdio>
+#include <memory>
 #include <string>
 #include <string_view>
 #include <vector>
@@ -229,6 +237,139 @@ void test_grouper_size_mismatch_is_empty() {
     CHECK(group_cleanups_by_block(hits, fwd_empty).empty());
 }
 
+// ── LO-2d (sturm-wva7) main-outer-scope suppression tests ────────────
+//
+// The 3-arg `group_cleanups_by_block(hits, fwd, ctx)` overload runs
+// `is_main_outer_block` on each block and emits an empty cleanup string
+// for the matches. The four cases below pin the predicate's edges:
+//   1. main body                → suppressed
+//   2. non-main free function   → emitted (regression)
+//   3. lambda body inside main  → emitted (lambda body is NOT main's)
+//   4. if-block inside main     → emitted (nested block is NOT main's)
+//
+// The harness uses a custom ASTConsumer that drives matchAST then
+// invokes `group_cleanups_by_block` with the live ASTContext while the
+// AST is still alive (group output is captured by reference).
+
+struct GroupRunResult {
+    std::vector<LossyOpHit> hits;
+    std::vector<BlockCleanup> blocks;
+};
+
+GroupRunResult run_grouper_with_ctx(std::string_view user_src) {
+    std::string code;
+    code.append(kLossyStub).append(user_src);
+    GroupRunResult result;
+    clang::ast_matchers::MatchFinder finder;
+    register_lossy_op_matcher(finder, result.hits);
+
+    class Consumer : public clang::ASTConsumer {
+    public:
+        Consumer(clang::ast_matchers::MatchFinder* f, GroupRunResult* r)
+            : finder_(f), result_(r) {}
+        void HandleTranslationUnit(clang::ASTContext& ctx) override {
+            finder_->matchAST(ctx);
+            FreshNameAllocator alloc;
+            std::vector<LossyEmission> fwd;
+            fwd.reserve(result_->hits.size());
+            for (const auto& h : result_->hits) {
+                fwd.push_back(emit_lossy_forward(h, alloc));
+            }
+            result_->blocks = group_cleanups_by_block(
+                result_->hits, fwd, &ctx);
+        }
+    private:
+        clang::ast_matchers::MatchFinder* finder_;
+        GroupRunResult* result_;
+    };
+    class Action : public clang::ASTFrontendAction {
+    public:
+        Action(clang::ast_matchers::MatchFinder* f, GroupRunResult* r)
+            : finder_(f), result_(r) {}
+        std::unique_ptr<clang::ASTConsumer> CreateASTConsumer(
+            clang::CompilerInstance&, llvm::StringRef) override {
+            return std::make_unique<Consumer>(finder_, result_);
+        }
+    private:
+        clang::ast_matchers::MatchFinder* finder_;
+        GroupRunResult* result_;
+    };
+
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        std::make_unique<Action>(&finder, &result),
+        code, args, "test_input.cpp");
+    if (!ok) std::fprintf(stderr, "FAIL  tool run returned false\n");
+    return result;
+}
+
+// Case 1: top-level `&=` directly inside main's body → cleanup
+// suppressed. The block IS still recorded so callers can see "we
+// matched a hit here", but its `text` is empty.
+void test_main_outer_block_suppresses_cleanup() {
+    auto r = run_grouper_with_ctx(
+        "int main() { qint_t a, b; a &= b; return 0; }\n");
+    CHECK(r.hits.size() == 1);
+    if (r.hits.empty()) return;
+    CHECK(r.blocks.size() == 1);
+    if (r.blocks.empty()) return;
+    CHECK_EQ_STR(r.blocks[0].text, std::string());
+    CHECK(r.blocks[0].enclosing_block == r.hits[0].enclosing_block);
+}
+
+// Case 2: hit inside a non-main free function → cleanup emitted.
+// Regression guard against the predicate over-firing on any free
+// function whose body is its outer CompoundStmt.
+void test_non_main_free_function_emits_cleanup() {
+    auto r = run_grouper_with_ctx(
+        "void demo(qint_t a, qint_t b) { a &= b; }\n");
+    CHECK(r.hits.size() == 1);
+    if (r.hits.empty()) return;
+    CHECK(r.blocks.size() == 1);
+    if (r.blocks.empty()) return;
+    CHECK(!r.blocks[0].text.empty());
+    CHECK(r.blocks[0].text.find("lib_c_AND_dsl") != std::string::npos);
+}
+
+// Case 3: lambda whose body sits inside main has its OWN CompoundStmt
+// — a child of the closure's `operator()` CXXMethodDecl, NOT the main
+// FunctionDecl. The predicate must NOT fire on the lambda body.
+// This is the plan §9 risk-register edge case ("`main`-exception
+// detection mis-classifies lambdas whose body is `main`'s outer
+// `CompoundStmt`").
+void test_lambda_inside_main_emits_cleanup() {
+    auto r = run_grouper_with_ctx(
+        "int main() {\n"
+        "    auto inner = [](qint_t x, qint_t y) { x &= y; };\n"
+        "    (void)inner;\n"
+        "    return 0;\n"
+        "}\n");
+    CHECK(r.hits.size() == 1);
+    if (r.hits.empty()) return;
+    CHECK(r.blocks.size() == 1);
+    if (r.blocks.empty()) return;
+    CHECK(!r.blocks[0].text.empty());
+    CHECK(r.blocks[0].text.find("lib_c_AND_dsl") != std::string::npos);
+}
+
+// Case 4: hit in a nested `if (cond) { … }` block inside main. The
+// if-body's parent is an IfStmt, not the main FunctionDecl, so the
+// predicate must NOT fire — cleanup at that nested block's brace.
+void test_nested_block_inside_main_emits_cleanup() {
+    auto r = run_grouper_with_ctx(
+        "int main() {\n"
+        "    qint_t a, b;\n"
+        "    if (true) { a &= b; }\n"
+        "    return 0;\n"
+        "}\n");
+    CHECK(r.hits.size() == 1);
+    if (r.hits.empty()) return;
+    CHECK(r.blocks.size() == 1);
+    if (r.blocks.empty()) return;
+    CHECK(!r.blocks[0].text.empty());
+    CHECK(r.blocks[0].text.find("lib_c_AND_dsl") != std::string::npos);
+}
+
 } // namespace
 
 int main() {
@@ -244,6 +385,10 @@ int main() {
     test_grouper_nested_scopes();
     test_ast_driven_single();
     test_grouper_size_mismatch_is_empty();
+    test_main_outer_block_suppresses_cleanup();
+    test_non_main_free_function_emits_cleanup();
+    test_lambda_inside_main_emits_cleanup();
+    test_nested_block_inside_main_emits_cleanup();
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
 }

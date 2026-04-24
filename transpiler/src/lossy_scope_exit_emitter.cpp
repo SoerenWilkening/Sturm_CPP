@@ -43,6 +43,11 @@
 
 #include "lossy_scope_exit_emitter.hpp"
 
+#include "clang/AST/ASTContext.h"
+#include "clang/AST/Decl.h"
+#include "clang/AST/ParentMapContext.h"
+#include "clang/AST/Stmt.h"
+
 #include <cstddef>
 #include <sstream>
 #include <string>
@@ -138,9 +143,28 @@ LossyCleanupEmission emit_lossy_cleanup(const LossyOpHit& hit,
     return em;
 }
 
+bool is_main_outer_block(const clang::CompoundStmt* block,
+                         clang::ASTContext& ctx) {
+    // PRD §4.3 predicate. The enclosing CompoundStmt's IMMEDIATE parent
+    // is a FunctionDecl named `main` iff `block` is main's outermost
+    // body. Lambda bodies have a CXXMethodDecl parent named
+    // `operator()`; nested if/while bodies have a control-flow Stmt
+    // parent; non-main function bodies have a FunctionDecl parent
+    // whose name differs. The single `getNameAsString() == "main"`
+    // check distinguishes all three negative cases.
+    if (block == nullptr) return false;
+    const auto parents =
+        ctx.getParents(clang::DynTypedNode::create(*block));
+    if (parents.empty()) return false;
+    const auto* fd = parents[0].get<clang::FunctionDecl>();
+    if (fd == nullptr) return false;
+    return fd->getNameAsString() == "main";
+}
+
 std::vector<BlockCleanup>
 group_cleanups_by_block(const std::vector<LossyOpHit>& hits,
-                        const std::vector<LossyEmission>& forwards) {
+                        const std::vector<LossyEmission>& forwards,
+                        clang::ASTContext* ctx) {
     std::vector<BlockCleanup> out;
     // Defensive: misaligned vectors are a wiring bug. Refuse rather
     // than emit half-correct output.
@@ -160,6 +184,16 @@ group_cleanups_by_block(const std::vector<LossyOpHit>& hits,
         out.push_back(std::move(bc));
     }
 
+    // LO-2d: per-block main-outer suppression flags computed once. A
+    // null `ctx` means "no AST available, do not suppress" — the legacy
+    // 2-arg overload routes here with nullptr.
+    std::vector<bool> suppress(out.size(), false);
+    if (ctx != nullptr) {
+        for (std::size_t b = 0; b < out.size(); ++b) {
+            suppress[b] = is_main_outer_block(out[b].enclosing_block, *ctx);
+        }
+    }
+
     // Pass 2: walk REVERSE, concatenate cleanup text into the matching
     // block's slot. Reverse iteration realises LIFO: the last hit in
     // the input cleans up first in the output.
@@ -169,11 +203,18 @@ group_cleanups_by_block(const std::vector<LossyOpHit>& hits,
         if (block == nullptr) continue;
         auto it = idx.find(block);
         if (it == idx.end()) continue;  // unreachable; defensive
+        if (suppress[it->second]) continue;  // PRD §4.3
         LossyCleanupEmission cu = emit_lossy_cleanup(hits[i], forwards[i]);
         if (cu.text.empty()) continue;  // skip degenerate
         out[it->second].text += cu.text;
     }
     return out;
+}
+
+std::vector<BlockCleanup>
+group_cleanups_by_block(const std::vector<LossyOpHit>& hits,
+                        const std::vector<LossyEmission>& forwards) {
+    return group_cleanups_by_block(hits, forwards, nullptr);
 }
 
 } // namespace sturm::transpile
