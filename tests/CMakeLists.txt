@@ -150,6 +150,10 @@ add_subdirectory(backend)
 # ── Qtypes test subdirectory (sturm-lo LO-1e and later) ───────────────────────
 add_subdirectory(qtypes)
 
+# ── Lib test subdirectory (sturm-lo LO-1d and siblings) ───────────────────────
+# DSL-level adjoint roundtrip tests for include/sturm/lib/*_dsl.hpp primitives.
+add_subdirectory(lib)
+
 # ── Transpiler-MVP Group C tests (M10+) ───────────────────────────────────────
 # Holds consumer-facing tests that exercise the transpiler toolchain from the
 # outside (add_quantum_executable, snapshot fixtures, gate-stream equivalence).

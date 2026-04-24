@@ -1,26 +1,14 @@
 // logic_dsl.hpp — M15 (PRD v3): Boolean logic in DSL style using qbool operators.
 //
 // Rewrites OR, NAND, NOR, XNOR using qbool operators (^=, &, |, flip()) instead
-// of direct primitive calls.
+// of direct primitive calls. All functions in sturm:: namespace; no _when
+// variants — WHEN lifting is automatic via the qbool/BitProxy operator path.
 //
-// Functions in sturm:: namespace:
-//
-//   lib_or_dsl(a, b, c)   — OR:  c ^= (a | b)
-//                            operator| + operator^= path (2 CX + 1 CCX).
-//
-//   lib_nand_dsl(a, b, c) — NAND: c ^= (a & b); c.flip()
-//                            Toffoli + X = 2 gates.
-//
-//   lib_nor_dsl(a, b, c)  — NOR: De Morgan approach
-//                            a.flip(); b.flip(); c ^= (a & b); b.flip(); a.flip();
-//                            = 2 X + 1 CCX + 2 X = 5 gates.
-//
+// Functions:
+//   lib_or_dsl(a, b, c)   — OR:   c ^= (a | b)                  2 CX + 1 CCX
+//   lib_nand_dsl(a, b, c) — NAND: c ^= (a & b); c.flip()        1 CCX + 1 X
+//   lib_nor_dsl(a, b, c)  — NOR:  X(a); X(b); c^=(a&b); X(b); X(a)
 //   lib_xnor_dsl(a, b, c) — XNOR: c ^= a; c ^= b; c.flip()
-//                            = 2 CX + 1 X = 3 gates.
-//
-// All functions are in the sturm:: namespace.
-// No _when variants, no explicit context parameter.
-// WHEN lifting is automatic: qbool operators consult the control stack.
 //
 // Target: <120 LoC.
 
@@ -28,6 +16,14 @@
 
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
+#include "sturm/routines/invert.hpp"
+
+// Forward-declare BitProxy for the LO-1d adjoint registration (backend-only).
+namespace sturm {
+#ifdef STURM_BACKEND_ENABLED
+struct BitProxy;
+#endif
+}  // namespace sturm
 
 namespace sturm {
 
@@ -95,4 +91,22 @@ inline void lib_xnor_dsl(Bit& a, Bit& b, Bit& c) {
     c.flip();   // X(c): c = NOT(a XOR b) = XNOR(a,b)
 }
 
+// ── __lib_or_dsl_adj (LO-1d, sturm-le6w) ──────────────────────────────────────
+// Adjoint of lib_or_dsl for the LO-2 rewrite's scope-exit cleanup
+// (PRD §2.2/§2.3): reverse-order of `c ^= (a|b)` = `c^=a; c^=b; c^=(a&b)`.
+// Each gate self-inverses and targets c, so applying the reversed sequence
+// on c holding `a|b` returns c to |0>.  Registered only for the BitProxy
+// instantiation consumed by the per-bit LO rewrite.
+template <typename Bit>
+inline void __lib_or_dsl_adj(Bit& a, Bit& b, Bit& c) {
+    c ^= (a & b);   // CCX(a,b,c)
+    c ^= b;         // CX(b,c)
+    c ^= a;         // CX(a,c)
+}
+
 } // namespace sturm
+
+#ifdef STURM_BACKEND_ENABLED
+STURM_REGISTER_ADJOINT(sturm::lib_or_dsl<sturm::BitProxy>,
+                       sturm::__lib_or_dsl_adj<sturm::BitProxy>)
+#endif
