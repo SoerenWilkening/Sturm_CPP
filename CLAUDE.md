@@ -17,7 +17,7 @@ This applies to every command you run, every subagent you spawn, every script yo
 
 At the start of every session, read:
 - `docs/01_principles.md` — core design principles
-- `docs/roadmap_transpiler_post_mvp.md` — phases to execute after the MVP pipeline is green
+- `docs/TODO_reversibility_deferrals.md` — outstanding reversibility deferrals
 
 **When archiving a document** (moving to `docs/archive/`), also remove its entry from this Required Reading list. A document in the archive must not be a session dependency.
 
