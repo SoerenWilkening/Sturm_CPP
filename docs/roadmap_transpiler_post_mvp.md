@@ -2524,6 +2524,257 @@ Lower priority, tracked for visibility.
 > for the shapes P-C / Q-B / R-A / R-B / S-A already accept, and
 > nothing else.
 
+> **2026-04-24:** Phase T complete. T-0..T-6 landed end-to-end,
+> closing the automatic-adjoint-synthesis cluster (P → Q → R → S
+> → T) at its integration capstone: the transpiler's
+> `ASTConsumer` now owns a `SynthesisRegistry` member and drives
+> every `[[clang::annotate("sturm::reversible")]]` FunctionDecl
+> through the full P-C validate → Q-B constness → Q-A twin synth
+> → R-A adjoint emission → S-A loop descent → R-B auto-
+> registration pipeline already unit-pinned by the standalone
+> modules. The drive-matcher emits a sibling `__<fn>_adj` body
+> plus a global-scope `STURM_REGISTER_ADJOINT(fn, __<fn>_adj);`
+> line flushed into the rewriter buffer from
+> `HandleTranslationUnit` BEFORE the second PM3 transpile pass,
+> so PI-1's existing registration matcher consumes the macro on
+> the next pass with no new matcher needed on the registration
+> side. Diagnostic emission is deferred through the same end-of-
+> TU flush: a P-C / Q-B rejection only fires a hard error when
+> all three PRD §9 Q2 conditions hold — the forward carries
+> `[[clang::annotate("sturm::reversible")]]`, no hand-registered
+> adjoint exists in the PI-1 `RoutineRegistry`, and the TU
+> contains at least one `invert(&fd)` call site — otherwise the
+> rejection is silent and the hand-registered entry (if any)
+> wins. End-to-end coverage: four runtime roundtrips in
+> `tests/test_invert.cpp` (straight-line XOR oracle plus the
+> three loop shapes) pin the forward-then-synthesized-adjoint
+> identity + zero gate counter guarantee with NO hand-written
+> adjoint and NO `STURM_REGISTER_ADJOINT` macro in the
+> transpiler input; three Q-positive snapshot fixtures
+> (`reversible_return_style_qbool`,
+> `reversible_return_style_qint`,
+> `reversible_out_param_canonical`) flip from pass-through to
+> real post-synthesis goldens; seven diagnostic tests flip from
+> `MUST_NOT_CONTAIN` to `MUST_CONTAIN` with
+> `EXPECTED_LINE=<basename>:<line>:` consuming the pre-existing
+> `.expected.diag` goldens; an m12 straight-line pair
+> (`m12_reversible_synth_{transpiled,reference}`) in
+> `tests/transpiler/test_gate_equivalence.cpp` complements the
+> three m12 loop pairs already landed under S-5, asserting byte-
+> identical counter-mode `GateRecord` streams between the
+> synthesized and hand-written adjoints at the gate-stream
+> level. No new synthesis modules are introduced — Phase T is
+> strictly driver-side integration of the modules that Phase
+> R's R-7 and Phase S's S-7 blockquotes flagged as the sole
+> deferred follow-up before end-to-end synthesis activates on
+> real translation units. `docs/01_principles.md` unchanged: T
+> is integration work, not a new optimization layer, a new
+> runtime path, or an ancilla-lifetime change. Sub-items:
+>
+> - T-0 (sturm-xrob.1): Phase T roadmap stub (the scope
+>   blockquote above) in `docs/roadmap_transpiler_post_mvp.md`,
+>   referencing parent design
+>   `docs/prd_automatic_adjoint_synthesis.md` §9 and
+>   `docs/implementation_plan_automatic_adjoint_synthesis.md`
+>   §3 (dependency DAG).
+> - T-1 (sturm-xrob.2): `TranspileConsumer` wiring +
+>   `SynthesisRegistry` instantiation. Added a
+>   `SynthesisRegistry` member to
+>   `transpiler/src/transpile_consumer.{hpp,cpp}` (+37 impl /
+>   +10 hdr LOC) and registered the reversible-drive matcher
+>   immediately after the PI-1 `register_routine_registry_matcher`
+>   call site, so the drive matcher walks every
+>   `[[sturm::reversible]]` FD, records it in the registry, and
+>   drives the Phase R `R-A` (`adjoint_emitter`) + `R-B`
+>   (`auto_register_emitter`) pipeline via `drive_reversible`.
+>   The drive-matcher in
+>   `transpiler/src/matcher_reversible_drive.{hpp,cpp}` (+386
+>   impl / +65 hdr LOC) was split into its R-A body-emission
+>   and R-B registration-emission halves so the `__<fn>_adj`
+>   body lands inside the enclosing namespace and the
+>   `STURM_REGISTER_ADJOINT` line lands at global scope with
+>   fully-qualified names (required by the m12 straight-line
+>   pair that T-5 introduced). `HandleTranslationUnit` flushes
+>   both the body and registration text into the rewriter
+>   buffer before the second PM3 transpile pass so PI-1's
+>   matcher picks up the macro on the next pass. CMake wiring:
+>   `transpiler/CMakeLists.txt` (+29 LOC) and
+>   `transpiler/tests/CMakeLists.txt` extended to link the
+>   drive-matcher and its five dependencies
+>   (`matcher_reversible_validate`,
+>   `matcher_reversible_signature`, `return_to_out_param`,
+>   `synthesis_registry`, `adjoint_emitter`,
+>   `auto_register_emitter`) into the transpiler binary and the
+>   `test_transpile_consumer` unit target; a latent dangling-
+>   pointer bug in `transpiler/tests/test_transpile_consumer.cpp`
+>   was fixed in the same commit (raw-pointer sink replaced
+>   with a `ConsumerSnapshot` populated in
+>   `EndSourceFileAction`). Six snapshot goldens under
+>   `tests/transpiler/fixtures/` updated to match the T-1
+>   auto-synthesis emission —
+>   `reversible_body_xor.expected.cpp`,
+>   `reversible_body_and.expected.cpp`,
+>   `reversible_body_compound.expected.cpp`,
+>   `reversible_loop_ripple.expected.cpp`,
+>   `reversible_loop_bit_reversal.expected.cpp`,
+>   `reversible_loop_adder_carry.expected.cpp` — confirmed as
+>   genuine T-series regressions, not pre-existing.
+> - T-2 (sturm-xrob.3): error-emission gating per PRD §9 Q2.
+>   Extended `transpiler/src/matcher_reversible_drive.{hpp,cpp}`
+>   + `transpiler/src/diag_context.{hpp,cpp}` to defer the
+>   drive-matcher's diagnostic emission into a buffer drained
+>   from `HandleTranslationUnit` after the PI-1 `invert(...)`
+>   call-site scan has completed. A P-C / Q-B rejection only
+>   escalates to a hard error when all three PRD §9 Q2
+>   conditions fire: the forward carries
+>   `[[clang::annotate("sturm::reversible")]]`, no hand-
+>   registered adjoint exists in the `RoutineRegistry`, and the
+>   TU contains at least one `invert(&fd)` call site. Otherwise
+>   the rejection is silent. Seven fixture inputs under
+>   `tests/transpiler/fixtures/` — the five P-5 reject fixtures
+>   (`reversible_reject_{classical_cond,io,measurement,
+>   unregistered_callee,while_loop}.cpp`) plus the two Q-B
+>   reject fixtures (`reversible_sig_const_ref_mutated.cpp`,
+>   `reversible_sig_multi_return.cpp`) — updated to take
+>   `invert(&fd)` of the forward so the three-condition gate
+>   fires and the error surfaces under transpile. Harness
+>   wiring in `tests/transpiler/CMakeLists.txt` updated to match.
+>   Unit-pinned through
+>   `transpiler/tests/test_matcher_reversible_drive.cpp`
+>   extensions covering each leg of the three-condition gate.
+> - T-3 (sturm-xrob.4): four end-to-end runtime roundtrips in
+>   `tests/test_invert.cpp` — a straight-line XOR oracle (based
+>   on the `reversible_body_xor` fixture shape) plus the three
+>   loop shapes (`reversible_loop_ripple`,
+>   `reversible_loop_bit_reversal`,
+>   `reversible_loop_adder_carry`). Each forward is declared
+>   `[[clang::annotate("sturm::reversible")]]` with NO hand-
+>   written adjoint and NO `STURM_REGISTER_ADJOINT` macro in the
+>   transpiler input; each test transpiles through the normal
+>   pipeline, calls `sturm::invert(&fwd)(args)` on a prepared
+>   state, and asserts the forward-then-synthesized-adjoint is
+>   identity + the gate counter is zero at scope exit. One new
+>   fixture under `tests/transpiler/fixtures/` —
+>   `reversible_invert_roundtrip.cpp` — sources the straight-
+>   line payload; the three loop payloads reuse the Phase S
+>   loop fixtures verbatim. `tests/CMakeLists.txt` extended to
+>   wire the four roundtrips through the transpile-then-
+>   compile-then-run harness. `include/sturm/routines/invert.hpp`
+>   unchanged — T-3 reuses `sturm::invert(fn)` untouched.
+> - T-4 (sturm-xrob.5): flipped existing fixtures from pass-
+>   through / `MUST_NOT_CONTAIN` to real goldens. The three
+>   Q-positive `expected.cpp` files under
+>   `tests/transpiler/fixtures/` —
+>   `reversible_return_style_qbool.expected.cpp`,
+>   `reversible_return_style_qint.expected.cpp`,
+>   `reversible_out_param_canonical.expected.cpp` — now contain
+>   the real post-synthesis output per PRD §4.1 / §5.1: the
+>   injected `__fn_out` twin (for the return-style cases) +
+>   `__fn_adj` body + `STURM_REGISTER_ADJOINT(fn, __fn_adj);`
+>   line. Seven diagnostic tests in
+>   `tests/transpiler/CMakeLists.txt` flipped from
+>   `MUST_NOT_CONTAIN` to `MUST_CONTAIN` +
+>   `EXPECTED_LINE=<basename>:<line>:` —
+>   `reversible_sig_const_ref_mutated_diagnostic`,
+>   `reversible_sig_multi_return_diagnostic`,
+>   `reversible_reject_measurement`, `reversible_reject_io`,
+>   `reversible_reject_unregistered_callee`,
+>   `reversible_reject_while_loop`,
+>   `reversible_reject_classical_cond` — each consuming the
+>   `.expected.diag` golden that already existed under
+>   `tests/transpiler/fixtures/`. The `reversible_oracle_diagnostic`
+>   assertion flipped from "stderr does not mention (P9d)" to
+>   "stderr empty AND transpile exit 0". New harness
+>   `tests/transpiler/check_reversible_diagnostic.cmake`
+>   finalised to the flipped contract; downstream driver edits
+>   in `transpiler/src/matcher_reversible_drive.cpp`,
+>   `transpiler/src/matcher_reversible_validate.cpp`, and
+>   `transpiler/src/diag_context.{hpp,cpp}` pin the exact
+>   diagnostic text the harness compares against. Unit-pinned
+>   through `transpiler/tests/test_matcher_reversible_validate.cpp`
+>   and `transpiler/tests/test_diag_context.cpp` extensions.
+> - T-5 (sturm-xrob.6): m12 straight-line pair added to
+>   `tests/transpiler/test_gate_equivalence.cpp` —
+>   `m12_reversible_synth_{transpiled,reference}` namespaces
+>   alongside the three m12 loop pairs that S-5 shipped under
+>   `sturm-ha2k.7`. Transpiled side
+>   (`tests/transpiler/fixtures/reversible_synth_runtime.cpp`)
+>   uses `[[clang::annotate("sturm::reversible")]]` and relies
+>   on auto-synthesis; reference side
+>   (`tests/transpiler/fixtures/reversible_synth_reference.cpp`)
+>   has a hand-written adjoint via `STURM_REGISTER_ADJOINT`.
+>   Byte-identical counter-mode `GateRecord` streams prove the
+>   synthesized adjoint matches the hand-written reference at
+>   the gate-stream level. The drive-matcher's body-versus-
+>   registration split (T-1) is what lets the `__<fn>_adj`
+>   body land inside the enclosing namespace while the
+>   `STURM_REGISTER_ADJOINT` line lands at global scope with
+>   fully-qualified names — required for the m12 pair to
+>   compile under the gate-equivalence harness.
+> - T-6 (sturm-xrob.7): this roadmap update.
+>
+> **Files touched across T-0..T-6.** Source and test files
+> edited across the T-series commits (8bb6c06 T-1 fix, 9a926f2
+> T-2, 81db5e3 T-3, 9cbd31f T-4, 76b1b7e T-5+T-1 wiring):
+> `transpiler/src/transpile_consumer.{hpp,cpp}`,
+> `transpiler/src/matcher_reversible_drive.{hpp,cpp}`,
+> `transpiler/src/matcher_reversible_validate.cpp`,
+> `transpiler/src/diag_context.{hpp,cpp}`,
+> `transpiler/CMakeLists.txt`,
+> `transpiler/tests/CMakeLists.txt`,
+> `transpiler/tests/test_transpile_consumer.cpp`,
+> `transpiler/tests/test_matcher_reversible_drive.cpp`,
+> `transpiler/tests/test_matcher_reversible_validate.cpp`,
+> `transpiler/tests/test_diag_context.cpp`,
+> `tests/CMakeLists.txt`,
+> `tests/test_invert.cpp`,
+> `tests/transpiler/CMakeLists.txt`,
+> `tests/transpiler/check_reversible_diagnostic.cmake`,
+> `tests/transpiler/test_gate_equivalence.cpp`,
+> `tests/transpiler/fixtures/reversible_body_xor.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_body_and.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_body_compound.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_loop_ripple.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_loop_bit_reversal.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_loop_adder_carry.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_oracle.cpp`,
+> `tests/transpiler/fixtures/reversible_out_param_canonical.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_return_style_qbool.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_return_style_qint.expected.cpp`,
+> `tests/transpiler/fixtures/reversible_reject_classical_cond.cpp`,
+> `tests/transpiler/fixtures/reversible_reject_io.cpp`,
+> `tests/transpiler/fixtures/reversible_reject_measurement.cpp`,
+> `tests/transpiler/fixtures/reversible_reject_unregistered_callee.cpp`,
+> `tests/transpiler/fixtures/reversible_reject_while_loop.cpp`,
+> `tests/transpiler/fixtures/reversible_sig_const_ref_mutated.cpp`,
+> `tests/transpiler/fixtures/reversible_sig_multi_return.cpp`,
+> `tests/transpiler/fixtures/reversible_invert_roundtrip.cpp`,
+> `tests/transpiler/fixtures/reversible_synth_runtime.cpp`,
+> `tests/transpiler/fixtures/reversible_synth_reference.cpp`,
+> and this file (`docs/roadmap_transpiler_post_mvp.md`).
+>
+> **PRD §9 deferrals.** Recursion, cross-TU synthesis, member-
+> function synthesis, and template synthesis remain deferred
+> per plan §9. These are roadmap notes only — **no bd issues
+> filed** per the locked decision at Phase T scoping (carried
+> through unchanged at Phase T closure). Phase T is the
+> narrowest possible integration surface: it activates end-to-
+> end synthesis for the shapes P-C / Q-B / R-A / R-B / S-A
+> already accept, and nothing else.
+>
+> Green-light: **314/314 CTests passing, 0 failed** under
+> `ctest --parallel 6` at closure (2026-04-24, real time ~48.91s,
+> labels: backend = 65 tests, transpiler = 230 tests). Phase T
+> is now complete — the automatic-adjoint-synthesis cluster
+> (P → Q → R → S → T) has closed its final integration phase.
+> Every `[[clang::annotate("sturm::reversible")]]` forward that
+> P-C / Q-B accept and R-A / R-B / S-A can emit for now gets an
+> auto-synthesised adjoint sibling through the transpiler's
+> normal pipeline, with no user-side `STURM_REGISTER_ADJOINT`
+> call required. The cluster's load-bearing principles (P9a,
+> P9b, P9c, P9d, B10, B11) all remain honoured by the
+> already-landed modules; Phase T simply threads them together.
+
 ---
 
 ## Principle Check
