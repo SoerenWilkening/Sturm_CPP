@@ -1132,6 +1132,64 @@ add_test(NAME test_matcher_peephole_reorder
 set_tests_properties(test_matcher_peephole_reorder PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: LO-2a lossy-op matcher (sturm-9254) ──────────────────────────
+# Unit test for `register_lossy_op_matcher`. Drives a real Clang tooling
+# invocation (runToolOnCodeWithArgs) against a 5-operator stub qint_t and
+# asserts the matcher fires on `*=`, `/=`, `%=`, `&=`, `|=` against qint_t
+# LHS, rejects reversible compound-assigns (`+=`, `-=`, `^=`) and plain
+# `=`, and rejects non-qint LHS types (builtin int, user class `NotQInt`).
+#
+# The matcher is a stand-alone module with no QUnit dependency — it writes
+# `LossyOpHit` records into a caller-owned vector. Link only the matcher
+# TU itself; no transitive matcher-common deps (the .hpp is header-only)
+# and no qir.cpp (no QUnit mutation).
+add_executable(test_matcher_lossy_op
+    test_matcher_lossy_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+)
+target_include_directories(test_matcher_lossy_op PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_lossy_op PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_lossy_op PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_LOSSY_OP NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_lossy_op PRIVATE
+    ${LLVM_DEFS_LIST_LOSSY_OP})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_lossy_op PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_lossy_op PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_OP support)
+    target_link_libraries(test_matcher_lossy_op PRIVATE
+        ${LLVM_LIBS_LOSSY_OP})
+endif()
+add_test(NAME test_matcher_lossy_op
+         COMMAND test_matcher_lossy_op)
+set_tests_properties(test_matcher_lossy_op PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
