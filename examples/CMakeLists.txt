@@ -449,6 +449,37 @@ target_sources(example_in_memory_transpile PRIVATE
 )
 target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)
 
+# ── Example: WHEN-nested lossy compound-assign garbage tracking ─────────────
+# Runtime-behavior demo for the sturm-h5it epic (CSWAP-and-leak tails for
+# &=, |=, *=, /=, %= under WHEN), sturm-pqs0 (MUL_UPPER_W and
+# DIV_REMAINDER tagging), and sturm-njul (WhenScopeGarbage scope-exit
+# consumer).  Unlike the Phase A–N examples above, no transpiler matcher
+# fires on this source — the fix is entirely in
+# include/sturm/qtypes/qint_{arith,bitwise}_v3.hpp and
+# include/sturm/control/{garbage_registry,when_scope_garbage}.hpp, so the
+# generated sibling at build/sturm_gen/examples/when_garbage_discovery.cpp
+# is essentially identical to the source.  The example prints per-phase
+# snapshots of sturm::detail::garbage_registry so a reader can see the
+# leaked register register tagged inside the WHEN body and popped back
+# to baseline by the scope-exit consumer.  Setting STURM_GARBAGE_REPORT
+# at runtime additionally surfaces the one-line stderr diagnostic per
+# WHEN scope exit.  Same helper / bypass pattern as example_rotations;
+# no new runtime symbols are introduced.
+add_quantum_executable(example_when_garbage_discovery
+    when_garbage_discovery.cpp
+)
+target_sources(example_when_garbage_discovery PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_when_garbage_discovery PRIVATE orkan_headers)
+
 # ── PM4-7: demo plugin exercising the PM4-1 / PM4-2 extension surface ───────
 # Builds `sturm-pm4-demo-plugin` as a MODULE shared library. The plugin is
 # dlopen-only — it is not wired into any `add_quantum_executable` target.
