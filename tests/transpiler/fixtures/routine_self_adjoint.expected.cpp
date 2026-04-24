@@ -54,7 +54,7 @@ void demo() {
     my_swap(x, y);
 
 #line 52 "routine_self_adjoint.cpp"
-    invert(my_swap)(x, y);
+    sturm::invert<&my_swap>()(x, y);
 
 #line 53 "routine_self_adjoint.cpp"
 }

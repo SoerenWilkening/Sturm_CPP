@@ -298,20 +298,27 @@ namespace {
 
 // Phase T T-2 (sturm-xrob.3): RecursiveASTVisitor that walks every
 // `CallExpr` in the TU looking for calls to `sturm::invert`. For each
-// match we resolve the single argument to the `FunctionDecl` it
-// references (peeling through implicit casts + `&`) and push the
-// result into `targets_`. The walker keys on the defining decl
+// match we resolve the targeted `FunctionDecl` and push it into
+// `targets_`. The walker keys on the defining decl
 // (`fd->getDefinition()`) when available so the recorded set matches
 // `SynthesisRegistry`'s canonical keys.
 //
-// `invert(&fn)` is the canonical runtime spelling (see
-// `include/sturm/routines/invert.hpp` line 70). We also accept the
-// rarer `invert(fn)` (no address-of) and `invert(&ns::fn)` shapes so
-// downstream user code that expands a macro / writes a qualified
-// name still gets the gate's condition (3) to fire. Any CallExpr to
-// `sturm::invert` whose argument does not resolve to a FunctionDecl
-// is silently skipped — it is not a condition-(3) trigger under any
-// reading of PRD §9 Q2.
+// Two call shapes are accepted, mirroring invert.hpp's pre- and post-
+// sturm-bdmh APIs:
+//
+//   * `invert<&fn>()`     — post-sturm-bdmh NTTP form. The `&fn` is a
+//                           non-type template argument; the CallExpr's
+//                           argument list is empty.
+//   * `invert(&fn)`       — pre-sturm-bdmh type-keyed form, retained
+//                           because external user TUs / older test
+//                           fixtures still use it.
+//
+// We also accept the rarer `invert(fn)` (no address-of) and
+// `invert(&ns::fn)` shapes so downstream user code that expands a
+// macro / writes a qualified name still gets the gate's condition (3)
+// to fire. Any CallExpr to `sturm::invert` whose target does not
+// resolve to a FunctionDecl is silently skipped — it is not a
+// condition-(3) trigger under any reading of PRD §9 Q2.
 class InvertCallCollector
     : public clang::RecursiveASTVisitor<InvertCallCollector> {
 public:
@@ -335,6 +342,27 @@ public:
         // direction for user-facing error emission.
         const std::string qn = callee->getQualifiedNameAsString();
         if (qn != "sturm::invert" && qn != "invert") return true;
+
+        // (1) Post-sturm-bdmh NTTP form: `invert<&fn>()`. The CallExpr
+        //     has zero arguments and the target lives in the callee's
+        //     template-argument list. `getTemplateSpecializationArgs`
+        //     returns the resolved arguments; the first is the function
+        //     pointer NTTP we want.
+        if (const auto* targs = callee->getTemplateSpecializationArgs()) {
+            if (targs->size() >= 1) {
+                const TemplateArgument& ta = targs->get(0);
+                const FunctionDecl* target = resolve_nttp_target(ta);
+                if (target != nullptr) {
+                    const FunctionDecl* def = target->getDefinition();
+                    if (def == nullptr) def = target;
+                    targets.push_back(def);
+                    return true;
+                }
+            }
+        }
+
+        // (2) Pre-sturm-bdmh type-keyed form: `invert(&fn)` — the target
+        //     is the first runtime argument.
         if (ce->getNumArgs() < 1) return true;
         const Expr* arg = ce->getArg(0);
         if (arg == nullptr) return true;
@@ -368,6 +396,23 @@ private:
         }
         if (const auto* dre = llvm::dyn_cast_or_null<DeclRefExpr>(cur)) {
             return llvm::dyn_cast<FunctionDecl>(dre->getDecl());
+        }
+        return nullptr;
+    }
+
+    // Resolve a non-type template argument (the post-sturm-bdmh
+    // `invert<&fn>()` form) to its referenced FunctionDecl. Mirrors
+    // the routine_registry.cpp `extract_forward_from_targ` cases for
+    // Declaration / Expression argument kinds.
+    const FunctionDecl* resolve_nttp_target(const TemplateArgument& ta) const {
+        if (ta.getKind() == TemplateArgument::Declaration) {
+            const auto* d = ta.getAsDecl();
+            return llvm::dyn_cast_or_null<FunctionDecl>(d);
+        }
+        if (ta.getKind() == TemplateArgument::Expression) {
+            const Expr* e = ta.getAsExpr();
+            if (e == nullptr) return nullptr;
+            return resolve_target(e);
         }
         return nullptr;
     }

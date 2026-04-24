@@ -6,7 +6,7 @@
 //
 // Invariants pinned:
 //   (1) `lib_or_dsl(a, b, c)` with c starting at |0> puts c in state (a | b).
-//   (2) `sturm::invert(&sturm::lib_or_dsl<BitProxy>)` resolves to the
+//   (2) `sturm::invert<&sturm::lib_or_dsl<BitProxy>>()` resolves to the
 //       registered `__lib_or_dsl_adj`.
 //   (3) Calling the adjoint on (a, b, c) after the forward zeros c
 //       (statevector readout == 0).
@@ -90,9 +90,9 @@ static void run_truth_case(uint32_t a_val, uint32_t b_val) {
     // for OR). The swap-and-uncompute scope-exit shape is modelled by calling
     // the adjoint on the same (a, b, c) with c already holding a|b.
     constexpr auto adj_ptr =
-        sturm::invert(&sturm::lib_or_dsl<sturm::BitProxy>);
+        sturm::invert<&sturm::lib_or_dsl<sturm::BitProxy>>();
     static_assert(adj_ptr != nullptr,
-                  "invert(lib_or_dsl<BitProxy>) must resolve to a registered adjoint");
+                  "invert<&lib_or_dsl<BitProxy>>() must resolve to a registered adjoint");
     adj_ptr(a, b, c);
     assert(read_qubit(sc.sv(), 2u, 3u) == 0u
            && "adjoint: c register returned to |0> post-swap-undo");

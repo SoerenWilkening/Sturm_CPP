@@ -14,12 +14,12 @@
 // LO rewrite shape (PRD §2.1) for `a /= b` after compute+swap-undo:
 //   state before adjoint: (a=old_a, b=b, tmp_q=old_a/b, tmp_r=old_a%b)
 //   invariant (1): a == tmp_q * b + tmp_r         ← enforced by divide
-//   invariant (2): invert(lib_div_dsl)(a, b, tmp_q, tmp_r) zeros tmp_q, tmp_r
-//                  while preserving a and b.
+//   invariant (2): invert<&lib_div_dsl>()(a, b, tmp_q, tmp_r) zeros tmp_q,
+//                  tmp_r while preserving a and b.
 //
 // For `a %= b`:
 //   state before adjoint: (a=old_a, b=b, tmp_r=old_a%b)
-//   invariant: invert(lib_mod_dsl)(a, b, tmp_r) zeros tmp_r.
+//   invariant: invert<&lib_mod_dsl>()(a, b, tmp_r) zeros tmp_r.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/div_dsl.hpp"
@@ -122,9 +122,9 @@ static void run_div_case(uint32_t a_val, uint32_t b_val) {
     assert(qv * b_sv + rv == a_sv && "invariant a == q*b + r post-swap-undo");
 
     constexpr auto adj_ptr =
-        sturm::invert(&sturm::lib_div_dsl<sturm::BitProxy>);
+        sturm::invert<&sturm::lib_div_dsl<sturm::BitProxy>>();
     static_assert(adj_ptr != nullptr,
-                  "invert(lib_div_dsl<BitProxy>) must resolve to registered adjoint");
+                  "invert<&lib_div_dsl<BitProxy>>() must resolve to registered adjoint");
     adj_ptr(a.bits.data(), W, b.bits.data(), W, q.bits.data(), r.bits.data());
 
     qv   = read_reg(sc.sv(), q.qi.data(), W, n_orkan);
@@ -164,9 +164,9 @@ static void run_mod_case(uint32_t a_val, uint32_t b_val) {
     assert(b_sv == b_val && "forward: b preserved");
 
     constexpr auto adj_ptr =
-        sturm::invert(&sturm::lib_mod_dsl<sturm::BitProxy>);
+        sturm::invert<&sturm::lib_mod_dsl<sturm::BitProxy>>();
     static_assert(adj_ptr != nullptr,
-                  "invert(lib_mod_dsl<BitProxy>) must resolve to registered adjoint");
+                  "invert<&lib_mod_dsl<BitProxy>>() must resolve to registered adjoint");
     adj_ptr(a.bits.data(), W, b.bits.data(), W, r.bits.data());
 
     rv   = read_reg(sc.sv(), r.qi.data(), W, n_orkan);

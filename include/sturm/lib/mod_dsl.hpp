@@ -3,7 +3,7 @@
 // lib_mod_dsl(a, n, b, d, rem): out-of-place n-bit modulo; rem must start |0>.
 // __lib_mod_dsl_adj(a, n, b, d, rem) — gate-reverse of lib_mod_dsl; given
 // rem = a%b, zeros rem (inputs unchanged).  Registered via
-// STURM_REGISTER_ADJOINT so `invert(lib_mod_dsl)(…)` resolves at the LO
+// STURM_REGISTER_ADJOINT so `invert<&lib_mod_dsl>()(…)` resolves at the LO
 // rewrite's scope-exit cleanup.  See plan_lossy_compound_reversibility §3.
 //
 // Forward sequence: alloc q; div(a,b,q,rem); alloc tr; div(a,b,q,tr);

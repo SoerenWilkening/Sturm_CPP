@@ -7,7 +7,7 @@
 // __lib_div_dsl_adj (LO-1b, sturm-1rjw): gate-reverse of lib_div_dsl.  Given
 //   state satisfying the divide invariant (dividend == quotient * divisor +
 //   remainder), zeros quotient and remainder.  Registered via
-//   STURM_REGISTER_ADJOINT so `invert(lib_div_dsl)(…)` resolves at the LO
+//   STURM_REGISTER_ADJOINT so `invert<&lib_div_dsl>()(…)` resolves at the LO
 //   rewrite's scope-exit cleanup.
 //
 // Algorithm: non-restoring shift-subtract/add with sign tracking.

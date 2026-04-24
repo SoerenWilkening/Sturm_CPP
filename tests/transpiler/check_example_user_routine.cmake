@@ -14,8 +14,8 @@
 #     Case 1: local-intermediate output — a call whose output argument
 #             is a qbool declared in the call's enclosing scope. PI-3
 #             classifies this as `Intermediate`; PI-4's uncompute pass
-#             plants `invert(rotate_by_k)(tmp, a, 3);` before the
-#             enclosing scope's close brace.
+#             plants `sturm::invert<&rotate_by_k>()(tmp, a, 3);` before
+#             the enclosing scope's close brace (post-sturm-bdmh shape).
 #
 #     Case 2: escaping output — a call whose output argument is a
 #             function parameter (the caller routine's ParmVarDecl).
@@ -31,20 +31,21 @@
 #   1. GENERATED exists on disk.
 #   2. GENERATED contains the Case 1 rewrite:
 #        - `rotate_by_k(tmp, a, 3);` preserved (forward call untouched).
-#        - `invert(rotate_by_k)(tmp, a, 3);` appears AFTER the forward
-#          call inside the same enclosing scope.
+#        - `sturm::invert<&rotate_by_k>()(tmp, a, 3);` appears AFTER the
+#          forward call inside the same enclosing scope.
 #   3. GENERATED contains the Case 2 escape rewrite:
 #        - `rotate_by_k(out, a, 3);` preserved inside the helper
 #          function whose `out` parameter is the routine's output.
-#        - NO `invert(rotate_by_k)(out, a, 3);` is injected after that
-#          forward call — the output escapes through the function
-#          parameter so PI-3 classifies it as `Final` and PI-4 emits
-#          nothing.
-#   4. SOURCE does NOT contain the injected `invert(rotate_by_k)(...)`
-#      fragment after `int main()` — the transpiler must not
-#      contaminate its input.  We anchor the "no-leak" search after
-#      `int main()` to avoid false-positives on the source's top-of-
-#      file comment block, which discusses the rewrite shape in prose.
+#        - NO `sturm::invert<&rotate_by_k>()(out, a, 3);` is injected
+#          after that forward call — the output escapes through the
+#          function parameter so PI-3 classifies it as `Final` and PI-4
+#          emits nothing.
+#   4. SOURCE does NOT contain the injected
+#      `sturm::invert<&rotate_by_k>()(...)` fragment after `int main()`
+#      — the transpiler must not contaminate its input.  We anchor the
+#      "no-leak" search after `int main()` to avoid false-positives on
+#      the source's top-of-file comment block, which discusses the
+#      rewrite shape in prose.
 
 if(NOT DEFINED SOURCE)
     message(FATAL_ERROR "check_example_user_routine: SOURCE not set")
@@ -93,12 +94,12 @@ string(LENGTH "rotate_by_k(tmp, a, 3)" _tmp_call_len)
 math(EXPR case1_tail_start "${tmp_call_offset} + ${_tmp_call_len}")
 string(SUBSTRING "${gen_main_body}" ${case1_tail_start} -1 case1_tail)
 
-string(FIND "${case1_tail}" "invert(rotate_by_k)(tmp, a, 3)"
+string(FIND "${case1_tail}" "sturm::invert<&rotate_by_k>()(tmp, a, 3)"
        invert_tmp_offset)
 if(invert_tmp_offset EQUAL -1)
     message(FATAL_ERROR
         "check_example_user_routine: expected injected "
-        "`invert(rotate_by_k)(tmp, a, 3);` AFTER the forward "
+        "`sturm::invert<&rotate_by_k>()(tmp, a, 3);` AFTER the forward "
         "`rotate_by_k(tmp, a, 3);` call inside main()'s body, but it "
         "was not found.\n  tail: <<<${case1_tail}>>>")
 endif()
@@ -142,14 +143,14 @@ endif()
 # PI-3 classifies `out` as `Final` (it's a ParmVarDecl), so
 # `skip_uncompute=true` is set and the M8 pass plants nothing. A
 # false-positive here would mean PI-3's escape classification broke.
-string(FIND "${apply_body}" "invert(rotate_by_k)" bogus_invert_offset)
+string(FIND "${apply_body}" "sturm::invert<&rotate_by_k>()" bogus_invert_offset)
 if(NOT bogus_invert_offset EQUAL -1)
     message(FATAL_ERROR
         "check_example_user_routine: found an injected "
-        "`invert(rotate_by_k)(...)` call inside `apply_rotation` — "
-        "but the `out` argument is a function parameter and PI-3 "
-        "must classify it as `Final` (escaping), so no inverse "
-        "should be injected.\n  body: <<<${apply_body}>>>")
+        "`sturm::invert<&rotate_by_k>()(...)` call inside "
+        "`apply_rotation` — but the `out` argument is a function "
+        "parameter and PI-3 must classify it as `Final` (escaping), "
+        "so no inverse should be injected.\n  body: <<<${apply_body}>>>")
 endif()
 
 # ── Assertion 4: SOURCE contains none of the injected fragments ───────────
@@ -169,7 +170,7 @@ endif()
 string(SUBSTRING "${src_content}" ${src_main_offset} -1 src_body)
 
 set(_pi6_src_patterns
-    "invert[ \t]*\\([ \t]*rotate_by_k[ \t]*\\)[ \t]*\\([ \t]*tmp[ \t]*,[ \t]*a[ \t]*,[ \t]*3[ \t]*\\)[ \t]*;")
+    "sturm::invert[ \t]*<[ \t]*&[ \t]*rotate_by_k[ \t]*>[ \t]*\\([ \t]*\\)[ \t]*\\([ \t]*tmp[ \t]*,[ \t]*a[ \t]*,[ \t]*3[ \t]*\\)[ \t]*;")
 foreach(rx IN LISTS _pi6_src_patterns)
     string(REGEX MATCH "${rx}" src_hit "${src_body}")
     if(src_hit)
@@ -185,6 +186,6 @@ endforeach()
 message(STATUS
     "check_example_user_routine: OK — generated file has the PI-6 "
     "local-intermediate rewrite (`rotate_by_k(tmp, a, 3);` + "
-    "`invert(rotate_by_k)(tmp, a, 3);` in main()), the escaping-output "
-    "case correctly skipped inside `apply_rotation` (no inverse "
-    "injected), and the source is byte-identical")
+    "`sturm::invert<&rotate_by_k>()(tmp, a, 3);` in main()), the "
+    "escaping-output case correctly skipped inside `apply_rotation` "
+    "(no inverse injected), and the source is byte-identical")

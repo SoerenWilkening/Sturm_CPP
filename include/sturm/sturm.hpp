@@ -11,7 +11,7 @@
 #include "sturm/uncompute/uncompute_api.hpp"
 
 // ── User-defined-routine inversion (Phase I PI-0, bd sturm-hi66) ─────────────
-// Exposes `sturm::invert(fn)` and the `STURM_REGISTER_ADJOINT(fn, adj)`
+// Exposes `sturm::invert<&fn>()` and the `STURM_REGISTER_ADJOINT(fn, adj)`
 // macro that registers a forward/adjoint pair for a user-written routine.
 // Header-only; zero runtime overhead.
 #include "sturm/routines/invert.hpp"

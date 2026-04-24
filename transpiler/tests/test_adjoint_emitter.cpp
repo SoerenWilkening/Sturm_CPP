@@ -362,15 +362,16 @@ void test_kind_ge_qint() {
 void test_kind_user_routine() {
     // USER_ROUTINE has NO single result — arguments sit in
     // `operands` and `routine_name` carries the callee identifier.
-    // Renders `invert(<name>)(<op0>, <op1>, ...);` at the uncompute
-    // point — same inverse text Phase I PI-4 emits.
+    // Renders `sturm::invert<&<name>>()(<op0>, <op1>, ...);` at the
+    // uncompute point — post-sturm-bdmh NTTP-form text emitted by
+    // Phase I PI-4.
     QOperation op;
     op.kind = QOpKind::USER_ROUTINE;
     op.routine_name = "helper";
     op.operands.push_back(QValueRef{"x", make_loc(1)});
     op.operands.push_back(QValueRef{"y", make_loc(2)});
     CHECK_EQ_STR(single_op_body(op),
-                 std::string("    invert(helper)(x, y);\n"));
+                 std::string("    sturm::invert<&helper>()(x, y);\n"));
 }
 
 void test_kind_ccnot_inplace() {

@@ -75,10 +75,10 @@ void demo(const qbool& in) {
     rot_b(t1, in, 3);
 
 #line 73 "routine_multiple_lifo.cpp"
-    invert(rot_b)(t1, in, 3);
+    sturm::invert<&rot_b>()(t1, in, 3);
 
 #line 72 "routine_multiple_lifo.cpp"
-    invert(rot_a)(t0, in);
+    sturm::invert<&rot_a>()(t0, in);
 
 #line 74 "routine_multiple_lifo.cpp"
 }

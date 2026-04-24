@@ -1326,7 +1326,7 @@ static void test_user_routine_emits_invert_two_outputs() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(both_out)(a, b);\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&both_out>()(a, b);\n"));
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(99)));
 }
 
@@ -1353,7 +1353,7 @@ static void test_user_routine_emits_invert_mixed_io() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(mixed_io)(x, y);\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&mixed_io>()(x, y);\n"));
 }
 
 static void test_user_routine_emits_invert_with_classical_scalar() {
@@ -1380,14 +1380,14 @@ static void test_user_routine_emits_invert_with_classical_scalar() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(scalar_fn)(out, 42);\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&scalar_fn>()(out, 42);\n"));
 }
 
 static void test_user_routine_zero_operands_still_emits_call() {
-    // A no-argument routine renders as `invert(name)();` — the inner
-    // parentheses are empty but still present. This case can arise if
-    // a user registers a parameterless compute routine (rare but not
-    // forbidden by the registrar).
+    // A no-argument routine renders as `sturm::invert<&name>()();` —
+    // the trailing argument-list parentheses are empty but still
+    // present. This case can arise if a user registers a parameterless
+    // compute routine (rare but not forbidden by the registrar).
     QScope scope;
     scope.open_brace  = make_loc(10);
     scope.close_brace = make_loc(99);
@@ -1405,7 +1405,7 @@ static void test_user_routine_zero_operands_still_emits_call() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(noop_fn)();\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&noop_fn>()();\n"));
 }
 
 static void test_user_routine_empty_name_emits_nothing() {
@@ -1484,7 +1484,7 @@ static void test_user_routine_honours_insert_before_override() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(mixed_io)(x, y);\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&mixed_io>()(x, y);\n"));
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(77)));
 }
 
@@ -1519,7 +1519,7 @@ static void test_user_routine_lifo_with_other_kinds() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 2u);
     if (ins.size() != 2) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(both_out)(x, y);\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&both_out>()(x, y);\n"));
     CHECK_EQ_STR(ins[1].code, std::string("    uncompute_or(t, a, b);\n"));
 }
 
@@ -1741,7 +1741,7 @@ static void test_hoist_to_override_user_routine_kind() {
     auto ins = synthesize(unit).insertions;
     CHECK_EQ_SIZE(ins.size(), 1u);
     if (ins.size() != 1) return;
-    CHECK_EQ_STR(ins[0].code, std::string("    invert(mixed_io)(x, y);\n"));
+    CHECK_EQ_STR(ins[0].code, std::string("    sturm::invert<&mixed_io>()(x, y);\n"));
     CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(make_loc(88)));
 }
 

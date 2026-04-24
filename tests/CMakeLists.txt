@@ -52,7 +52,7 @@ set_tests_properties(test_when_scope_garbage_consume PROPERTIES LABELS "njul")
 
 # ── Phase I PI-0 + Phase T T-3 (sturm-xrob.4): test_invert ─────────────────
 #
-# test_invert.cpp exercises the runtime `sturm::invert(fn)` surface. The
+# test_invert.cpp exercises the compile-time `sturm::invert<&fn>()` surface. The
 # original Phase I PI-0 tests (sturm-hi66) hand-register their adjoints
 # via `STURM_REGISTER_ADJOINT`. Phase T T-3 adds four end-to-end
 # roundtrip tests whose forwards are declared with
@@ -63,7 +63,7 @@ set_tests_properties(test_when_scope_garbage_consume PROPERTIES LABELS "njul")
 # (a T-3-specific fixture) and the generated post-transpile file is
 # text-included into test_invert.cpp BEFORE `main()` so the auto-
 # synthesised template specialisations are visible at the
-# `sturm::invert(&ns::fwd)` call sites in main.
+# `sturm::invert<&ns::fwd>()` call sites in main.
 #
 # C++ instantiation-order rule
 # ----------------------------
@@ -74,7 +74,7 @@ set_tests_properties(test_when_scope_garbage_consume PROPERTIES LABELS "njul")
 # forward (see `matcher_reversible_drive.cpp`'s `end_of_file_loc`). If
 # we routed test_invert.cpp itself through sturm-transpile, the
 # registration would land AFTER `int main() { ... }` — AFTER the
-# `sturm::invert(&fwd)` call sites. Text-including a SEPARATELY-
+# `sturm::invert<&fwd>()` call sites. Text-including a SEPARATELY-
 # transpiled fixture keeps the emission inside a scope that precedes
 # main, satisfying the rule without modifying the transpiler's EOF
 # anchor (out of scope for T-3).

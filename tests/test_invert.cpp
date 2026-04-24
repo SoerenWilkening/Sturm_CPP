@@ -41,7 +41,7 @@
 // Why text-include instead of linking the generated file as a peer
 // source: C++ requires every explicit specialisation of
 // `sturm::_detail::adjoint_of<T>` to be visible at each implicit
-// instantiation point. The `sturm::invert(&sturm_xrob_t3::fwd)` calls
+// instantiation point. The `sturm::invert<&sturm_xrob_t3::fwd>()` calls
 // in main() below instantiate the specialisation, so the specialisation
 // MUST be textually present in this TU BEFORE main(). Text-inclusion
 // folds the generated file's forwards + adjoint stubs +
@@ -116,12 +116,13 @@ static constexpr std::size_t kN = 8;
 using Reg = std::array<int, kN>;
 using Carry = std::array<int, kN + 1>;
 
-// Routines take their state registers by pointer so each fixture has
-// a distinct function-pointer TYPE — STURM_REGISTER_ADJOINT keys on
-// `decltype(&fn)`, and three `void()` functions would otherwise
-// collide at the trait level. Passing pointers also keeps the
-// fixtures reentrant (no hidden shared-globals coupling) which is
-// important for Test 9's repeated-roundtrip pin.
+// Routines take their state registers by pointer for reentrancy (no
+// hidden shared-globals coupling), which is important for Test 9's
+// repeated-roundtrip pin. Post-sturm-bdmh STURM_REGISTER_ADJOINT keys
+// on the function-pointer VALUE (not the type), so even three same-
+// signature `void()` forwards would specialise distinctly — but each
+// distinct signature here also serves as a readable per-fixture
+// disambiguator at the call site.
 
 // ── Fixture 1: ripple — in-place sweep, a[i] ^= a[i-1] ──────────────────
 //
@@ -246,7 +247,7 @@ STURM_REGISTER_ADJOINT(adder_carry, adder_carry_adj)
 // (`auto_register_emitter`, sturm-88d7.3) feeds the PI-1 matcher but
 // R-3 (`matcher_reversible_drive`, sturm-88d7.4) is not yet wired into
 // `transpile_consumer.cpp`. When that wiring lands, the registration
-// macro below is deleted in-place and `sturm::invert(&parity_cascade)`
+// macro below is deleted in-place and `sturm::invert<&parity_cascade>()`
 // resolves through the machine-emitted `__parity_cascade_adj`.
 //
 // Gate-counter invariant
@@ -278,11 +279,13 @@ int g_gate_count = 0;
 // order. The ++g_gate_count after each statement stands in for the
 // backend's per-gate emission counter.
 //
-// The trailing `double tag` parameter is purely a type-disambiguator
-// so the STURM_REGISTER_ADJOINT trait specialization keys on a
-// function-pointer type distinct from `ripple`'s `void(Reg*)` (same
-// rationale as `bit_reverse`'s `int` tag above). The tag is unused by
-// the body — `(void)tag` suppresses the unused-parameter warning.
+// The trailing `double tag` parameter survives as a per-fixture
+// readability disambiguator (matches `bit_reverse`'s `int` tag). Post-
+// sturm-bdmh STURM_REGISTER_ADJOINT keys on the function-pointer VALUE,
+// so the trait specialisation would be distinct even with identical
+// signatures — but the tag still disambiguates at the call site for
+// human readers. The tag is unused by the body — `(void)tag` suppresses
+// the unused-parameter warning.
 void parity_cascade(Reg* reg, double /*tag*/) {
     (*reg)[1] ^= (*reg)[0]; ++g_gate_count;
     (*reg)[2] ^= (*reg)[1]; ++g_gate_count;
@@ -309,33 +312,33 @@ STURM_REGISTER_ADJOINT(parity_cascade, parity_cascade_adj)
 // runtime-assert a compile error. Uncomment locally to manually verify.
 //
 //   int demo_unreg(int x) { return x; }
-//   static auto check = sturm::invert(&demo_unreg);   // should not compile
+//   static auto check = sturm::invert<&demo_unreg>();   // should not compile
 
 int main() {
-    // ── Test 1: invert(fwd) returns the registered adj pointer ───────────
+    // ── Test 1: invert<&fwd>() returns the registered adj pointer ────────
     {
-        constexpr auto adj_ptr = sturm::invert(&demo_fwd);
+        constexpr auto adj_ptr = sturm::invert<&demo_fwd>();
         // Pin the "zero runtime overhead / compile-time dispatch" claim:
         // the result is a constexpr, so it must be usable in a constant
         // expression context.
         static_assert(adj_ptr == &demo_adj,
-                      "invert(demo_fwd) must return &demo_adj at compile time");
+                      "invert<&demo_fwd>() must return &demo_adj at compile time");
         assert(adj_ptr == &demo_adj);
     }
 
-    // ── Test 2: invoking invert(fwd)(args...) runs adj ───────────────────
+    // ── Test 2: invoking invert<&fwd>()(args...) runs adj ────────────────
     {
         g_fwd_calls = 0;
         g_adj_calls = 0;
         g_state     = 0;
 
-        demo_fwd(5);                   // state: 0 -> 5, fwd_calls=1
+        demo_fwd(5);                       // state: 0 -> 5, fwd_calls=1
         assert(g_state == 5);
         assert(g_fwd_calls == 1);
         assert(g_adj_calls == 0);
 
-        sturm::invert(&demo_fwd)(5);   // state: 5 -> 0, adj_calls=1
-        assert(g_state == 0);          // round-trip proven
+        sturm::invert<&demo_fwd>()(5);     // state: 5 -> 0, adj_calls=1
+        assert(g_state == 0);              // round-trip proven
         assert(g_fwd_calls == 1);
         assert(g_adj_calls == 1);
     }
@@ -345,17 +348,18 @@ int main() {
         g_state = 42;
         for (int i = 1; i <= 10; ++i) {
             demo_fwd(i);
-            sturm::invert(&demo_fwd)(i);
+            sturm::invert<&demo_fwd>()(i);
         }
         assert(g_state == 42);
     }
 
-    // ── Test 4: the trait specializes per-function-pointer — invert on
-    //           a second registered routine returns its own adjoint ──────
+    // ── Test 4: the trait specializes per-function-pointer-VALUE —
+    //           invert on a second registered routine returns its own
+    //           adjoint ──────────────────────────────────────────────────
     {
-        constexpr auto adj_b = sturm::invert(&demo_fn_b);
+        constexpr auto adj_b = sturm::invert<&demo_fn_b>();
         static_assert(adj_b == &demo_fn_b_adj,
-                      "invert(demo_fn_b) must return &demo_fn_b_adj");
+                      "invert<&demo_fn_b>() must return &demo_fn_b_adj");
         assert(adj_b(10, 3) == 7);     // adj = subtraction
         assert(demo_fn_b(10, 3) == 13); // fwd = addition
     }
@@ -365,7 +369,7 @@ int main() {
     //           returned pointer is itself a plain function pointer and
     //           therefore usable wherever a function pointer is expected.)
     {
-        void (*p)(int) = sturm::invert(&demo_fwd);
+        void (*p)(int) = sturm::invert<&demo_fwd>();
         assert(p == &demo_adj);
     }
 
@@ -374,12 +378,12 @@ int main() {
     // For each fixture we:
     //   (a) capture a prepared (non-trivial) input state,
     //   (b) run the forward, confirming it actually mutated the state,
-    //   (c) run the synthesized adjoint via `sturm::invert(&fwd)()`,
+    //   (c) run the synthesized adjoint via `sturm::invert<&fwd>()(args)`,
     //   (d) assert the state has returned to the prepared value —
     //       this is the `forward ∘ adjoint == identity` contract of B11.
     //
     // Per the S-6 issue (sturm-ha2k.7) and the worker prompt, R-2
-    // (auto_register_emitter) is not yet landed, so `invert(&fwd)`
+    // (auto_register_emitter) is not yet landed, so `invert<&fwd>()`
     // resolves via the hand-registered STURM_REGISTER_ADJOINT macros
     // above. The adjoint bodies are byte-for-byte reversed-iteration
     // twins of the forward bodies — the same shape the Phase S
@@ -394,15 +398,15 @@ int main() {
         // Forward must mutate — else the test is vacuous.
         assert(reg != prep);
 
-        sturm::invert(&ripple)(&reg);
+        sturm::invert<&ripple>()(&reg);
         // forward ∘ adjoint = identity.
         assert(reg == prep);
 
-        // Pin the invert(fn) pointer identity separately — the
+        // Pin the invert<&fn>() pointer identity separately — the
         // result should be the registered adj at compile time.
-        constexpr auto adj = sturm::invert(&ripple);
+        constexpr auto adj = sturm::invert<&ripple>();
         static_assert(adj == &ripple_adj,
-                      "invert(ripple) must return &ripple_adj");
+                      "invert<&ripple>() must return &ripple_adj");
     }
 
     // ── Test 7: bit_reverse — roundtrip identity on a prepared register ──
@@ -419,12 +423,12 @@ int main() {
         }
         assert(reg == reversed);
 
-        sturm::invert(&bit_reverse)(&reg, 0);
+        sturm::invert<&bit_reverse>()(&reg, 0);
         assert(reg == prep);
 
-        constexpr auto adj = sturm::invert(&bit_reverse);
+        constexpr auto adj = sturm::invert<&bit_reverse>();
         static_assert(adj == &bit_reverse_adj,
-                      "invert(bit_reverse) must return &bit_reverse_adj");
+                      "invert<&bit_reverse>() must return &bit_reverse_adj");
     }
 
     // ── Test 8: adder_carry — roundtrip identity on a prepared state ─────
@@ -448,16 +452,16 @@ int main() {
         // Sum or carry must be mutated — else the test is vacuous.
         assert(s != s_prep || carry != c_prep);
 
-        sturm::invert(&adder_carry)(&a, &b, &carry, &s);
+        sturm::invert<&adder_carry>()(&a, &b, &carry, &s);
         // forward ∘ adjoint = identity on all four buffers.
         assert(a == a_prep);
         assert(b == b_prep);
         assert(s == s_prep);
         assert(carry == c_prep);
 
-        constexpr auto adj = sturm::invert(&adder_carry);
+        constexpr auto adj = sturm::invert<&adder_carry>();
         static_assert(adj == &adder_carry_adj,
-                      "invert(adder_carry) must return &adder_carry_adj");
+                      "invert<&adder_carry>() must return &adder_carry_adj");
     }
 
     // ── Test 9: adder_carry — repeated roundtrips preserve state ─────────
@@ -479,7 +483,7 @@ int main() {
 
         for (int k = 0; k < 5; ++k) {
             adder_carry(&a, &b, &carry, &s);
-            sturm::invert(&adder_carry)(&a, &b, &carry, &s);
+            sturm::invert<&adder_carry>()(&a, &b, &carry, &s);
             assert(a == a_prep);
             assert(b == b_prep);
             assert(s == s_prep);
@@ -529,7 +533,7 @@ int main() {
         assert(reg != prep);
         assert(g_gate_count == 4);
 
-        sturm::invert(&parity_cascade)(&reg, 0.0);
+        sturm::invert<&parity_cascade>()(&reg, 0.0);
         // (1) forward ∘ adjoint = identity on the prepared register.
         assert(reg == prep);
         // (2) gate counter == 0 at scope exit — each forward
@@ -537,12 +541,12 @@ int main() {
         //     mirror, nets to zero.
         assert(g_gate_count == 0);
 
-        // Pin the invert(fn) pointer identity separately at compile
+        // Pin the invert<&fn>() pointer identity separately at compile
         // time — matches the constexpr-dispatch contract Tests 6/7/8
         // pin for the Phase S fixtures.
-        constexpr auto adj = sturm::invert(&parity_cascade);
+        constexpr auto adj = sturm::invert<&parity_cascade>();
         static_assert(adj == &parity_cascade_adj,
-                      "invert(parity_cascade) must return &parity_cascade_adj");
+                      "invert<&parity_cascade>() must return &parity_cascade_adj");
     }
 
     // ── Phase T T-3 (sturm-xrob.4) end-to-end auto-synthesis tests ───────
@@ -551,7 +555,7 @@ int main() {
     // Phase P → Q → R → S → T cluster: a forward marked
     // `[[clang::annotate("sturm::reversible")]]` with NO hand-written
     // adjoint AND NO `STURM_REGISTER_ADJOINT` macro MUST be callable
-    // through `sturm::invert(&fwd)(args)` after the transpiler's T-1
+    // through `sturm::invert<&fwd>()(args)` after the transpiler's T-1
     // wiring (sturm-xrob.2) + T-2 diagnostic gating (sturm-xrob.3)
     // auto-synthesise a sibling `__<fn>_adj` stub and a global-scope
     // `STURM_REGISTER_ADJOINT` line. The four forwards live in
@@ -581,7 +585,7 @@ int main() {
     //       attribute on a forward with NO hand adjoint / NO macro
     //       and drives the R-A + R-B emitters end-of-TU.
     //   (b) The auto-emitted `STURM_REGISTER_ADJOINT` line is
-    //       syntactically valid — `sturm::invert(&fwd)` compiles.
+    //       syntactically valid — `sturm::invert<&fwd>()` compiles.
     //   (c) Link-time resolution of
     //       `sturm::_detail::adjoint_of<decltype(&fwd)>::value`
     //       succeeds — no undefined symbol at link.
@@ -612,7 +616,7 @@ int main() {
         // invariant, not state identity).
         int reg[8] = {1, 0, 1, 1, 0, 0, 1, 0};
 
-        sturm::invert(&sturm_xrob_t3::xor_oracle)(&reg, 0);
+        sturm::invert<&sturm_xrob_t3::xor_oracle>()(&reg, 0);
 
         // T-3 gate counter invariant: neither the forward nor the
         // auto-synthesised adjoint touches `g_gate_count`, so after
@@ -627,7 +631,7 @@ int main() {
         // at runtime. Retaining the static_assert keeps the link-
         // time pin on the auto-synthesis surface even if the runtime
         // side evolves.
-        constexpr auto adj = sturm::invert(&sturm_xrob_t3::xor_oracle);
+        constexpr auto adj = sturm::invert<&sturm_xrob_t3::xor_oracle>();
         static_assert(adj != nullptr,
                       "auto-synthesised xor_oracle adjoint must resolve");
     }
@@ -643,11 +647,11 @@ int main() {
 
         int reg[8] = {1, 1, 0, 1, 0, 0, 1, 1};
 
-        sturm::invert(&sturm_xrob_t3::loop_ripple)(&reg, 0.0);
+        sturm::invert<&sturm_xrob_t3::loop_ripple>()(&reg, 0.0);
 
         assert(g_gate_count == 0);
 
-        constexpr auto adj = sturm::invert(&sturm_xrob_t3::loop_ripple);
+        constexpr auto adj = sturm::invert<&sturm_xrob_t3::loop_ripple>();
         static_assert(adj != nullptr,
                       "auto-synthesised loop_ripple adjoint must resolve");
     }
@@ -665,12 +669,12 @@ int main() {
 
         int reg[8] = {7, 3, 5, 1, 2, 4, 6, 0};
 
-        sturm::invert(&sturm_xrob_t3::loop_bit_reversal)(&reg, '\0');
+        sturm::invert<&sturm_xrob_t3::loop_bit_reversal>()(&reg, '\0');
 
         assert(g_gate_count == 0);
 
         constexpr auto adj =
-            sturm::invert(&sturm_xrob_t3::loop_bit_reversal);
+            sturm::invert<&sturm_xrob_t3::loop_bit_reversal>();
         static_assert(adj != nullptr,
                       "auto-synthesised loop_bit_reversal adjoint must resolve");
     }
@@ -692,12 +696,12 @@ int main() {
         int s[8] = {0, 0, 0, 0, 0, 0, 0, 0};
         int c[9] = {0, 0, 0, 0, 0, 0, 0, 0, 0};
 
-        sturm::invert(&sturm_xrob_t3::loop_adder_carry)(&a, &b, &c, &s);
+        sturm::invert<&sturm_xrob_t3::loop_adder_carry>()(&a, &b, &c, &s);
 
         assert(g_gate_count == 0);
 
         constexpr auto adj =
-            sturm::invert(&sturm_xrob_t3::loop_adder_carry);
+            sturm::invert<&sturm_xrob_t3::loop_adder_carry>();
         static_assert(adj != nullptr,
                       "auto-synthesised loop_adder_carry adjoint must resolve");
     }

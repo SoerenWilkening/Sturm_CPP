@@ -81,7 +81,7 @@ void demo(qbool c, const qbool& in) {
         my_rotate(tmp, in, 3);
     
 #line 79 "routine_inside_when.cpp"
-    invert(my_rotate)(tmp, in, 3);
+    sturm::invert<&my_rotate>()(tmp, in, 3);
 
 #line 80 "routine_inside_when.cpp"
 }

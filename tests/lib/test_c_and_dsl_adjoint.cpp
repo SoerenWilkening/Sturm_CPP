@@ -12,7 +12,7 @@
 // Invariants pinned:
 //   (1) `lib_c_AND_dsl(c0, c1, tgt)` with tgt starting at |0> puts tgt in
 //       state (c0 & c1).
-//   (2) `sturm::invert(&sturm::lib_c_AND_dsl<BitProxy>)` resolves to the
+//   (2) `sturm::invert<&sturm::lib_c_AND_dsl<BitProxy>>()` resolves to the
 //       registered `__lib_c_AND_dsl_adj`.
 //   (3) Calling the adjoint on (c0, c1, tgt) after the forward zeros tgt.
 //   (4) Double-apply the sweep also zeros tgt — self-inverse property.
@@ -84,9 +84,9 @@ static void run_adjoint_case(uint32_t c0v, uint32_t c1v) {
     assert(read_qubit(sc.sv(), 2u, 3u) == expect_and && "forward: tgt == c0 & c1");
 
     constexpr auto adj_ptr =
-        sturm::invert(&sturm::lib_c_AND_dsl<sturm::BitProxy>);
+        sturm::invert<&sturm::lib_c_AND_dsl<sturm::BitProxy>>();
     static_assert(adj_ptr != nullptr,
-                  "invert(lib_c_AND_dsl<BitProxy>) must resolve to a registered adjoint");
+                  "invert<&lib_c_AND_dsl<BitProxy>>() must resolve to a registered adjoint");
     adj_ptr(c0, c1, tgt);
     assert(read_qubit(sc.sv(), 2u, 3u) == 0u
            && "adjoint: tgt register returned to |0> post-swap-undo");

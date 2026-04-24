@@ -263,8 +263,8 @@ std::string render_uncompute(const QOperation& op,
     }
     case QOpKind::USER_ROUTINE: {
         // Phase I PI-4: render the user-routine's adjoint dispatch.
-        // The emitted form is
-        //   "    invert(<routine_name>)(<op0>, <op1>, ...);\n"
+        // The emitted form is the post-sturm-bdmh NTTP shape
+        //   "    invert<&<routine_name>>()(<op0>, <op1>, ...);\n"
         // with operands listed in source order. There is NO result-name
         // prefix — a USER_ROUTINE op mutates through its output
         // parameters (flagged by `outputs_mask`) and has no single
@@ -272,14 +272,33 @@ std::string render_uncompute(const QOperation& op,
         // other kind so the emitter injects uniform text into the
         // user's source.
         //
+        // Why NTTP at the call site (and not the legacy `invert(<name>)
+        // (...)` form): see include/sturm/routines/invert.hpp. After
+        // sturm-bdmh the runtime trait `sturm::_detail::adjoint_of<auto
+        // Fn>` is keyed on the function-pointer VALUE, not the type, so
+        // two function-template instantiations sharing a signature can
+        // each register a distinct adjoint without colliding. The only
+        // C++20-portable way to feed the function pointer into the
+        // trait is as a non-type template argument at the call site.
+        //
         // Defensive: if `routine_name` is empty (should never happen
         // in practice — the PI-2 matcher always populates it, and a
         // FunctionDecl with no name could not have been registered in
         // the PI-1 routine registry — but a hand-built fixture or a
         // future IR consumer could seed an empty one), emit nothing
-        // rather than render `invert()(...);` which would not compile.
+        // rather than render `invert<&>()(...);` which would not
+        // compile.
         if (op.routine_name.empty()) return {};
-        os << "    invert(" << op.routine_name << ")(";
+        // Qualified `sturm::invert<...>()` — ADL does not propagate
+        // through a template-id (no first-positional argument from
+        // which to deduce associated namespaces, vs the legacy
+        // `invert(&fn)` shape which let ADL find `sturm::invert`
+        // through `&fn`'s sturm-namespaced argument types). The
+        // qualification is the simplest portable answer; alternatives
+        // (synthesising a `using sturm::invert;` at injection scope)
+        // would require coordinating with the surrounding TU's
+        // declaration set, which is out of scope here.
+        os << "    sturm::invert<&" << op.routine_name << ">()(";
         for (std::size_t i = 0; i < op.operands.size(); ++i) {
             if (i != 0) os << ", ";
             os << op.operands[i].name;

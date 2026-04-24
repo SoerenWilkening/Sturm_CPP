@@ -57,7 +57,7 @@ void demo(const qbool& in) {
         my_rotate(tmp, in, i);
     
 #line 55 "routine_inside_loop.cpp"
-    invert(my_rotate)(tmp, in, i);
+    sturm::invert<&my_rotate>()(tmp, in, i);
 
 #line 56 "routine_inside_loop.cpp"
 }

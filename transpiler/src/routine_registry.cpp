@@ -110,39 +110,75 @@ std::string addr_of_function_name(const Expr* e) {
     return dre->getNameInfo().getAsString();
 }
 
-// Extract the forward FunctionDecl from a written template argument
-// whose TypeSourceInfo is `decltype(&::fn)`. Walk the TypeLoc chain to
-// find a DecltypeTypeLoc, then use its underlying expression.
+// Extract the forward FunctionDecl from a written template argument.
+// Handles two shapes:
+//
+//   (1) Pre-sturm-bdmh TYPE-keyed: `adjoint_of<decltype(&::fn)>`. The
+//       template argument is a Type whose TypeLoc chain reaches a
+//       DecltypeTypeLoc whose underlying expression is `&fn`.
+//
+//   (2) Post-sturm-bdmh NTTP-keyed: `adjoint_of<&::fn>`. The template
+//       argument is a Declaration (the resolved function decl as an
+//       address-of NTTP) or an Expression (the literal `&fn` as written
+//       at the macro expansion site). In both cases we recover the
+//       referenced FunctionDecl directly.
 //
 // Falls back to looking at the unsugared type if a DecltypeTypeLoc is
-// not present — this is the unlikely-but-possible case where the user
-// wrote the specialization out by hand without decltype, e.g.
-// `adjoint_of<void(*)(int)>` — in which case we can't resolve which
-// function was meant and we return nullptr, declining to register.
+// not present in the type-keyed shape — this is the unlikely-but-
+// possible case where the user wrote `adjoint_of<void(*)(int)>` by
+// hand. Returns nullptr in that fallback because we can't resolve which
+// function was meant (no symbolic anchor) — better to decline the
+// registration than to seed a wrong entry.
 const FunctionDecl* extract_forward_from_targ(
     const TemplateArgumentLoc& tal) {
-    if (tal.getArgument().getKind() != TemplateArgument::Type) return nullptr;
-    TypeSourceInfo* tsi = tal.getTypeSourceInfo();
-    if (!tsi) return nullptr;
+    const TemplateArgument& targ = tal.getArgument();
 
-    // Walk the TypeLoc chain down through any number of sugared wrappers
-    // (Paren, Qualified, Attributed, Typedef, ElaboratedType, ...) to
-    // find a DecltypeTypeLoc whose underlying expr can be introspected.
-    TypeLoc tl = tsi->getTypeLoc();
-    for (int hops = 0; hops < 32 && !tl.isNull(); ++hops) {
-        if (auto dtl = tl.getAs<DecltypeTypeLoc>()) {
-            const Expr* under = dtl.getUnderlyingExpr();
-            return addr_of_function(under);
+    // (2a) NTTP-keyed, resolved declaration. The macro expansion
+    //      `adjoint_of<&::fn>` produces a Declaration template argument
+    //      after resolution: TemplateArgument carries a ValueDecl* that
+    //      is the FunctionDecl itself.
+    if (targ.getKind() == TemplateArgument::Declaration) {
+        const auto* decl = targ.getAsDecl();
+        if (const auto* fd = llvm::dyn_cast_or_null<FunctionDecl>(decl)) {
+            return fd->getCanonicalDecl();
         }
-        // Descend through any sugared TypeLoc — getNextTypeLoc() is the
-        // standard "walk one wrapper layer" helper. For wrappers that
-        // don't have one (LeafType), the result is a null TypeLoc and
-        // the loop terminates.
-        TypeLoc next = tl.getNextTypeLoc();
-        if (next.isNull() || next.getOpaqueData() == tl.getOpaqueData()) {
-            break;
+        return nullptr;
+    }
+
+    // (2b) NTTP-keyed, expression form. Some Clang versions surface the
+    //      written `&fn` as an Expression argument before normalisation.
+    //      Peel the address-of and recover the FunctionDecl.
+    if (targ.getKind() == TemplateArgument::Expression) {
+        const Expr* e = targ.getAsExpr();
+        if (e == nullptr) return nullptr;
+        return addr_of_function(e);
+    }
+
+    // (1) Type-keyed, legacy decltype(&fn) shape.
+    if (targ.getKind() == TemplateArgument::Type) {
+        TypeSourceInfo* tsi = tal.getTypeSourceInfo();
+        if (!tsi) return nullptr;
+
+        // Walk the TypeLoc chain down through any number of sugared
+        // wrappers (Paren, Qualified, Attributed, Typedef,
+        // ElaboratedType, ...) to find a DecltypeTypeLoc whose
+        // underlying expr can be introspected.
+        TypeLoc tl = tsi->getTypeLoc();
+        for (int hops = 0; hops < 32 && !tl.isNull(); ++hops) {
+            if (auto dtl = tl.getAs<DecltypeTypeLoc>()) {
+                const Expr* under = dtl.getUnderlyingExpr();
+                return addr_of_function(under);
+            }
+            // Descend through any sugared TypeLoc — getNextTypeLoc() is
+            // the standard "walk one wrapper layer" helper. For
+            // wrappers that don't have one (LeafType), the result is a
+            // null TypeLoc and the loop terminates.
+            TypeLoc next = tl.getNextTypeLoc();
+            if (next.isNull() || next.getOpaqueData() == tl.getOpaqueData()) {
+                break;
+            }
+            tl = next;
         }
-        tl = next;
     }
     return nullptr;
 }
