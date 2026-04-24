@@ -109,11 +109,43 @@ qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
     }
     lib_mul_dsl<BitProxy>(ab, W, bb, W, rb, RW);
     detail_arith::release_temp_qubits(b_mut, b);
-    for (std::size_t i = 0; i < W; ++i)
-        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-    for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
+    // Upper W bits of the 2W Cuccaro result are leaked unconditionally here —
+    // pre-existing behavior, out of scope for this issue (tracked via
+    // sturm-pqs0). Only the lower-W result-register relabel tail is fixed
+    // by this child.
     for (std::size_t i = W; i < RW; ++i) QubitPool::instance().release(ri[i]);
-    detail_arith::rebuild_super_mask(*this);
+    if (detail::current_control == nullptr) {
+        // Uncontrolled fast path: release old A, pointer-relabel to lower-W
+        // product register.
+        for (std::size_t i = 0; i < W; ++i)
+            if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+        for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
+        detail_arith::rebuild_super_mask(*this);
+    } else {
+        // Controlled path: per-bit Fredkin (CSWAP) between this->qubits[i]
+        // and ri[i] via the a^=b; b^=a; a^=b idiom. BitProxy lifts these
+        // CXs to controlled form under the current WHEN scope. After the
+        // swap, this->qubits[i] physically holds the product (iff ctrl=1)
+        // and ri[i] holds garbage (ctrl·old_A). Leak ri[0..W-1] — never
+        // release.
+        for (std::size_t i = 0; i < W; ++i) {
+            BitProxy a_bit(*this, i);
+            qbool r_q = qbool::make_non_owning(ri[i]);
+            BitProxy r_bit(r_q);
+            a_bit ^= r_bit;
+            r_bit ^= a_bit;
+            a_bit ^= r_bit;
+        }
+        // All W bits now live on physical qubits — force super_mask to all-ones.
+        super_mask = (W >= 64) ? ~0ULL : ((1ULL << W) - 1ULL);
+        // Register the leaked lower-W product register with the garbage
+        // registry so a future transpiler pass can emit proper uncomputation.
+        detail::garbage_registry::register_garbage(
+            detail::garbage_registry::source_op_tag::MUL_ASSIGN,
+            detail::current_control_qubit,
+            static_cast<int>(W),
+            ri);
+    }
     value = value * b.value;
     return *this;
 }
