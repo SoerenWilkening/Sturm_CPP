@@ -76,3 +76,21 @@ target_link_libraries(test_div_mod_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_div_mod_dsl_adjoint COMMAND test_div_mod_dsl_adjoint)
 set_tests_properties(test_div_mod_dsl_adjoint
     PROPERTIES LABELS "lib;lossy-reversibility")
+
+# sturm-735v LO-1a -- lib_mul_dsl adjoint roundtrip.
+add_executable(test_mul_dsl_adjoint
+    test_mul_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_dsl_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_mul_dsl_adjoint COMMAND test_mul_dsl_adjoint)
+set_tests_properties(test_mul_dsl_adjoint
+    PROPERTIES LABELS "lib;lossy-reversibility")

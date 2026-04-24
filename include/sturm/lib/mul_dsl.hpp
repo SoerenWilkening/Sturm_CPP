@@ -1,59 +1,91 @@
-// mul_dsl.hpp — M16 (PRD v3): shift-and-add multiplication in DSL style.
+// mul_dsl.hpp — M16 / LO-1a (sturm-735v): shift-and-add multiplication in DSL.
 //
-// lib_mul_dsl(a_bits, a_width, b_bits, b_width, result_bits, result_width):
-//   Out-of-place multiplication: result = a * b.
+// lib_mul_dsl(a, aw, b, bw, result, rw): out-of-place result = a * b; rw must
+//   equal aw + bw; result must start |0>; a and b are unchanged.
 //
-//   result_bits must point to (a_width + b_width) qubits all in |0> state.
-//   a and b are left unchanged.
+// __lib_mul_dsl_adj (LO-1a, sturm-735v): gate-reverse of lib_mul_dsl.  Given
+//   state where result = a * b, zeros result.  Registered via
+//   STURM_REGISTER_ADJOINT so `invert<&lib_mul_dsl>()(…)` resolves at the LO
+//   rewrite's scope-exit cleanup.  See plan_lossy_compound_reversibility §3.
 //
-// Algorithm: shift-and-add.
-//   For each bit i of b (i = 0..b_width-1):
-//     WHEN b[i]: result += (a << i)
-//   "a << i" means: the a_width-bit value a occupies positions [i .. i+a_width-1]
-//   of the result register.
+// Forward: i = 0..bw-1: push b[i]; lib_add_dsl on shifted window; pop.
+// Adjoint: i = bw-1..0: push b[i]; detail_div::lib_add_adj on the same
+//   window; pop.  Per-bit body is otherwise identical (control push/pop is
+//   self-inverse), so direction toggles only the loop order and the
+//   add/add_adj choice.  Shared via a `Forward` template kernel.
 //
-// Implementation:
-//   - Push b[i] onto the control stack (simulate WHEN(b[i])).
-//   - Call lib_add_dsl on the shifted window of result.
-//   - Pop b[i] from the control stack.
-//   - The carry output of each partial add goes to result[i + a_width].
-//
-// Gate cost: b_width × cost(a_width-bit controlled Cuccaro ADD).
-// Ancilla: 1 QubitPool qubit per ADD call (Cuccaro carry_anc).
-//
-// No explicit BackendContext parameter — operators read TLS context internally.
-// WHEN lifting is automatic via qbool operators and the control stack.
-//
-// Target: <150 LoC.
+// Target: <250 LoC.
 
 #pragma once
 
 #include "sturm/lib/adder_dsl.hpp"
+#include "sturm/lib/div_dsl.hpp"           // detail_div::lib_add_adj
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
+#include "sturm/routines/invert.hpp"
 
 #include <cstddef>
 #include <cassert>
 #include <type_traits>
 
+// Forward-declare BitProxy for the LO-1a adjoint registration (backend-only).
 namespace sturm {
+#ifdef STURM_BACKEND_ENABLED
+struct BitProxy;
+#endif
+}  // namespace sturm
+
+namespace sturm {
+
+namespace detail_mul {
+
+// Shared body for forward + adjoint multiplication.  `Forward` toggles the
+// b-bit loop order and the add (forward Cuccaro) vs. add_adj (gate-reversed
+// Cuccaro) call.  push_control / pop_control are self-inverse, so they
+// appear unchanged in both directions.
+template <typename Bit, bool Forward>
+inline void mul_kernel(Bit* a_bits, size_t a_width,
+                       Bit* b_bits, size_t b_width,
+                       Bit* result_bits) {
+    sturm_backend_context_t* raw = sturm_get_thread_context();
+    assert(raw && "lib_mul_dsl: no BackendContext installed");
+    BackendContext& ctx = *raw;
+
+    auto push_b_i = [&](size_t i) {
+        if constexpr (std::is_same_v<Bit, qbool>) {
+            ctx.control_stack.push_control(
+                static_cast<uint32_t>(b_bits[i].qubits[0]));
+        } else {
+            b_bits[i].ensure_quantum();
+            ctx.control_stack.push_control(
+                static_cast<uint32_t>(b_bits[i].qubit_index()));
+        }
+    };
+
+    for (size_t step = 0u; step < b_width; ++step) {
+        size_t i      = Forward ? step : (b_width - 1u - step);
+        Bit*   window = result_bits + i;            // [i..i+a_width-1]
+        Bit&   carry  = result_bits[i + a_width];   // carry output slot
+
+        push_b_i(i);
+        if constexpr (Forward) {
+            lib_add_dsl(a_bits, window, carry, a_width);
+        } else {
+            detail_div::lib_add_adj(a_bits, window, carry, a_width);
+        }
+        ctx.control_stack.pop_control();
+    }
+}
+
+}  // namespace detail_mul
 
 // ── lib_mul_dsl ───────────────────────────────────────────────────────────────
 //
-// Out-of-place multiplication: result = a * b.
-//
-// Parameters:
-//   a_bits       — pointer to a_width qbool objects for a (LSB = [0]). Unchanged.
-//   a_width      — number of bits in a.
-//   b_bits       — pointer to b_width qbool objects for b (LSB = [0]). Unchanged.
-//   b_width      — number of bits in b.
-//   result_bits  — pointer to (a_width + b_width) qbool objects for the result
-//                  (all must start |0>). Written with the product a * b.
-//   result_width — must equal (a_width + b_width); checked by assert.
-//
-// n == 0 (either width zero): no-op.
+// Out-of-place multiplication: result = a * b.  result_bits must point to
+// (a_width + b_width) qubits all in |0>; a and b are unchanged.
+// Either width zero: no-op.
 template <typename Bit>
 inline void lib_mul_dsl(Bit* a_bits, size_t a_width,
                         Bit* b_bits, size_t b_width,
@@ -61,49 +93,27 @@ inline void lib_mul_dsl(Bit* a_bits, size_t a_width,
     if (a_width == 0u || b_width == 0u) return;
     assert(result_width == a_width + b_width
            && "lib_mul_dsl: result_width must equal a_width + b_width");
+    detail_mul::mul_kernel<Bit, true>(a_bits, a_width, b_bits, b_width,
+                                      result_bits);
+}
 
-    // Get context for control stack access.
-    sturm_backend_context_t* raw = sturm_get_thread_context();
-    assert(raw && "lib_mul_dsl: no BackendContext installed");
-    BackendContext& ctx = *raw;
-
-    // For each bit i of b, conditionally add (a << i) into the result.
-    // (a << i) maps to result positions [i .. i + a_width - 1].
-    // The carry output of the ADD goes to result[i + a_width].
-    //
-    // We use result[i + a_width] as the carry_out qubit, which is always
-    // within the (a_width + b_width)-bit result register.
-    //
-    // Note: result[i + a_width] may be non-zero from a previous partial add.
-    // We use a separate carry ancilla to hold overflow and XOR it into
-    // result[i + a_width] to accumulate correctly.
-    //
-    // Simpler approach (matching lib_mul.hpp):
-    //   carry_out slot = result[i + a_width]
-    //   window        = result[i .. i + a_width - 1]
-    // Push b[i] as control; call lib_add_dsl; pop b[i].
-
-    for (size_t i = 0; i < b_width; ++i) {
-        // Window of the result register where (a << i) will be added.
-        Bit* window = result_bits + i;           // a_width qubits [i..i+a_width-1]
-        Bit& carry  = result_bits[i + a_width];  // carry output slot
-
-        // Push b[i] as control — requires a qubit index.
-        if constexpr (std::is_same_v<Bit, qbool>) {
-            uint32_t b_qubit = static_cast<uint32_t>(b_bits[i].qubits[0]);
-            ctx.control_stack.push_control(b_qubit);
-        } else {
-            b_bits[i].ensure_quantum();
-            uint32_t b_qubit = static_cast<uint32_t>(b_bits[i].qubit_index());
-            ctx.control_stack.push_control(b_qubit);
-        }
-
-        // WHEN b[i]: result[i..i+a_width-1] += a (adds a into the shifted window).
-        lib_add_dsl(a_bits, window, carry, a_width);
-
-        // Pop b[i].
-        ctx.control_stack.pop_control();
-    }
+// ── __lib_mul_dsl_adj (LO-1a, sturm-735v) ────────────────────────────────────
+// Gate-reverse of lib_mul_dsl.  Precondition: result_bits == a * b.
+// Postcondition: result_bits all |0>; a and b unchanged.
+template <typename Bit>
+inline void __lib_mul_dsl_adj(Bit* a_bits, size_t a_width,
+                              Bit* b_bits, size_t b_width,
+                              Bit* result_bits, size_t result_width) {
+    if (a_width == 0u || b_width == 0u) return;
+    assert(result_width == a_width + b_width
+           && "__lib_mul_dsl_adj: result_width must equal a_width + b_width");
+    detail_mul::mul_kernel<Bit, false>(a_bits, a_width, b_bits, b_width,
+                                       result_bits);
 }
 
 } // namespace sturm
+
+#ifdef STURM_BACKEND_ENABLED
+STURM_REGISTER_ADJOINT(sturm::lib_mul_dsl<sturm::BitProxy>,
+                       sturm::__lib_mul_dsl_adj<sturm::BitProxy>)
+#endif
