@@ -102,3 +102,9 @@ void compound_body(qint a) {
     *regs[0] *= 2;
     *regs[0] /= 2;
 }
+
+void __compound_body_adj(qint a) {
+}
+
+
+STURM_REGISTER_ADJOINT(compound_body, __compound_body_adj);

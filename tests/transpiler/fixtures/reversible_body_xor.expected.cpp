@@ -80,3 +80,9 @@ void xor_body(qbool& q0, qbool& q1, qbool& q2) {
     *regs[2] ^= *regs[1];
     *regs[2] ^= *regs[0];
 }
+
+void __xor_body_adj(qbool& q0, qbool& q1, qbool& q2) {
+}
+
+
+STURM_REGISTER_ADJOINT(xor_body, __xor_body_adj);

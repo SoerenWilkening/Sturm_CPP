@@ -72,16 +72,37 @@ qbool demo(qbool a, qbool b) {
 
 namespace {
 
+// Snapshot of the consumer's observable state, captured before the
+// consumer is destroyed. Phase T T-1 (sturm-xrob.2): the original
+// `sink_ = raw pointer to consumer` shape was relying on dangling-pointer
+// reads — ClangTool destroys the consumer alongside its owning
+// ASTFrontendAction when the tool invocation returns, so accessing
+// `consumer->mode()` / `consumer->rewritten_buffer()` after
+// `runToolOnCodeWithArgs` returns dereferences freed memory. The
+// pre-T-1 layout happened to leave `mode_` and the string's SSO bytes
+// readable by coincidence; the T-1 wiring introduces additional
+// allocations during teardown that zero `mode_`'s slot, exposing the
+// latent bug. Capturing the state into an externally-owned snapshot
+// inside `EndSourceFileAction` — which runs BEFORE the consumer is
+// destroyed — keeps the test robust regardless of allocator behavior.
+struct ConsumerSnapshot {
+    bool populated = false;
+    sturm::transpile::EmissionMode mode =
+        sturm::transpile::EmissionMode::StandaloneFile;
+    std::string rewritten_buffer;
+};
+
 // A FrontendAction that constructs our shared TranspileConsumer under
-// the caller-supplied EmissionMode. The constructed consumer is stored
-// on the action so the test can inspect rewritten_buffer() after the
-// tool invocation returns.
+// the caller-supplied EmissionMode. After HandleTranslationUnit runs,
+// `EndSourceFileAction` snapshots the consumer's observable state into
+// a caller-owned `ConsumerSnapshot` so the test can inspect it without
+// reaching into the destroyed consumer.
 class TestAction : public clang::ASTFrontendAction {
 public:
     TestAction(sturm::transpile::EmissionMode mode,
                std::string source_path,
                std::string output_dir,
-               sturm::transpile::TranspileConsumer** sink)
+               ConsumerSnapshot* sink)
         : mode_(mode),
           source_path_(std::move(source_path)),
           output_dir_(std::move(output_dir)),
@@ -92,15 +113,25 @@ public:
         auto consumer =
             std::make_unique<sturm::transpile::TranspileConsumer>(
                 ci, mode_, source_path_, output_dir_);
-        *sink_ = consumer.get();
+        consumer_ = consumer.get();
         return consumer;
+    }
+
+    void EndSourceFileAction() override {
+        if (sink_ != nullptr && consumer_ != nullptr) {
+            sink_->populated = true;
+            sink_->mode = consumer_->mode();
+            sink_->rewritten_buffer = consumer_->rewritten_buffer();
+        }
+        clang::ASTFrontendAction::EndSourceFileAction();
     }
 
 private:
     sturm::transpile::EmissionMode mode_;
     std::string source_path_;
     std::string output_dir_;
-    sturm::transpile::TranspileConsumer** sink_;
+    ConsumerSnapshot* sink_;
+    sturm::transpile::TranspileConsumer* consumer_ = nullptr;
 };
 
 class TestFactory : public clang::tooling::FrontendActionFactory {
@@ -108,7 +139,7 @@ public:
     TestFactory(sturm::transpile::EmissionMode mode,
                 std::string source_path,
                 std::string output_dir,
-                sturm::transpile::TranspileConsumer** sink)
+                ConsumerSnapshot* sink)
         : mode_(mode),
           source_path_(std::move(source_path)),
           output_dir_(std::move(output_dir)),
@@ -123,7 +154,7 @@ private:
     sturm::transpile::EmissionMode mode_;
     std::string source_path_;
     std::string output_dir_;
-    sturm::transpile::TranspileConsumer** sink_;
+    ConsumerSnapshot* sink_;
 };
 
 } // namespace
@@ -161,21 +192,21 @@ static void test_standalone_file_mode() {
     fs::path out_dir = dir / "out";
     fs::create_directories(out_dir);
 
-    sturm::transpile::TranspileConsumer* consumer = nullptr;
+    ConsumerSnapshot snapshot;
     TestFactory factory(
         sturm::transpile::EmissionMode::StandaloneFile,
-        src.string(), out_dir.string(), &consumer);
+        src.string(), out_dir.string(), &snapshot);
 
     std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
     bool ok = clang::tooling::runToolOnCodeWithArgs(
         factory.create(), kOrFixture, args, src.filename().string());
     CHECK(ok);
-    CHECK(consumer != nullptr);
+    CHECK(snapshot.populated);
 
     // Plugin-mode stash must be empty in StandaloneFile mode.
-    if (consumer != nullptr) {
-        CHECK(consumer->rewritten_buffer().empty());
-        CHECK(consumer->mode() ==
+    if (snapshot.populated) {
+        CHECK(snapshot.rewritten_buffer.empty());
+        CHECK(snapshot.mode ==
               sturm::transpile::EmissionMode::StandaloneFile);
     }
 
@@ -203,21 +234,21 @@ static void test_plugin_mode() {
     fs::path out_dir = dir / "out";
     fs::create_directories(out_dir);
 
-    sturm::transpile::TranspileConsumer* consumer = nullptr;
+    ConsumerSnapshot snapshot;
     TestFactory factory(
         sturm::transpile::EmissionMode::Plugin,
-        src.string(), out_dir.string(), &consumer);
+        src.string(), out_dir.string(), &snapshot);
 
     std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
     bool ok = clang::tooling::runToolOnCodeWithArgs(
         factory.create(), kOrFixture, args, src.filename().string());
     CHECK(ok);
-    CHECK(consumer != nullptr);
+    CHECK(snapshot.populated);
 
-    if (consumer != nullptr) {
-        CHECK(consumer->mode() ==
+    if (snapshot.populated) {
+        CHECK(snapshot.mode ==
               sturm::transpile::EmissionMode::Plugin);
-        const std::string& buf = consumer->rewritten_buffer();
+        const std::string& buf = snapshot.rewritten_buffer;
         CHECK(!buf.empty());
         // The plugin's rewritten buffer is fed to a NESTED
         // CompilerInvocation. A leading AUTO-GENERATED header would

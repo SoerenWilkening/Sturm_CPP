@@ -92,3 +92,9 @@ void and_body(qbool& q0, qbool& q1, qbool& q2, qbool& r) {
     qbool __t1 = *regs[1] & *regs[2];
     *regs[3] ^= __t1;
 }
+
+void __and_body_adj(qbool& q0, qbool& q1, qbool& q2, qbool& r) {
+}
+
+
+STURM_REGISTER_ADJOINT(and_body, __and_body_adj);

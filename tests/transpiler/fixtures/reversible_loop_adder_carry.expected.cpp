@@ -66,3 +66,9 @@ void adder_carry(qbool& q0, qbool& q1, qbool& q2) {
         *regs[i+1] ^= *regs[i];
     }
 }
+
+void __adder_carry_adj(qbool& q0, qbool& q1, qbool& q2) {
+}
+
+
+STURM_REGISTER_ADJOINT(adder_carry, __adder_carry_adj);

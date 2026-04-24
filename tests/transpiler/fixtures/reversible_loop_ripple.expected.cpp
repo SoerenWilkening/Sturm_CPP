@@ -73,3 +73,9 @@ void ripple(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
         *regs[i] ^= *regs[i-1];
     }
 }
+
+void __ripple_adj(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
+}
+
+
+STURM_REGISTER_ADJOINT(ripple, __ripple_adj);

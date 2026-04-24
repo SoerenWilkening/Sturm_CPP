@@ -1410,6 +1410,29 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_quantum_to_classical_cond.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
+    # Phase T T-1 (sturm-xrob.2): TranspileConsumer now calls
+    # `register_reversible_drive_matcher` (transpile_consumer.cpp:76) and
+    # `drive_reversible_forwards` (transpile_consumer.cpp:564). Link the
+    # driver TU plus its transitive validator / emitter / registry deps
+    # (same source list the `test_matcher_reversible_drive` target
+    # carries): matcher_reversible_drive.cpp is the module under
+    # exercise, matcher_reversible_validate.cpp (P-C) and
+    # matcher_reversible_signature.cpp (Q-B) supply the validator
+    # surfaces the driver consults, return_to_out_param.cpp (Q-A)
+    # populates the signature-normalisation registry entry the driver
+    # reads, synthesis_registry.cpp is the per-forward book-keeping
+    # container, adjoint_emitter.cpp (R-A) renders the __fn_adj body,
+    # and auto_register_emitter.cpp (R-B) renders the
+    # STURM_REGISTER_ADJOINT line. reversible_attribute.cpp and
+    # routine_registry.cpp are already on the link line above (Phase S
+    # S-B and PI-1 respectively), so they do not need repeating.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_drive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_validate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so

@@ -65,3 +65,9 @@ void bit_reversal(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
         *regs[i] ^= *regs[j];
     }
 }
+
+void __bit_reversal_adj(qbool& q0, qbool& q1, qbool& q2, qbool& q3) {
+}
+
+
+STURM_REGISTER_ADJOINT(bit_reversal, __bit_reversal_adj);
