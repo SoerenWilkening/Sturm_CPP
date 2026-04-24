@@ -1,0 +1,47 @@
+// LO-0.2 (sturm-iz9d): main-exception desugar fixture (input).
+//
+// Pins PRD §4.3 / plan §2 LO-0.2: a lossy compound assignment whose
+// enclosing CompoundStmt is `main`'s outermost body MUST receive the
+// forward allocate-compute-swap pair, but the scope-exit cleanup
+// (reverse swap + invert(<dsl>)) MUST be SUPPRESSED — the program
+// terminates at the closing brace of main, so cleanup would be dead
+// code, and per §4.3 the user expects measurements at end-of-main to
+// observe the post-op state.
+//
+// The fixture also asserts the negative side of the rule: a lambda
+// declared inside main has its OWN CompoundStmt (the lambda body),
+// which is NOT main's outermost block, so a lossy op there MUST
+// still receive the full cleanup pair at the lambda body's closing
+// brace. This is the edge case called out in plan §9 ("`main`-
+// exception detection mis-classifies lambdas whose body is `main`'s
+// outer `CompoundStmt`"); the LO-2d implementation must walk to the
+// nearest enclosing FunctionDecl and confirm it is `main` AND that
+// the matched CompoundStmt is its body, not a child block.
+//
+// Consumer: LO-2d (sturm-wva7) — "main-outer-scope exception" — is
+// the implementation issue that turns this fixture green. LO-2a/2b/2c
+// (matcher + emitters) must land first to provide the forward-pair
+// machinery this fixture also exercises. Until those land, the
+// snapshot test built against this fixture is in a known-RED state
+// and is therefore intentionally NOT registered in
+// tests/transpiler/CMakeLists.txt — LO-2d wires it.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qint_t& operator&=(const qint_t&) { return *this; }
+};
+} // namespace sturm
+using qint = sturm::qint_t<2>;
+
+int main() {
+    qint a, b;
+    a &= b;                  // top-level: NO cleanup at end of main
+    auto inner = [](qint x, qint y) {
+        x &= y;              // lambda body: cleanup MUST fire at }
+    };
+    (void)inner;
+    return 0;
+}
