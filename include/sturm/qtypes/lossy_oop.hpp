@@ -39,6 +39,7 @@
 #include "sturm/lib/c_and_dsl.hpp"
 #include "sturm/lib/logic_dsl.hpp"
 #include "sturm/lib/mul_dsl.hpp"
+#include "sturm/lib/swap_dsl.hpp"
 #include "sturm/routines/invert.hpp"
 
 #include <array>
@@ -55,13 +56,47 @@ namespace sturm {
 // names declared in the namespace where `qint_t` lives — i.e. `sturm::` — so
 // declaring `swap` here gives the emitted text a target without the emitter
 // needing to qualify the call.
+//
+// Control-aware behavior (sturm-arce, epic sturm-8aq3):
+//   * Depth 0 (or no context): keep the classical relabel — zero gates;
+//     swap value / super_mask / qubits / owning_ in place. This is the
+//     existing fast path the LO-2 emitter relies on outside WHEN scopes.
+//   * Depth >= 1: per-bit Fredkin via `lib_swap_dsl(BitProxy, BitProxy)`.
+//     `BitProxy::operator^=` consults the control stack and lifts each CX
+//     to CCX (and beyond), so the 3-CNOT chain inside `lib_swap_dsl` lands
+//     a per-bit Fredkin under one control. We deliberately do NOT swap
+//     value / owning_ on this branch: under `WHEN(ctrl)` the classical
+//     value field cannot hold a single classical truth (the gate-level
+//     Fredkin handles the conditional state) and qubits genuinely belong
+//     to their original owner on the `ctrl=0` branch. The forward+reverse
+//     swap pair the LO-2 cleanup emits is symmetric, so destructor-time
+//     release lands on the right indices.
+//
+// No `STURM_REGISTER_ADJOINT` for swap: Fredkin is self-inverse and the
+// LO-2 scope-exit emitter re-emits the same `swap(a, tmp)` token before
+// the adjoint of the wrapper, so the reverse swap auto-lifts identically
+// and self-cancels at gate level.
 template <std::size_t W>
 inline void swap(qint_t<W>& a, qint_t<W>& b) noexcept {
-    using std::swap;
-    swap(a.value, b.value);
-    swap(a.super_mask, b.super_mask);
-    swap(a.qubits, b.qubits);
-    swap(a.owning_, b.owning_);
+    sturm_backend_context_t* raw = sturm_get_thread_context();
+    if (!raw || raw->control_stack.depth() == 0u) {
+        // depth 0 (or no context): classical relabel — zero gates.
+        using std::swap;
+        swap(a.value, b.value);
+        swap(a.super_mask, b.super_mask);
+        swap(a.qubits, b.qubits);
+        swap(a.owning_, b.owning_);
+        return;
+    }
+    // depth >= 1: per-bit Fredkin via DSL. BitProxy::operator^= ->
+    // ensure_quantum() updates super_mask per bit, so the 3-CNOT
+    // chain inside lib_swap_dsl propagates per-bit superposition
+    // state correctly. value/owning_ are intentionally NOT swapped:
+    // under control they cannot hold a single classical truth.
+    for (std::size_t i = 0; i < W; ++i) {
+        BitProxy ai(a, i), bi(b, i);
+        lib_swap_dsl(ai, bi);
+    }
 }
 
 namespace detail {
