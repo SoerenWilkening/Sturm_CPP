@@ -67,3 +67,29 @@ target_compile_definitions(test_and_oop PRIVATE
 target_link_libraries(test_and_oop PRIVATE orkan_headers)
 add_test(NAME test_and_oop COMMAND test_and_oop)
 set_tests_properties(test_and_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
+
+# sturm-ph6f.2 LO-2 backend — mul_oop / mul_oop_adj reversible shift-and-add
+# multiplication network dispatched into lib_mul_dsl. Mirrors the divide_oop
+# fast-path / classical-path split: when at least one operand carries qubits
+# the wrapper allocates W qubits for tmp + W ancillas for the upper half of
+# the 2W-bit multiplication result, runs lib_mul_dsl, and stashes the upper-W
+# ancillas in a thread-local LIFO stack so the matching mul_oop_adj can
+# uncompute and release them. Otherwise (both qubits[0] < 0) the classical
+# short-circuit body runs to preserve example_qint_arith /
+# example_phase_abc_demo.
+add_executable(test_mul_oop
+    test_mul_oop.cpp
+    ${STURM_QTYPES_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_oop PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_oop PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_oop PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_MAX_QUBITS=16
+)
+target_link_libraries(test_mul_oop PRIVATE orkan_headers)
+add_test(NAME test_mul_oop COMMAND test_mul_oop)
+set_tests_properties(test_mul_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
