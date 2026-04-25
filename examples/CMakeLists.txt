@@ -449,6 +449,28 @@ target_sources(example_in_memory_transpile PRIVATE
 )
 target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)
 
+# ── Example: LO-2 single-multiplication end-to-end demo ────────────────────
+# Source has one `a *= b;` over qint_t<2> with both operands auto-promoted
+# onto the gate path. Routed through sturm-transpile so the LO-2 rewrite
+# turns that statement into an allocate-compute-swap triplet calling
+# mul_oop<2>, with a matching swap + mul_oop_adj<2> planted before the
+# inner scope's closing brace. Prints the resulting ASCII circuit so the
+# forward lib_mul_dsl ladder and its symmetric uncompute are both visible.
+add_quantum_executable(example_mul_demo
+    mul_demo.cpp
+)
+target_sources(example_mul_demo PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_link_libraries(example_mul_demo PRIVATE orkan_headers)
+
 # ── PM4-7: demo plugin exercising the PM4-1 / PM4-2 extension surface ───────
 # Builds `sturm-pm4-demo-plugin` as a MODULE shared library. The plugin is
 # dlopen-only — it is not wired into any `add_quantum_executable` target.
