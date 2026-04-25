@@ -939,28 +939,31 @@ add_test(NAME test_lossy_ancilla_cleaned COMMAND test_lossy_ancilla_cleaned)
 set_tests_properties(test_lossy_ancilla_cleaned
     PROPERTIES LABELS "backend;lossy-reversibility")
 
-# sturm-pqs0 — *= upper-W bits and /= remainder register discoverable leaks
-add_executable(test_mul_div_upperw_garbage
-    test_mul_div_upperw_garbage.cpp
+# sturm-0qu5 LO-3c — full-W `*=` upper-W product release and `/=` remainder
+# release drain the qubit pool by enclosing-scope exit. Replaces the
+# sturm-pqs0 garbage_registry-snapshot test with the post-LO PRD §2 pool-drain
+# invariant (mirrors LO-0.5 / sturm-qoq0).
+add_executable(test_mul_div_upperw_clean
+    test_mul_div_upperw_clean.cpp
     ${M19_SOURCES}
 )
-target_include_directories(test_mul_div_upperw_garbage PRIVATE
+target_include_directories(test_mul_div_upperw_clean PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
-target_compile_features(test_mul_div_upperw_garbage PRIVATE cxx_std_20)
-target_compile_definitions(test_mul_div_upperw_garbage PRIVATE
+target_compile_features(test_mul_div_upperw_clean PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_div_upperw_clean PRIVATE
     STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
-    STURM_MAX_QUBITS=17
 )
-target_link_libraries(test_mul_div_upperw_garbage PRIVATE orkan_headers)
+target_link_libraries(test_mul_div_upperw_clean PRIVATE orkan_headers)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     PROPERTIES LANGUAGE C
                COMPILE_FLAGS "-std=c11"
 )
-add_test(NAME test_mul_div_upperw_garbage COMMAND test_mul_div_upperw_garbage)
-set_tests_properties(test_mul_div_upperw_garbage PROPERTIES LABELS "backend;pqs0")
+add_test(NAME test_mul_div_upperw_clean COMMAND test_mul_div_upperw_clean)
+set_tests_properties(test_mul_div_upperw_clean
+    PROPERTIES LABELS "backend;lossy-reversibility")
 
 # sturm-h5it.3 — CSWAP-and-leak tail for operator*= under WHEN
 add_executable(test_when_mul_lossy
