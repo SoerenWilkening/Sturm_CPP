@@ -149,29 +149,30 @@ static void test_depth1_emits_3W_ccx_with_ordering() {
         assert(r2.kind == STURM_GATE_CCX && r2.n == 3u
                && "Fredkin gate 2 must be CCX with arity 3");
 
-        // First Toffoli: (ctrl, a_i, b_i).
+        // First Toffoli: (ctrl, b_i, a_i) — lib_swap_dsl(a,b) starts with a^=b
+        // → CX(b→a) → at depth 1 lifts to CCX(ctrl, b_i, a_i).
         assert(r0.qubits[0] == qctrl
                && "Fredkin gate 0: qubits[0] must be ctrl");
-        assert(r0.qubits[1] == static_cast<uint32_t>(qa[i])
-               && "Fredkin gate 0: qubits[1] must be a_i");
-        assert(r0.qubits[2] == static_cast<uint32_t>(qb[i])
-               && "Fredkin gate 0: qubits[2] must be b_i");
+        assert(r0.qubits[1] == static_cast<uint32_t>(qb[i])
+               && "Fredkin gate 0: qubits[1] must be b_i");
+        assert(r0.qubits[2] == static_cast<uint32_t>(qa[i])
+               && "Fredkin gate 0: qubits[2] must be a_i");
 
-        // Middle Toffoli: (ctrl, b_i, a_i).
+        // Middle Toffoli: (ctrl, a_i, b_i) — b^=a → CX(a→b) → CCX(ctrl,a_i,b_i).
         assert(r1.qubits[0] == qctrl
                && "Fredkin gate 1: qubits[0] must be ctrl");
-        assert(r1.qubits[1] == static_cast<uint32_t>(qb[i])
-               && "Fredkin gate 1: qubits[1] must be b_i");
-        assert(r1.qubits[2] == static_cast<uint32_t>(qa[i])
-               && "Fredkin gate 1: qubits[2] must be a_i");
+        assert(r1.qubits[1] == static_cast<uint32_t>(qa[i])
+               && "Fredkin gate 1: qubits[1] must be a_i");
+        assert(r1.qubits[2] == static_cast<uint32_t>(qb[i])
+               && "Fredkin gate 1: qubits[2] must be b_i");
 
-        // Third Toffoli: (ctrl, a_i, b_i).
+        // Third Toffoli: (ctrl, b_i, a_i) — final a^=b → CCX(ctrl,b_i,a_i).
         assert(r2.qubits[0] == qctrl
                && "Fredkin gate 2: qubits[0] must be ctrl");
-        assert(r2.qubits[1] == static_cast<uint32_t>(qa[i])
-               && "Fredkin gate 2: qubits[1] must be a_i");
-        assert(r2.qubits[2] == static_cast<uint32_t>(qb[i])
-               && "Fredkin gate 2: qubits[2] must be b_i");
+        assert(r2.qubits[1] == static_cast<uint32_t>(qb[i])
+               && "Fredkin gate 2: qubits[1] must be b_i");
+        assert(r2.qubits[2] == static_cast<uint32_t>(qa[i])
+               && "Fredkin gate 2: qubits[2] must be a_i");
     }
 
     // (D) Per-bit super_mask propagation: both operands' super_mask must
