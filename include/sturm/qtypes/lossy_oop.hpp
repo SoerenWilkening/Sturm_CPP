@@ -37,6 +37,7 @@
 #include "sturm/qtypes/divide_oop.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/lib/c_and_dsl.hpp"
+#include "sturm/lib/div_dsl.hpp"
 #include "sturm/lib/logic_dsl.hpp"
 #include "sturm/lib/mul_dsl.hpp"
 #include "sturm/lib/swap_dsl.hpp"
@@ -360,12 +361,35 @@ inline void or_oop_adj(const qint_t<W>& a, const qint_t<W>& b,
 }
 
 // ── divide_oop_adj<W>: zero (q, r) given a == q*b + r ───────────────────────
-// Forward `divide_oop` lives in divide_oop.hpp. Adjoint mirrors the classical
-// bookkeeping — given the post-swap-undo state where (q, r) satisfy the
-// divide invariant, both should return to |0>.
+// Forward `divide_oop` lives in divide_oop.hpp. Adjoint mirrors mul_oop_adj's
+// shape: build BitProxy views over (a, b, q, r) and call `__lib_div_dsl_adj`,
+// which gate-reverses the non-restoring division network. Precondition:
+// (q, r) satisfy `a == q*b + r` (the post-swap-undo state the LO-2 cleanup
+// hands us). Postcondition: q and r registers both back to |0…0>; a and b
+// preserved. Classical short-circuit (q.qubits[0] < 0) keeps the bookkeeping-
+// only inverse so the LO-2 emitter's `divide_oop_adj` cleanup line stays
+// no-op-coherent on operands that never escaped to the gate path.
 template <std::size_t W>
-inline void divide_oop_adj(const qint_t<W>& /*a*/, const qint_t<W>& /*b*/,
-                           qint_t<W>& q, qint_t<W>& r) noexcept {
+inline void divide_oop_adj(const qint_t<W>& a, const qint_t<W>& b,
+                           qint_t<W>& q, qint_t<W>& r) {
+    if (q.qubits[0] < 0) {
+        q.value = 0; q.super_mask = 0;
+        r.value = 0; r.super_mask = 0;
+        return;  // Classical short-circuit — bookkeeping-only inverse.
+    }
+
+    qint_t<W> a_mut; a_mut.value = a.value; a_mut.super_mask = a.super_mask;
+    a_mut.qubits = a.qubits; a_mut.owning_ = false;
+    qint_t<W> b_mut; b_mut.value = b.value; b_mut.super_mask = b.super_mask;
+    b_mut.qubits = b.qubits; b_mut.owning_ = false;
+
+    BitProxy ab[W], bb[W], qb[W], rb[W];
+    for (std::size_t i = 0; i < W; ++i) {
+        ab[i] = BitProxy(a_mut, i); bb[i] = BitProxy(b_mut, i);
+        qb[i] = BitProxy(q,     i); rb[i] = BitProxy(r,     i);
+    }
+    __lib_div_dsl_adj<BitProxy>(ab, W, bb, W, qb, rb);
+
     q.value = 0; q.super_mask = 0;
     r.value = 0; r.super_mask = 0;
 }
@@ -425,3 +449,12 @@ STURM_REGISTER_ADJOINT(sturm::detail::or_oop<8>,   sturm::detail::or_oop_adj<8>)
 STURM_REGISTER_ADJOINT(sturm::detail::or_oop<16>,  sturm::detail::or_oop_adj<16>)
 STURM_REGISTER_ADJOINT(sturm::detail::or_oop<32>,  sturm::detail::or_oop_adj<32>)
 STURM_REGISTER_ADJOINT(sturm::detail::or_oop<64>,  sturm::detail::or_oop_adj<64>)
+
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<1>,  sturm::detail::divide_oop_adj<1>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<2>,  sturm::detail::divide_oop_adj<2>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<3>,  sturm::detail::divide_oop_adj<3>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<4>,  sturm::detail::divide_oop_adj<4>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<8>,  sturm::detail::divide_oop_adj<8>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<16>, sturm::detail::divide_oop_adj<16>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<32>, sturm::detail::divide_oop_adj<32>)
+STURM_REGISTER_ADJOINT(sturm::detail::divide_oop<64>, sturm::detail::divide_oop_adj<64>)

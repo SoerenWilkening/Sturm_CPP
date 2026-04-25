@@ -117,6 +117,30 @@ target_link_libraries(test_or_oop PRIVATE orkan_headers)
 add_test(NAME test_or_oop COMMAND test_or_oop)
 set_tests_properties(test_or_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
 
+# sturm-nwwu LO-2 backend — divide_oop_adj reversible non-restoring division
+# adjoint dispatched into __lib_div_dsl_adj. Mirrors the mul_oop pattern: when
+# at least one operand carries qubits the wrapper builds BitProxy views and
+# calls __lib_div_dsl_adj which gate-reverses the forward network, returning
+# q and r registers to |0…0> on the post-swap-undo state where a == q*b + r.
+# Otherwise (both qubits[0] < 0) the bookkeeping-only inverse zeros q.value /
+# r.value to keep the classical path coherent with the simulator result.
+add_executable(test_divide_oop_adj
+    test_divide_oop_adj.cpp
+    ${STURM_QTYPES_BACKEND_SOURCES}
+)
+target_include_directories(test_divide_oop_adj PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_divide_oop_adj PRIVATE cxx_std_20)
+target_compile_definitions(test_divide_oop_adj PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_MAX_QUBITS=17
+)
+target_link_libraries(test_divide_oop_adj PRIVATE orkan_headers)
+add_test(NAME test_divide_oop_adj COMMAND test_divide_oop_adj)
+set_tests_properties(test_divide_oop_adj PROPERTIES LABELS "qtypes;lossy-reversibility")
+
 # sturm-8dzd RED-bar — sturm::swap(qint_t<W>&, qint_t<W>&) under a manually-
 # pushed control stack at depth==1. Pins the LO-2 swap-under-WHEN contract
 # epic sturm-8aq3 owns: depth==0 stays a zero-gate index relabel; depth>=1
