@@ -890,28 +890,6 @@ set_source_files_properties(
 add_test(NAME test_qint_bitwise_e2e COMMAND test_qint_bitwise_e2e)
 set_tests_properties(test_qint_bitwise_e2e PROPERTIES LABELS "backend")
 
-# sturm-h5it.4 — CSWAP-and-leak tail for operator/= and operator%= under WHEN
-add_executable(test_when_div_mod_lossy
-    test_when_div_mod_lossy.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_when_div_mod_lossy PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_div_mod_lossy PRIVATE cxx_std_20)
-target_compile_definitions(test_when_div_mod_lossy PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_div_mod_lossy PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_when_div_mod_lossy COMMAND test_when_div_mod_lossy)
-set_tests_properties(test_when_div_mod_lossy PROPERTIES LABELS "backend;h5it")
-
 # sturm-qoq0 LO-0.5 — end-to-end pool-drain invariant for every lossy compound
 # assignment (`*=`, `/=`, `%=`, `&=`, `|=`).  Asserts that, inside an inner
 # block, after the block exits the qubit pool has zero in-use allocations.
@@ -941,7 +919,7 @@ set_tests_properties(test_lossy_ancilla_cleaned
 
 # sturm-0qu5 LO-3c — full-W `*=` upper-W product release and `/=` remainder
 # release drain the qubit pool by enclosing-scope exit. Replaces the
-# sturm-pqs0 garbage_registry-snapshot test with the post-LO PRD §2 pool-drain
+# sturm-pqs0 leak-snapshot test with the post-LO PRD §2 pool-drain
 # invariant (mirrors LO-0.5 / sturm-qoq0).
 add_executable(test_mul_div_upperw_clean
     test_mul_div_upperw_clean.cpp
@@ -964,50 +942,6 @@ set_source_files_properties(
 add_test(NAME test_mul_div_upperw_clean COMMAND test_mul_div_upperw_clean)
 set_tests_properties(test_mul_div_upperw_clean
     PROPERTIES LABELS "backend;lossy-reversibility")
-
-# sturm-h5it.3 — CSWAP-and-leak tail for operator*= under WHEN
-add_executable(test_when_mul_lossy
-    test_when_mul_lossy.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_when_mul_lossy PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_mul_lossy PRIVATE cxx_std_20)
-target_compile_definitions(test_when_mul_lossy PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_mul_lossy PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_when_mul_lossy COMMAND test_when_mul_lossy)
-set_tests_properties(test_when_mul_lossy PROPERTIES LABELS "backend;h5it")
-
-# sturm-h5it.2 — CSWAP-and-leak tail for operator&= and operator|= under WHEN
-add_executable(test_when_and_or_lossy
-    test_when_and_or_lossy.cpp
-    ${M19_SOURCES}
-)
-target_include_directories(test_when_and_or_lossy PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_when_and_or_lossy PRIVATE cxx_std_20)
-target_compile_definitions(test_when_and_or_lossy PRIVATE
-    STURM_ANCILLA_CAPACITY=256
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_and_or_lossy PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
-add_test(NAME test_when_and_or_lossy COMMAND test_when_and_or_lossy)
-set_tests_properties(test_when_and_or_lossy PROPERTIES LABELS "backend;h5it")
 
 # sturm-h5it.1 — Regression baseline for non-lossy WHEN ops (^=, +=, -=)
 add_executable(test_when_inplace_nonlossy

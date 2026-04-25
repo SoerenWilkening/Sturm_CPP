@@ -2,11 +2,11 @@
 // for the full-W `*=` upper-W product register and `/=` remainder register.
 //
 // Replaces tests/backend/test_mul_div_upperw_garbage.cpp (sturm-pqs0). That
-// previous test asserted the per-call growth of the runtime garbage_registry
+// previous test asserted the per-call growth of the runtime leak registry
 // (MUL_UPPER_W / DIV_REMAINDER tags). LO-2 (sturm-v0ur) wires the LO
 // transpiler pass that auto-desugars lossy compound assignments into the PRD
 // §2 swap-and-uncompute shape; LO-4 (sturm-pw2f) then deletes the
-// garbage_registry entirely. The post-LO PRD §2 invariant is observable at
+// runtime leak registry entirely. The post-LO PRD §2 invariant is observable at
 // the runtime level: after the enclosing C++ block exits, the qubit pool
 // must have zero in-use allocations.
 //

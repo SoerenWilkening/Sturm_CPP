@@ -15,7 +15,6 @@
 #include "sturm/lib/div_dsl.hpp"
 #include "sturm/lib/mod_dsl.hpp"
 #include "sturm/control/when_fwd.hpp"
-#include "sturm/control/garbage_registry.hpp"
 #include <cstddef>
 
 namespace sturm {
@@ -109,57 +108,14 @@ qint_t<W>& qint_t<W>::operator*=(const qint_t<W>& b) {
     }
     lib_mul_dsl<BitProxy>(ab, W, bb, W, rb, RW);
     detail_arith::release_temp_qubits(b_mut, b);
-    // Upper W bits of the 2W Cuccaro result are released unconditionally.
-    // Safe only when both A and B are in computational-basis states; with
-    // superposition inputs those qubits are entangled with A/B and the
-    // release discards quantum information. Rather than do that silently,
-    // we register the leak with the garbage registry (source_op_tag
-    // MUL_UPPER_W) so a future transpiler pass / audit can discover it.
-    // ctrl_qubit is propagated from the active WHEN scope (or -1 when
-    // uncontrolled). See docs/TODO_reversibility_deferrals.md §6 and bd
-    // sturm-njul for the planned uncomputation pass.
-    {
-        int upper_idx[W];
-        for (std::size_t i = 0; i < W; ++i) upper_idx[i] = ri[W + i];
-        detail::garbage_registry::register_garbage(
-            detail::garbage_registry::source_op_tag::MUL_UPPER_W,
-            detail::current_control_qubit,
-            static_cast<int>(W),
-            upper_idx);
-    }
     for (std::size_t i = W; i < RW; ++i) QubitPool::instance().release(ri[i]);
-    if (detail::current_control == nullptr) {
-        // Uncontrolled fast path: release old A, pointer-relabel to lower-W
-        // product register.
-        for (std::size_t i = 0; i < W; ++i)
-            if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-        for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
-        detail_arith::rebuild_super_mask(*this);
-    } else {
-        // Controlled path: per-bit Fredkin (CSWAP) between this->qubits[i]
-        // and ri[i] via the a^=b; b^=a; a^=b idiom. BitProxy lifts these
-        // CXs to controlled form under the current WHEN scope. After the
-        // swap, this->qubits[i] physically holds the product (iff ctrl=1)
-        // and ri[i] holds garbage (ctrl·old_A). Leak ri[0..W-1] — never
-        // release.
-        for (std::size_t i = 0; i < W; ++i) {
-            BitProxy a_bit(*this, i);
-            qbool r_q = qbool::make_non_owning(ri[i]);
-            BitProxy r_bit(r_q);
-            a_bit ^= r_bit;
-            r_bit ^= a_bit;
-            a_bit ^= r_bit;
-        }
-        // All W bits now live on physical qubits — force super_mask to all-ones.
-        super_mask = (W >= 64) ? ~0ULL : ((1ULL << W) - 1ULL);
-        // Register the leaked lower-W product register with the garbage
-        // registry so a future transpiler pass can emit proper uncomputation.
-        detail::garbage_registry::register_garbage(
-            detail::garbage_registry::source_op_tag::MUL_ASSIGN,
-            detail::current_control_qubit,
-            static_cast<int>(W),
-            ri);
-    }
+    // Uncontrolled path only (controlled lossy *= is desugared at compile
+    // time by the LO transpiler pass — see PRD §2). Release old A, pointer-
+    // relabel to lower-W product register.
+    for (std::size_t i = 0; i < W; ++i)
+        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+    for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
+    detail_arith::rebuild_super_mask(*this);
     value = value * b.value;
     return *this;
 }
@@ -183,53 +139,14 @@ qint_t<W>& qint_t<W>::operator/=(const qint_t<W>& b) {
     }
     lib_div_dsl<BitProxy>(ab, W, bm, W, qb, rb);
     detail_arith::release_temp_qubits(b_mut, b);
-    // Remainder register ri[] is released unconditionally. Safe only when
-    // A and B are in computational-basis states; with superposition inputs
-    // the remainder is entangled with A/B and the release discards quantum
-    // information. Register the leak with the garbage registry
-    // (source_op_tag DIV_REMAINDER) before releasing so a future transpiler
-    // pass / audit can discover it. ctrl_qubit is propagated from the
-    // active WHEN scope (or -1 when uncontrolled). See
-    // docs/TODO_reversibility_deferrals.md §6 and bd sturm-njul.
-    detail::garbage_registry::register_garbage(
-        detail::garbage_registry::source_op_tag::DIV_REMAINDER,
-        detail::current_control_qubit,
-        static_cast<int>(W),
-        ri);
     for (std::size_t i = 0; i < W; ++i) QubitPool::instance().release(ri[i]);
-    if (detail::current_control == nullptr) {
-        // Uncontrolled fast path: release old A, pointer-relabel to quotient.
-        for (std::size_t i = 0; i < W; ++i)
-            if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-        for (std::size_t i = 0; i < W; ++i) qubits[i] = qi[i];
-        detail_arith::rebuild_super_mask(*this);
-    } else {
-        // Controlled path: per-bit Fredkin (CSWAP) between this->qubits[i]
-        // and qi[i] via the a^=b; b^=a; a^=b idiom. BitProxy lifts these
-        // CXs to controlled form under the current WHEN scope. After the
-        // swap, this->qubits[i] physically holds the quotient (iff ctrl=1)
-        // and qi[i] holds garbage (ctrl·old_A). Leak qi[] — never release.
-        for (std::size_t i = 0; i < W; ++i) {
-            // BitProxy over *this at bit i handles classical→quantum
-            // promotion internally via ensure_quantum (matches the existing
-            // compute-path semantics for classical input bits under WHEN).
-            BitProxy a_bit(*this, i);
-            qbool r_q = qbool::make_non_owning(qi[i]);
-            BitProxy r_bit(r_q);
-            a_bit ^= r_bit;
-            r_bit ^= a_bit;
-            a_bit ^= r_bit;
-        }
-        // All W bits now live on physical qubits — force super_mask to all-ones.
-        super_mask = (W >= 64) ? ~0ULL : ((1ULL << W) - 1ULL);
-        // Register the leaked quotient register with the garbage registry
-        // so a future transpiler pass can emit proper uncomputation.
-        detail::garbage_registry::register_garbage(
-            detail::garbage_registry::source_op_tag::DIV_ASSIGN,
-            detail::current_control_qubit,
-            static_cast<int>(W),
-            qi);
-    }
+    // Uncontrolled path only (controlled lossy /= is desugared at compile
+    // time by the LO transpiler pass — see PRD §2). Release old A, pointer-
+    // relabel to quotient register.
+    for (std::size_t i = 0; i < W; ++i)
+        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+    for (std::size_t i = 0; i < W; ++i) qubits[i] = qi[i];
+    detail_arith::rebuild_super_mask(*this);
     value = (b.value != 0) ? (value / b.value) : 0;
     return *this;
 }
@@ -251,30 +168,13 @@ qint_t<W>& qint_t<W>::operator%=(const qint_t<W>& b) {
     }
     lib_mod_dsl<BitProxy>(ab, W, bm, W, rb);
     detail_arith::release_temp_qubits(b_mut, b);
-    if (detail::current_control == nullptr) {
-        // Uncontrolled fast path: release old A, pointer-relabel to remainder.
-        for (std::size_t i = 0; i < W; ++i)
-            if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
-        for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
-        detail_arith::rebuild_super_mask(*this);
-    } else {
-        // Controlled path: per-bit Fredkin (CSWAP) between this->qubits[i]
-        // and ri[i]. Leak ri[] — never release.
-        for (std::size_t i = 0; i < W; ++i) {
-            BitProxy a_bit(*this, i);
-            qbool r_q = qbool::make_non_owning(ri[i]);
-            BitProxy r_bit(r_q);
-            a_bit ^= r_bit;
-            r_bit ^= a_bit;
-            a_bit ^= r_bit;
-        }
-        super_mask = (W >= 64) ? ~0ULL : ((1ULL << W) - 1ULL);
-        detail::garbage_registry::register_garbage(
-            detail::garbage_registry::source_op_tag::MOD_ASSIGN,
-            detail::current_control_qubit,
-            static_cast<int>(W),
-            ri);
-    }
+    // Uncontrolled path only (controlled lossy %= is desugared at compile
+    // time by the LO transpiler pass — see PRD §2). Release old A, pointer-
+    // relabel to remainder register.
+    for (std::size_t i = 0; i < W; ++i)
+        if (qubits[i] >= 0) QubitPool::instance().release(qubits[i]);
+    for (std::size_t i = 0; i < W; ++i) qubits[i] = ri[i];
+    detail_arith::rebuild_super_mask(*this);
     value = (b.value != 0) ? (value % b.value) : 0;
     return *this;
 }

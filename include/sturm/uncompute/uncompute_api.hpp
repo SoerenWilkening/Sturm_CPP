@@ -117,39 +117,26 @@ void uncompute_and(qbool& r, const qbool& a, const qbool& b);
 // and is explicitly out of scope for PJ-1.
 void ccnot_inplace(qbool& x, const qbool& a, const qbool& b);
 
-// ── Phase C — qint-qint arithmetic inverses ──────────────────────────────────
+// ── Phase C — qint-qint arithmetic inverses (non-lossy only) ─────────────────
 //
-// Emitted verbatim by sturm-transpile as the inverse of each qint-qint
-// compound-assign. Every variant delegates to the forward compound-assign
-// on qint_t<W> (defined in qint_arith_v3.hpp); under STURM_BACKEND_ENABLED
+// Emitted verbatim by sturm-transpile as the inverse of each non-lossy
+// qint-qint compound-assign (`+=`, `-=`). The three lossy variants
+// (`*=`, `/=`, `%=`) used to ship classical-placeholder stubs here, but
+// the LO transpiler pass (sturm-lggp) now desugars lossy compound-assigns
+// at compile time into the swap-and-uncompute shape (PRD §2), so the
+// runtime stubs are no longer emitted by sturm-transpile and have been
+// removed in LO-4 (sturm-pw2f).
+//
+// Each remaining variant delegates to the forward compound-assign on
+// qint_t<W> (defined in qint_arith_v3.hpp); under STURM_BACKEND_ENABLED
 // those compound-assigns emit their library circuits against the active
 // BackendContext. The transpiler places the call inside the same scope as
 // the forward statement so `a` and `b` are still live when the inverse
 // runs.
-//
-// Caveats (user responsibility — the transpiler does not emit a runtime
-// guard, matching the Phase B coprime/overflow policy):
-//   uncompute_mul_qint: b must be coprime with 2^W (otherwise `a *= b` is
-//                       not invertible over the W-bit modular ring).
-//   uncompute_div_qint: the product `a * b` must not overflow W bits
-//                       (otherwise `a /= b` was lossy and cannot be
-//                       undone by multiplication).
-//   uncompute_mod_qint: no clean dual exists — the forward op throws away
-//                       the quotient. Ships as a stub body pending a real
-//                       modular-inverse adjoint (see TODO in the body).
 template <std::size_t W>
 inline void uncompute_add_qint(qint_t<W>& a, const qint_t<W>& b) { a -= b; }
 template <std::size_t W>
 inline void uncompute_sub_qint(qint_t<W>& a, const qint_t<W>& b) { a += b; }
-template <std::size_t W>
-inline void uncompute_mul_qint(qint_t<W>& a, const qint_t<W>& b) { a /= b; }
-template <std::size_t W>
-inline void uncompute_div_qint(qint_t<W>& a, const qint_t<W>& b) { a *= b; }
-template <std::size_t W>
-inline void uncompute_mod_qint(qint_t<W>& /*a*/, const qint_t<W>& /*b*/) {
-    // TODO(phase-later): real modular-inverse adjoint.
-    // No simple dual — the forward `a %= b` throws away the quotient.
-}
 
 // ── Phase D — qint-qint comparison inverses (sturm-999i) ─────────────────────
 //

@@ -439,10 +439,16 @@ static void test_when_qint_xor_per_bit_promotion() {
 }
 
 // ── Test 11: WHEN + classical qint AND ──────────────────────────────────────
-// M5: Inside WHEN(flag), a &= b with classical operands should produce
-// quantum result bits where the AND of the classical bit values is 1.
-// a=7 (0b0111), b=5 (0b0101).  AND result: 0b0101 (bits 0,2 are 1).
-// Those result bits should be quantum (super_mask != 0).
+// M5: Inside WHEN(flag), a &= b with classical operands. Pre-LO this hit the
+// CSWAP-and-leak controlled path which forced super_mask all-ones; LO-4
+// (sturm-pw2f) deletes that path because the LO transpiler pass desugars
+// controlled lossy `&=` at compile time into the swap-and-uncompute shape
+// (PRD §2). Backend tests bypass the transpiler, so the runtime falls
+// through to the uncontrolled relabel path. We keep the gate-emission
+// regression check (the BitProxy promote-on-WHEN behaviour fires during the
+// per-bit Toffoli loop) but no longer assert on the post-op super_mask
+// shape — that is the LO desugar's contract now, validated by the LO-3*
+// reversibility / pool-drain tests.
 
 static void test_when_qint_and_promotion() {
     sturm::QubitPool::instance().reset_for_testing();
@@ -462,14 +468,8 @@ static void test_when_qint_and_promotion() {
     }
     size_t after = sc.ir().size();
 
-    // Gates must have been emitted.
+    // Gates must have been emitted (BitProxy promotion kicks in under WHEN).
     assert(after > before && "WHEN + AND must emit gates");
-
-    // Result super_mask must be nonzero: bits where (a_i AND b_i) == 1
-    // get promoted because they're inside a WHEN with classical-1 AND result.
-    // a=0b0111, b=0b0101 -> AND = 0b0101.  Bits 0 and 2 have AND result 1,
-    // so those result bits should be quantum.
-    assert(a.super_mask != 0 && "AND result must have quantum bits inside WHEN");
 
     // Classical value: 7 & 5 = 5.
     assert(a.value == 5 && "classical value must be 7 & 5 = 5");

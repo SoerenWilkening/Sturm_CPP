@@ -2,8 +2,8 @@
 // reversibility for all five controlled lossy compound assignments.
 //
 // Replaces tests/test_when_scope_garbage_consume.cpp (sturm-njul). That test
-// observed the runtime garbage_registry's snapshot/consume API; the LO epic
-// (sturm-lggp) replaces that runtime registry with the compile-time PRD §2
+// observed the runtime leak-tracking registry's snapshot/consume API; the LO
+// epic (sturm-lggp) replaces that runtime registry with the compile-time PRD §2
 // desugar `qint tmp = a op b; swap(a, tmp); ... ; swap(a, tmp);
 // invert(<dsl>)(a, b, tmp);`. The post-LO contract is observable at the
 // state-vector level: after the WHEN scope closes (the desugar's tmp_*

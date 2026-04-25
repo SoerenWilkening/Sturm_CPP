@@ -29,11 +29,6 @@
 //   qbool.hpp     — included transitively through when_fwd.hpp
 
 #include "sturm/control/when_fwd.hpp"   // current_control TLS
-// sturm-njul: scope-exit consumer for the garbage_registry. Owns a baseline
-// snapshot of the registry so we can pop the scope's records on exit and
-// (optionally) emit a one-line diagnostic. No gates are emitted — see
-// when_scope_garbage.hpp for why honest in-place uncomputation is impossible.
-#include "sturm/control/when_scope_garbage.hpp"
 // Phase K PK-3 (sturm-pzye): when_capture.hpp retired — the intermediate
 // uncompute deferral it implemented relied on the retired uncompute_op /
 // qint_base runtime. Compound WHEN expressions' inverse emission is now
@@ -87,22 +82,6 @@ struct WhenGuard {
 #ifdef STURM_BACKEND_ENABLED
     bool  pushed_to_ctx_stack_;  // true if we modified ctx->control_stack (sturm-d9n)
 #endif
-
-    // sturm-njul: per-scope garbage consumer. Captures the registry baseline
-    // at guard construction (before the body executes) and consumes every
-    // record registered during the scope body at destruction. See
-    // when_scope_garbage.hpp for the full design note.
-    //
-    // Destructor ordering: WhenGuard's own destructor body runs first (it
-    // restores current_control and unwinds the context stack). Then members
-    // are destroyed in reverse declaration order — so `scope_garbage_`
-    // placed last is destroyed FIRST among the members. Since this pass is
-    // diagnostic-only (it consumes records, emits no gates), it does not
-    // require the control TLS to still be live; the ordering is benign.
-    // A future gate-emitting revision would need to either run the consumer
-    // from WhenGuard::~WhenGuard()'s body (before TLS unwind) or swap the
-    // order of unwinding / consumption. For today's pass, either works.
-    ::sturm::detail::WhenScopeGarbage scope_garbage_;
 
     explicit WhenGuard(qbool& expr) noexcept
         : run_(false), modified_tls_(false),
