@@ -292,14 +292,24 @@ wanted. The transpiler does not guess; it honours C++ scope.
 
 ### 5.1 Classicality branching of `swap`
 
+**Status:** Landed (sturm-arce, 2026-04-25). The behaviour described below is
+the implementation, not a target. `sturm::swap(qint_t<W>&, qint_t<W>&)` lives
+at `include/sturm/qtypes/lossy_oop.hpp:79-100` and consults
+`sturm_get_thread_context()->control_stack.depth()` to dispatch:
+
 - `WHEN(expr)` body where `expr` is classical `true`: equivalent to no
-  control; `swap` is a qubit-index relabel (zero gates).
+  control; control-stack depth is 0 and `swap` is a qubit-index relabel
+  (zero gates) — `value` / `super_mask` / `qubits` / `owning_` are
+  exchanged via `std::swap`.
 - `WHEN(expr)` body where `expr` is classical `false`: body skipped; nothing
   emitted.
-- `WHEN(expr)` body where `expr` is superposed: `swap` emits a per-bit
-  controlled-SWAP (Fredkin), lifted into the active control chain via
-  BitProxy. The scope-exit reverse swap and the uncompute are lifted
-  identically.
+- `WHEN(expr)` body where `expr` is superposed: control-stack depth is
+  `>= 1` and `swap` emits a per-bit controlled-SWAP (Fredkin) by calling
+  `lib_swap_dsl(BitProxy(a, i), BitProxy(b, i))` for each `i ∈ [0, W)`,
+  lifted into the active control chain via BitProxy. Each `lib_swap_dsl`
+  call is the standard 3-CNOT chain `a^=b; b^=a; a^=b`, so the per-bit
+  cost under control is `3 × CCX` (Fredkin). The scope-exit reverse swap
+  and the uncompute are lifted identically.
 
 The uncontrolled fast path inside the current
 `operator*=` / `operator/=` / `operator%=` / `operator&=` / `operator|=`
