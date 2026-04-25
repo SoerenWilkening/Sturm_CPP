@@ -1682,3 +1682,22 @@ set_source_files_properties(
 add_test(NAME test_when_lossy_gate_equiv COMMAND test_when_lossy_gate_equiv)
 set_tests_properties(test_when_lossy_gate_equiv
     PROPERTIES LABELS "backend;lossy-reversibility")
+
+# sturm-wrmg LO-3b -- post-WHEN ancilla reversibility for all five controlled
+# lossy compound assignments (replaces tests/test_when_scope_garbage_consume.cpp).
+add_executable(test_when_lossy_reversibility
+    test_when_lossy_reversibility.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_when_lossy_reversibility PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_lossy_reversibility PRIVATE cxx_std_20)
+target_compile_definitions(test_when_lossy_reversibility PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_when_lossy_reversibility PRIVATE orkan_headers)
+add_test(NAME test_when_lossy_reversibility COMMAND test_when_lossy_reversibility)
+set_tests_properties(test_when_lossy_reversibility
+    PROPERTIES LABELS "backend;lossy-reversibility")
