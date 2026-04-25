@@ -33,7 +33,10 @@
 
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/qtypes/qint_core.hpp"
+#include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/divide_oop.hpp"
+#include "sturm/core/qubit_pool.hpp"
+#include "sturm/lib/c_and_dsl.hpp"
 #include "sturm/routines/invert.hpp"
 
 #include <array>
@@ -83,17 +86,77 @@ inline void mul_oop_adj(const qint_t<W>& /*a*/, const qint_t<W>& /*b*/,
 }
 
 // ── and_oop<W>: a&b → tmp ───────────────────────────────────────────────────
+// Out-of-place bitwise-AND helper used by the LO-2 `a &= b` desugar.
+//
+// Fast-path / classical-path split (mirrors `divide_oop`):
+//   * Both operands on the classical short-circuit path (a.qubits[0] < 0 AND
+//     b.qubits[0] < 0) — keep the pure classical body. `example_qint_arith`
+//     and `example_phase_abc_demo` rely on this; they never enter the gate
+//     path so the wrapper must not allocate qubits or emit gates for them.
+//   * Otherwise — at least one operand carries qubits — allocate `W` fresh
+//     qubits for `tmp` and dispatch into `lib_c_AND_dsl` per bit. The DSL
+//     emits a single CCX (Toffoli) per bit: `tmp_i ^= a_i & b_i`. With
+//     `tmp` starting in |0…0> this leaves `tmp == a & b`.
 template <std::size_t W>
 inline void and_oop(const qint_t<W>& a, const qint_t<W>& b,
-                    qint_t<W>& tmp) noexcept {
-    tmp.value = a.value & b.value;
+                    qint_t<W>& tmp) {
+    tmp.value      = a.value & b.value;
     tmp.super_mask = a.super_mask & b.super_mask;
+
+    if (a.qubits[0] < 0 && b.qubits[0] < 0) {
+        // Classical short-circuit — no qubit allocation, no gate emission.
+        return;
+    }
+
+    // Gate path: borrow non-owning views over a, b so we can build BitProxy
+    // handles into lib_c_AND_dsl without mutating the caller's const refs.
+    qint_t<W> a_mut; a_mut.value = a.value; a_mut.super_mask = a.super_mask;
+    a_mut.qubits = a.qubits; a_mut.owning_ = false;
+    qint_t<W> b_mut; b_mut.value = b.value; b_mut.super_mask = b.super_mask;
+    b_mut.qubits = b.qubits; b_mut.owning_ = false;
+
+    for (std::size_t i = 0; i < W; ++i) {
+        tmp.qubits[i] = QubitPool::instance().allocate();
+    }
+    tmp.owning_ = true;
+
+    for (std::size_t i = 0; i < W; ++i) {
+        BitProxy ab(a_mut, i), bb(b_mut, i), tb(tmp, i);
+        lib_c_AND_dsl<BitProxy>(ab, bb, tb);  // tb ^= (ab & bb) — one CCX
+    }
 }
 
+// `and_oop_adj` is the structural inverse of `and_oop`. The forward emits a
+// per-bit Toffoli (CCX is self-inverse), so re-applying the same ladder on
+// the post-swap-undo state where `tmp == a & b` returns `tmp` to |0…0>.
+//
+// Same fast-path / classical-path split: on the classical path both
+// `tmp.qubits[0] < 0`, so we just zero the bookkeeping fields. On the gate
+// path we re-emit the CCX ladder (no qubit allocation — `tmp` already owns
+// the qubits the forward allocated).
 template <std::size_t W>
-inline void and_oop_adj(const qint_t<W>& /*a*/, const qint_t<W>& /*b*/,
-                        qint_t<W>& tmp) noexcept {
-    tmp.value = 0;
+inline void and_oop_adj(const qint_t<W>& a, const qint_t<W>& b,
+                        qint_t<W>& tmp) {
+    if (tmp.qubits[0] < 0) {
+        // Classical short-circuit — bookkeeping-only inverse.
+        tmp.value = 0;
+        tmp.super_mask = 0;
+        return;
+    }
+
+    // Gate path: re-apply the CCX ladder; CCX is self-inverse so this zeros
+    // tmp's qubits given the (a & b) post-state. Bookkeeping mirror to keep
+    // tmp.value coherent with the simulator readout.
+    qint_t<W> a_mut; a_mut.value = a.value; a_mut.super_mask = a.super_mask;
+    a_mut.qubits = a.qubits; a_mut.owning_ = false;
+    qint_t<W> b_mut; b_mut.value = b.value; b_mut.super_mask = b.super_mask;
+    b_mut.qubits = b.qubits; b_mut.owning_ = false;
+
+    for (std::size_t i = 0; i < W; ++i) {
+        BitProxy ab(a_mut, i), bb(b_mut, i), tb(tmp, i);
+        lib_c_AND_dsl<BitProxy>(ab, bb, tb);
+    }
+    tmp.value      = 0;
     tmp.super_mask = 0;
 }
 
@@ -145,3 +208,28 @@ using detail::divide_oop;
 using detail::divide_oop_adj;
 
 }  // namespace sturm
+
+// ── STURM_REGISTER_ADJOINT pairings for and_oop<W> ───────────────────────────
+// Pairs each `and_oop<W>` instantiation with its structural inverse so
+// `sturm::invert<&::sturm::detail::and_oop<W>>()` resolves at compile time
+// to `&::sturm::detail::and_oop_adj<W>`. The macro keys on the function-
+// pointer VALUE, so each width must be registered explicitly. Covers the
+// widths the LO-2 emitter / examples / tests instantiate today; extend as
+// new widths land. (The classical short-circuit body is identical across
+// widths, but the gate path and the inverse are width-specific.)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<1>,
+                       sturm::detail::and_oop_adj<1>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<2>,
+                       sturm::detail::and_oop_adj<2>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<3>,
+                       sturm::detail::and_oop_adj<3>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<4>,
+                       sturm::detail::and_oop_adj<4>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<8>,
+                       sturm::detail::and_oop_adj<8>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<16>,
+                       sturm::detail::and_oop_adj<16>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<32>,
+                       sturm::detail::and_oop_adj<32>)
+STURM_REGISTER_ADJOINT(sturm::detail::and_oop<64>,
+                       sturm::detail::and_oop_adj<64>)

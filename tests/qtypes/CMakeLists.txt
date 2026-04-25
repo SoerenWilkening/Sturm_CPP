@@ -45,3 +45,25 @@ set_source_files_properties(
 )
 add_test(NAME test_divide_oop COMMAND test_divide_oop)
 set_tests_properties(test_divide_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
+
+# sturm-ph6f.3 LO-2 backend — and_oop / and_oop_adj reversible Toffoli ladder
+# dispatched into c_and_dsl. Mirrors the divide_oop fast-path / classical-path
+# split: when at least one operand carries qubits the wrapper emits a per-bit
+# CCX; otherwise (both qubits[0] < 0) the classical short-circuit body runs to
+# preserve example_qint_arith / example_phase_abc_demo.
+add_executable(test_and_oop
+    test_and_oop.cpp
+    ${STURM_QTYPES_BACKEND_SOURCES}
+)
+target_include_directories(test_and_oop PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_and_oop PRIVATE cxx_std_20)
+target_compile_definitions(test_and_oop PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_MAX_QUBITS=12
+)
+target_link_libraries(test_and_oop PRIVATE orkan_headers)
+add_test(NAME test_and_oop COMMAND test_and_oop)
+set_tests_properties(test_and_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
