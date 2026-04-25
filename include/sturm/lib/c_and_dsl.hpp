@@ -24,25 +24,19 @@
 // All functions in sturm:: namespace.
 // No _when variants. WHEN lifting is automatic via qbool operators.
 //
-// Target: <150 LoC.
+// Target: <150 LoC.  The adjoint + STURM_REGISTER_ADJOINT block lives in the
+// sibling c_and_dsl_adj.hpp header and is auto-included from the bottom of
+// this file (sturm-nmf1).
 
 #pragma once
 
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
-#include "sturm/routines/invert.hpp"
 
 #include <cstddef>
 #include <cassert>
 #include <type_traits>
-
-// Forward-declare BitProxy for the LO-1c adjoint registration (backend-only).
-namespace sturm {
-#ifdef STURM_BACKEND_ENABLED
-struct BitProxy;
-#endif
-}  // namespace sturm
 
 namespace sturm {
 
@@ -144,20 +138,9 @@ inline void lib_c_n_AND_dsl(Bit* controls, size_t n_controls, Bit& tgt) {
     }
 }
 
-// ── __lib_c_AND_dsl_adj (LO-1c, sturm-eum8) ──────────────────────────────────
-// Adjoint of lib_c_AND_dsl for the LO-2 rewrite's scope-exit cleanup
-// (PRD §2.2/§2.3).  The forward sweep is a single CCX, which is its own
-// adjoint (self-inverse).  The body is therefore identical to the forward —
-// we register the pair explicitly so `invert(lib_c_AND_dsl)(...)` resolves
-// at the cleanup call site rather than relying on call-site inlining.
-template <typename Bit>
-inline void __lib_c_AND_dsl_adj(Bit& c0, Bit& c1, Bit& tgt) {
-    tgt ^= (c0 & c1);   // CCX self-inverse: re-applying the sweep zeros tgt
-}
-
 } // namespace sturm
 
-#ifdef STURM_BACKEND_ENABLED
-STURM_REGISTER_ADJOINT(sturm::lib_c_AND_dsl<sturm::BitProxy>,
-                       sturm::__lib_c_AND_dsl_adj<sturm::BitProxy>)
-#endif
+// Sibling header carries __lib_c_AND_dsl_adj + STURM_REGISTER_ADJOINT
+// (sturm-nmf1).  Auto-included so callers of lib_c_AND_dsl pick up the
+// adjoint-pair registration without an extra #include.
+#include "sturm/lib/c_and_dsl_adj.hpp"
