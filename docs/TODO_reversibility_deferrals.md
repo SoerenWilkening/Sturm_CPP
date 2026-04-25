@@ -69,6 +69,37 @@ Template-dependent reversible forwards (e.g., `template<int N> void fn(qint<N>&)
 
 ---
 
+## 5. LO-2 OOP wrapper backends (`mul_oop` / `and_oop` / `or_oop`)
+
+**Category note.** Items 1–4 above are *synthesis-pipeline* deferrals (recursion / cross-TU / member / template). This item is a different category: a *runtime-target* deferral on the LO-2 transpiler's emitted output. It is grouped here because both deferral kinds gate the same end-to-end reversibility story.
+
+**Status:** Scoped (bd epic `sturm-ph6f`).
+
+**Source.** Surfaced during `sturm-czfi` (LO-2 emitter fix that made the example consumers compile). The classical / TODO(backend) posture is documented in-source at `include/sturm/qtypes/lossy_oop.hpp:14-23` and on the `mul_oop` body at `lossy_oop.hpp:66`.
+
+**Current behaviour.** The LO-2 transpiler emits calls to `mul_oop` / `and_oop` / `or_oop` / `divide_oop` (and `*_oop_adj` counterparts) for desugared compound-assigns on `qint_t<W>`. `divide_oop` already has a real reversible implementation in `include/sturm/qtypes/divide_oop.hpp`. The other three forwards in `lossy_oop.hpp` classically update `tmp.value` / `tmp.super_mask` and leave `tmp.qubits` at the default-constructed `-1` sentinel. All four `*_oop_adj` helpers (mul / and / or / divide) just zero `tmp` rather than running a structural inverse. This is sufficient for the example targets that drove `sturm-czfi` (`example_qint_arith`, `example_phase_abc_demo`) because both keep their operands on the classical short-circuit path (`qubits[0] < 0` throughout `main`); on that path the simulator never enters the gate-emitting fast path, and the wrappers only need to honour the classical bookkeeping invariants.
+
+**Required work.** For each of `mul_oop` / `and_oop` / `or_oop`:
+
+1. Allocate `W` qubits for `tmp` (replace the `qubits left at -1` shortcut) when at least one operand is on the gate-emitting path.
+2. Dispatch into the matching `lib_*_dsl` to emit the reversible network (controlled-add ladder / Toffoli per bit / De Morgan ladder respectively). The DSLs already exist in tree (`include/sturm/lib/{mul,c_and,or}_dsl.hpp`) with adjoint registrations extracted into `*_dsl_adj.hpp` siblings via `sturm-nmf1`.
+3. Register `*_oop_adj` as the structural inverse via `STURM_REGISTER_ADJOINT`, mirroring `divide_oop`'s pattern, so `sturm::invert<&mul_oop<W>>()` resolves to the proper adjoint instead of the classical zeroer.
+
+`include/sturm/qtypes/divide_oop.hpp` is the worked reference for what each wrapper should look like (fast-path / classical-path split, qubit allocation, DSL dispatch, adjoint registration).
+
+**Tracking.**
+- **Epic:** `sturm-ph6f` — *LO-2 backend: replace classical-only `*_oop` wrappers with reversible gate networks.*
+- **Children:** `sturm-ph6f.2` (mul / `lib_mul_dsl`), `sturm-ph6f.3` (and / `c_and_dsl`), `sturm-ph6f.1` (or / `or_dsl`).
+
+**References.**
+- `include/sturm/qtypes/lossy_oop.hpp:14-23` — preamble explaining the classical / TODO(backend) posture.
+- `include/sturm/qtypes/lossy_oop.hpp:66` — `TODO(backend)` marker on `mul_oop`.
+- `include/sturm/qtypes/divide_oop.hpp` — reference implementation.
+- bd `sturm-czfi` — LO-2 emitter fix that made this scope visible.
+- bd `sturm-nmf1` — extracted `*_dsl_adj.hpp` siblings, prerequisite for clean dispatch.
+
+---
+
 ## Cross-references
 
 - **PRD:** `docs/prd_automatic_adjoint_synthesis.md` §9 (locked reversibility-scope decisions).
