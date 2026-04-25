@@ -127,6 +127,21 @@ add_executable(sturm-transpile
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
+    # sturm-v0ur (LO-2 wiring): per-op inverse renderer hoisted from
+    # `uncompute_pass.cpp` so that file stays under the plan §9 600-LoC
+    # budget once the `register_external_cleanup()` hook lands.
+    src/uncompute_render.cpp
+    # sturm-v0ur (LO-2 wiring): lossy compound-assign rewrite pipeline.
+    # `matcher_lossy_op` (LO-2a) emits `LossyOpHit`s for `qint *=`,
+    # `/=`, `%=`, `&=`, `|=`; `lossy_rewrite_emitter` (LO-2b) turns
+    # each hit into the §2.2 forward triplet (allocate-compute-swap);
+    # `lossy_scope_exit_emitter` (LO-2c) groups hits per enclosing
+    # `CompoundStmt` and emits the §2.3 LIFO cleanup. The wiring lives
+    # in `transpile_consumer.cpp`; the LO-2d main-outer suppression is
+    # baked into `lossy_scope_exit_emitter` itself.
+    src/matcher_lossy_op.cpp
+    src/lossy_rewrite_emitter.cpp
+    src/lossy_scope_exit_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -359,6 +374,13 @@ add_library(sturm-transpile-plugin SHARED
     src/routine_registry.cpp
     src/matcher_user_routine.cpp
     src/uncompute_pass.cpp
+    # sturm-v0ur (LO-2 wiring): mirror the main binary — the plugin
+    # build needs `render_uncompute()` resolved from the new TU and
+    # the lossy-rewrite pipeline (LO-2a/2b/2c/2d) linked in.
+    src/uncompute_render.cpp
+    src/matcher_lossy_op.cpp
+    src/lossy_rewrite_emitter.cpp
+    src/lossy_scope_exit_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for

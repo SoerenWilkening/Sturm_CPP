@@ -39,6 +39,11 @@
 // through synthesize() keeps each consumer's Registry scoped to its own
 // lifetime.
 #include "sturm/transpile/plugin_api.hpp"
+// sturm-v0ur (LO-2 wiring): the consumer owns an `ExternalCleanup`
+// vector populated by the LO drain block in `HandleTranslationUnit`.
+// Pull in the full struct definition so member declarations resolve at
+// header-parse time.
+#include "sturm/transpile/uncompute_pass.hpp"
 
 #include "clang/AST/ASTConsumer.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
@@ -47,7 +52,15 @@
 #include "routine_registry.hpp"
 #include "synthesis_registry.hpp"
 
+// sturm-v0ur (LO-2 wiring): the consumer registers the lossy-op
+// matcher (LO-2a) and feeds its hits through the LO-2b/2c emitters
+// after `matchAST`. Member declarations need the full LossyOpHit
+// struct shape, so the matcher header lands here at the consumer
+// boundary alongside the existing routine / synthesis registries.
+#include "matcher_lossy_op.hpp"
+
 #include <string>
+#include <vector>
 
 namespace clang { class CompilerInstance; class ASTContext; }
 
@@ -163,6 +176,23 @@ private:
     // `STURM_REGISTER_ADJOINT` text into `unit_.raw_insertions`,
     // ahead of the second PM3 transpile pass.
     SynthesisRegistry synth_registry_;
+    // sturm-v0ur (LO-2 wiring): hits vector populated by the LO-2a
+    // matcher (`register_lossy_op_matcher`). Lives alongside `unit_`
+    // because the AST-bound `LossyOpHit::call` / `enclosing_block`
+    // pointers must outlive `matchAST` but die before `ASTContext`
+    // tear-down. Drained by `HandleTranslationUnit` after the
+    // post-walk backstops, BEFORE `synthesize()` so the LO-2b
+    // forward triplets feed `unit_.replacements` and the LO-2c
+    // cleanups feed the `synthesize()` external-cleanup overload.
+    std::vector<LossyOpHit> lossy_hits_;
+    // sturm-v0ur (LO-2 wiring): cleanup records assembled from
+    // `lossy_hits_` after `matchAST`. Each `ExternalCleanup` carries
+    // a close-brace `SourceLocation` and the pre-formatted cleanup
+    // body (already `#line`-prefixed per line). `synthesize(unit,
+    // external, sm, registry)` reads this vector and converts each
+    // entry into one `UncomputeInsertion` anchored at the close
+    // brace.
+    std::vector<sturm::transpile::ExternalCleanup> external_cleanups_;
     clang::ast_matchers::MatchFinder finder_;
 
     // Plugin-mode stash — populated by HandleTranslationUnit when

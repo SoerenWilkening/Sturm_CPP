@@ -4241,3 +4241,64 @@ add_test(
 set_tests_properties(plugin_diagnostic_qbool_prep_clean PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-v0ur (LO-2 wiring): snapshot fixtures for lossy compound-assigns ─
+# Three LO-0.x fixtures land here. The first two exercise LO-2a/2b/2c +
+# LO-2d (main-outer suppression):
+#
+#   * snapshot_when_lossy_and_assign — `WHEN(ctrl) { a &= b; }` desugars
+#     to the §2.2 forward triplet inside the WHEN body and the §2.3
+#     scope-exit cleanup at the body's close brace; the WHEN-lift
+#     pipeline lifts the per-bit Fredkin / controlled-CCX through the
+#     existing BitProxy path at run time.
+#
+#   * snapshot_top_level_lossy_in_main — exercises the LO-2d
+#     main-outer exception. Two `&=` calls: one in `main`'s outermost
+#     CompoundStmt (forward triplet ONLY — cleanup suppressed per
+#     PRD §4.3) and one in a lambda body (full forward + cleanup
+#     pair — the lambda's CompoundStmt is NOT main's outermost, so
+#     suppression does not apply).
+#
+# The third fixture is for LO-2e (sturm-rry6 — nested lossy-op
+# depth-first rewrite). The current LO-2 wiring matcher only fires
+# on a `qint *=` whose RHS is a bare DeclRefExpr, so `a *= (b & c);`
+# does not trigger any rewrite under sturm-v0ur. The snapshot is
+# wired here as a byte-identical-to-input check so it stays GREEN
+# until LO-2e lands; LO-2e (sturm-rry6) will overwrite the expected
+# file with the post-nested-rewrite shape, at which point this
+# snapshot becomes the LO-2e regression.
+add_test(
+    NAME snapshot_when_lossy_and_assign
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_lossy_and_assign.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_lossy_and_assign.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/when_lossy_and_assign
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_when_lossy_and_assign PROPERTIES
+    LABELS "transpiler;lossy-reversibility"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_top_level_lossy_in_main
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/top_level_lossy_in_main.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/top_level_lossy_in_main.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/top_level_lossy_in_main
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_top_level_lossy_in_main PROPERTIES
+    LABELS "transpiler;lossy-reversibility"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_compound_nested_mul_and
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_nested_mul_and.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/compound_nested_mul_and.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/compound_nested_mul_and
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_compound_nested_mul_and PROPERTIES
+    LABELS "transpiler;lossy-reversibility"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

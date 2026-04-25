@@ -105,6 +105,37 @@ struct QSynthesisResult {
     std::vector<QReplacement>       replacements;
 };
 
+/// sturm-v0ur (LO-2 wiring): one external cleanup record. External
+/// emitters — currently `lossy_scope_exit_emitter` — produce one
+/// `ExternalCleanup` per enclosing `CompoundStmt` whose body needs LIFO
+/// reverse-swap + `sturm::invert<&dsl>()(...)` cleanup planted before its
+/// closing brace. The struct is intentionally minimal so the
+/// `register_external_cleanup()` hook stays under the plan §9 ~20-LoC
+/// budget: a `SourceLocation` (the close-brace anchor) + a complete
+/// cleanup-text body the wiring layer has already line-prefixed with the
+/// `#line` directives the snapshot fixtures expect.
+struct ExternalCleanup {
+    clang::SourceLocation close_brace;
+    std::string           text;
+};
+
+/// sturm-v0ur (LO-2 wiring): append one cleanup record to the caller-
+/// owned `sink` vector. Records with an invalid close-brace location or
+/// an empty text body are dropped silently — the synthesis pass would
+/// no-op on them anyway. The hook exists so external emitters do not
+/// have to spell out the `ExternalCleanup{}` initializer or duplicate
+/// the empty-string / invalid-loc guards at every call site. Plan §9
+/// caps this hook at ~20 LoC; the implementation is a four-line guard
+/// + push.
+///
+/// `sink` is typically a per-translation-unit member of the consumer
+/// (the same lifetime as the `QUnit`). The `synthesize()` overload that
+/// accepts a `std::vector<ExternalCleanup>` reads it after the per-op
+/// LIFO loop and appends one `UncomputeInsertion` per surviving record.
+void register_external_cleanup(std::vector<ExternalCleanup>& sink,
+                               clang::SourceLocation close_brace,
+                               std::string text);
+
 /// Synthesize uncompute insertions for every QOperation in `unit`.
 ///
 /// Ordering contract:
@@ -165,6 +196,23 @@ struct QSynthesisResult {
 /// outer and inner consumers are both alive; threading by pointer
 /// keeps each synthesize() call bound to its own consumer's Registry.
 QSynthesisResult synthesize(const QUnit& unit,
+                            const clang::SourceManager* sm = nullptr,
+                            const plugin::Registry* registry = nullptr);
+
+/// sturm-v0ur (LO-2 wiring) overload: same contract as the legacy 3-arg
+/// form, plus an `external` cleanup vector populated via
+/// `register_external_cleanup()`. Each surviving entry is appended to
+/// the returned `insertions` list as one `UncomputeInsertion` anchored
+/// at the entry's close-brace location, with text taken verbatim. When
+/// the close-brace anchor is NOT also the `close_brace` of any
+/// `unit.scopes` entry (the LO common case — a WHEN body or inner
+/// `CompoundStmt` no other matcher claimed as a `QScope`), and `sm` is
+/// non-null, one extra restoring `#line` directive is emitted at that
+/// anchor so user source after the close brace stays line-accurate.
+/// External cleanups grouped under the same anchor share a single
+/// restoring directive — the helper deduplicates by raw-encoding.
+QSynthesisResult synthesize(const QUnit& unit,
+                            const std::vector<ExternalCleanup>& external,
                             const clang::SourceManager* sm = nullptr,
                             const plugin::Registry* registry = nullptr);
 

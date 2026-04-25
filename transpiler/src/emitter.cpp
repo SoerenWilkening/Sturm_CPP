@@ -161,8 +161,18 @@ std::string apply_rewrites_and_serialize(
 // stream is byte-identical to the pre-PM4 shape.
 std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx,
                            const plugin::Registry* registry) {
+    return emit_to_string(unit, {}, ctx, registry);
+}
+
+// sturm-v0ur (LO-2 wiring) overload: forward `external` to the matching
+// `synthesize()` overload so the consumer's LO cleanup records land at
+// their close-brace anchors.
+std::string emit_to_string(const QUnit& unit,
+                           const std::vector<ExternalCleanup>& external,
+                           clang::ASTContext& ctx,
+                           const plugin::Registry* registry) {
     auto synth = sturm::transpile::synthesize(
-        unit, &ctx.getSourceManager(), registry);
+        unit, external, &ctx.getSourceManager(), registry);
     clang::Rewriter rw(ctx.getSourceManager(), ctx.getLangOpts());
     return apply_rewrites_and_serialize(
         ctx.getSourceManager(), rw, synth.insertions, synth.replacements);

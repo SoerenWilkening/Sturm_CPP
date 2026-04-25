@@ -134,6 +134,15 @@ std::string format_line_directive(const clang::SourceManager& sm,
 std::string emit_to_string(const QUnit& unit, clang::ASTContext& ctx,
                            const plugin::Registry* registry = nullptr);
 
+/// sturm-v0ur (LO-2 wiring) overload: same contract as above, plus the
+/// external cleanup vector populated via `register_external_cleanup()`.
+/// Forwarded verbatim to the matching `synthesize()` overload so LO
+/// cleanups land at their close-brace anchors.
+std::string emit_to_string(const QUnit& unit,
+                           const std::vector<ExternalCleanup>& external,
+                           clang::ASTContext& ctx,
+                           const plugin::Registry* registry = nullptr);
+
 /// PM1-2 — file emission step.
 ///
 /// Call `emit_to_string(unit, ctx)`, prepend `idempotency_header(

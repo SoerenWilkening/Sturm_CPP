@@ -18,9 +18,18 @@ public:
 } // namespace sturm
 using qint = sturm::qint_t<1>;
 
-void demo(qint a, qint b) { a /= b; 
+void demo(qint a, qint b) { 
 #line 19 "div_assign_qint.cpp"
-    uncompute_div_qint(a, b);
+qint __sturm_tmp_div_0_q, __sturm_tmp_div_0_r;
 
 #line 19 "div_assign_qint.cpp"
+divide_oop(a, b, __sturm_tmp_div_0_q, __sturm_tmp_div_0_r);
+
+#line 19 "div_assign_qint.cpp"
+swap(a, __sturm_tmp_div_0_q); 
+#line 19 "div_assign_qint.cpp"
+    swap(a, __sturm_tmp_div_0_q);
+
+#line 19 "div_assign_qint.cpp"
+    sturm::invert<&::sturm::lib_div_dsl>()(a, b, __sturm_tmp_div_0_q, __sturm_tmp_div_0_r);
 }

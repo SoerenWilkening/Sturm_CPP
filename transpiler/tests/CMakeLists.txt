@@ -470,6 +470,9 @@ add_executable(test_adjoint_emitter
     test_adjoint_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    # sturm-v0ur (LO-2 wiring): `render_uncompute()` now lives in its
+    # own TU; link it for the adjoint_emitter test too.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
@@ -618,6 +621,7 @@ add_executable(test_matcher_reversible_drive
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
@@ -932,6 +936,12 @@ set_tests_properties(test_pm4_dogfood_registry PROPERTIES LABELS "transpiler")
 add_executable(test_transpile_uncompute_pass
     test_uncompute_pass.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    # sturm-v0ur (LO-2 wiring): per-op renderer hoisted out of
+    # `uncompute_pass.cpp` so that file stays under the plan §9
+    # 600-LoC budget. The unit-test still consumes the renderer via
+    # the `render_uncompute()` symbol (declared in the same header),
+    # so we link the new TU here too.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
     # PM4-3: `uncompute_pass.cpp` now calls into the plugin Registry via
@@ -1313,6 +1323,7 @@ add_executable(test_transpile_emitter
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
     # PM4-3: uncompute_pass.cpp now references `Registry::find_render_fn`
     # from the plugin TU. Link plugin_registry.cpp so the Registry method
     # bodies resolve at link time.
@@ -1462,6 +1473,7 @@ add_executable(test_transpile_matcher
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
     # PM4-3: uncompute_pass.cpp now references `Registry::find_render_fn`
     # from the plugin TU. Link plugin_registry.cpp so Registry method
     # bodies resolve at link time (the in-tree matcher tests never
@@ -1601,6 +1613,16 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
+    # sturm-v0ur (LO-2 wiring): TranspileConsumer now registers the
+    # lossy compound-assign matcher + emitters. Link the three TUs so
+    # the LO-2a/2b/2c symbols resolve at link time (the consumer's
+    # post-walk drains the LO hits vector via `emit_lossy_forward` /
+    # `group_cleanups_by_block` and feeds `register_external_cleanup()`
+    # into `synthesize()`).
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so
     # the Registry method bodies (register_op, find_render_fn,

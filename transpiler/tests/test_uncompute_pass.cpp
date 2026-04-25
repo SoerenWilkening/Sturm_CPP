@@ -2090,6 +2090,119 @@ static void test_plugin_kind_honours_skip_uncompute() {
     CHECK_EQ_SIZE(ins.size(), 0u);
 }
 
+// ── sturm-v0ur (LO-2 wiring): external_cleanup hook tests ───────────────────
+//
+// `register_external_cleanup(sink, close_brace, text)` lets external
+// emitters (currently `lossy_scope_exit_emitter`) push one cleanup
+// record per enclosing CompoundStmt close-brace into a caller-owned
+// vector. `synthesize(unit, external, sm, registry)` then converts
+// each surviving record into one `UncomputeInsertion` anchored at the
+// close-brace location, with the text taken verbatim — and emits a
+// restoring `#line` directive once per unique anchor when `sm` is
+// non-null and the scope loop did not already cover that anchor.
+//
+// Invariants under test:
+//   1. Empty `text` records are dropped at registration (no UncomputeInsertion
+//      shows up in the synthesize() output for them).
+//   2. Invalid close-brace locations are dropped at registration.
+//   3. A surviving record produces exactly one UncomputeInsertion, anchored
+//      at the registered close-brace, with `code == registered text`.
+//   4. Multiple records sharing one close-brace each become one insertion —
+//      they are NOT merged, deduped, or re-ordered by `synthesize`.
+//   5. Records whose close-brace matches a `unit.scopes` close-brace do NOT
+//      trigger a duplicate restoring `#line` (the scope loop owns that).
+
+static void test_external_cleanup_empty_text_dropped() {
+    // Hook drops records with empty text — synthesize() output is
+    // byte-identical to the no-external-cleanup baseline.
+    QUnit unit;  // no scopes, no ops
+    std::vector<ExternalCleanup> sink;
+    register_external_cleanup(sink, make_loc(50), /*text=*/"");
+    CHECK_EQ_SIZE(sink.size(), 0u);
+
+    auto ins = synthesize(unit, sink, /*sm=*/nullptr).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_external_cleanup_invalid_loc_dropped() {
+    QUnit unit;
+    std::vector<ExternalCleanup> sink;
+    register_external_cleanup(sink, /*close_brace=*/clang::SourceLocation(),
+                              "swap(a, tmp);\n");
+    CHECK_EQ_SIZE(sink.size(), 0u);
+
+    auto ins = synthesize(unit, sink, /*sm=*/nullptr).insertions;
+    CHECK_EQ_SIZE(ins.size(), 0u);
+}
+
+static void test_external_cleanup_one_record_one_insertion() {
+    QUnit unit;
+    std::vector<ExternalCleanup> sink;
+    const auto close = make_loc(100);
+    register_external_cleanup(sink, close, "swap(a, tmp);\n");
+    CHECK_EQ_SIZE(sink.size(), 1u);
+
+    auto ins = synthesize(unit, sink, /*sm=*/nullptr).insertions;
+    CHECK_EQ_SIZE(ins.size(), 1u);
+    if (ins.empty()) return;
+    CHECK_EQ_STR(ins[0].code, std::string("swap(a, tmp);\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(close));
+}
+
+static void test_external_cleanup_two_records_same_close_brace() {
+    // Two cleanups at the same close-brace become two insertions, in
+    // registration order. synthesize() does not merge or re-order them.
+    QUnit unit;
+    std::vector<ExternalCleanup> sink;
+    const auto close = make_loc(200);
+    register_external_cleanup(sink, close, "first;\n");
+    register_external_cleanup(sink, close, "second;\n");
+    CHECK_EQ_SIZE(sink.size(), 2u);
+
+    auto ins = synthesize(unit, sink, /*sm=*/nullptr).insertions;
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+    CHECK_EQ_STR(ins[0].code, std::string("first;\n"));
+    CHECK_EQ_STR(ins[1].code, std::string("second;\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(close));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(close));
+}
+
+static void test_external_cleanup_interleaves_with_internal_lifo() {
+    // One scope with one op (internal LIFO) plus one external cleanup
+    // at the same close-brace. The internal uncompute insertion lands
+    // first in the output vector (per the existing scope loop), and the
+    // external cleanup follows. Reverse-iter in `emit()` will then
+    // place the internal closer to the user's `}` (LIFO precedes
+    // external). Both insertions share the close_brace anchor.
+    QScope scope;
+    scope.open_brace  = make_loc(10);
+    scope.close_brace = make_loc(50);
+    QOperation op;
+    op.kind   = QOpKind::OR;
+    op.result = QValueRef{"tmp", make_loc(30)};
+    op.operands.push_back(QValueRef{"a", make_loc(20)});
+    op.operands.push_back(QValueRef{"b", make_loc(25)});
+    op.stmt_range = clang::SourceRange(make_loc(28), make_loc(40));
+    scope.ops.push_back(op);
+
+    QUnit unit;
+    unit.scopes.push_back(scope);
+
+    std::vector<ExternalCleanup> sink;
+    register_external_cleanup(sink, scope.close_brace, "lo_cleanup();\n");
+
+    auto ins = synthesize(unit, sink, /*sm=*/nullptr).insertions;
+    CHECK_EQ_SIZE(ins.size(), 2u);
+    if (ins.size() != 2) return;
+    // Internal uncompute first, external cleanup second.
+    CHECK_EQ_STR(ins[0].code,
+                 std::string("    uncompute_or(tmp, a, b);\n"));
+    CHECK_EQ_STR(ins[1].code, std::string("lo_cleanup();\n"));
+    CHECK_EQ_SIZE(raw(ins[0].insert_before), raw(scope.close_brace));
+    CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(scope.close_brace));
+}
+
 int main() {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
@@ -2161,6 +2274,13 @@ int main() {
     test_plugin_kind_unregistered_emits_nothing();
     test_plugin_kind_lifo_with_in_tree_kinds();
     test_plugin_kind_honours_skip_uncompute();
+
+    // sturm-v0ur (LO-2 wiring): register_external_cleanup() hook.
+    test_external_cleanup_empty_text_dropped();
+    test_external_cleanup_invalid_loc_dropped();
+    test_external_cleanup_one_record_one_insertion();
+    test_external_cleanup_two_records_same_close_brace();
+    test_external_cleanup_interleaves_with_internal_lifo();
 
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

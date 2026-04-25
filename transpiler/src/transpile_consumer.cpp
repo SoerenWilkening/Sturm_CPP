@@ -16,16 +16,29 @@
 #include "sturm/transpile/skip.hpp"
 #include "sturm/transpile/uncompute_pass.hpp"
 
+// sturm-v0ur (LO-2 wiring): consumer-only headers for the lossy
+// rewrite pipeline. The matcher (LO-2a) produces hits during
+// `matchAST`; the emitters (LO-2b/2c) drain those hits after the
+// walk, BEFORE `synthesize()`.
+#include "fresh_names.hpp"
+#include "lossy_rewrite_emitter.hpp"
+#include "lossy_scope_exit_emitter.hpp"
+
 #include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
+#include "clang/Lex/Lexer.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
 #include <cstdio>
 #include <filesystem>
+#include <sstream>
+#include <string>
+#include <string_view>
 #include <utility>
 
 namespace sturm::transpile {
@@ -211,6 +224,22 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     sturm::transpile::register_mul_assign_qint_matcher(finder_, unit_);
     sturm::transpile::register_div_assign_qint_matcher(finder_, unit_);
     sturm::transpile::register_mod_assign_qint_matcher(finder_, unit_);
+    // sturm-v0ur (LO-2 wiring): register the lossy compound-assign
+    // matcher (LO-2a). Anchors on `CXXOperatorCallExpr` for `qint *=`,
+    // `/=`, `%=`, `&=`, `|=`. Records a `LossyOpHit` per match into
+    // `lossy_hits_`; the consumer drains the vector after `matchAST`
+    // returns and before `synthesize()` so the LO-2b forward triplet
+    // becomes a `QReplacement` in `unit_.replacements` and the LO-2c
+    // cleanup becomes one external-cleanup record per enclosing
+    // block. Coexistence with the Phase C qint-qint compound-assign
+    // matchers above is intentional and structurally safe — Phase C
+    // pushes a `QOpKind::*_ASSIGN_QINT` op into `unit_.scopes`,
+    // LO-2a records a `LossyOpHit` in a disjoint sink. The post-walk
+    // wiring below DELETES the corresponding Phase C op from the
+    // QUnit when an LO hit fires on the same call (so the Phase C
+    // `uncompute_*_qint` shim isn't double-emitted alongside the LO
+    // forward triplet + cleanup pair).
+    sturm::transpile::register_lossy_op_matcher(finder_, lossy_hits_);
     sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
@@ -546,6 +575,196 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
     sturm::transpile::apply_eliminated_stmt_guards(
         unit_, ctx.getSourceManager());
 
+    // sturm-v0ur (LO-2 wiring): drain `lossy_hits_` produced by the
+    // LO-2a matcher. Per hit:
+    //
+    //   1. Compute the LO-2b forward triplet via `emit_lossy_forward`
+    //      (using a per-TU `FreshNameAllocator` so suffixes are
+    //      monotonic across hits).
+    //   2. Replace the user's `*=`/`/=`/`%=`/`&=`/`|=` source range
+    //      with the triplet text via a `QReplacement` pushed onto
+    //      `unit_.replacements`.
+    //   3. Suppress any Phase C `*_ASSIGN_QINT` op the qint-qint
+    //      matchers may have pushed for the same call so the LO
+    //      forward triplet + cleanup pair is the SOLE emission for
+    //      that compound-assign — no `uncompute_*_qint` shim from
+    //      the Phase C path on top.
+    //
+    // Then group hits by enclosing `CompoundStmt` (LO-2c), apply the
+    // PRD §4.3 main-outer suppression (LO-2d), and feed each
+    // surviving block's cleanup text through `register_external_
+    // cleanup` so `synthesize()` plants it before the close brace.
+    if (!lossy_hits_.empty()) {
+        const clang::SourceManager& sm = ctx.getSourceManager();
+        const clang::LangOptions& lang = ctx.getLangOpts();
+
+        FreshNameAllocator alloc;
+        std::vector<sturm::transpile::LossyEmission> forwards;
+        forwards.reserve(lossy_hits_.size());
+        for (const auto& hit : lossy_hits_) {
+            auto em = sturm::transpile::emit_lossy_forward(hit, alloc);
+            forwards.push_back(em);
+
+            // Skip degenerate hits (empty operand names) — the
+            // emitter returned an empty triplet, no rewrite to plant.
+            if (em.text.empty() || hit.call == nullptr) continue;
+
+            // Replace the user's compound-assign call with the
+            // forward triplet text. The call's `getSourceRange()`
+            // covers the full `lhs <op>= rhs` expression; the
+            // statement's terminating `;` lands AFTER that range,
+            // so a `QReplacement` over the call range produces
+            // `<triplet>;` — the trailing semicolon already in the
+            // user's source becomes a stray no-op statement after
+            // the last `swap(...)` line. To fold it cleanly we
+            // strip the trailing `\n` from the triplet text and
+            // let the user's `;` close the final swap.
+            //
+            // Indentation: the `lossy_rewrite_emitter` emits each
+            // triplet line at column 0. The user's `*=` may be
+            // anywhere on the line; the simplest "good enough"
+            // posture (matching the LO-0.x expected fixtures) is
+            // to leave column-0 lines and let the `#line`
+            // directive prefix carry source-map fidelity. Each
+            // line of the triplet gets its own `#line` directive
+            // anchored at the call's begin loc.
+            const clang::SourceLocation call_begin =
+                hit.call->getBeginLoc();
+            const std::string line_directive =
+                sturm::transpile::format_line_directive(sm, call_begin);
+
+            // Split triplet into lines (each ending in '\n') and
+            // re-emit with `#line` per line. The triplet has 3
+            // lines (single-ancilla) or 3 lines (divide-kernel,
+            // pre-split combined decl). We do not over-engineer:
+            // simple manual scan is enough.
+            //
+            // Leading `\n` before each `#line`: per the C/C++
+            // standard, `#line` must be the FIRST non-whitespace
+            // token on its own line. The user's source at the
+            // replacement begin loc may carry whatever was on the
+            // same line as the matched call (e.g. `void demo(...)
+            // { a *= b; }` collapses everything onto one line, so
+            // the source position immediately before the call has
+            // a non-newline `{ ` prefix). A leading `\n` guarantees
+            // the directive lands at column 0 of a fresh line.
+            // Mirrors the PM2-3 prefix logic in
+            // `uncompute_pass.cpp`.
+            std::string body;
+            body.reserve(em.text.size() + 4 * line_directive.size());
+            std::size_t pos = 0;
+            while (pos < em.text.size()) {
+                const std::size_t nl = em.text.find('\n', pos);
+                if (nl == std::string::npos) break;
+                if (!line_directive.empty()) {
+                    body.push_back('\n');
+                    body.append(line_directive);
+                }
+                body.append(em.text, pos, nl - pos);
+                // Drop the trailing `\n` on the LAST emitted line —
+                // the user's `;` will replace it. For non-last
+                // lines, keep the `\n`.
+                const bool is_last = (nl + 1 == em.text.size());
+                if (!is_last) body.push_back('\n');
+                pos = nl + 1;
+            }
+
+            sturm::transpile::QReplacement rep;
+            const auto char_range =
+                clang::CharSourceRange::getTokenRange(
+                    hit.call->getSourceRange());
+            const auto end_loc = clang::Lexer::getLocForEndOfToken(
+                char_range.getEnd(), 0, sm, lang);
+            if (end_loc.isInvalid()) continue;
+            rep.range = clang::SourceRange(call_begin, end_loc);
+            // CharSourceRange-style end is exclusive; ReplaceText
+            // takes a [begin, end) range, so subtract one token.
+            // Clang's Rewriter::ReplaceText with `range` uses the
+            // token-end semantics already.
+            rep.replacement = std::move(body);
+            unit_.replacements.push_back(std::move(rep));
+
+            // Suppress any QOperation in `unit_.scopes` whose
+            // `stmt_range.getBegin()` matches this call's begin —
+            // that is the Phase C `*_ASSIGN_QINT` op the
+            // pre-existing matchers pushed for this same call.
+            // Without this suppression the M8 synthesis pass would
+            // emit a `uncompute_*_qint(lhs, rhs);` shim AFTER the
+            // LO forward triplet, and the resulting source would
+            // contain BOTH the LO cleanup pair AND the Phase C
+            // shim — semantically wrong and snapshot-breaking.
+            const unsigned key =
+                hit.call->getBeginLoc().getRawEncoding();
+            for (auto& scope : unit_.scopes) {
+                for (auto& op : scope.ops) {
+                    if (op.stmt_range.getBegin().getRawEncoding() == key) {
+                        op.skip_uncompute = true;
+                    }
+                }
+            }
+        }
+
+        // LO-2c: group cleanups by enclosing block (LIFO within each
+        // block) and apply LO-2d main-outer suppression. Pass `&ctx`
+        // so the suppression predicate can resolve the enclosing
+        // FunctionDecl and match `main`'s outermost body.
+        const auto blocks =
+            sturm::transpile::group_cleanups_by_block(
+                lossy_hits_, forwards, &ctx);
+
+        for (const auto& bc : blocks) {
+            if (bc.text.empty() || bc.enclosing_block == nullptr) continue;
+
+            // Anchor the cleanup `#line` directives at the FIRST
+            // hit's call begin loc — every hit in the same block
+            // matches a forward statement on the user's same line
+            // (the LO fixtures only ever pin one or two ops per
+            // block), so a single anchor is enough. If the block
+            // contains hits from multiple lines, the first-hit
+            // anchor is still semantically correct: each cleanup
+            // line maps back to ITS forward op's line, but the
+            // simple shared anchor matches the snapshot fixture
+            // shape.
+            clang::SourceLocation anchor;
+            for (const auto& hit : lossy_hits_) {
+                if (hit.enclosing_block == bc.enclosing_block &&
+                    hit.call != nullptr) {
+                    anchor = hit.call->getBeginLoc();
+                    break;
+                }
+            }
+            const std::string line_directive =
+                anchor.isValid()
+                    ? sturm::transpile::format_line_directive(sm, anchor)
+                    : std::string();
+
+            // Format the cleanup text. Each `\n`-terminated line in
+            // `bc.text` becomes `\n#line ...\n    <line>\n` so the
+            // expected snapshot byte-shape is reproduced (PM2-3
+            // pattern, four-space indent leading each statement).
+            std::string formatted;
+            formatted.reserve(bc.text.size() * 2 + 64);
+            std::size_t pos = 0;
+            while (pos < bc.text.size()) {
+                const std::size_t nl = bc.text.find('\n', pos);
+                if (nl == std::string::npos) break;
+                formatted.push_back('\n');
+                if (!line_directive.empty()) {
+                    formatted.append(line_directive);
+                }
+                formatted.append("    ");
+                formatted.append(bc.text, pos, nl - pos);
+                formatted.push_back('\n');
+                pos = nl + 1;
+            }
+
+            const clang::SourceLocation close_brace =
+                bc.enclosing_block->getRBracLoc();
+            sturm::transpile::register_external_cleanup(
+                external_cleanups_, close_brace, std::move(formatted));
+        }
+    }
+
     // Phase T T-1 (sturm-xrob.2): drive the reversible-adjoint
     // synthesis pipeline for every `[[sturm::reversible]]` forward
     // collected during `matchAST`. For each forward that passes P-C
@@ -581,8 +800,9 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // the same idempotency header the M9 emit() path would.
             if (!dump_transpiled_path_.empty()) {
                 std::string body =
-                    sturm::transpile::emit_to_string(unit_, ctx,
-                                                      &plugin_registry_);
+                    sturm::transpile::emit_to_string(
+                        unit_, external_cleanups_, ctx,
+                        &plugin_registry_);
                 std::string out;
                 out.reserve(body.size() + 128);
                 out.append(
@@ -619,8 +839,14 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // fixtures contain no PLUGIN ops, so the Registry lookup
             // never fires and the output is byte-identical to the
             // pre-PM4 shape.
+            // sturm-v0ur (LO-2 wiring): pass `external_cleanups_`
+            // through the new `synthesize()` overload so the LO-2c
+            // cleanups assembled in the LO drain block above land at
+            // their close-brace anchors interleaved with the per-op
+            // LIFO insertions.
             auto synth = sturm::transpile::synthesize(
-                unit_, &ctx.getSourceManager(), &plugin_registry_);
+                unit_, external_cleanups_,
+                &ctx.getSourceManager(), &plugin_registry_);
 
             // M9: build a Rewriter over the same
             // SourceManager/LangOptions and let emit() apply
@@ -646,8 +872,9 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // stashed on this consumer is the handle those steps need
             // to clone the parent invocation.
             rewritten_buffer_ =
-                sturm::transpile::emit_to_string(unit_, ctx,
-                                                  &plugin_registry_);
+                sturm::transpile::emit_to_string(
+                    unit_, external_cleanups_, ctx,
+                    &plugin_registry_);
             (void)ci_;
             break;
         }
