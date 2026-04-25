@@ -42,7 +42,7 @@ int main() {
     qint a, b;
     
 #line 41 "top_level_lossy_in_main.cpp"
-qint __sturm_tmp_and_0;
+sturm::qint_t<2> __sturm_tmp_and_0;
 
 #line 41 "top_level_lossy_in_main.cpp"
 and_oop(a, b, __sturm_tmp_and_0);
@@ -52,7 +52,7 @@ swap(a, __sturm_tmp_and_0);                  // top-level: NO cleanup at end of 
     auto inner = [](qint x, qint y) {
         
 #line 43 "top_level_lossy_in_main.cpp"
-qint __sturm_tmp_and_1;
+sturm::qint_t<2> __sturm_tmp_and_1;
 
 #line 43 "top_level_lossy_in_main.cpp"
 and_oop(x, y, __sturm_tmp_and_1);
@@ -64,7 +64,7 @@ swap(x, __sturm_tmp_and_1);              // lambda body: cleanup MUST fire at }
     swap(x, __sturm_tmp_and_1);
 
 #line 43 "top_level_lossy_in_main.cpp"
-    sturm::invert<&::sturm::lib_c_AND_dsl>()(x, y, __sturm_tmp_and_1);
+    and_oop_adj(x, y, __sturm_tmp_and_1);
 
 #line 44 "top_level_lossy_in_main.cpp"
 };

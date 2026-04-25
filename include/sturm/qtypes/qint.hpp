@@ -21,6 +21,14 @@
 #include "sturm/qtypes/qint_bitwise.hpp"
 #include "sturm/qtypes/qint_compare.hpp"
 
+// sturm-czfi: Pulls in the LO-2 runtime helpers
+// (sturm::swap, sturm::detail::{mul,and,or,divide}_oop and adjoints) the
+// transpiler emits unqualified-by-ADL calls into. Backend-gated because
+// `divide_oop.hpp` is.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/qtypes/lossy_oop.hpp"
+#endif
+
 // qint alias is already defined in qint_fwd.hpp via:
 //   using qint = qint_t<64>;
 // pow overloads are defined in qint_arith.hpp.

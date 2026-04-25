@@ -119,6 +119,14 @@ forward_for(const std::vector<LossyOpHit>& hits, FreshNameAllocator& alloc) {
     return out;
 }
 
+// AST-driven cleanup goldens. sturm-czfi swapped the cleanup line from the
+// pre-czfi `sturm::invert<&::sturm::lib_X_dsl>()` form to a direct call into
+// the registered `*_oop_adj<W>` wrapper (rationale: invert<&fn<W>>'s NTTP
+// type depends on W, which makes the trait specialization ill-formed; the
+// runtime helper module promotes the adjoint into `sturm::` via using-decls
+// so unqualified ADL on `qint_t<W>&` finds it). The AST-driven hits resolve
+// W=2 off the stub `using qint_t = sturm::qint_t<2>;`, so the goldens here
+// pin the post-czfi width-aware shape.
 void test_grouper_single_hit() {
     auto hits = run_lossy_matcher(
         "void demo(qint_t a, qint_t b) { a &= b; }\n");
@@ -131,8 +139,7 @@ void test_grouper_single_hit() {
     if (blocks.empty()) return;
     CHECK_EQ_STR(blocks[0].text,
         "swap(a, __sturm_tmp_and_0);\n"
-        "sturm::invert<&::sturm::lib_c_AND_dsl>()"
-        "(a, b, __sturm_tmp_and_0);\n");
+        "and_oop_adj(a, b, __sturm_tmp_and_0);\n");
     CHECK(blocks[0].enclosing_block == hits[0].enclosing_block);
 }
 
@@ -151,14 +158,12 @@ void test_grouper_lifo_two_hits_same_scope() {
     if (blocks.empty()) return;
     const std::string want =
         "swap(a, __sturm_tmp_and_1);\n"
-        "sturm::invert<&::sturm::lib_c_AND_dsl>()"
-        "(a, b, __sturm_tmp_and_1);\n"
+        "and_oop_adj(a, b, __sturm_tmp_and_1);\n"
         "swap(a, __sturm_tmp_mul_0);\n"
-        "sturm::invert<&::sturm::lib_mul_dsl>()"
-        "(a, b, __sturm_tmp_mul_0);\n";
+        "mul_oop_adj(a, b, __sturm_tmp_mul_0);\n";
     CHECK_EQ_STR(blocks[0].text, want);
-    CHECK(blocks[0].text.find("lib_c_AND_dsl") <
-          blocks[0].text.find("lib_mul_dsl"));
+    CHECK(blocks[0].text.find("and_oop_adj") <
+          blocks[0].text.find("mul_oop_adj"));
 }
 
 // All five ops in one scope → LIFO. |= < &= < %= < /= < *= in output.
@@ -175,11 +180,11 @@ void test_grouper_lifo_all_five_same_scope() {
     CHECK(blocks.size() == 1);
     if (blocks.empty()) return;
     const std::string& t = blocks[0].text;
-    auto p_or  = t.find("lib_or_dsl");
-    auto p_and = t.find("lib_c_AND_dsl");
-    auto p_mul = t.find("lib_mul_dsl");
-    auto p_div0 = t.find("lib_div_dsl");
-    auto p_div1 = t.find("lib_div_dsl", p_div0 + 1);
+    auto p_or  = t.find("or_oop_adj");
+    auto p_and = t.find("and_oop_adj");
+    auto p_mul = t.find("mul_oop_adj");
+    auto p_div0 = t.find("divide_oop_adj");
+    auto p_div1 = t.find("divide_oop_adj", p_div0 + 1);
     CHECK(p_or != std::string::npos && p_and != std::string::npos);
     CHECK(p_mul != std::string::npos);
     CHECK(p_div0 != std::string::npos && p_div1 != std::string::npos);
@@ -204,13 +209,13 @@ void test_grouper_nested_scopes() {
     if (blocks.size() != 2) return;
     int outer = -1, inner = -1;
     for (int i = 0; i < 2; ++i) {
-        if (blocks[i].text.find("lib_mul_dsl") != std::string::npos) outer = i;
-        if (blocks[i].text.find("lib_c_AND_dsl") != std::string::npos) inner = i;
+        if (blocks[i].text.find("mul_oop_adj") != std::string::npos) outer = i;
+        if (blocks[i].text.find("and_oop_adj") != std::string::npos) inner = i;
     }
     CHECK(outer != -1 && inner != -1 && outer != inner);
     if (outer == -1 || inner == -1) return;
-    CHECK(blocks[outer].text.find("lib_c_AND_dsl") == std::string::npos);
-    CHECK(blocks[inner].text.find("lib_mul_dsl") == std::string::npos);
+    CHECK(blocks[outer].text.find("and_oop_adj") == std::string::npos);
+    CHECK(blocks[inner].text.find("mul_oop_adj") == std::string::npos);
     CHECK(blocks[outer].enclosing_block != blocks[inner].enclosing_block);
 }
 
@@ -224,8 +229,7 @@ void test_ast_driven_single() {
     auto cu = emit_lossy_cleanup(hits[0], emit_lossy_forward(hits[0], alloc));
     CHECK_EQ_STR(cu.text,
         "swap(a, __sturm_tmp_or_0);\n"
-        "sturm::invert<&::sturm::lib_or_dsl>()"
-        "(a, b, __sturm_tmp_or_0);\n");
+        "or_oop_adj(a, b, __sturm_tmp_or_0);\n");
     CHECK(cu.opcode == LossyOpKind::OrAssign);
     CHECK(cu.enclosing_block == hits[0].enclosing_block);
 }
@@ -320,6 +324,9 @@ void test_main_outer_block_suppresses_cleanup() {
 // Case 2: hit inside a non-main free function → cleanup emitted.
 // Regression guard against the predicate over-firing on any free
 // function whose body is its outer CompoundStmt.
+//
+// sturm-czfi: post-czfi the cleanup line uses `and_oop_adj` directly (the
+// pre-czfi `lib_c_AND_dsl` token is now gated to the legacy width-0 path).
 void test_non_main_free_function_emits_cleanup() {
     auto r = run_grouper_with_ctx(
         "void demo(qint_t a, qint_t b) { a &= b; }\n");
@@ -328,7 +335,7 @@ void test_non_main_free_function_emits_cleanup() {
     CHECK(r.blocks.size() == 1);
     if (r.blocks.empty()) return;
     CHECK(!r.blocks[0].text.empty());
-    CHECK(r.blocks[0].text.find("lib_c_AND_dsl") != std::string::npos);
+    CHECK(r.blocks[0].text.find("and_oop_adj") != std::string::npos);
 }
 
 // Case 3: lambda whose body sits inside main has its OWN CompoundStmt
@@ -349,7 +356,7 @@ void test_lambda_inside_main_emits_cleanup() {
     CHECK(r.blocks.size() == 1);
     if (r.blocks.empty()) return;
     CHECK(!r.blocks[0].text.empty());
-    CHECK(r.blocks[0].text.find("lib_c_AND_dsl") != std::string::npos);
+    CHECK(r.blocks[0].text.find("and_oop_adj") != std::string::npos);
 }
 
 // Case 4: hit in a nested `if (cond) { … }` block inside main. The
@@ -367,7 +374,7 @@ void test_nested_block_inside_main_emits_cleanup() {
     CHECK(r.blocks.size() == 1);
     if (r.blocks.empty()) return;
     CHECK(!r.blocks[0].text.empty());
-    CHECK(r.blocks[0].text.find("lib_c_AND_dsl") != std::string::npos);
+    CHECK(r.blocks[0].text.find("and_oop_adj") != std::string::npos);
 }
 
 } // namespace

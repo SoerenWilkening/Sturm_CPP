@@ -25,7 +25,7 @@ using qint = sturm::qint_t<1>;
 
 void demo(qint a, qint b) { 
 #line 24 "and_assign_qint.cpp"
-qint __sturm_tmp_and_0;
+sturm::qint_t<1> __sturm_tmp_and_0;
 
 #line 24 "and_assign_qint.cpp"
 and_oop(a, b, __sturm_tmp_and_0);
@@ -36,7 +36,7 @@ swap(a, __sturm_tmp_and_0);
     swap(a, __sturm_tmp_and_0);
 
 #line 24 "and_assign_qint.cpp"
-    sturm::invert<&::sturm::lib_c_AND_dsl>()(a, b, __sturm_tmp_and_0);
+    and_oop_adj(a, b, __sturm_tmp_and_0);
 
 #line 24 "and_assign_qint.cpp"
 }

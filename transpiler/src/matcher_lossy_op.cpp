@@ -25,13 +25,20 @@
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
+#include "clang/AST/DeclCXX.h"
+#include "clang/AST/DeclTemplate.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
 #include "clang/AST/ParentMapContext.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/TemplateBase.h"
+#include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "llvm/ADT/APSInt.h"
+#include "llvm/Support/Casting.h"
 
+#include <cstdint>
 #include <memory>
 #include <string>
 #include <utility>
@@ -43,6 +50,38 @@ namespace {
 
 using namespace clang;
 using namespace clang::ast_matchers;
+
+// sturm-czfi: Resolve the `W` in `qint_t<W>` off a DeclRefExpr's type. The
+// LHS in every LossyOpHit is bound by `declRefExpr(hasType(...qint_t...))`,
+// so its type peels through typedef sugar to a
+// `ClassTemplateSpecializationDecl` for `sturm::qint_t<W>`. Mirrors the
+// `extract_qint_width` helper in `transpiler/src/alias.cpp` — we intentionally
+// inline the logic here rather than create a cross-TU dependency on
+// `sturm::transpile::detail::` (the alias.cpp helper lives in a different
+// namespace + header tier and the matcher is meant to remain a leaf module).
+//
+// Returns 0 if the type is dependent, not a `sturm::qint_t` instantiation, or
+// the first template argument is not an integral constant. Downstream
+// emitters interpret 0 as "unknown" and fall back to the legacy unqualified
+// `qint` typename.
+int extract_qint_width_from_dre(const DeclRefExpr& dre) {
+    QualType qt = dre.getType().getCanonicalType();
+    const auto* record = qt->getAsCXXRecordDecl();
+    if (record == nullptr) return 0;
+    const auto* spec = llvm::dyn_cast<ClassTemplateSpecializationDecl>(record);
+    if (spec == nullptr) return 0;
+    const auto* primary = spec->getSpecializedTemplate();
+    if (primary == nullptr) return 0;
+    if (primary->getQualifiedNameAsString() != "sturm::qint_t") return 0;
+    const TemplateArgumentList& args = spec->getTemplateArgs();
+    if (args.size() == 0) return 0;
+    const TemplateArgument& arg0 = args.get(0);
+    if (arg0.getKind() != TemplateArgument::Integral) return 0;
+    const llvm::APSInt& apsint = arg0.getAsIntegral();
+    const int64_t w64 = apsint.getExtValue();
+    if (w64 <= 0) return 0;
+    return static_cast<int>(w64);
+}
 
 // Walk up the parent chain to the nearest enclosing CompoundStmt. LO-2c
 // needs the raw lexical block (not the Phase H PH-1 braceless-body
@@ -89,6 +128,11 @@ public:
         if (const NamedDecl* nd = rhs->getDecl()) {
             hit.rhs_name = nd->getNameAsString();
         }
+        // sturm-czfi: peel the LHS qint_t<W> width into the hit so LO-2b
+        // can emit `sturm::qint_t<W>` for the ancilla decl and LO-2c can
+        // splice `<W>` into the cleanup's `invert<&::sturm::detail::*_oop<W>>`
+        // NTTP. 0 ⇒ unknown / dependent; emitters fall back to bare `qint`.
+        hit.lhs_width = extract_qint_width_from_dre(*lhs);
         hit.call = call;
         hit.lhs_ref = lhs;
         hit.rhs_ref = rhs;

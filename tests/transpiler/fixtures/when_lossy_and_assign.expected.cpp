@@ -46,7 +46,7 @@ void demo(qbool ctrl, qint a, qint b) {
     WHEN(ctrl) {
         
 #line 45 "when_lossy_and_assign.cpp"
-qint __sturm_tmp_and_0;
+sturm::qint_t<2> __sturm_tmp_and_0;
 
 #line 45 "when_lossy_and_assign.cpp"
 and_oop(a, b, __sturm_tmp_and_0);
@@ -58,7 +58,7 @@ swap(a, __sturm_tmp_and_0);
     swap(a, __sturm_tmp_and_0);
 
 #line 45 "when_lossy_and_assign.cpp"
-    sturm::invert<&::sturm::lib_c_AND_dsl>()(a, b, __sturm_tmp_and_0);
+    and_oop_adj(a, b, __sturm_tmp_and_0);
 
 #line 46 "when_lossy_and_assign.cpp"
 }

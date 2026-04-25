@@ -94,11 +94,24 @@ const char* oop_name(LossyOpKind k) {
     return "";
 }
 
+// sturm-czfi: render the ancilla declaration's typename. `lhs_width > 0`
+// means the matcher resolved the LHS qint_t<W> off the AST and we splice the
+// W into a concrete `sturm::qint_t<W>` so the emitted text compiles in TUs
+// without a `using qint = ...;` typedef (the real example target). `0` keeps
+// the legacy bare `qint` shape the hermetic-stub fixtures depend on.
+std::string render_qint_typename(int lhs_width) {
+    if (lhs_width <= 0) return "qint";
+    std::ostringstream os;
+    os << "sturm::qint_t<" << lhs_width << ">";
+    return os.str();
+}
+
 // Single-ancilla forward emission. Shared body for *=, &=, |= — the
 // only thing that varies is `kind_tag(k)` and `oop_name(k)`.
 LossyEmission emit_single_ancilla(LossyOpKind k,
                                   std::string_view lhs,
                                   std::string_view rhs,
+                                  int lhs_width,
                                   FreshNameAllocator& alloc) {
     LossyEmission em;
     em.opcode = k;
@@ -109,7 +122,7 @@ LossyEmission emit_single_ancilla(LossyOpKind k,
     // aux_tmp_name stays empty — single-ancilla shape.
 
     std::ostringstream os;
-    os << "qint " << tmp << ";\n"
+    os << render_qint_typename(lhs_width) << ' ' << tmp << ";\n"
        << oop_name(k) << '(' << lhs << ", " << rhs << ", " << tmp << ");\n"
        << "swap(" << lhs << ", " << tmp << ");\n";
     em.text = os.str();
@@ -121,6 +134,7 @@ LossyEmission emit_single_ancilla(LossyOpKind k,
 LossyEmission emit_divide_kernel(LossyOpKind k,
                                  std::string_view lhs,
                                  std::string_view rhs,
+                                 int lhs_width,
                                  FreshNameAllocator& alloc) {
     LossyEmission em;
     em.opcode = k;
@@ -140,7 +154,8 @@ LossyEmission emit_divide_kernel(LossyOpKind k,
     }
 
     std::ostringstream os;
-    os << "qint " << tmp_q << ", " << tmp_r << ";\n"
+    os << render_qint_typename(lhs_width) << ' '
+       << tmp_q << ", " << tmp_r << ";\n"
        << "divide_oop(" << lhs << ", " << rhs << ", "
        << tmp_q << ", " << tmp_r << ");\n"
        << "swap(" << lhs << ", " << em.swap_target_name << ");\n";
@@ -153,6 +168,7 @@ LossyEmission emit_divide_kernel(LossyOpKind k,
 LossyEmission emit_lossy_forward_text(LossyOpKind kind,
                                       std::string_view lhs,
                                       std::string_view rhs,
+                                      int lhs_width,
                                       FreshNameAllocator& alloc) {
     // Defensive: refuse to emit a forward pair we cannot name. An
     // empty operand string would render as `<op>_oop(, b, ...)` which
@@ -170,10 +186,10 @@ LossyEmission emit_lossy_forward_text(LossyOpKind kind,
         case LossyOpKind::MulAssign:
         case LossyOpKind::AndAssign:
         case LossyOpKind::OrAssign:
-            return emit_single_ancilla(kind, lhs, rhs, alloc);
+            return emit_single_ancilla(kind, lhs, rhs, lhs_width, alloc);
         case LossyOpKind::DivAssign:
         case LossyOpKind::ModAssign:
-            return emit_divide_kernel(kind, lhs, rhs, alloc);
+            return emit_divide_kernel(kind, lhs, rhs, lhs_width, alloc);
     }
     // Unreachable for a well-formed enum.
     LossyEmission em;
@@ -181,10 +197,20 @@ LossyEmission emit_lossy_forward_text(LossyOpKind kind,
     return em;
 }
 
+// Backward-compatible 4-arg overload: width unknown ⇒ legacy `qint` shape.
+// Pre-sturm-czfi callers (and the pure-string snapshot fixtures) reach this
+// overload; the AST-driven path below feeds the resolved `hit.lhs_width`.
+LossyEmission emit_lossy_forward_text(LossyOpKind kind,
+                                      std::string_view lhs,
+                                      std::string_view rhs,
+                                      FreshNameAllocator& alloc) {
+    return emit_lossy_forward_text(kind, lhs, rhs, 0, alloc);
+}
+
 LossyEmission emit_lossy_forward(const LossyOpHit& hit,
                                  FreshNameAllocator& alloc) {
     return emit_lossy_forward_text(hit.opcode, hit.lhs_name, hit.rhs_name,
-                                   alloc);
+                                   hit.lhs_width, alloc);
 }
 
 } // namespace sturm::transpile

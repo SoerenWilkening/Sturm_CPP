@@ -28,7 +28,7 @@ using qint = sturm::qint_t<1>;
 
 void demo(qint a, qint b) { 
 #line 27 "mod_assign_qint.cpp"
-qint __sturm_tmp_mod_0_q, __sturm_tmp_mod_0_r;
+sturm::qint_t<1> __sturm_tmp_mod_0_q, __sturm_tmp_mod_0_r;
 
 #line 27 "mod_assign_qint.cpp"
 divide_oop(a, b, __sturm_tmp_mod_0_q, __sturm_tmp_mod_0_r);
@@ -39,5 +39,5 @@ swap(a, __sturm_tmp_mod_0_r);
     swap(a, __sturm_tmp_mod_0_r);
 
 #line 27 "mod_assign_qint.cpp"
-    sturm::invert<&::sturm::lib_div_dsl>()(a, b, __sturm_tmp_mod_0_q, __sturm_tmp_mod_0_r);
+    divide_oop_adj(a, b, __sturm_tmp_mod_0_q, __sturm_tmp_mod_0_r);
 }

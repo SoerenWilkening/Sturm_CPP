@@ -25,7 +25,7 @@ using qint = sturm::qint_t<1>;
 
 void demo(qint a, qint b) { 
 #line 24 "mul_assign_qint.cpp"
-qint __sturm_tmp_mul_0;
+sturm::qint_t<1> __sturm_tmp_mul_0;
 
 #line 24 "mul_assign_qint.cpp"
 mul_oop(a, b, __sturm_tmp_mul_0);
@@ -36,5 +36,5 @@ swap(a, __sturm_tmp_mul_0);
     swap(a, __sturm_tmp_mul_0);
 
 #line 24 "mul_assign_qint.cpp"
-    sturm::invert<&::sturm::lib_mul_dsl>()(a, b, __sturm_tmp_mul_0);
+    mul_oop_adj(a, b, __sturm_tmp_mul_0);
 }

@@ -62,6 +62,12 @@ namespace {
 // Map a `LossyOpKind` to the DSL identifier referenced by the
 // `sturm::invert<&::sturm::lib_<X>_dsl>()` cleanup. Stable across runs
 // because the LO-0.x expected fixtures depend on the exact spelling.
+//
+// sturm-czfi: legacy width-0 path. When lhs_width is unknown / 0 we still
+// emit the historical `lib_<X>_dsl` template-name shape so the hermetic-stub
+// fixtures (which never compile the line) continue to byte-match. The
+// width-aware path below in `render_cleanup_body` selects the registered-
+// adjoint `sturm::detail::*_oop<W>` shape instead.
 const char* dsl_name(LossyOpKind k) {
     switch (k) {
         case LossyOpKind::MulAssign: return "lib_mul_dsl";
@@ -73,19 +79,55 @@ const char* dsl_name(LossyOpKind k) {
     return "";  // unreachable for a well-formed enum
 }
 
+// sturm-czfi: width-aware adjoint helper name. The cleanup line for a
+// width-resolved hit calls the registered `*_oop_adj<W>` directly (ADL on
+// `qint_t<W>&` finds the using-promoted `sturm::*_oop_adj` from
+// `sturm/qtypes/lossy_oop.hpp`). We bypass the `invert<&fn>()` NTTP-keyed
+// lookup because partial specialization of `adjoint_of<&fn<W>>` with a NTTP
+// whose type depends on `W` is ill-formed (the lossy_oop.hpp file-level
+// comment cites the standard reference). Mod shares `divide_oop_adj<W>`
+// (PRD §2.4) — the swap target differs but the adjoint signature is
+// identical.
+const char* oop_adj_name(LossyOpKind k) {
+    switch (k) {
+        case LossyOpKind::MulAssign: return "mul_oop_adj";
+        case LossyOpKind::DivAssign: return "divide_oop_adj";
+        case LossyOpKind::ModAssign: return "divide_oop_adj";
+        case LossyOpKind::AndAssign: return "and_oop_adj";
+        case LossyOpKind::OrAssign:  return "or_oop_adj";
+    }
+    return "";  // unreachable for a well-formed enum
+}
+
 // Render the per-hit cleanup body. Two shapes — single-ancilla and
 // divide-kernel — keyed off the opcode. The divide branch threads
 // q/r in canonical (q-then-r) order regardless of which of the two
 // is the swap target.
+//
+// sturm-czfi: when `lhs_width > 0`, render the registered-adjoint NTTP
+// target `&::sturm::detail::<op>_oop<W>` so the line compiles in real TUs.
+// When 0, fall back to the legacy `&::sturm::lib_<X>_dsl` template-name
+// shape that the hermetic-stub fixtures depend on.
 std::string render_cleanup_body(LossyOpKind k,
                                 std::string_view lhs,
                                 std::string_view rhs,
                                 std::string_view swap_target,
-                                std::string_view aux_tmp) {
+                                std::string_view aux_tmp,
+                                int lhs_width) {
     std::ostringstream os;
-    os << "swap(" << lhs << ", " << swap_target << ");\n"
-       << "sturm::invert<&::sturm::" << dsl_name(k) << ">()"
-       << '(' << lhs << ", " << rhs << ", ";
+    os << "swap(" << lhs << ", " << swap_target << ");\n";
+    if (lhs_width > 0) {
+        // sturm-czfi: bypass the `invert<&fn>()` NTTP-keyed lookup because
+        // partial specialization of `adjoint_of<&fn<W>>` with a NTTP whose
+        // type depends on `W` is ill-formed (C++ standard 17.5.5/9). Direct
+        // call to the registered adjoint wrapper resolves via ADL on
+        // `qint_t<W>&` (the using-decl in lossy_oop.hpp promotes the
+        // `*_oop_adj` family from `sturm::detail::` into `sturm::`).
+        os << oop_adj_name(k);
+    } else {
+        os << "sturm::invert<&::sturm::" << dsl_name(k) << ">()";
+    }
+    os << '(' << lhs << ", " << rhs << ", ";
     if (k == LossyOpKind::DivAssign) {
         // /= : swap target is q, aux is r → emit (lhs, rhs, q, r).
         os << swap_target << ", " << aux_tmp;
@@ -106,7 +148,8 @@ LossyCleanupEmission emit_lossy_cleanup_text(LossyOpKind kind,
                                              std::string_view lhs,
                                              std::string_view rhs,
                                              std::string_view swap_target,
-                                             std::string_view aux_tmp) {
+                                             std::string_view aux_tmp,
+                                             int lhs_width) {
     LossyCleanupEmission em;
     em.opcode = kind;
 
@@ -128,15 +171,26 @@ LossyCleanupEmission emit_lossy_cleanup_text(LossyOpKind kind,
         return em;
     }
 
-    em.text = render_cleanup_body(kind, lhs, rhs, swap_target, aux_tmp);
+    em.text = render_cleanup_body(kind, lhs, rhs, swap_target, aux_tmp,
+                                  lhs_width);
     return em;
+}
+
+// Backward-compatible 5-arg overload: width unknown ⇒ legacy lib_*_dsl shape.
+LossyCleanupEmission emit_lossy_cleanup_text(LossyOpKind kind,
+                                             std::string_view lhs,
+                                             std::string_view rhs,
+                                             std::string_view swap_target,
+                                             std::string_view aux_tmp) {
+    return emit_lossy_cleanup_text(kind, lhs, rhs, swap_target, aux_tmp, 0);
 }
 
 LossyCleanupEmission emit_lossy_cleanup(const LossyOpHit& hit,
                                         const LossyEmission& forward) {
     LossyCleanupEmission em = emit_lossy_cleanup_text(
         hit.opcode, hit.lhs_name, hit.rhs_name,
-        forward.swap_target_name, forward.aux_tmp_name);
+        forward.swap_target_name, forward.aux_tmp_name,
+        hit.lhs_width);
     // Carry the enclosing block through so callers can group on it
     // without a second AST walk.
     em.enclosing_block = hit.enclosing_block;

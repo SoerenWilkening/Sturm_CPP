@@ -41,6 +41,21 @@ struct BlockCleanup {
 
 /// Pure-string per-hit cleanup. Empty operand or empty swap target ⇒
 /// empty result.
+///
+/// `lhs_width` (sturm-czfi): when > 0, the cleanup `sturm::invert<&fn>()`
+/// line targets `&::sturm::detail::*_oop<lhs_width>` — a registered NTTP-keyed
+/// adjoint that resolves at compile time. When 0, the legacy
+/// `&::sturm::lib_<X>_dsl` (template name without explicit args) shape is
+/// emitted; that shape pre-dates sturm-czfi and is byte-shape compatible with
+/// the hermetic-stub fixture path. The 4-arg overload below preserves the
+/// legacy call shape by defaulting to 0.
+LossyCleanupEmission emit_lossy_cleanup_text(LossyOpKind kind,
+                                             std::string_view lhs,
+                                             std::string_view rhs,
+                                             std::string_view swap_target,
+                                             std::string_view aux_tmp,
+                                             int lhs_width);
+
 LossyCleanupEmission emit_lossy_cleanup_text(LossyOpKind kind,
                                              std::string_view lhs,
                                              std::string_view rhs,

@@ -42,13 +42,27 @@ struct LossyEmission {
 /// Pure-string forward emission. Empty `lhs` or `rhs` ⇒ empty result
 /// (degenerate input, skip). Used directly by tests; the AST overload
 /// below delegates here after recovering names from a LossyOpHit.
+///
+/// `lhs_width` (sturm-czfi): when > 0, the ancilla declaration is emitted
+/// as `sturm::qint_t<lhs_width>` (resolves to a concrete type even when the
+/// generated TU does not carry a `using qint = ...;` typedef — the case the
+/// real example targets exercise). When 0, the legacy unqualified `qint`
+/// typename is emitted (the hermetic-stub fixture path that pre-dates
+/// sturm-czfi). The 4-arg overload below preserves the legacy call shape
+/// by defaulting to 0.
+LossyEmission emit_lossy_forward_text(LossyOpKind kind,
+                                      std::string_view lhs,
+                                      std::string_view rhs,
+                                      int lhs_width,
+                                      FreshNameAllocator& alloc);
+
 LossyEmission emit_lossy_forward_text(LossyOpKind kind,
                                       std::string_view lhs,
                                       std::string_view rhs,
                                       FreshNameAllocator& alloc);
 
-/// AST-aware overload: pulls `lhs_name` / `rhs_name` off `hit` and
-/// delegates. Source-map (`#line`) prefixing is the wiring layer's
+/// AST-aware overload: pulls `lhs_name` / `rhs_name` / `lhs_width` off `hit`
+/// and delegates. Source-map (`#line`) prefixing is the wiring layer's
 /// concern, not this emitter's.
 LossyEmission emit_lossy_forward(const LossyOpHit& hit,
                                  FreshNameAllocator& alloc);

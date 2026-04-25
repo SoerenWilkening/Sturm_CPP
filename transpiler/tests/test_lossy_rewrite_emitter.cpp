@@ -147,7 +147,12 @@ void test_operand_names_threaded() {
           != std::string::npos);
 }
 
-// AST-driven — emitter consumes LO-2a's LossyOpHit cleanly.
+// AST-driven — emitter consumes LO-2a's LossyOpHit cleanly. The matcher
+// resolves the LHS qint_t<W> width off the AST (sturm-czfi); for the test
+// stub `using qint_t = sturm::qint_t<2>;` that is W=2, which the emitter
+// splices into the ancilla declaration as `sturm::qint_t<2>` (replacing the
+// pre-czfi bare-`qint` shape that only worked when the consumer TU carried
+// a `using qint = ...;` typedef of its own).
 void test_ast_driven_and() {
     auto hits = run_lossy_matcher(
         "void demo(qint_t a, qint_t b) { a &= b; }\n");
@@ -156,10 +161,38 @@ void test_ast_driven_and() {
     FreshNameAllocator alloc;
     LossyEmission em = emit_lossy_forward(hits[0], alloc);
     CHECK_EQ_STR(em.text,
-        std::string("qint __sturm_tmp_and_0;\n"
+        std::string("sturm::qint_t<2> __sturm_tmp_and_0;\n"
                     "and_oop(a, b, __sturm_tmp_and_0);\n"
                     "swap(a, __sturm_tmp_and_0);\n"));
     CHECK_EQ_STR(em.swap_target_name, std::string("__sturm_tmp_and_0"));
+}
+
+// sturm-czfi: matcher must surface the LHS width on every hit.
+void test_ast_driven_lhs_width_resolved() {
+    auto hits = run_lossy_matcher(
+        "void demo(qint_t a, qint_t b) { a &= b; }\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].lhs_width == 2);
+}
+
+// sturm-czfi: legacy 4-arg pure-string overload (no width) preserves the
+// pre-czfi `qint` ancilla shape so the byte-equality goldens that drove
+// LO-2b's TDD survive.
+void test_legacy_overload_preserves_qint_typename() {
+    FreshNameAllocator alloc;
+    LossyEmission em = emit_lossy_forward_text(
+        LossyOpKind::AndAssign, "a", "b", alloc);
+    CHECK(em.text.find("qint __sturm_tmp_and_0;\n") == 0);
+}
+
+// sturm-czfi: 5-arg pure-string overload with a positive width emits the
+// concrete `sturm::qint_t<W>` ancilla shape.
+void test_width_aware_overload_emits_qint_t_W() {
+    FreshNameAllocator alloc;
+    LossyEmission em = emit_lossy_forward_text(
+        LossyOpKind::AndAssign, "a", "b", 8, alloc);
+    CHECK(em.text.find("sturm::qint_t<8> __sturm_tmp_and_0;\n") == 0);
 }
 
 void test_ast_driven_all_five_distinct() {
@@ -211,6 +244,9 @@ int main() {
     test_counter_div_consumes_one_slot();
     test_operand_names_threaded();
     test_ast_driven_and();
+    test_ast_driven_lhs_width_resolved();
+    test_legacy_overload_preserves_qint_typename();
+    test_width_aware_overload_emits_qint_t_W();
     test_ast_driven_all_five_distinct();
     test_empty_lhs();
     test_empty_rhs();
