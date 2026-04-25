@@ -93,3 +93,26 @@ target_compile_definitions(test_mul_oop PRIVATE
 target_link_libraries(test_mul_oop PRIVATE orkan_headers)
 add_test(NAME test_mul_oop COMMAND test_mul_oop)
 set_tests_properties(test_mul_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
+
+# sturm-ph6f.1 LO-2 backend — or_oop / or_oop_adj reversible per-bit OR ladder
+# dispatched into lib_or_dsl. Mirrors the divide_oop fast-path / classical-path
+# split: when at least one operand carries qubits the wrapper allocates W
+# qubits for tmp and emits per-bit `tmp_i ^= a_i | b_i` (CX+CX+CCX); otherwise
+# (both qubits[0] < 0) the classical short-circuit body runs to preserve
+# example_qint_arith / example_phase_abc_demo.
+add_executable(test_or_oop
+    test_or_oop.cpp
+    ${STURM_QTYPES_BACKEND_SOURCES}
+)
+target_include_directories(test_or_oop PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_or_oop PRIVATE cxx_std_20)
+target_compile_definitions(test_or_oop PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_MAX_QUBITS=12
+)
+target_link_libraries(test_or_oop PRIVATE orkan_headers)
+add_test(NAME test_or_oop COMMAND test_or_oop)
+set_tests_properties(test_or_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
