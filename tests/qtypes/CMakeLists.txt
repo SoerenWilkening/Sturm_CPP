@@ -116,3 +116,26 @@ target_compile_definitions(test_or_oop PRIVATE
 target_link_libraries(test_or_oop PRIVATE orkan_headers)
 add_test(NAME test_or_oop COMMAND test_or_oop)
 set_tests_properties(test_or_oop PROPERTIES LABELS "qtypes;lossy-reversibility")
+
+# sturm-8dzd RED-bar — sturm::swap(qint_t<W>&, qint_t<W>&) under a manually-
+# pushed control stack at depth==1. Pins the LO-2 swap-under-WHEN contract
+# epic sturm-8aq3 owns: depth==0 stays a zero-gate index relabel; depth>=1
+# must lift to a per-bit Fredkin (3 CCX per bit). RED on main (current
+# `sturm::swap(qint_t<W>&, qint_t<W>&)` in `include/sturm/qtypes/lossy_oop.hpp`
+# emits zero gates regardless of control depth); GREEN after sturm-arce.
+add_executable(test_when_swap_qint
+    test_when_swap_qint.cpp
+    ${STURM_QTYPES_BACKEND_SOURCES}
+)
+target_include_directories(test_when_swap_qint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_when_swap_qint PRIVATE cxx_std_20)
+target_compile_definitions(test_when_swap_qint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+    STURM_MAX_QUBITS=12
+)
+target_link_libraries(test_when_swap_qint PRIVATE orkan_headers)
+add_test(NAME test_when_swap_qint COMMAND test_when_swap_qint)
+set_tests_properties(test_when_swap_qint PROPERTIES LABELS "qtypes;lossy-reversibility")
