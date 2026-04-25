@@ -352,6 +352,36 @@ set_tests_properties(snapshot_mod_assign_qint PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# LO-0.1 (sturm-nw7c): bare-scope `&=` and `|=` desugar fixtures. Same
+# snapshot driver as the mul/div/mod siblings above; goldens encode the
+# PRD §2.2 single-ancilla shape — `qint __sturm_tmp_<op>_0;
+# <op>_oop(a, b, __sturm_tmp_<op>_0); swap(a, __sturm_tmp_<op>_0);` with
+# the matching scope-exit `swap(...); sturm::invert<&::sturm::lib_<X>_dsl>()(...);`
+# pair (lib_c_AND_dsl for `&=`, lib_or_dsl for `|=`).
+add_test(
+    NAME snapshot_and_assign_qint
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/and_assign_qint.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/and_assign_qint.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/and_assign_qint
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_and_assign_qint PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_or_assign_qint
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/or_assign_qint.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/or_assign_qint.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/or_assign_qint
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_or_assign_qint PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 # ── Phase D / PD-1..PD-6: snapshot fixtures for qint-qint comparisons ───────
 # Each covers one relational operator (== != < <= > >=) whose operands are
 # bare DeclRefExprs to two qint_t parameters, anchored under a `qbool c =

@@ -1,10 +1,15 @@
-// Phase C / PC-3 input for the sturm-transpile snapshot test.
+// LO-0.1 (sturm-nw7c): bare-scope `*=` desugar fixture (input).
 //
-// Exercises the qint RHS form of MUL_ASSIGN on a qint_t: `a *= b;` must
-// be paired with `uncompute_mul_qint(a, b);` injected before the scope's
-// close brace. The RHS `b` is a bare DeclRefExpr to a second qint_t
-// parameter — no converting constructor fires, so the matcher sees a
-// qint-qint CXXOperatorCallExpr with a plain identifier on the right.
+// Exercises the PRD §2.2 desugar of the qint RHS form of MUL_ASSIGN on a
+// qint_t: `a *= b;` must be paired with the LO emission
+// `qint __sturm_tmp_mul_0; mul_oop(a, b, __sturm_tmp_mul_0);
+// swap(a, __sturm_tmp_mul_0);` plus the matching scope-exit cleanup
+// `swap(a, __sturm_tmp_mul_0);
+// sturm::invert<&::sturm::lib_mul_dsl>()(a, b, __sturm_tmp_mul_0);`. The
+// RHS `b` is a bare DeclRefExpr to a second qint_t parameter — no
+// converting constructor fires, so the matcher sees a qint-qint
+// CXXOperatorCallExpr with a plain identifier on the right. See plan §2
+// and PRD §2.2 / §2.4.
 namespace sturm {
 template <int W>
 class qint_t {
