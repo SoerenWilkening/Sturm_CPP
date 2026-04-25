@@ -1,6 +1,5 @@
 // matcher_lossy_op.hpp — LO-2a (sturm-9254): AST matcher for lossy
-// compound-assigns on qint_t. See docs/plan_lossy_compound_reversibility.md
-// §4 and PRD §7.
+// compound-assigns on qint_t.
 //
 // Anchors on `CXXOperatorCallExpr` (NOT `CompoundAssignOperator`): qint_t
 // overloads `operator*=` etc. as members, so overloaded compound-assigns

@@ -1,9 +1,8 @@
 // test_mul_dsl_adjoint.cpp -- LO-1a (sturm-735v): lib_mul_dsl adjoint roundtrip.
 //
 // Contract: after `invert<&lib_mul_dsl>()(a, aw, b, bw, result, rw)` runs in
-// the PRD §2.1 swap-then-uncompute shape, the result register (tmp_mul
-// post-swap-undo) is returned to |0>.  See docs/plan_lossy_compound_reversibility.md
-// §3 LO-1a.
+// the swap-then-uncompute shape, the result register (tmp_mul
+// post-swap-undo) is returned to |0>.
 //
 // Unlike c_AND / OR, lib_mul_dsl is NOT self-inverse.  The adjoint runs the
 // reverse gate schedule: the b-bit loop runs from bw-1 down to 0, and each

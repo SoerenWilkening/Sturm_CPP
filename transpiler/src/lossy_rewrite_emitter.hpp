@@ -1,9 +1,7 @@
 // lossy_rewrite_emitter.hpp — LO-2b (sturm-yxxa): forward
 // allocate-compute-swap pair for every LossyOpHit produced by LO-2a.
-// See docs/plan_lossy_compound_reversibility.md §4 row LO-2b and
-// docs/prd_lossy_compound_reversibility.md §2.2 / §2.4.
 //
-// Per PRD §2.4 each lossy compound assignment desugars to a fresh
+// Each lossy compound assignment desugars to a fresh
 // ancilla + an OOP DSL call + a swap. `<N>` is a single global counter
 // per FreshNameAllocator instance, monotonic across opcodes — matches
 // the LO-0.3 fixture pattern (`__sturm_tmp_and_0` then

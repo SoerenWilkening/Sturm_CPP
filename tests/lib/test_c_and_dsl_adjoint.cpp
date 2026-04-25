@@ -1,8 +1,8 @@
 // test_c_and_dsl_adjoint.cpp -- LO-1c (sturm-eum8): lib_c_AND_dsl adjoint roundtrip.
 //
-// Contract: after `invert(lib_c_AND_dsl)(c0, c1, tgt)` runs in the PRD §2.2
+// Contract: after `invert(lib_c_AND_dsl)(c0, c1, tgt)` runs in the
 // swap-then-uncompute shape, the target register `tgt` (tmp_and post-swap-undo)
-// is returned to |0>. See docs/plan_lossy_compound_reversibility.md §3 LO-1c.
+// is returned to |0>.
 //
 // The CCX sweep `tgt ^= (c0 & c1)` is self-inverse (CCX is its own adjoint),
 // so __lib_c_AND_dsl_adj is structurally identical to the forward. We still

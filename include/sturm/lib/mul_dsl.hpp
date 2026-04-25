@@ -6,7 +6,7 @@
 // __lib_mul_dsl_adj (LO-1a, sturm-735v): gate-reverse of lib_mul_dsl.  Given
 //   state where result = a * b, zeros result.  Registered via
 //   STURM_REGISTER_ADJOINT so `invert<&lib_mul_dsl>()(…)` resolves at the LO
-//   rewrite's scope-exit cleanup.  See plan_lossy_compound_reversibility §3.
+//   rewrite's scope-exit cleanup.
 //
 // Forward: i = 0..bw-1: push b[i]; lib_add_dsl on shifted window; pop.
 // Adjoint: i = bw-1..0: push b[i]; detail_div::lib_add_adj on the same

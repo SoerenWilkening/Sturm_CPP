@@ -1,9 +1,8 @@
 // test_div_mod_dsl_adjoint.cpp -- LO-1b (sturm-1rjw): div/mod DSL adjoint.
 //
 // Contract: after `invert(lib_div_dsl)(a, b, q, r)` (resp. lib_mod_dsl) runs
-// in the PRD §2.1 swap-then-uncompute shape, the quotient (q) and remainder
-// (r) ancillas are returned to |0>.  See docs/plan_lossy_compound_reversibility
-// §3 LO-1b.
+// in the swap-then-uncompute shape, the quotient (q) and remainder
+// (r) ancillas are returned to |0>.
 //
 // Unlike c_AND / OR, lib_div_dsl is NOT self-inverse.  The adjoint implements
 // the reverse gate schedule (every constituent gate is self-inverse, so

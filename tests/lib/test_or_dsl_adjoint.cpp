@@ -1,8 +1,8 @@
 // test_or_dsl_adjoint.cpp -- LO-1d (sturm-le6w): lib_or_dsl adjoint roundtrip.
 //
-// Contract: after `invert(lib_or_dsl)(a, b, c)` runs in the PRD §2.2
+// Contract: after `invert(lib_or_dsl)(a, b, c)` runs in the
 // swap-then-uncompute shape, the target register `c` (tmp_or post-swap-undo)
-// is returned to |0>. See docs/plan_lossy_compound_reversibility.md §3 LO-1d.
+// is returned to |0>.
 //
 // Invariants pinned:
 //   (1) `lib_or_dsl(a, b, c)` with c starting at |0> puts c in state (a | b).

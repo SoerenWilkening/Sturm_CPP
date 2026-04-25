@@ -4,8 +4,7 @@
 //
 // __lib_div_dsl_adj is the gate-reverse of lib_div_dsl.  Precondition:
 // dividend == quotient * divisor + remainder.  Postcondition: quotient,
-// remainder both |0>; dividend and divisor unchanged.  See
-// plan_lossy_compound_reversibility §3 LO-1b.  Registered via
+// remainder both |0>; dividend and divisor unchanged.  Registered via
 // STURM_REGISTER_ADJOINT so `invert<&lib_div_dsl>()(…)` resolves at the LO
 // rewrite's scope-exit cleanup.
 //

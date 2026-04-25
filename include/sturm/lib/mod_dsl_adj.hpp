@@ -5,7 +5,7 @@
 // __lib_mod_dsl_adj is the gate-reverse of lib_mod_dsl.  Precondition:
 // remainder_bits == dividend % divisor (the forward's output).  Postcondition:
 // remainder_bits |0>; dividend / divisor unchanged.  Runs the reversed
-// forward gate sequence — see plan_lossy_compound_reversibility §3 LO-1b.
+// forward gate sequence.
 //
 // Forward sequence: alloc q; div(a,b,q,rem); alloc tr; div(a,b,q,tr);
 //                   tr ^= rem; release tr; release q.
