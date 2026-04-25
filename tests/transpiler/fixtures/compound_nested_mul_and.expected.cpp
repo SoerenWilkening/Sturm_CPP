@@ -37,5 +37,30 @@ inline qint_t<W> operator&(const qint_t<W>&, const qint_t<W>&) {
 using qint = sturm::qint_t<2>;
 
 void demo(qint a, qint b, qint c) {
-    a *= (b & c);
+    
+#line 38 "compound_nested_mul_and.cpp"
+qint __sturm_tmp_and_0;
+
+#line 38 "compound_nested_mul_and.cpp"
+and_oop(b, c, __sturm_tmp_and_0);
+
+#line 38 "compound_nested_mul_and.cpp"
+qint __sturm_tmp_mul_1;
+
+#line 38 "compound_nested_mul_and.cpp"
+mul_oop(a, __sturm_tmp_and_0, __sturm_tmp_mul_1);
+
+#line 38 "compound_nested_mul_and.cpp"
+swap(a, __sturm_tmp_mul_1);
+
+#line 38 "compound_nested_mul_and.cpp"
+    swap(a, __sturm_tmp_mul_1);
+
+#line 38 "compound_nested_mul_and.cpp"
+    sturm::invert<&::sturm::lib_mul_dsl>()(a, __sturm_tmp_and_0, __sturm_tmp_mul_1);
+
+#line 38 "compound_nested_mul_and.cpp"
+    sturm::invert<&::sturm::lib_c_AND_dsl>()(b, c, __sturm_tmp_and_0);
+
+#line 39 "compound_nested_mul_and.cpp"
 }

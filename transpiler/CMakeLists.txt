@@ -142,6 +142,13 @@ add_executable(sturm-transpile
     src/matcher_lossy_op.cpp
     src/lossy_rewrite_emitter.cpp
     src/lossy_scope_exit_emitter.cpp
+    # sturm-rry6 (LO-2e): depth-first nested-lossy rewrite. Adds an AST
+    # matcher for `a *= (b & c)` outer-lossy / inner-bare-binary shapes
+    # (LO-2a's matcher requires a bare DRE on arg(1) so it does not
+    # fire on these). The consumer drains nested hits ahead of plain
+    # LO-2a hits and produces the inner-first forward + outer-first
+    # cleanup pair via `emit_nested_lossy`.
+    src/lossy_nested_rewrite.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -381,6 +388,13 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_lossy_op.cpp
     src/lossy_rewrite_emitter.cpp
     src/lossy_scope_exit_emitter.cpp
+    # sturm-rry6 (LO-2e): depth-first nested-lossy rewrite. Adds an AST
+    # matcher for `a *= (b & c)` outer-lossy / inner-bare-binary shapes
+    # (LO-2a's matcher requires a bare DRE on arg(1) so it does not
+    # fire on these). The consumer drains nested hits ahead of plain
+    # LO-2a hits and produces the inner-first forward + outer-first
+    # cleanup pair via `emit_nested_lossy`.
+    src/lossy_nested_rewrite.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for

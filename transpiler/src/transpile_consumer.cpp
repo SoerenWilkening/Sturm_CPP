@@ -23,6 +23,11 @@
 #include "fresh_names.hpp"
 #include "lossy_rewrite_emitter.hpp"
 #include "lossy_scope_exit_emitter.hpp"
+// sturm-rry6 (LO-2e): nested-lossy depth-first rewrite. Drained BEFORE
+// the LO-2a hits in `HandleTranslationUnit` so the outer call's
+// `LossyOpHit`-keyed Phase C suppression and source-range replacement
+// land before any plain LO-2a drain step.
+#include "lossy_nested_rewrite.hpp"
 
 #include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
@@ -240,6 +245,13 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // `uncompute_*_qint` shim isn't double-emitted alongside the LO
     // forward triplet + cleanup pair).
     sturm::transpile::register_lossy_op_matcher(finder_, lossy_hits_);
+    // sturm-rry6 (LO-2e): nested-lossy matcher fires on `a *= (b & c)`
+    // shapes that LO-2a's bare-DRE-on-arg(1) constraint excludes. Order
+    // relative to LO-2a is irrelevant for correctness — the two
+    // matchers' AST shapes are structurally disjoint. Registered
+    // immediately after LO-2a so the two related hit-vectors are
+    // populated in the same pass for diagnostic clarity.
+    sturm::transpile::register_nested_lossy_matcher(finder_, nested_hits_);
     sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
@@ -575,6 +587,109 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
     sturm::transpile::apply_eliminated_stmt_guards(
         unit_, ctx.getSourceManager());
 
+    // sturm-rry6 (LO-2e): drain `nested_hits_` produced by the
+    // depth-first nested-lossy matcher BEFORE the LO-2a drain so the
+    // shared `FreshNameAllocator` mints the inner-first / outer-second
+    // suffixes for nested hits ahead of any plain LO-2a hits in the
+    // same TU. PRD §11 requires inner `__sturm_tmp_and_0` to appear
+    // lexically before outer `__sturm_tmp_mul_1`; emit_nested_lossy
+    // mints the inner suffix first inside the same allocator call.
+    //
+    // Per hit:
+    //   1. Compute the depth-first forward + LIFO cleanup pair via
+    //      `emit_nested_lossy` against the shared allocator.
+    //   2. Replace the outer call's source range with the forward
+    //      text via a `QReplacement` (same #line + indent shape as
+    //      the LO-2a drain below).
+    //   3. Suppress any Phase C `*_ASSIGN_QINT` op the qint-qint
+    //      matchers may have pushed for the outer call.
+    //   4. Stage the cleanup text under the enclosing block's close
+    //      brace via `register_external_cleanup`, with main-outer
+    //      suppression matching LO-2d's posture.
+    FreshNameAllocator alloc;
+    if (!nested_hits_.empty()) {
+        const clang::SourceManager& sm = ctx.getSourceManager();
+        const clang::LangOptions& lang = ctx.getLangOpts();
+        for (const auto& hit : nested_hits_) {
+            auto em = sturm::transpile::emit_nested_lossy(hit, alloc);
+            if (em.forward_text.empty() || hit.outer_call == nullptr) continue;
+
+            const clang::SourceLocation call_begin =
+                hit.outer_call->getBeginLoc();
+            const std::string line_directive =
+                sturm::transpile::format_line_directive(sm, call_begin);
+
+            // Same #line-per-line + drop-trailing-newline shape as the
+            // LO-2a drain below — keeps the snapshot byte-shape aligned
+            // with the existing fixtures.
+            std::string body;
+            body.reserve(em.forward_text.size() +
+                         8 * line_directive.size());
+            std::size_t p = 0;
+            while (p < em.forward_text.size()) {
+                const std::size_t nl = em.forward_text.find('\n', p);
+                if (nl == std::string::npos) break;
+                if (!line_directive.empty()) {
+                    body.push_back('\n');
+                    body.append(line_directive);
+                }
+                body.append(em.forward_text, p, nl - p);
+                const bool is_last = (nl + 1 == em.forward_text.size());
+                if (!is_last) body.push_back('\n');
+                p = nl + 1;
+            }
+
+            sturm::transpile::QReplacement rep;
+            const auto char_range =
+                clang::CharSourceRange::getTokenRange(
+                    hit.outer_call->getSourceRange());
+            const auto end_loc = clang::Lexer::getLocForEndOfToken(
+                char_range.getEnd(), 0, sm, lang);
+            if (end_loc.isInvalid()) continue;
+            rep.range = clang::SourceRange(call_begin, end_loc);
+            rep.replacement = std::move(body);
+            unit_.replacements.push_back(std::move(rep));
+
+            // Suppress any matching Phase C op (same begin loc).
+            const unsigned key =
+                hit.outer_call->getBeginLoc().getRawEncoding();
+            for (auto& scope : unit_.scopes) {
+                for (auto& op : scope.ops) {
+                    if (op.stmt_range.getBegin().getRawEncoding() == key) {
+                        op.skip_uncompute = true;
+                    }
+                }
+            }
+
+            // Cleanup. Suppress when the enclosing block IS main's
+            // outer body (LO-2d posture; cleanup would be dead code).
+            if (em.cleanup_text.empty() ||
+                hit.enclosing_block == nullptr) continue;
+            if (sturm::transpile::is_main_outer_block(
+                    hit.enclosing_block, ctx)) continue;
+
+            std::string formatted;
+            formatted.reserve(em.cleanup_text.size() * 2 + 64);
+            std::size_t cp = 0;
+            while (cp < em.cleanup_text.size()) {
+                const std::size_t nl =
+                    em.cleanup_text.find('\n', cp);
+                if (nl == std::string::npos) break;
+                formatted.push_back('\n');
+                if (!line_directive.empty())
+                    formatted.append(line_directive);
+                formatted.append("    ");
+                formatted.append(em.cleanup_text, cp, nl - cp);
+                formatted.push_back('\n');
+                cp = nl + 1;
+            }
+            const clang::SourceLocation close_brace =
+                hit.enclosing_block->getRBracLoc();
+            sturm::transpile::register_external_cleanup(
+                external_cleanups_, close_brace, std::move(formatted));
+        }
+    }
+
     // sturm-v0ur (LO-2 wiring): drain `lossy_hits_` produced by the
     // LO-2a matcher. Per hit:
     //
@@ -598,7 +713,9 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
         const clang::SourceManager& sm = ctx.getSourceManager();
         const clang::LangOptions& lang = ctx.getLangOpts();
 
-        FreshNameAllocator alloc;
+        // sturm-rry6 (LO-2e): the per-TU `alloc` declared at the head
+        // of the LO-2e drain is shared HERE so the fresh-name counter
+        // is monotonic across the nested + LO-2a drains.
         std::vector<sturm::transpile::LossyEmission> forwards;
         forwards.reserve(lossy_hits_.size());
         for (const auto& hit : lossy_hits_) {

@@ -1309,6 +1309,61 @@ add_test(NAME test_lossy_scope_exit_emitter
 set_tests_properties(test_lossy_scope_exit_emitter PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: LO-2e lossy_nested_rewrite (sturm-rry6) ──────────────────────
+# Depth-first rewrite for nested lossy ops. Drives the AST matcher + the
+# combined inner-then-outer forward / outer-then-inner cleanup emitter. Links
+# the LO-2a/2b/2c TUs so the AST harness reuses LO-2a's matcher to verify
+# disjointness and `emit_nested_lossy` reuses the LO-2b/2c text emitters.
+add_executable(test_lossy_nested_rewrite
+    test_lossy_nested_rewrite.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_nested_rewrite.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+)
+target_include_directories(test_lossy_nested_rewrite PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_lossy_nested_rewrite PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_lossy_nested_rewrite PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_LOSSY_NESTED NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_lossy_nested_rewrite PRIVATE
+    ${LLVM_DEFS_LIST_LOSSY_NESTED})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_lossy_nested_rewrite PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_lossy_nested_rewrite PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_NESTED support)
+    target_link_libraries(test_lossy_nested_rewrite PRIVATE
+        ${LLVM_LIBS_LOSSY_NESTED})
+endif()
+add_test(NAME test_lossy_nested_rewrite
+         COMMAND test_lossy_nested_rewrite)
+set_tests_properties(test_lossy_nested_rewrite PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
@@ -1623,6 +1678,11 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
+    # sturm-rry6 (LO-2e): TranspileConsumer now registers the
+    # nested-lossy matcher and drains nested hits in
+    # `HandleTranslationUnit`. Link the LO-2e TU so
+    # `register_nested_lossy_matcher` and `emit_nested_lossy` resolve.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_nested_rewrite.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so
     # the Registry method bodies (register_op, find_render_fn,

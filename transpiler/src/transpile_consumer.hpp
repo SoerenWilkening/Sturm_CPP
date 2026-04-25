@@ -58,6 +58,10 @@
 // struct shape, so the matcher header lands here at the consumer
 // boundary alongside the existing routine / synthesis registries.
 #include "matcher_lossy_op.hpp"
+// sturm-rry6 (LO-2e): nested-lossy AST matcher emits NestedLossyHits for
+// the outer-lossy / inner-bare-or-compound shape that LO-2a does not
+// see. The consumer owns the hits vector alongside `lossy_hits_`.
+#include "lossy_nested_rewrite.hpp"
 
 #include <string>
 #include <vector>
@@ -185,6 +189,13 @@ private:
     // forward triplets feed `unit_.replacements` and the LO-2c
     // cleanups feed the `synthesize()` external-cleanup overload.
     std::vector<LossyOpHit> lossy_hits_;
+    // sturm-rry6 (LO-2e): hits vector populated by the nested-lossy
+    // matcher (`register_nested_lossy_matcher`). Drained BEFORE
+    // `lossy_hits_` in `HandleTranslationUnit` so the inner+outer
+    // forward triplet is planted in `unit_.replacements` ahead of any
+    // LO-2a-triggered Phase C suppression — the outer call's begin loc
+    // is the same key that suppresses the Phase C *_ASSIGN_QINT op.
+    std::vector<NestedLossyHit> nested_hits_;
     // sturm-v0ur (LO-2 wiring): cleanup records assembled from
     // `lossy_hits_` after `matchAST`. Each `ExternalCleanup` carries
     // a close-brace `SourceLocation` and the pre-formatted cleanup
