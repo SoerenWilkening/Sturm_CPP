@@ -7,8 +7,9 @@
 // classical .value field on the way out.  No new gate emission and no new
 // arithmetic kernel — see PRD §4 layering rule.
 //
-// Beat 4.1 lands the add_mod body; 4.2/4.3 fill in mul_mod / pow_mod.  The
-// W == 0 short-circuit matches the n == 0 contract documented in PRD §5.
+// Beat 4.1 lands the add_mod body; beat 4.2 lands mul_mod; 4.3 fills in
+// pow_mod.  The W == 0 short-circuit matches the n == 0 contract documented
+// in PRD §5.
 //
 // Target: <=150 LoC.
 
@@ -66,10 +67,16 @@ qint_t<W> add_mod(const qint_t<W>& a, const qint_t<W>& b, const qint_t<W>& n) {
 }
 
 template <std::size_t W>
-qint_t<W> mul_mod(const qint_t<W>& /*a*/, const qint_t<W>& /*b*/, const qint_t<W>& /*n*/) {
+qint_t<W> mul_mod(const qint_t<W>& a, const qint_t<W>& b, const qint_t<W>& n) {
     if constexpr (W == 0u) return qint_t<W>{};
-    assert(false && "mul_mod: not implemented (Phase 4)");
-    return qint_t<W>{};
+    qint_t<W> r, a_mut, b_mut, n_mut;
+    BitProxy ab[W], bb[W], nb[W], rb[W];
+    detail_qint_modular::make_proxy_quad<W>(a, b, n, r,
+                                            a_mut, b_mut, n_mut,
+                                            ab, bb, nb, rb);
+    lib_mul_mod_dsl<BitProxy>(ab, bb, nb, W, rb);
+    r.value = (n.value != 0) ? ((a.value * b.value) % n.value) : 0;
+    return r;
 }
 
 template <std::size_t W>

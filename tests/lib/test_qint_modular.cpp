@@ -1,24 +1,18 @@
 // test_qint_modular.cpp -- sturm-kgwx P4 free-function wrappers in
-// include/sturm/ops/qint_modular.hpp.
+// include/sturm/ops/qint_modular.hpp.  Plan §6.3 budget <= 200 LoC.
 //
-// Beat 4.1 (sturm-kgwx.1): `sturm::add_mod(a, b, n)` matches the result of
-// calling `lib_add_mod_dsl` directly.  W=2 single classical case
-// (a=1, b=1, n=3) -> r=2.  Inputs unchanged, pool live-count returns to its
-// pre-call value, and the wrapper-produced register holds the same bit
-// pattern as a parallel direct lib_add_mod_dsl invocation.
-//
-// Subsequent beats (4.2 mul_mod, 4.3 pow_mod, 4.4 move/copy correctness) fill
-// in the rest of this file.  This test follows the test_add_mod_dsl.cpp
-// SimCtx / Reg pattern: an OrkanBridge pre-allocated at the kMaxQubits=17
-// cap, qbool::make_non_owning views over input qubits, BitProxy arrays for
-// the lib-level call, and read_reg over the dominant basis state to
-// extract the classical W-bit result.
-//
-// Budget: <= 200 LoC (plan §6.3).
+// Beat 4.1 (sturm-kgwx.1): `sturm::add_mod(a, b, n)` matches lib_add_mod_dsl
+// for one W=2 case.  Uses the orkan state-vector simulator at the
+// kMaxQubits=17 cap (test_add_mod_dsl.cpp SimCtx/Reg pattern).
+// Beat 4.2 (sturm-kgwx.2): `sturm::mul_mod(a, b, n)` matches lib_mul_mod_dsl
+// for one W=2 case.  Uses APPEND-mode classical-trace replay because
+// lib_mul_mod_dsl peaks above 17 qubits at W=2 (mirrors test_mul_mod_dsl.cpp
+// beat 2.4 harness).  Beats 4.3/4.4 fill in pow_mod and move/copy.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/ops/qint_modular.hpp"
 #include "sturm/lib/add_mod_dsl.hpp"
+#include "sturm/lib/mul_mod_dsl.hpp"
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
@@ -26,6 +20,8 @@
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
+#include "sturm/backend/ir.hpp"
+#include "sturm/core/gate_kind.h"
 
 #include <array>
 #include <cassert>
@@ -33,6 +29,7 @@
 #include <complex>
 #include <cstdio>
 #include <cstdint>
+#include <vector>
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
@@ -148,10 +145,127 @@ static void run_add_mod_case(uint32_t a_val, uint32_t b_val, uint32_t n_val) {
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// ── Beat 4.2 — mul_mod wrapper test (APPEND classical-trace) ─────────────
+// lib_mul_mod_dsl peaks above 17 qubits at W=2 — drive wrapper in APPEND
+// mode, capture X/CX/CCX into ctx.ir, replay over a bit-vector seeded with
+// the input register values.  Mirror of test_mul_mod_dsl.cpp beat 2.4.
+
+static void apply_gate_classical(std::vector<uint8_t>& bits,
+                                 const sturm::GateRecord& rec) {
+    switch (rec.kind) {
+    case STURM_GATE_X:
+        bits[rec.qubits[0]] ^= 1u;
+        break;
+    case STURM_GATE_CX:
+        if (bits[rec.qubits[0]]) bits[rec.qubits[1]] ^= 1u;
+        break;
+    case STURM_GATE_CCX:
+        if (bits[rec.qubits[0]] && bits[rec.qubits[1]])
+            bits[rec.qubits[2]] ^= 1u;
+        break;
+    default:
+        std::fprintf(stderr,
+                     "trace: unsupported gate kind %d at index %u\n",
+                     static_cast<int>(rec.kind), rec.qubits[0]);
+        std::abort();
+    }
+}
+
+static uint32_t read_reg_classical(const std::vector<uint8_t>& bits,
+                                   const int* qi, std::size_t n) {
+    uint32_t v = 0u;
+    for (std::size_t k = 0; k < n; ++k) {
+        if (qi[k] >= 0 && bits[static_cast<std::size_t>(qi[k])])
+            v |= (1u << k);
+    }
+    return v;
+}
+
+// Beat 4.2 driver.  Asserts r == (a*b) mod n via classical replay, inputs
+// unchanged, pool live-count returns to pre-call + W (only r's qubits
+// remain), classical .value tracks the quantum result.
+static void run_mul_mod_case(uint32_t a_val, uint32_t b_val, uint32_t n_val) {
+    assert(a_val < n_val && "test precondition: a < n");
+    assert(b_val < n_val && "test precondition: b < n");
+    sturm::QubitPool::instance().reset_for_testing();
+    // Reserve 3*W qubit indices for a, b, n at fixed slots; wrapper
+    // allocates r's W qubits beyond that.
+    constexpr uint32_t n_input = 3u * W;
+    int reserved[n_input];
+    for (uint32_t k = 0; k < n_input; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+
+    // APPEND-mode context (execute_gate just records to ctx.ir).
+    sturm_backend_context_t* ctx =
+        sturm_backend_create(STURM_MODE_APPEND, 64u);
+    assert(ctx);
+    sturm_backend_context_t* prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+
+    // qint_t<W> non-owning views with super_mask=full so BitProxy emits
+    // gates rather than classical-folding.
+    std::array<int, W> qi_a{}, qi_b{}, qi_n{};
+    for (std::size_t i = 0; i < W; ++i) {
+        qi_a[i] = reserved[i];
+        qi_b[i] = reserved[W + i];
+        qi_n[i] = reserved[2 * W + i];
+    }
+    const uint64_t full_mask = (1ULL << W) - 1ULL;
+    sturm::qint_t<W> a = sturm::qint_t<W>::make_non_owning(
+        qi_a, static_cast<int64_t>(a_val), full_mask);
+    sturm::qint_t<W> b = sturm::qint_t<W>::make_non_owning(
+        qi_b, static_cast<int64_t>(b_val), full_mask);
+    sturm::qint_t<W> n = sturm::qint_t<W>::make_non_owning(
+        qi_n, static_cast<int64_t>(n_val), full_mask);
+
+    // Wrapper under test: fresh owning qint_t<W>, all ancillas LIFO-released.
+    sturm::qint_t<W> r = sturm::mul_mod(a, b, n);
+    const int high_water = sturm::QubitPool::instance().high_water();
+
+    // Seed bit-vector with input values, replay captured stream.
+    std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
+    for (std::size_t i = 0; i < W; ++i) {
+        if ((a_val >> i) & 1u) bits[static_cast<std::size_t>(qi_a[i])] = 1u;
+        if ((b_val >> i) & 1u) bits[static_cast<std::size_t>(qi_b[i])] = 1u;
+        if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])] = 1u;
+    }
+    for (std::size_t i = 0; i < ctx->ir.size(); ++i)
+        apply_gate_classical(bits, ctx->ir.at(i));
+
+    const uint32_t expect_r = (a_val * b_val) % n_val;
+    const uint32_t a_out = read_reg_classical(bits, qi_a.data(), W);
+    const uint32_t b_out = read_reg_classical(bits, qi_b.data(), W);
+    const uint32_t n_out = read_reg_classical(bits, qi_n.data(), W);
+    const uint32_t r_out =
+        read_reg_classical(bits, r.qubits.data(), W);
+    assert(a_out == a_val && "mul_mod: a register unchanged");
+    assert(b_out == b_val && "mul_mod: b register unchanged");
+    assert(n_out == n_val && "mul_mod: n register unchanged");
+    assert(r_out == expect_r && "mul_mod: r == (a*b) mod n");
+    assert(static_cast<uint32_t>(r.value) == expect_r
+           && "mul_mod: classical .value tracks the quantum result");
+
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use + static_cast<int>(W)
+           && "mul_mod: only the result's W qubits remain live after the call");
+
+    sturm_set_thread_context(prev);
+    sturm_backend_destroy(ctx);
+
+    { sturm::qint_t<W> sink = std::move(r); (void)sink; }
+    for (uint32_t k = 0; k < n_input; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+}
+
 int main() {
     std::printf("sturm-kgwx.1 P4.1 qint_modular: add_mod wrapper test:\n");
     run_add_mod_case(/*a=*/1u, /*b=*/1u, /*n=*/3u);
     std::puts("  PASS: add_mod(1, 1, 3) == 2 matches lib_add_mod_dsl");
-    std::printf("All sturm-kgwx.1 tests passed.\n");
+
+    std::printf("sturm-kgwx.2 P4.2 qint_modular: mul_mod wrapper test:\n");
+    run_mul_mod_case(/*a=*/2u, /*b=*/2u, /*n=*/3u);
+    std::puts("  PASS: mul_mod(2, 2, 3) == 1 matches lib_mul_mod_dsl");
+
+    std::printf("All sturm-kgwx.{1,2} tests passed.\n");
     return 0;
 }
