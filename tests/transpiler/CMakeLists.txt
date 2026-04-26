@@ -4582,3 +4582,48 @@ set_tests_properties(transpiler_idempotent_modular_pow_int_exp PROPERTIES
     LABELS "transpiler;modular-arith"
     DEPENDS "snapshot_modular_pow_int_exp"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-qzab.8 (P5 beat 5.8): unrelated `%` untouched ───────────────────
+# Plan §7.4 / PRD §3 #4: regression fixture pinning the contract that a
+# bare `qint r = a % b;` (no inner `+`/`*`/`pow`) and a plain-int
+# `r = a % b;` both round-trip through sturm-transpile unchanged. The
+# AddMod / MulMod / PowMod matcher arms reject the AST shape (no inner
+# op-call), the qint-type guard rejects the builtin-int site, and no
+# other matcher in the family touches a bare `%`. Snapshot byte-equality
+# enforces the contract end-to-end (matcher + emitter + driver).
+#
+# Configure-time independence: the fixture is identity-only — no
+# rewrite is expected under either `STURM_MODULAR_POW=OFF` (default) or
+# `STURM_MODULAR_POW=ON`. A single `EXPECTED` golden suffices for both
+# configures (mirrors the AddMod / MulMod / compound_collapse fixtures
+# whose rewrites are flag-independent — only the pow_op_* / pow_int_exp
+# fixtures need a per-mode golden).
+add_test(
+    NAME snapshot_modular_unrelated
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_unrelated.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_unrelated.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_unrelated
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_unrelated PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# Idempotency sibling — re-running the transpiler on the snapshot output
+# must produce a byte-identical file. The AUTO-GENERATED sentinel in
+# main.cpp's skip detection is the runtime enforcement; this end-to-end
+# pin regresses any matcher/emitter change that would (a) start
+# rewriting a bare `%` site or (b) drop the AUTO-GENERATED header on
+# round-trip.
+add_test(
+    NAME transpiler_idempotent_modular_unrelated
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_unrelated/modular_unrelated.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_unrelated_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_unrelated PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_unrelated"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

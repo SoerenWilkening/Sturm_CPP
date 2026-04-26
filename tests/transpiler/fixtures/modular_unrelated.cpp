@@ -1,0 +1,61 @@
+// sturm-qzab.8 (P5 beat 5.8) input — regression fixture pinning the
+// "unrelated `%` is untouched" contract.
+//
+// Plan §7.4 / PRD §3 #4: the modular-arith matcher family (AddMod,
+// MulMod, PowMod) MUST anchor on a structurally complete pattern —
+// AddMod/MulMod require an inner qint `+` / `*` op-call as the LHS of
+// the outer `%`, and PowMod requires an inner `pow(...)` call. A bare
+// `qint r = a % b;` (no inner `+`/`*`/`pow`) is therefore NOT a
+// modular-arithmetic site at all — it is an ordinary modulus
+// expression that lowers via the existing `lib_mod_dsl` primitive at
+// codegen. This fixture pins that the modular-op matcher leaves such
+// sites alone: the snapshot output is byte-identical to the input
+// (modulo the `AUTO-GENERATED ... Source:` header), and the sibling
+// idempotency test (sturm-qzab.7 wiring) confirms the contract is
+// stable under round-trip.
+//
+// Companion negative coverage at the matcher-API level lives in
+// `transpiler/tests/test_matcher_modular_op.cpp`:
+//   - `test_bare_modulus_does_not_match`     — bare qint `%`
+//   - `test_no_modulus_does_not_match`       — qint `+` without `%`
+//   - `test_non_qint_operands_do_not_match`  — non-qint operands
+// This fixture is the end-to-end (matcher + emitter + driver) sibling:
+// even if all three matcher arms reject the AST shape individually, a
+// regression that re-introduced a too-permissive arm (e.g. anchoring
+// AddMod on the outer `%` alone) would surface here as a snapshot
+// diff. The plain-int `r = a % b;` site below also exercises that the
+// matcher's `cxxRecordDecl(hasName("qint_t"))` qint-type guard rejects
+// builtin-int operands cleanly — no spurious rewrite of ordinary C++
+// integer modulus inside a quantum routine.
+//
+// The hermetic `qint_t<W>` stub below mirrors the sister fixtures so
+// the transpiler's FixedCompilationDatabase (no system include paths)
+// can resolve the CXXOperatorCallExpr AST shape.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qint_t& operator=(const qint_t&) { return *this; }
+};
+template <int W>
+inline qint_t<W> operator%(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+} // namespace sturm
+using qint = sturm::qint_t<2>;
+
+void demo_qint(qint a, qint n) {
+    // Bare qint modulus — no inner `+`/`*`/`pow`, so AddMod/MulMod/PowMod
+    // arms all reject. Lowers via lib_mod_dsl unchanged.
+    qint r = a % n;
+    (void)r;
+}
+
+void demo_int(int a, int b) {
+    // Plain-int modulus — the qint-type guard rejects this even though
+    // the AST shape involves `%`. Round-trips verbatim.
+    int r = a % b;
+    (void)r;
+}
