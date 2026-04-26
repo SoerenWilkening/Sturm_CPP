@@ -15,11 +15,17 @@
 //     // emitter produces:
 //     sturm::qint_t<W> r = ::sturm::add_mod(a, b, n);
 //
-// Beats 5.2 / 5.4-5.6 fill in the MulMod / PowMod arms following the
-// same single-statement substitution shape. Unlike the LO-2 lossy
-// rewrites, modular rewrites do NOT inject a scope-exit cleanup —
-// `r` is a freshly-bound register whose lifetime is the user's
-// intent.
+// Beat 5.2 (sturm-qzab.2) mirrors that for the MulMod arm:
+//
+//     // user wrote:
+//     qint_t<W> r = (a * b) % n;
+//     // emitter produces:
+//     sturm::qint_t<W> r = ::sturm::mul_mod(a, b, n);
+//
+// Beats 5.4-5.6 fill in the PowMod arm following the same
+// single-statement substitution shape. Unlike the LO-2 lossy rewrites,
+// modular rewrites do NOT inject a scope-exit cleanup — `r` is a
+// freshly-bound register whose lifetime is the user's intent.
 //
 // Why `::sturm::add_mod` and not `lib_add_mod_dsl` directly? PRD §2.1
 // phrases the rewrite target as `lib_add_mod_dsl(a.bits(), b.bits(),
@@ -51,8 +57,9 @@ class FreshNameAllocator;
 /// One forward emission record. Matches the shape of `LossyEmission`:
 /// empty `text` ⇒ caller skips this hit. The AddMod arm (beat 5.1)
 /// populates `text` with the single-statement rewrite
-/// `sturm::qint_t<W> r = ::sturm::add_mod(a, b, n);\n`. Beats 5.2 /
-/// 5.4–5.6 follow the same shape for MulMod / PowMod.
+/// `sturm::qint_t<W> r = ::sturm::add_mod(a, b, n);\n`; the MulMod arm
+/// (beat 5.2) mirrors that with `::sturm::mul_mod(...)`. Beats 5.4-5.6
+/// follow the same shape for PowMod.
 ///
 /// `cleanup_anchor_name` carries the result-variable name. AddMod /
 /// MulMod do not inject a scope-exit cleanup, so the consumer drain
@@ -77,8 +84,9 @@ struct ModularEmission {
 /// when 0, falls back to the legacy unqualified `qint` typename used
 /// by hermetic-stub fixtures.
 ///
-/// `alloc` is reserved for beats 5.2 / 5.4–5.6 which may need fresh
-/// ancilla names; beat 5.1's AddMod arm does not consume a slot.
+/// `alloc` is reserved for beats 5.4-5.6 (PowMod) which may need fresh
+/// ancilla names; the AddMod / MulMod arms (beats 5.1 / 5.2) do not
+/// consume a slot.
 ModularEmission emit_modular_forward_text(ModularOpKind kind,
                                           std::string_view result,
                                           std::string_view a,

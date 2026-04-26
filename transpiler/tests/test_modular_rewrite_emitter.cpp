@@ -1,16 +1,24 @@
-// test_modular_rewrite_emitter.cpp — sturm-qzab.1 (P5.1 beat 5.1) unit
-// tests for the modular-arithmetic rewrite emitter.
+// test_modular_rewrite_emitter.cpp — sturm-qzab.1 / sturm-qzab.2
+// (P5.1 beat 5.1 + P5.2 beat 5.2) unit tests for the modular-arithmetic
+// rewrite emitter.
 //
-// Beat 5.1 covers the AddMod arm only. The emitter's contract for
+// Beat 5.1 covers the AddMod arm. The emitter's contract for
 // `qint_t<W> r = (a + b) % n;` is to produce a single statement-level
 // rewrite: `sturm::qint_t<W> r = ::sturm::add_mod(a, b, n);`. The
 // emitter is a pure-text leaf — no `#line` prefix, no Rewriter — the
 // wiring layer in `transpile_consumer.cpp` is the one that splices the
 // `#line` directives and the `QReplacement` source range.
 //
-// Counter contract: AddMod does not allocate any ancilla tmp, so it
-// does not consume a fresh-name slot. Beat 5.2 / 5.4 may revisit this
-// when MulMod / PowMod arms add their own temps.
+// Beat 5.2 mirrors that for the MulMod arm: `qint_t<W> r = (a * b) % n;`
+// → `sturm::qint_t<W> r = ::sturm::mul_mod(a, b, n);`. Same
+// pure-string posture, different free-function name. The width / empty
+// / alloc-slot contracts apply identically to MulMod.
+//
+// Counter contract: neither AddMod nor MulMod allocates any ancilla
+// tmp at the AST-rewrite level (the wide-intermediate elimination
+// happens at lib-level — `lib_mul_mod_dsl` interleaves the reduction
+// internally). Both arms therefore leave the fresh-name allocator
+// untouched. Beat 5.4 may revisit when the PowMod arm lands.
 
 #include "modular_rewrite_emitter.hpp"
 
@@ -40,6 +48,10 @@ public:
 };
 template <int W>
 inline qint_t<W> operator+(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+template <int W>
+inline qint_t<W> operator*(const qint_t<W>&, const qint_t<W>&) {
     return qint_t<W>{};
 }
 template <int W>
@@ -163,6 +175,86 @@ void test_ast_driven_add_mod_emits_full_rewrite() {
     CHECK(em.kind == ModularOpKind::AddMod);
 }
 
+// sturm-qzab.2 (P5.2 beat 5.2): MulMod arm — emits the
+// `sturm::mul_mod(a, b, n)` free-function call, mirroring AddMod's
+// shape. All width / empty-operand / alloc-slot contracts apply
+// identically.
+void test_mul_mod_text_with_width() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::MulMod, "r", "a", "b", "n", 2, alloc);
+    CHECK_EQ_STR(em.text,
+        std::string("sturm::qint_t<2> r = ::sturm::mul_mod(a, b, n);\n"));
+    CHECK_EQ_STR(em.cleanup_anchor_name, std::string("r"));
+    CHECK(em.kind == ModularOpKind::MulMod);
+}
+
+void test_mul_mod_text_without_width() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::MulMod, "p", "x", "y", "m", 0, alloc);
+    CHECK_EQ_STR(em.text,
+        std::string("qint p = ::sturm::mul_mod(x, y, m);\n"));
+    CHECK_EQ_STR(em.cleanup_anchor_name, std::string("p"));
+}
+
+// MulMod, like AddMod, does not consume a fresh-name slot. The
+// allocator's first call after the emission must still mint
+// `__stu_t0`.
+void test_mul_mod_does_not_consume_alloc_slot() {
+    FreshNameAllocator alloc;
+    (void)emit_modular_forward_text(
+        ModularOpKind::MulMod, "r", "a", "b", "n", 2, alloc);
+    CHECK_EQ_STR(alloc.next(), std::string("__stu_t0"));
+}
+
+void test_mul_mod_empty_result_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::MulMod, "", "a", "b", "n", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+void test_mul_mod_empty_a_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::MulMod, "r", "", "b", "n", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+void test_mul_mod_empty_b_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::MulMod, "r", "a", "", "n", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+void test_mul_mod_empty_n_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::MulMod, "r", "a", "b", "", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+// AST-driven MulMod: feed a real `(a * b) % n` ModularOpHit through
+// `emit_modular_forward` and check the rendered text matches the
+// post-rewrite contract.
+void test_ast_driven_mul_mod_emits_full_rewrite() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint n) {\n"
+        "    qint r = (a * b) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::MulMod);
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward(hits[0], alloc);
+    CHECK_EQ_STR(em.text,
+        std::string("sturm::qint_t<2> r = ::sturm::mul_mod(a, b, n);\n"));
+    CHECK(em.kind == ModularOpKind::MulMod);
+}
+
 } // namespace
 
 int main() {
@@ -174,6 +266,14 @@ int main() {
     test_empty_b_name();
     test_empty_n_name();
     test_ast_driven_add_mod_emits_full_rewrite();
+    test_mul_mod_text_with_width();
+    test_mul_mod_text_without_width();
+    test_mul_mod_does_not_consume_alloc_slot();
+    test_mul_mod_empty_result_name();
+    test_mul_mod_empty_a_name();
+    test_mul_mod_empty_b_name();
+    test_mul_mod_empty_n_name();
+    test_ast_driven_mul_mod_emits_full_rewrite();
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
 }

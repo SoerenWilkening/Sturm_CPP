@@ -1,13 +1,14 @@
 // matcher_modular_op.hpp — Phase 5 (sturm-qzab) modular-arithmetic AST
 // matcher.
 //
-// Plan §2.1 / §7. Beat 5.1 (sturm-qzab.1) lands the AddMod arm:
-// recognises the AST shape `qint_t<W> r = (a + b) % n;` and produces
-// one `ModularOpHit` per match. Subsequent beats append additional
-// `register_one<...>` calls inside `register_modular_op_matcher`:
+// Plan §2.1 / §7. Beats 5.1 (sturm-qzab.1) and 5.2 (sturm-qzab.2)
+// land the AddMod and MulMod arms: recognise the AST shapes
+// `qint_t<W> r = (a + b) % n;` and `qint_t<W> r = (a * b) % n;` and
+// produce one `ModularOpHit` per match. Subsequent beats append
+// additional callback registrations inside `register_modular_op_matcher`:
 //
-//   1. `(qint + qint) % qint` → AddMod   (beat 5.1, this beat)
-//   2. `(qint * qint) % qint` → MulMod   (beat 5.2)
+//   1. `(qint + qint) % qint` → AddMod   (beat 5.1, landed)
+//   2. `(qint * qint) % qint` → MulMod   (beat 5.2, landed)
 //   3. peephole-collapsed `r = a + b; r %= n;` (beat 5.3)
 //   4. `pow(qint, qint) % qint` → PowMod (beats 5.4–5.6, gated on
 //                                          STURM_MODULAR_POW)
@@ -51,10 +52,10 @@ namespace sturm::transpile {
 
 /// Which modular-arithmetic rewrite family fired. The consumer drain
 /// dispatches on this enum so a single loop handles all three rewrite
-/// families. Beat 5.1 produces only `AddMod` hits; later beats add
-/// `MulMod` and `PowMod`.
+/// families. Beats 5.1 (AddMod) and 5.2 (MulMod) are landed; the
+/// PowMod arm lands in beats 5.4-5.6.
 ///
-///   - `AddMod`  : `(a + b) % n`   → `::sturm::add_mod(a, b, n)`
+///   - `AddMod`  : `(a + b) % n`   → `::sturm::add_mod(a, b, n)` (beat 5.1)
 ///   - `MulMod`  : `(a * b) % n`   → `::sturm::mul_mod(a, b, n)` (beat 5.2)
 ///   - `PowMod`  : `pow(a, x) % n` → `::sturm::pow_mod(a, x, n)` (beats 5.4–5.6,
 ///                  gated on STURM_MODULAR_POW; OFF leaves the AST alone)
@@ -63,9 +64,10 @@ enum class ModularOpKind { AddMod, MulMod, PowMod };
 /// One matched modular-arithmetic site. Non-owning pointers reference
 /// AST nodes valid only for the MatchFinder's ASTContext lifetime.
 /// `enclosing_block` anchors the rewrite scope (parallel to
-/// `LossyOpHit::enclosing_block`). Beat 5.1's AddMod callback populates
-/// the operand-name strings off the bound DeclRefExpr nodes; later
-/// beats follow the same shape for MulMod / PowMod.
+/// `LossyOpHit::enclosing_block`). Beats 5.1 / 5.2 (AddMod / MulMod)
+/// populate the operand-name strings off the bound DeclRefExpr nodes;
+/// the PowMod arm (beats 5.4-5.6) follows the same shape but pulls
+/// names off the `pow(...)` call expression instead.
 ///
 /// Field-shape rationale: mirrors `LossyOpHit` so the consumer drain
 /// loop in `transpile_consumer.cpp` can follow the same code shape (a
@@ -105,10 +107,10 @@ struct ModularOpHit {
 };
 
 /// Register the modular-op AST matchers against `finder`, directing
-/// every match into `hits`. Beat 5.1 registers the AddMod arm; later
-/// beats append MulMod / PowMod patterns inside the same function.
-/// `hits` must outlive the finder's run. Call at most once per hits
-/// vector.
+/// every match into `hits`. Beats 5.1 / 5.2 register the AddMod and
+/// MulMod arms; later beats append the PowMod patterns inside the
+/// same function. `hits` must outlive the finder's run. Call at most
+/// once per hits vector.
 void register_modular_op_matcher(clang::ast_matchers::MatchFinder& finder,
                                  std::vector<ModularOpHit>& hits);
 

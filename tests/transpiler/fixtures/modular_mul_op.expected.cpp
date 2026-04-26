@@ -30,6 +30,8 @@ inline qint_t<W> operator%(const qint_t<W>&, const qint_t<W>&) {
 using qint = sturm::qint_t<2>;
 
 void demo(qint a, qint b, qint n) {
-    qint r = (a * b) % n;
+    
+#line 31 "modular_mul_op.cpp"
+sturm::qint_t<2> r = ::sturm::mul_mod(a, b, n);
     (void)r;
 }
