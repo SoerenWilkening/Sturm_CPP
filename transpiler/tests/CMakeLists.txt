@@ -1372,6 +1372,7 @@ add_executable(test_matcher_modular_op
     test_matcher_modular_op.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
 )
 target_include_directories(test_matcher_modular_op PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1411,6 +1412,28 @@ else()
     target_link_libraries(test_matcher_modular_op PRIVATE
         ${LLVM_LIBS_MOD_OP})
 endif()
+if(STURM_MODULAR_POW)
+    # sturm-qzab.5 (P5 beat 5.5): under the top-level STURM_MODULAR_POW=ON
+    # configure, the test executable must exercise the matcher's flag-on
+    # PowMod arm. We do this in two steps:
+    #   1. Re-compile JUST the matcher TU (transpiler/src/matcher_modular_op.cpp)
+    #      with `-DSTURM_MODULAR_POW` so the `#ifdef STURM_MODULAR_POW`
+    #      registration block in `register_modular_op_matcher` fires.
+    #   2. Set a SEPARATE test-only macro `STURM_TEST_MODULAR_POW_ON` on
+    #      the whole test target so the test TU's `#ifdef` gate around the
+    #      flag-on test functions activates.
+    # The tests use the test-only macro (not `STURM_MODULAR_POW` directly)
+    # so the `cmake_modular_pow_flag` ctest's compile_commands.json scan —
+    # which forbids `-DSTURM_MODULAR_POW` outside `transpiler/src/` — does
+    # not false-positive on `transpiler/tests/test_matcher_modular_op.cpp`.
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
+        TARGET_DIRECTORY test_matcher_modular_op
+        PROPERTIES COMPILE_DEFINITIONS STURM_MODULAR_POW)
+    target_compile_definitions(test_matcher_modular_op PRIVATE
+        STURM_TEST_MODULAR_POW_ON)
+endif()
 add_test(NAME test_matcher_modular_op
          COMMAND test_matcher_modular_op)
 set_tests_properties(test_matcher_modular_op PROPERTIES
@@ -1425,6 +1448,7 @@ add_executable(test_modular_rewrite_emitter
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
 )
 target_include_directories(test_modular_rewrite_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1463,6 +1487,20 @@ else()
     llvm_map_components_to_libnames(LLVM_LIBS_MOD_EMIT support)
     target_link_libraries(test_modular_rewrite_emitter PRIVATE
         ${LLVM_LIBS_MOD_EMIT})
+endif()
+if(STURM_MODULAR_POW)
+    # sturm-qzab.5 (P5 beat 5.5): mirror the matcher-test wiring so the
+    # AST-driven PowMod emission path is exercised under the flag-on
+    # configure. See the corresponding block above (test_matcher_modular_op)
+    # for the rationale on the STURM_MODULAR_POW vs STURM_TEST_MODULAR_POW_ON
+    # split.
+    set_source_files_properties(
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
+        TARGET_DIRECTORY test_modular_rewrite_emitter
+        PROPERTIES COMPILE_DEFINITIONS STURM_MODULAR_POW)
+    target_compile_definitions(test_modular_rewrite_emitter PRIVATE
+        STURM_TEST_MODULAR_POW_ON)
 endif()
 add_test(NAME test_modular_rewrite_emitter
          COMMAND test_modular_rewrite_emitter)
@@ -1796,6 +1834,7 @@ add_executable(test_transpile_consumer
     # no additional sources required.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so

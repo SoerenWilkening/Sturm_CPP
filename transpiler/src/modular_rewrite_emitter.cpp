@@ -121,10 +121,17 @@ ModularEmission emit_modular_forward_text(ModularOpKind kind,
                                         result_width);
             break;
         case ModularOpKind::PowMod:
-            // SHELL: beats 5.4-5.6 (PowMod) overwrite this arm.
-            // Returning empty here keeps the modular_pow_op_*
-            // fixtures rounding-tripping identically through the
-            // transpiler under the current beat contract.
+            // sturm-qzab.5 (P5 beat 5.5): PowMod arm — emits the
+            // `sturm::pow_mod(a, x, n)` free-function call. Same
+            // single-statement substitution shape as AddMod / MulMod;
+            // the wide-intermediate elimination happens at lib level
+            // inside `lib_pow_mod_dsl` (no AST-side fresh ancilla).
+            // The emission is unconditional on the kind — the matcher
+            // arm registration in `matcher_modular_op.cpp` is what
+            // gates `PowMod` hits behind `#ifdef STURM_MODULAR_POW`,
+            // so this dispatch only runs under the flag-on configure.
+            em.text = render_binary_mod("pow_mod", result, a, b, n,
+                                        result_width);
             break;
     }
     return em;

@@ -255,6 +255,128 @@ void test_ast_driven_mul_mod_emits_full_rewrite() {
     CHECK(em.kind == ModularOpKind::MulMod);
 }
 
+// ── sturm-qzab.5 (P5 beat 5.5): PowMod arm — emits the
+// `sturm::pow_mod(a, x, n)` free-function call. Mirrors the AddMod /
+// MulMod shape (`sturm::qint_t<W> r = ::sturm::pow_mod(a, x, n);\n`)
+// — same width-resolution, same empty-operand fall-throughs, same
+// alloc-slot non-consumption posture (the wide-intermediate
+// elimination happens inside `lib_pow_mod_dsl`, not at the AST-rewrite
+// level). The pure-string contracts compile under both flag modes —
+// the gating (`#ifdef STURM_TEST_MODULAR_POW_ON`) lives only on the matcher
+// arm registration; the emitter dispatch on `ModularOpKind::PowMod`
+// is unconditional.
+void test_pow_mod_text_with_width() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::PowMod, "r", "a", "x", "n", 2, alloc);
+    CHECK_EQ_STR(em.text,
+        std::string("sturm::qint_t<2> r = ::sturm::pow_mod(a, x, n);\n"));
+    CHECK_EQ_STR(em.cleanup_anchor_name, std::string("r"));
+    CHECK(em.kind == ModularOpKind::PowMod);
+}
+
+void test_pow_mod_text_without_width() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::PowMod, "p", "u", "v", "m", 0, alloc);
+    CHECK_EQ_STR(em.text,
+        std::string("qint p = ::sturm::pow_mod(u, v, m);\n"));
+    CHECK_EQ_STR(em.cleanup_anchor_name, std::string("p"));
+}
+
+void test_pow_mod_does_not_consume_alloc_slot() {
+    FreshNameAllocator alloc;
+    (void)emit_modular_forward_text(
+        ModularOpKind::PowMod, "r", "a", "x", "n", 2, alloc);
+    CHECK_EQ_STR(alloc.next(), std::string("__stu_t0"));
+}
+
+void test_pow_mod_empty_result_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::PowMod, "", "a", "x", "n", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+void test_pow_mod_empty_a_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::PowMod, "r", "", "x", "n", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+void test_pow_mod_empty_b_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::PowMod, "r", "a", "", "n", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+void test_pow_mod_empty_n_name() {
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward_text(
+        ModularOpKind::PowMod, "r", "a", "x", "", 2, alloc);
+    CHECK(em.text.empty());
+}
+
+#ifdef STURM_TEST_MODULAR_POW_ON
+// AST-driven PowMod: only meaningful under flag-on (the matcher
+// otherwise produces no hit on this AST shape, by design — see
+// sturm-qzab.4). Feeds a real `pow(a, x) % n` ModularOpHit through
+// `emit_modular_forward` and checks the rendered text matches the
+// post-rewrite contract.
+constexpr std::string_view kPowStub = R"CPP(
+template <int W>
+inline sturm::qint_t<W> pow(const sturm::qint_t<W>&, const sturm::qint_t<W>&) {
+    return sturm::qint_t<W>{};
+}
+)CPP";
+
+std::vector<ModularOpHit> run_matcher_with_pow_stub(std::string_view user_src) {
+    std::string code;
+    code.reserve(kModularStub.size() + kPowStub.size() + user_src.size());
+    code.append(kModularStub);
+    // Inject the namespaced `sturm::pow` overload (the kModularStub above
+    // does not carry it because the AddMod / MulMod tests don't need it).
+    code.append("namespace sturm {\n");
+    code.append("template <int W>\n");
+    code.append("inline qint_t<W> pow(const qint_t<W>&, const qint_t<W>&) {\n"
+                "    return qint_t<W>{};\n"
+                "}\n");
+    code.append("} // namespace sturm\n");
+    code.append(user_src);
+
+    std::vector<ModularOpHit> hits;
+    clang::ast_matchers::MatchFinder finder;
+    register_modular_op_matcher(finder, hits);
+
+    auto factory = clang::tooling::newFrontendActionFactory(&finder);
+    std::vector<std::string> args{"-std=c++20", "-fsyntax-only"};
+    bool ok = clang::tooling::runToolOnCodeWithArgs(
+        factory->create(), code, args, "test_input.cpp");
+    if (!ok) {
+        std::fprintf(stderr, "FAIL  tool run returned false (pow stub)\n");
+    }
+    return hits;
+}
+
+void test_ast_driven_pow_mod_emits_full_rewrite() {
+    auto hits = run_matcher_with_pow_stub(
+        "void demo(qint a, qint x, qint n) {\n"
+        "    qint r = sturm::pow(a, x) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    FreshNameAllocator alloc;
+    ModularEmission em = emit_modular_forward(hits[0], alloc);
+    CHECK_EQ_STR(em.text,
+        std::string("sturm::qint_t<2> r = ::sturm::pow_mod(a, x, n);\n"));
+    CHECK(em.kind == ModularOpKind::PowMod);
+}
+#endif // STURM_MODULAR_POW
+
 } // namespace
 
 int main() {
@@ -274,6 +396,16 @@ int main() {
     test_mul_mod_empty_b_name();
     test_mul_mod_empty_n_name();
     test_ast_driven_mul_mod_emits_full_rewrite();
+    test_pow_mod_text_with_width();
+    test_pow_mod_text_without_width();
+    test_pow_mod_does_not_consume_alloc_slot();
+    test_pow_mod_empty_result_name();
+    test_pow_mod_empty_a_name();
+    test_pow_mod_empty_b_name();
+    test_pow_mod_empty_n_name();
+#ifdef STURM_TEST_MODULAR_POW_ON
+    test_ast_driven_pow_mod_emits_full_rewrite();
+#endif
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
 }

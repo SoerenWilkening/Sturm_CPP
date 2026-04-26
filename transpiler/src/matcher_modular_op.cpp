@@ -1,8 +1,9 @@
 // matcher_modular_op.cpp — sturm-qzab.1 (Phase 5 beat 5.1) +
-// sturm-qzab.2 (Phase 5 beat 5.2) implementation. Orchestrates beat
-// 5.3 (sturm-qzab.3) registration via the sibling TU
-// `matcher_modular_compound_collapse.cpp` to keep this file under the
-// plan §7.1 280-LoC budget.
+// sturm-qzab.2 (Phase 5 beat 5.2) implementation. Orchestrates beats
+// 5.3 (sturm-qzab.3) and 5.5 (sturm-qzab.5) registration via the
+// sibling TUs `matcher_modular_compound_collapse.cpp` and
+// `matcher_modular_pow_mod.cpp` to keep this file under the plan §7.1
+// 280-LoC budget.
 //
 // AST matcher for the modular-arithmetic rewrite. Beat 5.1 landed the
 // AddMod arm (`(qint + qint) % qint` as the initializer of a `qint_t<W>`
@@ -11,9 +12,10 @@
 // lives in `matcher_modular_compound_collapse.{hpp,cpp}`; this file's
 // `register_modular_op_matcher` calls
 // `register_compound_collapse_addmod_arm` to pin the beat-5.3 arm onto
-// the same finder + hits vector. Beats 5.4-5.6 will reuse the same
-// hits vector for PowMod by appending additional `register_one<...>`
-// calls here.
+// the same finder + hits vector. Beat 5.5 (PowMod, gated on
+// `STURM_MODULAR_POW`) lives in `matcher_modular_pow_mod.{hpp,cpp}`;
+// it is included only inside the `#ifdef STURM_MODULAR_POW` block at
+// the bottom of `register_modular_op_matcher`.
 //
 // The matcher anchors on a `varDecl(hasInitializer(...))` shape. The
 // initializer's outer node is a `CXXOperatorCallExpr` for the
@@ -46,6 +48,7 @@
 #include "matcher_modular_op.hpp"
 
 #include "matcher_modular_compound_collapse.hpp"
+#include "matcher_modular_pow_mod.hpp"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
@@ -294,9 +297,21 @@ void register_modular_op_matcher(clang::ast_matchers::MatchFinder& finder,
     // fixture `tests/transpiler/fixtures/modular_pow_op_default.cpp`
     // pins the byte-level identity output.
 #ifdef STURM_MODULAR_POW
-    // Beat 5.5 (sturm-qzab.5) lands the PowMod arm registration here.
-    // Intentionally empty under sturm-qzab.4 — the negative-path beat
-    // owns only the OFF-mode contract.
+    // Beat 5.5 (sturm-qzab.5): PowMod positive path (flag ON).
+    //
+    // Plan §7.4 / PRD §3.4: under `STURM_MODULAR_POW=ON` the matcher
+    // recognises the AST shape `qint_t<W> r = sturm::pow(a, x) % n;`
+    // and surfaces ONE `ModularOpHit` with `kind == PowMod`. The
+    // emitter (`modular_rewrite_emitter.cpp::emit_modular_forward`)
+    // then renders `sturm::qint_t<W> r = ::sturm::pow_mod(a, x, n);`
+    // and the consumer drain in `transpile_consumer.cpp` splices the
+    // text over the user's full VarDecl source range.
+    //
+    // The arm's per-pattern callback + AST helpers live in the sibling
+    // TU `matcher_modular_pow_mod.{hpp,cpp}` to keep this orchestrator
+    // file under the plan §7.1 280-LoC budget — same posture used for
+    // the beat-5.3 compound-collapse arm.
+    register_pow_mod_arm(finder, hits);
 #endif
 }
 

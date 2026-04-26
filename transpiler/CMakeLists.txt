@@ -160,6 +160,7 @@ add_executable(sturm-transpile
     # contract while the bodies are empty. See plan §2.1 / §7.
     src/matcher_modular_op.cpp
     src/matcher_modular_compound_collapse.cpp
+    src/matcher_modular_pow_mod.cpp
     src/modular_rewrite_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
@@ -438,6 +439,7 @@ add_library(sturm-transpile-plugin SHARED
     # the contract under test.
     src/matcher_modular_op.cpp
     src/matcher_modular_compound_collapse.cpp
+    src/matcher_modular_pow_mod.cpp
     src/modular_rewrite_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp

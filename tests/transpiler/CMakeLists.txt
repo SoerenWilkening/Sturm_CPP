@@ -4401,24 +4401,62 @@ set_tests_properties(snapshot_modular_compound_collapse PROPERTIES
     LABELS "transpiler;modular-arith"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# sturm-qzab.5 (P5 beat 5.5): the `modular_pow_op_default` snapshot's
+# expected golden ALSO depends on the configure-time `STURM_MODULAR_POW`
+# value — under flag ON, the driver rewrites the same `pow(a,x) % n`
+# shape regardless of which fixture file the input came from (the
+# matcher is purely AST-shape-driven, not file-name-driven). Pin the
+# post-rewrite golden (`modular_pow_op_default.expected.flag_on.cpp`)
+# under ON, and the identity golden under OFF, mirroring the sister
+# fixture. This keeps both pow-op snapshots green under both configure
+# modes; their PURPOSE remains distinct (default fixture pins the
+# under-OFF identity contract; flag fixture pins the under-ON rewrite
+# contract) but the byte-equality check needs the right golden in each
+# configure to enforce that purpose.
+if(STURM_MODULAR_POW)
+    set(_modular_pow_op_default_expected
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_default.expected.flag_on.cpp)
+else()
+    set(_modular_pow_op_default_expected
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_default.expected.cpp)
+endif()
 add_test(
     NAME snapshot_modular_pow_op_default
     COMMAND "${CMAKE_COMMAND}"
             -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
             -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_default.cpp
-            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_default.expected.cpp
+            -DEXPECTED=${_modular_pow_op_default_expected}
             -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_default
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
 set_tests_properties(snapshot_modular_pow_op_default PROPERTIES
     LABELS "transpiler;modular-arith"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# sturm-qzab.5 (P5 beat 5.5): the `modular_pow_op_flag` snapshot's
+# expected golden depends on the top-level `STURM_MODULAR_POW` configure
+# value. Under OFF (the default) the driver leaves the AST alone and
+# the snapshot pins the identity output (`modular_pow_op_flag.expected.cpp`).
+# Under ON the driver rewrites `sturm::pow(a, x) % n` into
+# `::sturm::pow_mod(a, x, n)` and the snapshot pins the post-rewrite
+# golden (`modular_pow_op_flag.expected.flag_on.cpp`). The plan §7.3
+# "two-config build via `check_*_diagnostic.cmake`" mechanism is
+# realised here as a conditional `EXPECTED` argument — same snapshot
+# driver, different golden per configure — so a CI matrix that runs
+# both configures pins both contracts without duplicating the test
+# wiring or the run_snapshot driver.
+if(STURM_MODULAR_POW)
+    set(_modular_pow_op_flag_expected
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_flag.expected.flag_on.cpp)
+else()
+    set(_modular_pow_op_flag_expected
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_flag.expected.cpp)
+endif()
 add_test(
     NAME snapshot_modular_pow_op_flag
     COMMAND "${CMAKE_COMMAND}"
             -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
             -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_flag.cpp
-            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_flag.expected.cpp
+            -DEXPECTED=${_modular_pow_op_flag_expected}
             -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_flag
             -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
 set_tests_properties(snapshot_modular_pow_op_flag PROPERTIES

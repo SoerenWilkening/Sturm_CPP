@@ -543,6 +543,7 @@ void test_compound_collapse_coexists_with_in_init_form() {
     CHECK(in_init_seen == 1);
 }
 
+#ifndef STURM_TEST_MODULAR_POW_ON
 // ── sturm-qzab.4 (P5 beat 5.4): PowMod negative path (flag OFF) ─────────────
 //
 // Plan §7.4 / PRD §3.4: under the default `STURM_MODULAR_POW=OFF`
@@ -609,6 +610,158 @@ void test_pow_mod_does_not_collide_with_addmod_mulmod_under_flag_off() {
     CHECK(saw_mul);
     CHECK(!saw_pow);
 }
+#endif // !STURM_TEST_MODULAR_POW_ON
+
+// ── sturm-qzab.5 (P5 beat 5.5): PowMod positive path (flag ON) ───────────────
+//
+// Plan §7.4 / PRD §3.4: when `STURM_MODULAR_POW=ON` the matcher MUST
+// recognise the AST shape `qint_t<W> r = sturm::pow(a, x) % n;` (a
+// VarDecl whose initializer is the qint-overloaded `operator%` whose
+// LHS in turn is a `CallExpr` to a function template named `pow`) and
+// surface ONE `ModularOpHit` with `kind == PowMod`. The operand-name
+// slots populate from the bound DeclRefExpr nodes inside the `pow`
+// call's arguments and the outer `%` second operand; the result-width
+// resolves off the result VarDecl's `qint_t<W>` type the same way the
+// AddMod / MulMod arms do; the `pow_call` AST anchor populates so the
+// emitter can locate the `pow(...)` source range if needed.
+//
+// These tests compile only when the matcher TU itself is compiled with
+// `-DSTURM_MODULAR_POW`. The test executable's CMake target opts in
+// when the top-level `STURM_MODULAR_POW=ON` configure runs (see the
+// `if(STURM_MODULAR_POW)` block in `transpiler/tests/CMakeLists.txt`),
+// so under the default OFF configure these tests are absent — the
+// negative-coverage suite above pins the OFF-mode contract.
+#ifdef STURM_TEST_MODULAR_POW_ON
+void test_pow_mod_basic_match_under_flag_on() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint x, qint n) {\n"
+        "    qint r = sturm::pow(a, x) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    CHECK_EQ_STR(hits[0].result_name, std::string("r"));
+    CHECK_EQ_STR(hits[0].a_name, std::string("a"));
+    CHECK_EQ_STR(hits[0].b_name, std::string("x"));
+    CHECK_EQ_STR(hits[0].n_name, std::string("n"));
+    CHECK(hits[0].result_width == 2);
+    CHECK(hits[0].mod_expr != nullptr);
+    CHECK(hits[0].pow_call != nullptr);
+    CHECK(hits[0].result_var != nullptr);
+    CHECK(hits[0].enclosing_block != nullptr);
+}
+
+void test_pow_mod_distinct_widths_resolve_under_flag_on() {
+    // Width resolution mirrors the AddMod / MulMod siblings: qint_t<5>
+    // in the source must surface as result_width=5.
+    auto hits = run_matcher(
+        "using qint5 = sturm::qint_t<5>;\n"
+        "void demo(qint5 a, qint5 x, qint5 n) {\n"
+        "    qint5 r = sturm::pow(a, x) % n;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    CHECK(hits[0].result_width == 5);
+}
+
+void test_pow_mod_outer_mul_does_not_match_under_flag_on() {
+    // `sturm::pow(a, x) * n` has outer `*`, not `%`. The PowMod arm
+    // anchors on outer `%` so this AST shape is rejected even under
+    // the flag-on configure.
+    auto hits = run_matcher(
+        "void demo(qint a, qint x, qint n) {\n"
+        "    qint r = sturm::pow(a, x) * n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+void test_pow_mod_non_pow_call_does_not_match_under_flag_on() {
+    // A non-`pow` callee with the same signature must not collapse
+    // into a PowMod rewrite. The matcher gates on the function name.
+    auto hits = run_matcher(
+        "namespace sturm {\n"
+        "template <int W>\n"
+        "inline qint_t<W> notpow(const qint_t<W>&, const qint_t<W>&) {\n"
+        "    return qint_t<W>{};\n"
+        "}\n"
+        "}\n"
+        "void demo(qint a, qint x, qint n) {\n"
+        "    qint r = sturm::notpow(a, x) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+void test_pow_mod_coexists_with_addmod_mulmod_under_flag_on() {
+    // Mixed TU under flag ON: AddMod + MulMod (always-on) plus PowMod
+    // (now firing). Expect three distinct hits, one per kind.
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint x, qint n) {\n"
+        "    qint s = (a + b) % n;\n"
+        "    qint p = (a * b) % n;\n"
+        "    qint q = sturm::pow(a, x) % n;\n"
+        "    (void)s; (void)p; (void)q;\n"
+        "}\n");
+    CHECK(hits.size() == 3);
+    if (hits.size() != 3) return;
+    bool saw_add = false;
+    bool saw_mul = false;
+    bool saw_pow = false;
+    for (const auto& h : hits) {
+        if (h.kind == ModularOpKind::AddMod) saw_add = true;
+        if (h.kind == ModularOpKind::MulMod) saw_mul = true;
+        if (h.kind == ModularOpKind::PowMod) saw_pow = true;
+    }
+    CHECK(saw_add);
+    CHECK(saw_mul);
+    CHECK(saw_pow);
+}
+
+void test_pow_mod_non_qint_operands_do_not_match_under_flag_on() {
+    // `pow(a, x) % n` with non-qint operands must be rejected by the
+    // PowMod arm even under the flag-on configure (the matcher's
+    // qint-type guard rejects the structural match).
+    auto hits = run_matcher(
+        "namespace nq {\n"
+        "inline NotQInt pow(const NotQInt&, const NotQInt&) {\n"
+        "    return NotQInt{};\n"
+        "}\n"
+        "}\n"
+        "void demo(NotQInt a, NotQInt x, NotQInt n) {\n"
+        "    NotQInt r = nq::pow(a, x) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+void test_pow_mod_enclosing_block_tracks_inner_scope_under_flag_on() {
+    // Inner-scope tracking for the PowMod arm — mirrors the
+    // AddMod / MulMod siblings.
+    auto hits = run_matcher(
+        "void demo(qint a, qint x, qint n) {\n"
+        "    {\n"
+        "        qint r = sturm::pow(a, x) % n;\n"
+        "        (void)r;\n"
+        "    }\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    CHECK(hits[0].enclosing_block != nullptr);
+}
+#endif // STURM_TEST_MODULAR_POW_ON
+// Note: the flag-on test guards use `STURM_TEST_MODULAR_POW_ON` (a
+// test-only macro distinct from the production `STURM_MODULAR_POW`
+// flag) so the `cmake_modular_pow_flag` ctest's `compile_commands.json`
+// scan — which rejects any `-DSTURM_MODULAR_POW` outside
+// `transpiler/src/` — does not false-positive on this test TU. The
+// matcher TU itself receives `-DSTURM_MODULAR_POW` via
+// `set_source_files_properties` in the test target; that file lives
+// under `transpiler/src/` and is therefore allowed by the scanner's
+// driver-bucket rule.
 
 } // namespace
 
@@ -637,9 +790,20 @@ int main() {
     test_compound_collapse_inner_sub_does_not_match();
     test_compound_collapse_non_qint_operands_do_not_match();
     test_compound_collapse_coexists_with_in_init_form();
+#ifndef STURM_TEST_MODULAR_POW_ON
     test_pow_mod_qint_exponent_does_not_match_under_flag_off();
     test_pow_mod_int_exponent_does_not_match_under_flag_off();
     test_pow_mod_does_not_collide_with_addmod_mulmod_under_flag_off();
+#endif
+#ifdef STURM_TEST_MODULAR_POW_ON
+    test_pow_mod_basic_match_under_flag_on();
+    test_pow_mod_distinct_widths_resolve_under_flag_on();
+    test_pow_mod_outer_mul_does_not_match_under_flag_on();
+    test_pow_mod_non_pow_call_does_not_match_under_flag_on();
+    test_pow_mod_coexists_with_addmod_mulmod_under_flag_on();
+    test_pow_mod_non_qint_operands_do_not_match_under_flag_on();
+    test_pow_mod_enclosing_block_tracks_inner_scope_under_flag_on();
+#endif
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
 }
