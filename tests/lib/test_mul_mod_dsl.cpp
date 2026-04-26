@@ -1,4 +1,5 @@
-// test_mul_mod_dsl.cpp -- sturm-kubb.{1,2} P2.{1,2} mul-mod-dsl beats 2.1, 2.2.
+// test_mul_mod_dsl.cpp -- sturm-kubb.{1,2,3} P2.{1,2,3} mul-mod-dsl
+// beats 2.1, 2.2, 2.3.
 //
 // Plan §4.3 beat 2.1: `lib_mul_mod_dsl(... n=0 ...)` short-circuits and
 // leaves r (and a, b, n) unchanged.  This mirrors add-mod beat 1.1
@@ -8,8 +9,14 @@
 // the body composes `lib_add_mod_dsl` in a doubling-and-add loop using a
 // `shifted` ancilla register chain that starts as `a` and at each step
 // holds `(a · 2^i) mod n`.  Beat 2.2 wires up the smallest body that
-// gets one classical input correct; beats 2.3–2.7 broaden coverage,
-// adjoint round-trip, ancilla budget, and pool live-count.
+// gets one classical input correct.
+// Plan §4.3 beat 2.3 (sturm-kubb.3): exhaustive W=2 sweep over all
+// (a, b, n) with PRD §5 precondition `a, b < n` and `n >= 1`
+// (14 cases total: n=1 → 1, n=2 → 4, n=3 → 9).  Mirrors add-mod
+// beat 1.3 (sturm-yh3d.3).  Each case asserts r == (a*b) mod n,
+// inputs unchanged, and pool live-count returns to its pre-call
+// value.  Beats 2.4–2.7 broaden coverage (W=3 random, adjoint
+// round-trip, ancilla budget, pool live-count).
 //
 // Test harness layout mirrors test_add_mod_dsl.cpp (beat 1.{1,2,3,4}):
 //   - SimCtx wraps OrkanBridge + sturm_backend_context_t with a 17-qubit
@@ -214,6 +221,23 @@ int main() {
     run_classical_case(/*a=*/2u, /*b=*/2u, /*n=*/3u);
     std::printf("  PASS: (2 * 2) mod 3 == 1\n");
 
-    std::printf("All sturm-kubb.{1,2} tests passed.\n");
+    std::printf("sturm-kubb.3 P2.3 mul-mod-dsl: W=2 exhaustive sweep "
+                "(all a, b in [0, n) for n in [1, 4)):\n");
+    std::size_t cases_run = 0u;
+    for (uint32_t n_val = 1u; n_val < (1u << W); ++n_val) {
+        for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
+            for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
+                run_classical_case(a_val, b_val, n_val);
+                ++cases_run;
+            }
+        }
+    }
+    // n=1 → 1 case; n=2 → 4 cases; n=3 → 9 cases; total = 14 cases.
+    assert(cases_run == 14u && "W=2 sweep covered every (a, b, n) "
+                                "with a, b < n and n >= 1");
+    std::printf("  PASS: %zu W=2 cases covering every (a, b, n) "
+                "with a, b < n, n >= 1\n", cases_run);
+
+    std::printf("All sturm-kubb.{1,2,3} tests passed.\n");
     return 0;
 }

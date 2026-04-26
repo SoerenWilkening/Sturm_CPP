@@ -182,6 +182,13 @@ set_tests_properties(test_add_mod_dsl_pool_drain
     PROPERTIES LABELS "lib;modular-arith")
 
 # sturm-r5pn P2 -- lib_mul_mod_dsl scaffold (will be filled by Phase 2 beats).
+# Beat 2.3 (sturm-kubb.3): W=2 exhaustive sweep iterates 14 multiplications,
+# each on a 25-qubit state vector (2^25 = 33M amplitudes).  Single
+# classical case profiled at ~125 s on the dev box, so 15 cases
+# (3 n=0 + 1 single + 14 sweep) × ~125 s ≈ 30 min — past ctest's
+# default 1500 s and our prior 1800 s --timeout.  Set TIMEOUT to
+# 3600 s (1 h) to leave headroom for slower CI runners and the
+# beat-2.4 W=3 random sweep that lands next.
 add_executable(test_mul_mod_dsl
     test_mul_mod_dsl.cpp
     ${STURM_LIB_BACKEND_SOURCES}
@@ -197,7 +204,8 @@ target_compile_definitions(test_mul_mod_dsl PRIVATE
 target_link_libraries(test_mul_mod_dsl PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl COMMAND test_mul_mod_dsl)
 set_tests_properties(test_mul_mod_dsl
-    PROPERTIES LABELS "lib;modular-arith")
+    PROPERTIES LABELS "lib;modular-arith"
+               TIMEOUT 3600)
 
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
