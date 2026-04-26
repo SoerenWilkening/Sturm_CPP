@@ -22,6 +22,7 @@
 #include "sturm/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include <cstddef>
+#include <cstdint>
 #include <cassert>
 
 namespace sturm {
@@ -49,6 +50,17 @@ inline void make_proxy_quad(const qint_t<W>& a, const qint_t<W>& b,
         bb[i] = BitProxy(b_mut, i);
         nb[i] = BitProxy(n_mut, i);
     }
+}
+
+// Classical (base^exp) mod n via repeated unsigned multiplication.  Mirrors
+// the convention in lib_pow_mod_dsl (0^0 == 1, n == 0 yields 0) so the
+// pow_mod wrapper can stamp .value in one ternary.
+inline int64_t pow_mod_classical(int64_t base, int64_t exp, int64_t n) {
+    if (n == 0) return 0;
+    uint64_t acc = 1u;
+    for (int64_t k = 0; k < exp; ++k)
+        acc = (acc * static_cast<uint64_t>(base)) % static_cast<uint64_t>(n);
+    return static_cast<int64_t>(acc);
 }
 
 }  // namespace detail_qint_modular
@@ -80,10 +92,20 @@ qint_t<W> mul_mod(const qint_t<W>& a, const qint_t<W>& b, const qint_t<W>& n) {
 }
 
 template <std::size_t W>
-qint_t<W> pow_mod(const qint_t<W>& /*base*/, const qint_t<W>& /*exp*/, const qint_t<W>& /*n*/) {
+qint_t<W> pow_mod(const qint_t<W>& base, const qint_t<W>& exp,
+                  const qint_t<W>& n) {
     if constexpr (W == 0u) return qint_t<W>{};
-    assert(false && "pow_mod: not implemented (Phase 4)");
-    return qint_t<W>{};
+    qint_t<W> r, base_mut, exp_mut, n_mut;
+    BitProxy bb[W], eb[W], nb[W], rb[W];
+    // pow_mod's lib-level signature is (base, exp, n, width, r); reuse
+    // make_proxy_quad's a/b/n/r slots by mapping base→a, exp→b, n→n, r→r.
+    detail_qint_modular::make_proxy_quad<W>(base, exp, n, r,
+                                            base_mut, exp_mut, n_mut,
+                                            bb, eb, nb, rb);
+    lib_pow_mod_dsl<BitProxy>(bb, eb, nb, W, rb);
+    r.value = detail_qint_modular::pow_mod_classical(base.value, exp.value,
+                                                     n.value);
+    return r;
 }
 
 } // namespace sturm
