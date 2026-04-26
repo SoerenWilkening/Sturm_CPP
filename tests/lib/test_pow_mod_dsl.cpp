@@ -1,5 +1,5 @@
-// test_pow_mod_dsl.cpp -- sturm-a5te.{1,2,3,4} P3.{1,2,3,4} pow-mod-dsl
-// beats 3.1, 3.2, 3.3, 3.4.
+// test_pow_mod_dsl.cpp -- sturm-a5te.{1,2,3,4,5} P3.{1,2,3,4,5} pow-mod-dsl
+// beats 3.1, 3.2, 3.3, 3.4, 3.5.
 //
 // Beat 3.1 (plan §5.3): `lib_pow_mod_dsl(... n=0 ...)` short-circuits and
 // leaves r (and base, exp, n) unchanged.  Mirrors PRD §8 #3 and the shape
@@ -41,6 +41,20 @@
 //   n=3 → 3×4 = 12
 //   ────────────
 //                24 cases.
+//
+// Beat 3.5 (plan §5.3, sturm-a5te.5): W=3 random sweep — 50 random cases
+// vs. classical reference, fixed `std::mt19937(42)` seed.  Mirrors
+// mul-mod beat 2.4 (sturm-kubb.4).  Each case samples
+// `n ∈ [1, 2^W)`, then `base ∈ [0, n)` and `exp ∈ [0, 2^W)` (PRD §5
+// precondition: `base ∈ [0, n)`; exp may take any W-bit value because
+// the chain-style algorithm only reads exp bit-by-bit).  Driven by
+// `run_pow_classical_case_w3` (the harness already in place from beat
+// 3.3) which uses APPEND-mode capture + classical replay.  At W=3 the
+// chain-style pow_mod peaks far above orkan's 30-qubit ceiling so
+// simulator-driven verification is infeasible; classical replay is
+// O(gates) per case and runs in milliseconds.  Each case asserts
+// r == (base^exp) mod n, base/exp/n unchanged, every ancilla bit
+// cleaned to 0, and pool live-count returns to its pre-call value.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/pow_mod_dsl.hpp"
@@ -59,6 +73,7 @@
 #include <complex>
 #include <cstdio>
 #include <cstdint>
+#include <random>
 #include <vector>
 
 static constexpr double kTol = 1e-9;
@@ -314,9 +329,10 @@ static constexpr std::size_t W3 = 3u;
 
 static void run_pow_classical_case_w3(uint32_t base_val, uint32_t exp_val,
                                       uint32_t n_val) {
+    assert(n_val >= 1u && "test precondition: n >= 1 (n==0 is the no-op path)");
     assert(n_val < (1u << W3) && "test precondition: n fits in W3 bits");
     assert(base_val < n_val && "test precondition: base < n (PRD §5)");
-    assert(exp_val < n_val && "test precondition: exp < n (PRD §5)");
+    assert(exp_val < (1u << W3) && "test precondition: exp fits in W3 bits");
 
     sturm::QubitPool::instance().reset_for_testing();
 
@@ -597,6 +613,32 @@ int main() {
                 "with base in [0, n), exp in [0, 2^W), n in [1, 2^W)\n",
                 cases_run);
 
-    std::printf("All sturm-a5te.{1,2,3,4} tests passed.\n");
+    // ── Beat 3.5 — W=3 random sweep (50 cases, fixed seed=42) ────────────
+    // No orkan simulator: APPEND-mode capture + classical bit-vector
+    // replay (see comments above run_pow_classical_case_w3).  Plan §5.3
+    // row 3.5 wording.  Seed matches add-mod beat 1.4 (sturm-yh3d.4) and
+    // mul-mod beat 2.4 (sturm-kubb.4) for reproducibility across the
+    // modular family.  PRD §5 precondition: `base ∈ [0, n)`; the
+    // exponent iterates the full register range — the algorithm only
+    // inspects exp bit-by-bit.
+    constexpr uint32_t    kW3Seed  = 42u;
+    constexpr std::size_t kW3Cases = 50u;
+    std::printf("sturm-a5te.5 P3.5 pow-mod-dsl: W=3 random sweep "
+                "(%zu cases, seed=%u, n in [1, 8), classical trace):\n",
+                kW3Cases, kW3Seed);
+    std::mt19937 rng(kW3Seed);
+    std::uniform_int_distribution<uint32_t> n_dist(1u, (1u << W3) - 1u);
+    std::uniform_int_distribution<uint32_t> exp_dist(0u, (1u << W3) - 1u);
+    for (std::size_t i = 0; i < kW3Cases; ++i) {
+        uint32_t n_val = n_dist(rng);
+        std::uniform_int_distribution<uint32_t> base_dist(0u, n_val - 1u);
+        uint32_t base_val = base_dist(rng);
+        uint32_t exp_val  = exp_dist(rng);
+        run_pow_classical_case_w3(base_val, exp_val, n_val);
+    }
+    std::printf("  PASS: %zu W=3 random cases (base^exp) mod n matches "
+                "classical reference (trace mode)\n", kW3Cases);
+
+    std::printf("All sturm-a5te.{1,2,3,4,5} tests passed.\n");
     return 0;
 }
