@@ -1,0 +1,38 @@
+// sturm-r5pn.4 (Phase 0.4) input — identity snapshot for the upcoming
+// `(a + b) % n` modular-add rewrite.
+//
+// While the modular-op matcher / emitter SHELL ships empty (no
+// patterns registered, no emission produced), this fixture must
+// round-trip through `sturm-transpile` byte-identical to the input
+// (modulo the AUTO-GENERATED header the emitter prepends). When
+// Phase 5 / beat 5.1 (sturm-r5pn epic) wires the
+// `register_modular_op_matcher` body, this fixture's `.expected.cpp`
+// is overwritten with the post-rewrite golden — at which point the
+// same snapshot test becomes the Phase 5.1 regression. The hermetic
+// `qint_t<W>` stub below mirrors the Phase B `add_assign_const.cpp`
+// fixture so the matcher can resolve the binary-operator AST shape
+// without an `#include <sturm/sturm.hpp>` (the transpiler's
+// FixedCompilationDatabase carries no include paths).
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qint_t& operator=(const qint_t&) { return *this; }
+};
+template <int W>
+inline qint_t<W> operator+(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+template <int W>
+inline qint_t<W> operator%(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+} // namespace sturm
+using qint = sturm::qint_t<2>;
+
+void demo(qint a, qint b, qint n) {
+    qint r = (a + b) % n;
+    (void)r;
+}

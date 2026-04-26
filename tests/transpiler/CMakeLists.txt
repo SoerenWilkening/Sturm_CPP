@@ -4332,3 +4332,75 @@ add_test(
 set_tests_properties(snapshot_compound_nested_mul_and PROPERTIES
     LABELS "transpiler;lossy-reversibility"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-r5pn.4 (Phase 0.4): identity snapshots for the modular-arith ──────
+# matcher / emitter SHELL.
+#
+# Plan §2.1 / §2.2: the matcher/emitter SHELL TUs
+# (`transpiler/src/matcher_modular_op.{hpp,cpp}` and
+# `modular_rewrite_emitter.{hpp,cpp}`) ship with NO patterns registered.
+# Each fixture below carries one of the three pattern families Phase 5
+# will recognize — `(a + b) % n`, `(a * b) % n`, `pow(a, x) % n` — and
+# pins the round-trip contract that the SHELL leaves the input
+# byte-identical to the output (modulo the AUTO-GENERATED header).
+#
+# When Phase 5 / beats 5.1, 5.2, 5.4, 5.5 land, each
+# `.expected.cpp` is overwritten with the post-rewrite golden, at
+# which point the same snapshot tests become the Phase 5 regressions
+# without any CMake change here.
+#
+# Two pow fixtures: `modular_pow_op_default` is the
+# `STURM_MODULAR_POW=OFF` (default) configuration; `modular_pow_op_flag`
+# is the `STURM_MODULAR_POW=ON` configuration. Under the SHELL both
+# fixtures produce identity output (matcher fires no patterns
+# regardless of flag value), so both snapshots pass under either
+# configure. Phase 5 / beat 5.5 will diverge the `.expected.cpp` for
+# the flag-on fixture so a CI matrix run pins the per-mode behavior
+# split.
+add_test(
+    NAME snapshot_modular_add_op
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_add_op.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_add_op.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_add_op
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_add_op PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_modular_mul_op
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_mul_op.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_mul_op.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_mul_op
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_mul_op PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_modular_pow_op_default
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_default.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_default.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_default
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_pow_op_default PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_modular_pow_op_flag
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_flag.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_op_flag.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_flag
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_pow_op_flag PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

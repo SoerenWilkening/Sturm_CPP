@@ -149,6 +149,17 @@ add_executable(sturm-transpile
     # LO-2a hits and produces the inner-first forward + outer-first
     # cleanup pair via `emit_nested_lossy`.
     src/lossy_nested_rewrite.cpp
+    # sturm-r5pn.4 (Phase 0.4): modular-arith matcher + emitter SHELL.
+    # Both TUs land empty (matcher registers no patterns; emitter
+    # returns empty `ModularEmission`s) so that Phase 5
+    # (P5 transpiler-modular-rewrite) can swap in the per-pattern
+    # bodies without touching the source-list ordering or any
+    # consumer-side wiring. The identity snapshot fixtures
+    # `tests/transpiler/fixtures/modular_{add,mul}_op.{cpp,expected.cpp}`
+    # plus the pow flag-default / flag-on pair pin the round-trip
+    # contract while the bodies are empty. See plan §2.1 / §7.
+    src/matcher_modular_op.cpp
+    src/modular_rewrite_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -418,6 +429,14 @@ add_library(sturm-transpile-plugin SHARED
     # LO-2a hits and produces the inner-first forward + outer-first
     # cleanup pair via `emit_nested_lossy`.
     src/lossy_nested_rewrite.cpp
+    # sturm-r5pn.4 (Phase 0.4): mirror the main binary — the plugin
+    # build needs the modular-arith matcher + emitter SHELL TUs linked
+    # in so that Phase 5's per-pattern bodies resolve identically when
+    # the plugin-path consumer constructs its `register_modular_op_
+    # matcher` callback. SHELL = empty bodies; the symbol surface is
+    # the contract under test.
+    src/matcher_modular_op.cpp
+    src/modular_rewrite_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
