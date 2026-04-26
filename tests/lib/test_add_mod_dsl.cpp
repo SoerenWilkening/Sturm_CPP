@@ -1,20 +1,26 @@
-// test_add_mod_dsl.cpp -- sturm-yh3d.1 P1.1 add-mod-dsl beat 1.1.
+// test_add_mod_dsl.cpp -- sturm-yh3d.1 beat 1.1 + sturm-yh3d.2 beat 1.2.
 //
 // Plan §3.3 beat 1.1: assert that `lib_add_mod_dsl` short-circuits when the
-// width parameter `n` is 0 and leaves the `r` register unchanged. This pins
-// the no-op contract before the full algorithm lands in beats 1.2…1.7.
+// width parameter `n` is 0 and leaves the `r` register unchanged.
 //
-// Smallest impl that passes: the existing stub returns silently when n==0
-// (see include/sturm/lib/add_mod_dsl.hpp). This test exercises that path:
+// Plan §3.3 beat 1.2: assert that the full algorithm computes
+// (a + b) mod n correctly for the single classical case W=2, (a=1, b=1, n=3).
+// The expected result is r = 2.  The implementation must (per plan §3.1):
+//   1. allocate a (W+1)-bit sum register `s`,
+//   2. copy a into s_low via per-bit XOR,
+//   3. lib_add_dsl(b, s_low, s_high, W) so s = a+b,
+//   4. compute a "needs subtract" flag from a (W+1)-bit comparison
+//      against n_extended,
+//   5. controlled subtract of n via the gate-reverse of lib_add_dsl,
+//   6. copy s_low into r via per-bit XOR,
+//   7. paired uncompute of the flag and the controlled subtract,
+//   8. uncompute s LIFO so the pool returns to its pre-call state.
 //
-//   1. Set the `r` register to a known non-zero classical value.
-//   2. Set `a`, `b`, `n` registers to known classical values.
-//   3. Call `lib_add_mod_dsl<BitProxy>(a, b, n_bits, /*n=*/0, r)`.
-//   4. Assert all four registers are byte-for-byte unchanged afterwards.
-//
-// No gate emission should occur on the n==0 path; if any future change
-// accidentally emits gates here this test will fail because the simulator
-// state will be perturbed.
+// In addition to checking r, the test asserts that a, b, n are unchanged
+// (reversibility of inputs) and that QubitPool::live_count() returns to its
+// pre-call value (no leaked ancillas).  Beats 1.3..1.7 expand the coverage
+// (exhaustive sweep, W=3 random, adjoint round-trip, ancilla counter, pool
+// live-count).
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/add_mod_dsl.hpp"
@@ -34,7 +40,12 @@
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
-static constexpr uint32_t n_orkan = 4u * W;  // a, b, n, r each W qubits.
+// Beat 1.2's algorithm needs a (W+1)-bit s register, an n_pad qubit, an
+// lt_flag, a carry_anc, plus the transient ancillas inside the lib_add_*
+// calls and their controlled-Toffoli folds.  Sizing the simulator at the
+// hard 17-qubit cap (kMaxQubits) gives us the headroom every branch needs
+// without forcing the budget to be re-tuned per beat.
+static constexpr uint32_t n_orkan = 17u;
 
 struct SimCtx {
     sturm::OrkanBridge bridge;
@@ -118,17 +129,60 @@ static void run_n_zero_case(uint32_t a_val, uint32_t b_val,
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// Beat 1.2: full algorithm, single classical case (a, b, n=3) -> r = (a+b) % n.
+//
+// Asserts:
+//   - r register holds (a + b) mod n,
+//   - a, b, n registers unchanged,
+//   - QubitPool::in_use() returns to its pre-call value (no leaked ancillas).
+static void run_classical_case(uint32_t a_val, uint32_t b_val,
+                               uint32_t n_val) {
+    assert(a_val < n_val && "test precondition: a < n");
+    assert(b_val < n_val && "test precondition: b < n");
+    sturm::QubitPool::instance().reset_for_testing();
+    const uint32_t n_reg = 4u * W;
+    int reserved[n_reg];
+    for (uint32_t k = 0; k < n_reg; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    SimCtx sc{n_orkan, 64u};
+    Reg a = make_reg(0,         a_val, sc.sv());
+    Reg b = make_reg(W,         b_val, sc.sv());
+    Reg n = make_reg(2 * W,     n_val, sc.sv());
+    Reg r = make_reg(3 * W,     0u,    sc.sv());
+
+    sturm::lib_add_mod_dsl<sturm::BitProxy>(a.bits.data(), b.bits.data(),
+                                            n.bits.data(), W,
+                                            r.bits.data());
+
+    const uint32_t expect_r = (a_val + b_val) % n_val;
+    uint32_t a_sv = read_reg(sc.sv(), a.qi.data(), W, n_orkan);
+    uint32_t b_sv = read_reg(sc.sv(), b.qi.data(), W, n_orkan);
+    uint32_t n_sv = read_reg(sc.sv(), n.qi.data(), W, n_orkan);
+    uint32_t r_sv = read_reg(sc.sv(), r.qi.data(), W, n_orkan);
+    assert(a_sv == a_val && "forward: a register unchanged");
+    assert(b_sv == b_val && "forward: b register unchanged");
+    assert(n_sv == n_val && "forward: n register unchanged");
+    assert(r_sv == expect_r && "forward: r == (a+b) mod n");
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "forward: pool live-count returns to pre-call value");
+
+    for (uint32_t k = 0; k < n_reg; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+}
+
 int main() {
     std::printf("sturm-yh3d.1 P1.1 add-mod-dsl: n==0 no-op tests:\n");
-    // r=|0> case (typical fresh ancilla).
     run_n_zero_case(/*a=*/1u, /*b=*/2u, /*n=*/3u, /*r=*/0u);
     std::puts("  PASS: n==0 with r=|0> leaves r at 0");
-    // r=non-zero case (the load-bearing assertion: stub must not
-    // accidentally clobber r when n==0).
     run_n_zero_case(/*a=*/1u, /*b=*/2u, /*n=*/3u, /*r=*/3u);
     std::puts("  PASS: n==0 with r=3 leaves r at 3");
     run_n_zero_case(/*a=*/0u, /*b=*/0u, /*n=*/0u, /*r=*/2u);
     std::puts("  PASS: n==0 with all-zero inputs and r=2 leaves r at 2");
-    std::printf("All sturm-yh3d.1 tests passed.\n");
+
+    std::printf("sturm-yh3d.2 P1.2 add-mod-dsl: single classical case:\n");
+    run_classical_case(/*a=*/1u, /*b=*/1u, /*n=*/3u);
+    std::puts("  PASS: (1 + 1) mod 3 == 2");
+    std::printf("All sturm-yh3d.1 + sturm-yh3d.2 tests passed.\n");
     return 0;
 }
