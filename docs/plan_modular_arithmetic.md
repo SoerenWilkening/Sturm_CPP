@@ -263,7 +263,7 @@ namespace into a sibling helper header.
 | 2.1 | `n == 0` no-op |
 | 2.2 | `W=2` single classical case |
 | 2.3 | Exhaustive `W=2` sweep |
-| 2.4 | `W=3` random sweep (50 cases) |
+| 2.4 | `W=3` random sweep (50 cases), traced against a classical reference (no orkan state-vector simulation) — orkan stub state grows ~2^(qubits), and chain-style mul_mod peaks at ~35 qubits at W=3, so simulator-driven sweeps are infeasible. Drive the algorithm in trace mode: pre-set all input bits to definite |0>/|1>, follow each gate as a classical bit-flip program, assert `r == (a*b) mod n`, register reversibility, no leaked ancillas. |
 | 2.5 | Adjoint round-trip |
 | 2.6 | Peak ancilla counter ≤ `2W + 5` |
 | 2.7 | Pool live-count returns to pre-call value |
