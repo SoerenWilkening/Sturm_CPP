@@ -1,23 +1,29 @@
-// test_mul_mod_dsl.cpp -- sturm-kubb.1 P2.1 mul-mod-dsl beat 2.1.
+// test_mul_mod_dsl.cpp -- sturm-kubb.{1,2} P2.{1,2} mul-mod-dsl beats 2.1, 2.2.
 //
 // Plan §4.3 beat 2.1: `lib_mul_mod_dsl(... n=0 ...)` short-circuits and
 // leaves r (and a, b, n) unchanged.  This mirrors add-mod beat 1.1
-// (sturm-yh3d.1) — the stub forward header
-// `include/sturm/lib/mul_mod_dsl.hpp` already silences itself when n==0
-// and asserts otherwise; this test exercises the n==0 no-op path so the
-// scaffold is verifiably wired.  Subsequent beats (2.2…2.7) will fill
-// in the full algorithm and broaden coverage; beat 2.1's job is to
-// guarantee that the n==0 short-circuit lands callers back at the
-// pre-call register state with no leaked ancillas.
+// (sturm-yh3d.1).
+// Plan §4.3 beat 2.2: full shift-and-add algorithm produces
+// `r = (a * b) mod n` for the single classical W=2 case.  Per plan §4.1
+// the body composes `lib_add_mod_dsl` in a doubling-and-add loop using a
+// `shifted` ancilla register chain that starts as `a` and at each step
+// holds `(a · 2^i) mod n`.  Beat 2.2 wires up the smallest body that
+// gets one classical input correct; beats 2.3–2.7 broaden coverage,
+// adjoint round-trip, ancilla budget, and pool live-count.
 //
-// Test harness layout mirrors test_add_mod_dsl.cpp (beat 1.1):
+// Test harness layout mirrors test_add_mod_dsl.cpp (beat 1.{1,2,3,4}):
 //   - SimCtx wraps OrkanBridge + sturm_backend_context_t with a 17-qubit
-//     state vector (kMaxQubits cap) — well above the four W=2 input
-//     registers (4*W = 8) the n==0 path needs.
+//     state vector (kMaxQubits cap) for the n==0 no-op tests; beat 2.2
+//     uses the larger orkan stub directly (orkan::allocate(bridge.state,
+//     n_orkan_w2_full)) because the W=2 chain algorithm peaks above 17
+//     qubits — same workaround as test_add_mod_dsl.cpp's W=3 sweep.
 //   - read_reg decodes a register's classical value out of the simulator
 //     state vector by scanning for the unique non-zero amplitude.
 //   - run_n_zero_case asserts a, b, n, r are all unchanged after the
 //     n==0 call.
+//   - run_classical_case asserts r == (a*b) mod n, that a, b, n are
+//     unchanged (reversibility of inputs), and that QubitPool::in_use()
+//     returns to its pre-call value (no leaked ancillas).
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/mul_mod_dsl.hpp"
@@ -133,6 +139,68 @@ static void run_n_zero_case(uint32_t a_val, uint32_t b_val,
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// ── Beat 2.2 — W=2 single classical case harness ─────────────────────────
+//
+// The chain-style shift-and-add algorithm (plan §4.1) keeps
+//   shifted_chain[0..W-1]  (W·W qubits)  – (a · 2^i) mod n cache
+//   r_chain[1..W]          (W·W qubits)  – partial sums
+// alive across the loop, so peak live qubits exceed the kMaxQubits=17
+// soft cap.  Bypass with orkan::allocate (same trick test_add_mod_dsl.cpp
+// uses for its W=3 random sweep).  25 qubits stays within the orkan
+// stub's 30-qubit ceiling.
+static constexpr uint32_t n_orkan_w2_full = 25u;
+
+// Beat 2.2: full algorithm, single classical case (a, b, n=3) -> r = (a*b) % n.
+//
+// Asserts:
+//   - r register holds (a * b) mod n,
+//   - a, b, n registers unchanged,
+//   - QubitPool::in_use() returns to its pre-call value (no leaked ancillas).
+static void run_classical_case(uint32_t a_val, uint32_t b_val,
+                               uint32_t n_val) {
+    assert(a_val < n_val && "test precondition: a < n");
+    assert(b_val < n_val && "test precondition: b < n");
+    sturm::QubitPool::instance().reset_for_testing();
+    const uint32_t n_reg = 4u * W;
+    int reserved[n_reg];
+    for (uint32_t k = 0; k < n_reg; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    sturm::OrkanBridge bridge;
+    orkan::allocate(bridge.state(), n_orkan_w2_full);  // bypass kMaxQubits cap
+    sturm_backend_context_t* ctx =
+        sturm_backend_create(STURM_MODE_SIMULATE, 64u);
+    assert(ctx);
+    ctx->orkan_state_ptr = &bridge;
+    sturm_backend_context_t* prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+    orkan::state_t& sv = bridge.state();
+    Reg a = make_reg(0,         a_val, sv);
+    Reg b = make_reg(W,         b_val, sv);
+    Reg n = make_reg(2 * W,     n_val, sv);
+    Reg r = make_reg(3 * W,     0u,    sv);
+
+    sturm::lib_mul_mod_dsl<sturm::BitProxy>(a.bits.data(), b.bits.data(),
+                                            n.bits.data(), W,
+                                            r.bits.data());
+
+    const uint32_t expect_r = (a_val * b_val) % n_val;
+    uint32_t a_sv = read_reg(sv, a.qi.data(), W, n_orkan_w2_full);
+    uint32_t b_sv = read_reg(sv, b.qi.data(), W, n_orkan_w2_full);
+    uint32_t n_sv = read_reg(sv, n.qi.data(), W, n_orkan_w2_full);
+    uint32_t r_sv = read_reg(sv, r.qi.data(), W, n_orkan_w2_full);
+    assert(a_sv == a_val && "forward: a register unchanged");
+    assert(b_sv == b_val && "forward: b register unchanged");
+    assert(n_sv == n_val && "forward: n register unchanged");
+    assert(r_sv == expect_r && "forward: r == (a*b) mod n");
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "forward: pool live-count returns to pre-call value");
+    sturm_set_thread_context(prev);
+    sturm_backend_destroy(ctx);
+    for (uint32_t k = 0; k < n_reg; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+}
+
 int main() {
     std::printf("sturm-kubb.1 P2.1 mul-mod-dsl: n==0 no-op tests:\n");
     run_n_zero_case(/*a=*/1u, /*b=*/2u, /*n=*/3u, /*r=*/0u);
@@ -141,6 +209,11 @@ int main() {
     std::puts("  PASS: n==0 with r=3 leaves r at 3");
     run_n_zero_case(/*a=*/0u, /*b=*/0u, /*n=*/0u, /*r=*/2u);
     std::puts("  PASS: n==0 with all-zero inputs and r=2 leaves r at 2");
-    std::printf("All sturm-kubb.1 tests passed.\n");
+
+    std::printf("sturm-kubb.2 P2.2 mul-mod-dsl: single classical case:\n");
+    run_classical_case(/*a=*/2u, /*b=*/2u, /*n=*/3u);
+    std::printf("  PASS: (2 * 2) mod 3 == 1\n");
+
+    std::printf("All sturm-kubb.{1,2} tests passed.\n");
     return 0;
 }
