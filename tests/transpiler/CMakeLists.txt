@@ -4381,6 +4381,26 @@ set_tests_properties(snapshot_modular_mul_op PROPERTIES
     LABELS "transpiler;modular-arith"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
 
+# sturm-qzab.3 (P5 beat 5.3): compound peephole-collapsed AddMod fixture.
+# Pins the post-rewrite golden for the two-stmt form
+# `qint r = a + b; r %= n;` — the matcher walks the next sibling of the
+# VarDecl, recognises the `r %= n;` op-call, and the consumer drain
+# extends the QReplacement range to absorb both stmts into a single
+# `::sturm::add_mod(a, b, n)` declaration. The pre-pass in the consumer
+# drops the LO-2a `LossyOpHit` and the PC-5 `MOD_ASSIGN_QINT` op for the
+# same `%=` call so neither path double-rewrites the absorbed range.
+add_test(
+    NAME snapshot_modular_compound_collapse
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_compound_collapse.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_compound_collapse.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_compound_collapse
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_compound_collapse PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
 add_test(
     NAME snapshot_modular_pow_op_default
     COMMAND "${CMAKE_COMMAND}"

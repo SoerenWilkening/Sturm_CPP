@@ -1,6 +1,6 @@
-// test_matcher_modular_op.cpp — sturm-qzab.1 / sturm-qzab.2
-// (P5.1 beat 5.1 + P5.2 beat 5.2) unit tests for the modular-arithmetic
-// AST matcher.
+// test_matcher_modular_op.cpp — sturm-qzab.1 / sturm-qzab.2 / sturm-qzab.3
+// (P5.1 beat 5.1 + P5.2 beat 5.2 + P5.3 beat 5.3) unit tests for the
+// modular-arithmetic AST matcher.
 //
 // Beat 5.1 covers the AddMod arm: the matcher must recognize the AST
 // shape `qint_t<W> r = (a + b) % n;` (a `VarDecl` whose initializer is
@@ -13,6 +13,19 @@
 // instead of `operator+`. The matcher emits `ModularOpKind::MulMod` for
 // these hits; `AddMod` patterns must remain unaffected (no
 // double-firing, no false positives between the two arms).
+//
+// Beat 5.3 covers the compound peephole-collapsed form: the user writes
+// the addition and the modular reduction as TWO adjacent statements
+// (`qint r = a + b; r %= n;`). After `matcher_peephole_reorder` has had
+// its chance, the modular-op matcher must still recognise the pair and
+// surface a single `ModularOpHit` with `kind=AddMod` plus the `%=` call
+// pointer in the new `mod_assign_call` slot. The hit's `result_var`
+// points at the `r` VarDecl; `mod_assign_call` lets the consumer
+// (a) extend the rewrite range to absorb both stmts and (b) suppress
+// the LO-2a `LossyOpHit` the lossy matcher would otherwise emit for the
+// `%=` call. Falls back to the wide path (no collapse hit emitted) when
+// any statement intervenes between the VarDecl and the `%=` — including
+// statements that read `r`.
 //
 // Negative coverage in this file:
 //   - `qint_t<W> r = a % n;` (bare modulus, no inner +/*) does NOT match.
@@ -52,6 +65,8 @@ public:
     qint_t() {}
     qint_t(const qint_t&) {}
     qint_t& operator=(const qint_t&) { return *this; }
+    qint_t& operator+=(const qint_t&) { return *this; }
+    qint_t& operator%=(const qint_t&) { return *this; }
 };
 template <int W>
 inline qint_t<W> operator+(const qint_t<W>&, const qint_t<W>&) {
@@ -345,6 +360,170 @@ void test_enclosing_block_tracks_inner_scope() {
     CHECK(hits[0].enclosing_block != nullptr);
 }
 
+// ── sturm-qzab.3 (P5 beat 5.3): compound peephole-collapsed AddMod ──────────
+//
+// `qint r = a + b; r %= n;` (two adjacent stmts) must surface ONE
+// ModularOpHit with kind=AddMod and `mod_assign_call` populated. The
+// `result_var` slot points at the `r` VarDecl; the `inner_op_expr`
+// slot points at the `+` op-call (so the existing AST anchors stay
+// usable for diagnostics); the new `mod_assign_call` slot points at
+// the `%=` CXXOperatorCallExpr (so the consumer drain can extend the
+// QReplacement range and suppress the LO-2a hit on the same call).
+void test_compound_collapse_basic_match() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint n) {\n"
+        "    qint r = a + b;\n"
+        "    r %= n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::AddMod);
+    CHECK_EQ_STR(hits[0].result_name, std::string("r"));
+    CHECK_EQ_STR(hits[0].a_name, std::string("a"));
+    CHECK_EQ_STR(hits[0].b_name, std::string("b"));
+    CHECK_EQ_STR(hits[0].n_name, std::string("n"));
+    CHECK(hits[0].result_width == 2);
+    CHECK(hits[0].inner_op_expr != nullptr);
+    CHECK(hits[0].result_var != nullptr);
+    CHECK(hits[0].enclosing_block != nullptr);
+    // The compound-collapse arm leaves `mod_expr` null (no outer
+    // `%` op-call exists in this AST shape) and populates the new
+    // `mod_assign_call` slot with the `%=` CXXOperatorCallExpr.
+    CHECK(hits[0].mod_expr == nullptr);
+    CHECK(hits[0].mod_assign_call != nullptr);
+}
+
+void test_compound_collapse_distinct_widths_resolve() {
+    auto hits = run_matcher(
+        "using qint5 = sturm::qint_t<5>;\n"
+        "void demo(qint5 a, qint5 b, qint5 n) {\n"
+        "    qint5 r = a + b;\n"
+        "    r %= n;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::AddMod);
+    CHECK(hits[0].result_width == 5);
+    CHECK(hits[0].mod_assign_call != nullptr);
+}
+
+// `qint r = a + b;` alone (no `%=` follow-up) must NOT collapse — the
+// matcher's compound-collapse arm requires the adjacent `r %= n;` stmt.
+// The decl on its own falls through to no rewrite (the user explicitly
+// asked for a non-modular addition).
+void test_compound_collapse_no_mod_assign_does_not_match() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b) {\n"
+        "    qint r = a + b;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+// Adjacency requirement: any intervening stmt (even a no-op like
+// `(void)r;`) breaks the collapse — the matcher walks the IMMEDIATE
+// next sibling only and bails when that sibling is not the `r %= n;`
+// op-call. With the collapse arm declining, the wide path takes over:
+// the user's `qint r = a + b;` decl lands verbatim and the LO-2a `%=`
+// matcher emits the standard divide-kernel desugar for the `%=` stmt.
+// (This test only asserts that the COLLAPSE matcher emits no hit; the
+// LO-2a / wide-path behaviour is exercised by its own snapshot
+// fixtures.)
+void test_compound_collapse_intervening_stmt_does_not_collapse() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint n) {\n"
+        "    qint r = a + b;\n"
+        "    (void)r;\n"
+        "    r %= n;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+// `r += c;` between the decl and the `%=` is the canonical "intervening
+// read of r" case the plan §7.2 #2 wide-path fallback discussion calls
+// out — `r` is read on the `+=`'s LHS so collapsing `add_mod(r, n)`
+// from the original `(a+b) % n` would be semantically wrong (the user
+// wanted `((a+b) + c) % n`, not `(a+b) % n` followed by an unrelated
+// `r += c`). Matcher must bail.
+void test_compound_collapse_intervening_read_of_r_does_not_collapse() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint c, qint n) {\n"
+        "    qint r = a + b;\n"
+        "    r += c;\n"
+        "    r %= n;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+// `r %= n;` whose LHS is NOT the just-declared VarDecl must not
+// collapse — the matcher's per-pair guard checks decl_loc equality so
+// the `r %= n;` referring to a SHADOWING / OUTER `r` falls through to
+// the wide path.
+void test_compound_collapse_mismatched_lhs_does_not_collapse() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint n, qint other) {\n"
+        "    qint r = a + b;\n"
+        "    other %= n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+// `qint r = a - b;` then `r %= n;` — inner `-` op rejects (subtraction-
+// mod is deferred per PRD §7). Mirrors the in-initializer
+// `test_inner_sub_does_not_match_addmod` posture.
+void test_compound_collapse_inner_sub_does_not_match() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint n) {\n"
+        "    qint r = a - b;\n"
+        "    r %= n;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+// Non-qint operands: even with the right AST shape, the
+// `cxxRecordDecl(hasName(\"qint_t\"))` guard rejects non-qint user types.
+void test_compound_collapse_non_qint_operands_do_not_match() {
+    auto hits = run_matcher(
+        "namespace nq {\n"
+        "class T { public: T(){} T(const T&){} T& operator=(const T&){return *this;}\n"
+        "          T& operator%=(const T&){return *this;} };\n"
+        "inline T operator+(const T&, const T&) { return T{}; }\n"
+        "}\n"
+        "void demo(nq::T a, nq::T b, nq::T n) {\n"
+        "    nq::T r = a + b;\n"
+        "    r %= n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+// Coexistence with the in-initializer AddMod arm: a TU containing both
+// `(a+b) % n` (in-initializer, beat 5.1 hit) AND `s = a+b; s %= n;`
+// (compound collapse, beat 5.3 hit) must produce TWO AddMod hits — one
+// per site, no double-firing.
+void test_compound_collapse_coexists_with_in_init_form() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint n) {\n"
+        "    qint r = (a + b) % n;\n"
+        "    qint s = a + b;\n"
+        "    s %= n;\n"
+        "    (void)r; (void)s;\n"
+        "}\n");
+    CHECK(hits.size() == 2);
+    if (hits.size() != 2) return;
+    int collapse_seen = 0;
+    int in_init_seen = 0;
+    for (const auto& h : hits) {
+        if (h.kind != ModularOpKind::AddMod) continue;
+        if (h.mod_assign_call != nullptr) ++collapse_seen;
+        if (h.mod_expr != nullptr) ++in_init_seen;
+    }
+    CHECK(collapse_seen == 1);
+    CHECK(in_init_seen == 1);
+}
+
 } // namespace
 
 int main() {
@@ -363,6 +542,15 @@ int main() {
     test_mul_mod_non_qint_operands_do_not_match();
     test_add_and_mul_mod_coexist();
     test_mul_mod_enclosing_block_tracks_inner_scope();
+    test_compound_collapse_basic_match();
+    test_compound_collapse_distinct_widths_resolve();
+    test_compound_collapse_no_mod_assign_does_not_match();
+    test_compound_collapse_intervening_stmt_does_not_collapse();
+    test_compound_collapse_intervening_read_of_r_does_not_collapse();
+    test_compound_collapse_mismatched_lhs_does_not_collapse();
+    test_compound_collapse_inner_sub_does_not_match();
+    test_compound_collapse_non_qint_operands_do_not_match();
+    test_compound_collapse_coexists_with_in_init_form();
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
 }

@@ -1,11 +1,19 @@
 // matcher_modular_op.cpp — sturm-qzab.1 (Phase 5 beat 5.1) +
-// sturm-qzab.2 (Phase 5 beat 5.2) implementation.
+// sturm-qzab.2 (Phase 5 beat 5.2) implementation. Orchestrates beat
+// 5.3 (sturm-qzab.3) registration via the sibling TU
+// `matcher_modular_compound_collapse.cpp` to keep this file under the
+// plan §7.1 280-LoC budget.
 //
 // AST matcher for the modular-arithmetic rewrite. Beat 5.1 landed the
 // AddMod arm (`(qint + qint) % qint` as the initializer of a `qint_t<W>`
 // VarDecl); beat 5.2 mirrors that for MulMod (`(qint * qint) % qint`).
-// Beats 5.4-5.6 will reuse the same hits vector for PowMod by appending
-// additional `register_one<...>` calls here.
+// Beat 5.3 (compound peephole-collapsed `qint r = a + b; r %= n;`)
+// lives in `matcher_modular_compound_collapse.{hpp,cpp}`; this file's
+// `register_modular_op_matcher` calls
+// `register_compound_collapse_addmod_arm` to pin the beat-5.3 arm onto
+// the same finder + hits vector. Beats 5.4-5.6 will reuse the same
+// hits vector for PowMod by appending additional `register_one<...>`
+// calls here.
 //
 // The matcher anchors on a `varDecl(hasInitializer(...))` shape. The
 // initializer's outer node is a `CXXOperatorCallExpr` for the
@@ -36,6 +44,8 @@
 // site cannot fire both arms.
 
 #include "matcher_modular_op.hpp"
+
+#include "matcher_modular_compound_collapse.hpp"
 
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
@@ -247,10 +257,13 @@ auto binary_mod_pattern(const char* inner_op) {
 void register_modular_op_matcher(clang::ast_matchers::MatchFinder& finder,
                                  std::vector<ModularOpHit>& hits) {
     // Beat 5.1 (sturm-qzab.1): AddMod arm. Beat 5.2 (sturm-qzab.2):
-    // MulMod arm. Beats 5.4-5.6 (PowMod variants) will extend this
-    // body with their own register block; the hits vector is shared
-    // across the arms because the enum discriminant on `ModularOpKind`
-    // lets the emitter dispatch in O(1).
+    // MulMod arm. Beat 5.3 (sturm-qzab.3): compound peephole-collapsed
+    // AddMod arm, registered via the sibling TU's helper so the per-
+    // pattern callback + AST helpers stay out of this file's LoC budget.
+    // Beats 5.4-5.6 (PowMod variants) will extend this body with their
+    // own register block; the hits vector is shared across the arms
+    // because the enum discriminant on `ModularOpKind` (plus the
+    // `mod_assign_call` flag) lets the emitter dispatch in O(1).
     {
         auto& pool = add_mod_pool();
         pool.push_back(std::make_unique<AddModCallback>(&hits));
@@ -261,6 +274,7 @@ void register_modular_op_matcher(clang::ast_matchers::MatchFinder& finder,
         pool.push_back(std::make_unique<MulModCallback>(&hits));
         finder.addMatcher(binary_mod_pattern("*"), pool.back().get());
     }
+    register_compound_collapse_addmod_arm(finder, hits);
 }
 
 } // namespace sturm::transpile

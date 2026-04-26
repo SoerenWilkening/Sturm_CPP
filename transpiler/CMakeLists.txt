@@ -159,6 +159,7 @@ add_executable(sturm-transpile
     # plus the pow flag-default / flag-on pair pin the round-trip
     # contract while the bodies are empty. See plan §2.1 / §7.
     src/matcher_modular_op.cpp
+    src/matcher_modular_compound_collapse.cpp
     src/modular_rewrite_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
@@ -436,6 +437,7 @@ add_library(sturm-transpile-plugin SHARED
     # matcher` callback. SHELL = empty bodies; the symbol surface is
     # the contract under test.
     src/matcher_modular_op.cpp
+    src/matcher_modular_compound_collapse.cpp
     src/modular_rewrite_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp

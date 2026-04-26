@@ -1,17 +1,22 @@
 // matcher_modular_op.hpp — Phase 5 (sturm-qzab) modular-arithmetic AST
 // matcher.
 //
-// Plan §2.1 / §7. Beats 5.1 (sturm-qzab.1) and 5.2 (sturm-qzab.2)
-// land the AddMod and MulMod arms: recognise the AST shapes
-// `qint_t<W> r = (a + b) % n;` and `qint_t<W> r = (a * b) % n;` and
-// produce one `ModularOpHit` per match. Subsequent beats append
+// Plan §2.1 / §7. Beats 5.1 (sturm-qzab.1), 5.2 (sturm-qzab.2), and
+// 5.3 (sturm-qzab.3) land the AddMod and MulMod arms plus the
+// compound peephole-collapsed AddMod arm: recognise the AST shapes
+//   - `qint_t<W> r = (a + b) % n;`            → AddMod (beat 5.1)
+//   - `qint_t<W> r = (a * b) % n;`            → MulMod (beat 5.2)
+//   - `qint_t<W> r = a + b; r %= n;` (adj.)   → AddMod (beat 5.3,
+//                                                compound collapse)
+// and produce one `ModularOpHit` per match. Subsequent beats append
 // additional callback registrations inside `register_modular_op_matcher`:
 //
-//   1. `(qint + qint) % qint` → AddMod   (beat 5.1, landed)
-//   2. `(qint * qint) % qint` → MulMod   (beat 5.2, landed)
-//   3. peephole-collapsed `r = a + b; r %= n;` (beat 5.3)
-//   4. `pow(qint, qint) % qint` → PowMod (beats 5.4–5.6, gated on
-//                                          STURM_MODULAR_POW)
+//   1. `(qint + qint) % qint` → AddMod                  (beat 5.1, landed)
+//   2. `(qint * qint) % qint` → MulMod                  (beat 5.2, landed)
+//   3. peephole-collapsed `r = a + b; r %= n;` → AddMod (beat 5.3, landed)
+//   4. `pow(qint, qint) % qint` → PowMod                (beats 5.4–5.6,
+//                                                        gated on
+//                                                        STURM_MODULAR_POW)
 //
 // Each beat's per-pattern callback is appended to a shared hits vector;
 // the consumer drain in `transpile_consumer.cpp` dispatches on the
@@ -104,6 +109,18 @@ struct ModularOpHit {
     const clang::CallExpr*       pow_call    = nullptr;
     const clang::VarDecl*        result_var  = nullptr;
     const clang::CompoundStmt*   enclosing_block = nullptr;
+    /// Beat 5.3 (sturm-qzab.3) compound peephole-collapsed AddMod
+    /// arm. When non-null, the matched site is `qint r = a + b;
+    /// r %= n;` (two adjacent stmts) rather than the in-initializer
+    /// `qint r = (a + b) % n;` shape; the consumer drain extends the
+    /// QReplacement range from the VarDecl's begin loc to the trailing
+    /// `;` of this `%=` op-call (absorbing both stmts into the single
+    /// rewrite) and suppresses the LO-2a `LossyOpHit` whose `call`
+    /// pointer matches this same op-call (so the lossy desugar does
+    /// not double-rewrite the `%=` text). Null on the in-initializer
+    /// AddMod / MulMod arms (beats 5.1 / 5.2) and on the PowMod arm
+    /// (beats 5.4-5.6).
+    const clang::CXXOperatorCallExpr* mod_assign_call = nullptr;
 };
 
 /// Register the modular-op AST matchers against `finder`, directing

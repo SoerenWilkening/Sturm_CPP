@@ -45,6 +45,7 @@
 #include "clang/Lex/Lexer.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
+#include <algorithm>
 #include <cstdio>
 #include <filesystem>
 #include <optional>
@@ -52,6 +53,7 @@
 #include <string>
 #include <string_view>
 #include <utility>
+#include <vector>
 
 namespace sturm::transpile {
 
@@ -604,6 +606,72 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
     sturm::transpile::apply_eliminated_stmt_guards(
         unit_, ctx.getSourceManager());
 
+    // sturm-qzab.3 (P5 beat 5.3): pre-pass suppression for compound
+    // peephole-collapsed AddMod hits. When the modular matcher emits a
+    // hit with `mod_assign_call != nullptr`, the consumer must absorb
+    // BOTH adjacent stmts (`qint r = a + b;` and `r %= n;`) into a
+    // single rewrite — which means the LO-2a `LossyOpHit` and the PC-5
+    // `MOD_ASSIGN_QINT` op on the same `%=` call MUST be dropped before
+    // their drains fire (otherwise the rewrite would double-emit the
+    // `%=` desugar on top of the `add_mod(...)` call).
+    //
+    // This pre-pass walks `modular_hits_`, builds the set of `%=` call
+    // pointers to suppress, then filters `lossy_hits_` and
+    // `unit_.scopes[*].ops` in-place. Pointer-equality keying (rather
+    // than begin-loc keying like the LO-2a drain uses) is safe here
+    // because all three callbacks (LO-2a, PC-5, modular compound
+    // collapse) bind the same Clang AST node — `MatchFinder` returns
+    // the same `CXXOperatorCallExpr*` to every callback that matched
+    // it, so pointer equality is a strict subset of begin-loc equality.
+    {
+        std::vector<const clang::CXXOperatorCallExpr*> suppress_calls;
+        for (const auto& hit : modular_hits_) {
+            if (hit.mod_assign_call != nullptr) {
+                suppress_calls.push_back(hit.mod_assign_call);
+            }
+        }
+        if (!suppress_calls.empty()) {
+            auto is_suppressed = [&](const clang::CXXOperatorCallExpr* p) {
+                for (const auto* s : suppress_calls) {
+                    if (s == p) return true;
+                }
+                return false;
+            };
+            // Drop matching LO-2a hits — the modular drain below will
+            // emit a single `qint r = ::sturm::add_mod(a, b, n);`
+            // declaration in their place.
+            lossy_hits_.erase(
+                std::remove_if(
+                    lossy_hits_.begin(), lossy_hits_.end(),
+                    [&](const sturm::transpile::LossyOpHit& h) {
+                        return is_suppressed(h.call);
+                    }),
+                lossy_hits_.end());
+            // Drop matching PC-5 ops from every scope. Same begin-loc
+            // recipe the LO-2a drain uses for its Phase C suppression
+            // — applied here pre-emptively because the modular drain
+            // would otherwise leave the MOD_ASSIGN_QINT op live and
+            // the M8 synthesis pass would emit a `uncompute_mod_qint`
+            // shim on top of our `add_mod(...)` call.
+            for (const auto* call : suppress_calls) {
+                if (call == nullptr) continue;
+                const unsigned key =
+                    call->getBeginLoc().getRawEncoding();
+                for (auto& scope : unit_.scopes) {
+                    auto& ops = scope.ops;
+                    ops.erase(
+                        std::remove_if(
+                            ops.begin(), ops.end(),
+                            [&](const sturm::transpile::QOperation& op) {
+                                return op.stmt_range.getBegin()
+                                    .getRawEncoding() == key;
+                            }),
+                        ops.end());
+                }
+            }
+        }
+    }
+
     // sturm-rry6 (LO-2e): drain `nested_hits_` produced by the
     // depth-first nested-lossy matcher BEFORE the LO-2a drain so the
     // shared `FreshNameAllocator` mints the inner-first / outer-second
@@ -934,9 +1002,24 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             // and the emitted text's own trailing `;` does not double
             // up. Same recipe `matcher_dead_ancilla.cpp` uses for the
             // PJ-4a empty-text decl removal.
+            //
+            // sturm-qzab.3 (P5 beat 5.3) compound-collapse arm: when
+            // `mod_assign_call` is non-null the matched site is two
+            // adjacent stmts (`qint r = a + b;` and `r %= n;`); the
+            // replacement range MUST extend to the `;` of the SECOND
+            // stmt so the `r %= n;` text disappears alongside the
+            // VarDecl. Without this extension the rewritten output
+            // would carry the residual `r %= n;` after the `add_mod(...)`
+            // declaration and double-apply the modular reduction
+            // semantically. The pre-pass above has already dropped the
+            // matching LO-2a hit and PC-5 op so the `%=` desugar does
+            // not also fire.
+            const clang::SourceLocation end_loc_anchor =
+                (hit.mod_assign_call != nullptr)
+                    ? hit.mod_assign_call->getEndLoc()
+                    : hit.result_var->getEndLoc();
             std::optional<clang::Token> semi =
-                clang::Lexer::findNextToken(
-                    hit.result_var->getEndLoc(), sm, lang);
+                clang::Lexer::findNextToken(end_loc_anchor, sm, lang);
             if (!semi || semi->getKind() != clang::tok::semi) continue;
 
             const clang::SourceLocation decl_begin =

@@ -1371,6 +1371,7 @@ set_tests_properties(test_lossy_nested_rewrite PROPERTIES
 add_executable(test_matcher_modular_op
     test_matcher_modular_op.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
 )
 target_include_directories(test_matcher_modular_op PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1423,6 +1424,7 @@ add_executable(test_modular_rewrite_emitter
     test_modular_rewrite_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
 )
 target_include_directories(test_modular_rewrite_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1786,6 +1788,15 @@ add_executable(test_transpile_consumer
     # `HandleTranslationUnit`. Link the LO-2e TU so
     # `register_nested_lossy_matcher` and `emit_nested_lossy` resolve.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_nested_rewrite.cpp
+    # sturm-qzab.1/.2/.3 (P5 beats 5.1/5.2/5.3): TranspileConsumer
+    # registers `register_modular_op_matcher` and drains
+    # `modular_hits_` via `emit_modular_forward`. Link both TUs so
+    # the consumer test resolves the symbols at link time. The beat
+    # 5.3 compound-collapse arm rides the same translation units —
+    # no additional sources required.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so
     # the Registry method bodies (register_op, find_render_fn,
