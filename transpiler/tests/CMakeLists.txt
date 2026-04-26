@@ -1364,6 +1364,109 @@ add_test(NAME test_lossy_nested_rewrite
 set_tests_properties(test_lossy_nested_rewrite PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: P5.1 matcher_modular_op (sturm-qzab.1) ──────────────────────
+# Beat 5.1 AddMod arm. Stand-alone matcher TU — writes `ModularOpHit`
+# records into a caller-owned vector. Mirrors `test_matcher_lossy_op`'s
+# linkage; no QUnit / Rewriter dependency.
+add_executable(test_matcher_modular_op
+    test_matcher_modular_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+)
+target_include_directories(test_matcher_modular_op PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_modular_op PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_modular_op PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_MOD_OP NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_modular_op PRIVATE
+    ${LLVM_DEFS_LIST_MOD_OP})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_modular_op PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_modular_op PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_MOD_OP support)
+    target_link_libraries(test_matcher_modular_op PRIVATE
+        ${LLVM_LIBS_MOD_OP})
+endif()
+add_test(NAME test_matcher_modular_op
+         COMMAND test_matcher_modular_op)
+set_tests_properties(test_matcher_modular_op PROPERTIES
+    LABELS "transpiler;modular-arith")
+
+# ── Unit test: P5.1 modular_rewrite_emitter (sturm-qzab.1) ─────────────────
+# Beat 5.1 AddMod arm. Pure-string + AST-driven harness. Linkage matches
+# the matcher test; links the matcher TU because the AST-driven half
+# of the test runs the matcher to produce live hits.
+add_executable(test_modular_rewrite_emitter
+    test_modular_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+)
+target_include_directories(test_modular_rewrite_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_modular_rewrite_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_modular_rewrite_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_MOD_EMIT NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_modular_rewrite_emitter PRIVATE
+    ${LLVM_DEFS_LIST_MOD_EMIT})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_modular_rewrite_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_modular_rewrite_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_MOD_EMIT support)
+    target_link_libraries(test_modular_rewrite_emitter PRIVATE
+        ${LLVM_LIBS_MOD_EMIT})
+endif()
+add_test(NAME test_modular_rewrite_emitter
+         COMMAND test_modular_rewrite_emitter)
+set_tests_properties(test_modular_rewrite_emitter PROPERTIES
+    LABELS "transpiler;modular-arith")
+
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when

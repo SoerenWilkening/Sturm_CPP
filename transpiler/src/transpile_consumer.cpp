@@ -28,11 +28,17 @@
 // `LossyOpHit`-keyed Phase C suppression and source-range replacement
 // land before any plain LO-2a drain step.
 #include "lossy_nested_rewrite.hpp"
+// sturm-qzab.1 (P5.1 beat 5.1): modular-arithmetic rewrite emitter.
+// Consumer drains `modular_hits_` after `matchAST` and converts each
+// `ModularOpHit` into a `QReplacement` over the matched VarDecl
+// statement's source range.
+#include "modular_rewrite_emitter.hpp"
 
 #include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
 
 #include "clang/AST/ASTContext.h"
+#include "clang/AST/Decl.h"
 #include "clang/AST/Stmt.h"
 #include "clang/Basic/SourceManager.h"
 #include "clang/Frontend/CompilerInstance.h"
@@ -41,6 +47,7 @@
 
 #include <cstdio>
 #include <filesystem>
+#include <optional>
 #include <sstream>
 #include <string>
 #include <string_view>
@@ -252,6 +259,16 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // immediately after LO-2a so the two related hit-vectors are
     // populated in the same pass for diagnostic clarity.
     sturm::transpile::register_nested_lossy_matcher(finder_, nested_hits_);
+    // sturm-qzab.1 (P5.1 beat 5.1): register the modular-arithmetic
+    // matcher. Pattern shape `VarDecl(qint_t<W>, init=(qint+qint)%qint)`
+    // is structurally disjoint from every per-op compound-assign
+    // matcher above, so registration order is irrelevant for
+    // correctness. Grouped here next to LO-2e for diagnostic clarity:
+    // both produce hit-vectors drained by the consumer, both target
+    // qint_t<W>-typed VarDecls / operands. Beats 5.2 / 5.4-5.6 extend
+    // the matcher body with MulMod / PowMod arms — no change to the
+    // wiring here.
+    sturm::transpile::register_modular_op_matcher(finder_, modular_hits_);
     sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
@@ -879,6 +896,85 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
                 bc.enclosing_block->getRBracLoc();
             sturm::transpile::register_external_cleanup(
                 external_cleanups_, close_brace, std::move(formatted));
+        }
+    }
+
+    // sturm-qzab.1 (P5.1 beat 5.1): drain `modular_hits_` produced by
+    // the modular-arithmetic matcher. Per hit:
+    //
+    //   1. Compute the AddMod (beat 5.1) / MulMod (beat 5.2) /
+    //      PowMod (beats 5.4-5.6) forward emission via
+    //      `emit_modular_forward` against the shared `alloc` declared
+    //      at the head of the LO-2e drain (so any future fresh-name
+    //      consumption stays monotonic across all three rewrite
+    //      families).
+    //   2. Replace the user's full VarDecl statement (`qint_t<W> r =
+    //      (a + b) % n;` — including the trailing `;`) with the
+    //      emission text via a `QReplacement`. The replacement range
+    //      starts at the VarDecl's begin loc and ends at the
+    //      one-past-the-`;` location, mirroring the PJ-4a /
+    //      ccnot-fuse range-extension recipe in
+    //      `matcher_dead_ancilla.cpp`.
+    //   3. NO Phase C suppression and NO scope-exit cleanup. The
+    //      AST shape we matched (VarDecl init=binary-op-on-binary-op)
+    //      is structurally disjoint from every per-op compound-assign
+    //      matcher above, so no Phase C `*_ASSIGN_QINT` op was pushed
+    //      for this site. The rewrite produces a fresh declaration
+    //      whose lifetime is the user's intent — there is no extra
+    //      ancilla register that needs reverting at scope exit.
+    if (!modular_hits_.empty()) {
+        const clang::SourceManager& sm = ctx.getSourceManager();
+        const clang::LangOptions& lang = ctx.getLangOpts();
+
+        for (const auto& hit : modular_hits_) {
+            auto em = sturm::transpile::emit_modular_forward(hit, alloc);
+            if (em.text.empty() || hit.result_var == nullptr) continue;
+
+            // Locate the trailing `;` so the replacement absorbs it
+            // and the emitted text's own trailing `;` does not double
+            // up. Same recipe `matcher_dead_ancilla.cpp` uses for the
+            // PJ-4a empty-text decl removal.
+            std::optional<clang::Token> semi =
+                clang::Lexer::findNextToken(
+                    hit.result_var->getEndLoc(), sm, lang);
+            if (!semi || semi->getKind() != clang::tok::semi) continue;
+
+            const clang::SourceLocation decl_begin =
+                hit.result_var->getBeginLoc();
+            const clang::SourceLocation decl_end = semi->getLocation();
+
+            // Source-map fidelity: prefix each emission line with a
+            // `#line` directive anchored at the VarDecl's begin loc.
+            // Mirrors the LO-2a drain's line-by-line shape so the
+            // snapshot byte-shape stays consistent across the
+            // transpiler's rewrite families.
+            const std::string line_directive =
+                sturm::transpile::format_line_directive(sm, decl_begin);
+
+            std::string body;
+            body.reserve(em.text.size() + 4 * line_directive.size());
+            std::size_t pos = 0;
+            while (pos < em.text.size()) {
+                const std::size_t nl = em.text.find('\n', pos);
+                if (nl == std::string::npos) break;
+                if (!line_directive.empty()) {
+                    body.push_back('\n');
+                    body.append(line_directive);
+                }
+                body.append(em.text, pos, nl - pos);
+                // Drop the trailing newline on the LAST line so the
+                // user's source position immediately after the `;`
+                // (typically a `\n` or whitespace before the next
+                // statement) is preserved verbatim.
+                const bool is_last = (nl + 1 == em.text.size());
+                if (!is_last) body.push_back('\n');
+                pos = nl + 1;
+            }
+
+            sturm::transpile::QReplacement rep;
+            rep.range = clang::SourceRange(decl_begin, decl_end);
+            rep.replacement = std::move(body);
+            unit_.replacements.push_back(std::move(rep));
         }
     }
 

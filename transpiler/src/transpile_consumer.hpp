@@ -62,6 +62,13 @@
 // the outer-lossy / inner-bare-or-compound shape that LO-2a does not
 // see. The consumer owns the hits vector alongside `lossy_hits_`.
 #include "lossy_nested_rewrite.hpp"
+// sturm-qzab.1 (P5.1 beat 5.1): modular-arithmetic AST matcher emits
+// ModularOpHits for `(qint OP qint) % qint` shapes. The consumer owns
+// the hits vector alongside `lossy_hits_` / `nested_hits_`. Drained
+// after the post-walk backstops, BEFORE `synthesize()` so the
+// statement-level VarDecl rewrite lands as a `QReplacement` in
+// `unit_.replacements`.
+#include "matcher_modular_op.hpp"
 
 #include <string>
 #include <vector>
@@ -196,6 +203,14 @@ private:
     // LO-2a-triggered Phase C suppression — the outer call's begin loc
     // is the same key that suppresses the Phase C *_ASSIGN_QINT op.
     std::vector<NestedLossyHit> nested_hits_;
+    // sturm-qzab.1 (P5.1 beat 5.1): hits vector populated by the
+    // modular-arithmetic matcher (`register_modular_op_matcher`).
+    // Drained alongside the LO-2a/LO-2e drains in
+    // `HandleTranslationUnit`. The AST shape it matches
+    // (`VarDecl(qint_t<W>, init=(qint OP qint) % qint)`) is structurally
+    // disjoint from every per-op compound-assign matcher in the pool,
+    // so no per-hit Phase C suppression is needed (unlike LO-2a / LO-2e).
+    std::vector<ModularOpHit> modular_hits_;
     // sturm-v0ur (LO-2 wiring): cleanup records assembled from
     // `lossy_hits_` after `matchAST`. Each `ExternalCleanup` carries
     // a close-brace `SourceLocation` and the pre-formatted cleanup

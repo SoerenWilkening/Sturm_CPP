@@ -1,32 +1,40 @@
-// modular_rewrite_emitter.hpp — sturm-r5pn.4 (Phase 0.4): emitter SHELL
-// for the upcoming Phase 5 modular-arithmetic rewrites.
+// modular_rewrite_emitter.hpp — Phase 5 (sturm-qzab) modular-arithmetic
+// rewrite emitter.
 //
 // Plan §2.1 / §7. Companion to `matcher_modular_op.{hpp,cpp}`. The
 // matcher produces a `ModularOpHit` per matched site; this emitter
-// turns each hit into a forward call to one of the new
-// `lib_{add,mul,pow}_mod_dsl` primitives plus the matching scope-exit
-// adjoint. Phase 5 fills in the body following the LO-2b shape
-// (`lossy_rewrite_emitter.hpp`).
+// turns each hit into a single statement-level rewrite: the user's
+// `qint_t<W> r = (a OP b) % n;` declaration is replaced with a call
+// to the corresponding qint-level free function (`add_mod` / `mul_mod`
+// / `pow_mod`).
 //
-// Forward emission shape Phase 5 will produce (see plan §7.2):
+// Beat 5.1 (sturm-qzab.1) implements the AddMod arm:
 //
-//     // (a + b) % n
-//     sturm::qint_t<W> r{};
-//     ::sturm::lib_add_mod_dsl(a, b, n, r);
-//     // (scope exit, injected by the LO-2c-shaped sibling emitter)
-//     sturm::invert<&::sturm::lib_add_mod_dsl<W>>()(a, b, n, r);
+//     // user wrote:
+//     qint_t<W> r = (a + b) % n;
+//     // emitter produces:
+//     sturm::qint_t<W> r = ::sturm::add_mod(a, b, n);
 //
-// With the emitter currently a SHELL, every entry-point function below
-// returns an empty `ModularEmission` so the caller's
-// `if (em.text.empty()) continue;` short-circuit fires unconditionally.
-// Identity snapshot fixtures (modular_{add,mul}_op,
-// modular_pow_op_{default,flag}) thus round-trip unchanged regardless
-// of `STURM_MODULAR_POW`.
+// Beats 5.2 / 5.4-5.6 fill in the MulMod / PowMod arms following the
+// same single-statement substitution shape. Unlike the LO-2 lossy
+// rewrites, modular rewrites do NOT inject a scope-exit cleanup —
+// `r` is a freshly-bound register whose lifetime is the user's
+// intent.
 //
-// Pure-string testability: Phase 5's text-only entry point delegates
-// here without spinning up an ASTContext, mirroring
-// `emit_lossy_forward_text` so the unit tests in
-// `transpiler/tests/test_*emitter.cpp` can byte-compare emissions.
+// Why `::sturm::add_mod` and not `lib_add_mod_dsl` directly? PRD §2.1
+// phrases the rewrite target as `lib_add_mod_dsl(a.bits(), b.bits(),
+// n.bits(), W, r.bits())`, but `qint_t<W>` does not expose a `bits()`
+// method — the lib-level primitive takes raw `Bit*` arrays. The
+// public free function `sturm::add_mod` (PRD §3.1, plan §6.2) is the
+// qint-friendly wrapper that allocates the fresh result register and
+// dispatches to `lib_add_mod_dsl` internally. Emitting the wrapper
+// is the same posture LO-2b takes when emitting `mul_oop` /
+// `and_oop` instead of `lib_c_MUL_dsl` / `lib_c_AND_dsl` directly.
+//
+// Pure-string testability: the text-only entry point delegates here
+// without spinning up an ASTContext, mirroring `emit_lossy_forward_text`
+// so the unit tests in `transpiler/tests/test_modular_rewrite_emitter.cpp`
+// can byte-compare emissions.
 
 #ifndef STURM_TRANSPILE_MODULAR_REWRITE_EMITTER_HPP
 #define STURM_TRANSPILE_MODULAR_REWRITE_EMITTER_HPP
@@ -41,14 +49,18 @@ namespace sturm::transpile {
 class FreshNameAllocator;
 
 /// One forward emission record. Matches the shape of `LossyEmission`:
-/// empty `text` ⇒ caller skips this hit. Phase 5 populates `text` with
-/// the §7.2 forward-pair triplet (allocate result, call primitive,
-/// optional swap) and `cleanup_anchor_name` with the result-variable
-/// name the LO-2c-shaped scope-exit emitter uses to mint the matching
-/// adjoint at the enclosing block's close brace.
+/// empty `text` ⇒ caller skips this hit. The AddMod arm (beat 5.1)
+/// populates `text` with the single-statement rewrite
+/// `sturm::qint_t<W> r = ::sturm::add_mod(a, b, n);\n`. Beats 5.2 /
+/// 5.4–5.6 follow the same shape for MulMod / PowMod.
+///
+/// `cleanup_anchor_name` carries the result-variable name. AddMod /
+/// MulMod do not inject a scope-exit cleanup, so the consumer drain
+/// uses this slot only as a diagnostic breadcrumb. PowMod's deferred
+/// adjoint-swap pattern (beat 5.6) may consume it.
 ///
 /// `kind` echoes the originating `ModularOpHit::kind` so the consumer
-/// drain loop can dispatch the cleanup arm without re-walking the AST
+/// drain loop can dispatch any cleanup arm without re-walking the AST
 /// (parallel to `LossyEmission::opcode`).
 struct ModularEmission {
     std::string text;
@@ -57,14 +69,16 @@ struct ModularEmission {
 };
 
 /// Pure-string forward emission. Empty `result` / `a` / `b` (or `n`
-/// for the gated PowMod arm) ⇒ empty result (degenerate input, skip).
-/// Phase 5 wires this overload from `transpile_consumer.cpp` after
-/// recovering names off a `ModularOpHit`. SHELL: returns `{}`.
+/// for the gated PowMod arm) ⇒ empty result (degenerate input, skip)
+/// — the consumer's `if (em.text.empty()) continue;` arm fires.
 ///
 /// `result_width` (mirrors `LossyEmission`'s sturm-czfi sibling): when
 /// > 0, the emitted result-allocation is `sturm::qint_t<result_width>`;
 /// when 0, falls back to the legacy unqualified `qint` typename used
 /// by hermetic-stub fixtures.
+///
+/// `alloc` is reserved for beats 5.2 / 5.4–5.6 which may need fresh
+/// ancilla names; beat 5.1's AddMod arm does not consume a slot.
 ModularEmission emit_modular_forward_text(ModularOpKind kind,
                                           std::string_view result,
                                           std::string_view a,
@@ -76,7 +90,6 @@ ModularEmission emit_modular_forward_text(ModularOpKind kind,
 /// AST-aware overload: pulls the operand names + width off `hit` and
 /// delegates to the pure-string overload. Source-map (`#line`)
 /// prefixing is the wiring layer's concern, not this emitter's.
-/// SHELL: returns `{}`.
 ModularEmission emit_modular_forward(const ModularOpHit& hit,
                                      FreshNameAllocator& alloc);
 
