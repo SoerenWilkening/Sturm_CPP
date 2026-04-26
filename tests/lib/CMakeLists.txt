@@ -304,6 +304,30 @@ add_test(NAME test_pow_mod_dsl COMMAND test_pow_mod_dsl)
 set_tests_properties(test_pow_mod_dsl
     PROPERTIES LABELS "lib;modular-arith")
 
+# sturm-a5te.6 P3.6 -- lib_pow_mod_dsl adjoint round-trip.
+# Plan §5.3 row 3.6: forward + adjoint must zero r, preserve base/exp/n, and
+# return the QubitPool live-count to its pre-call value.  Both legs (W=2
+# exhaustive sweep, W=3 random sweep) use the APPEND-mode classical-trace
+# harness because the simulator is infeasible at W=2+ for chain-style
+# pow_mod (recursive chain mul_mod composition vastly exceeds orkan's
+# 30-qubit ceiling).  Trace mode runs in milliseconds per case.
+add_executable(test_pow_mod_dsl_adjoint
+    test_pow_mod_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_pow_mod_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow_mod_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_pow_mod_dsl_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_pow_mod_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_pow_mod_dsl_adjoint COMMAND test_pow_mod_dsl_adjoint)
+set_tests_properties(test_pow_mod_dsl_adjoint
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
+
 # sturm-r5pn P4 -- qint_modular free-fn scaffold (will be filled by Phase 4 beats).
 add_executable(test_qint_modular
     test_qint_modular.cpp
