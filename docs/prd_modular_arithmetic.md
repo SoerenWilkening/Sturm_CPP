@@ -239,8 +239,10 @@ surface above does not preclude adding it later.
      implementation reaches `O(W²)` — measured `2·W² + W + 7`. Tightening
      requires the deferred Karatsuba design (§8 #1). Documented gap, not
      a regression.
-   - `pow_mod`: long-term target `O(W)`; actual depends on the shipping
-     `mul_mod` and is therefore `O(W²)` until §8 #1 lands.
+   - `pow_mod`: long-term target `O(W)`; shipping chain-style
+     repeated-squaring reaches `O(W²)` — measured `4·W² + 2W + 8`. The
+     `O(W)` budget would follow once `mul_mod` switches to the deferred
+     Karatsuba design (§8 #1).
    Verified by counter-sink tests pinned to the measured bounds.
 5. **No leaked ancillas.** Every primitive releases all allocated qubits
    to the pool by the time it returns (existing

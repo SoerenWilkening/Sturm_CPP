@@ -327,7 +327,7 @@ Karatsuba design (PRD §8 #1).
 | 3.4 | Exhaustive `W=2` sweep |
 | 3.5 | `W=3` random sweep |
 | 3.6 | Adjoint round-trip |
-| 3.7 | Peak ancilla `≤ c·W` for small `c` |
+| 3.7 | Peak ancilla `≤ 4·W² + 2W + 8` (measured bound for chain-style repeated-squaring; W·sq_chain + (W+1)·acc_chain + chain mul_mod's `2W²+W+7` interior + 1 outer-control fold ancilla — O(W²), not the originally targeted linear `c·W`. Tighter `O(W)` requires the deferred Karatsuba `mul_mod` (PRD §8 #1).) |
 | 3.8 | Pool live-count return |
 
 ### 5.4 Phase 3 exit gate

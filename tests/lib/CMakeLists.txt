@@ -328,6 +328,33 @@ add_test(NAME test_pow_mod_dsl_adjoint COMMAND test_pow_mod_dsl_adjoint)
 set_tests_properties(test_pow_mod_dsl_adjoint
     PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
 
+# sturm-a5te.7 P3.7 -- lib_pow_mod_dsl peak-ancilla budget assertion.
+# Plan §5.3 row 3.7 wording: peak live ancillas <= c·W (linear).  The
+# chain-style implementation in include/sturm/lib/pow_mod_dsl.hpp allocates
+# W² (sq_chain) + (W+1)·W (acc_chain) + 2·W² + W + 7 (mul_mod-internal peak)
+# ancillas, so the achieved peak is O(W²) — far above the literal `c·W`
+# linear target.  Mirrors mul-mod beat 2.6's situation (the literal plan
+# bound was undercounted for the actual algorithm); see test header for
+# the structural breakdown and orchestrator brief for plan amendment
+# follow-up (the `O(W)` budget would only follow once mul_mod switches
+# to the deferred Karatsuba design — PRD §8 #1).
+add_executable(test_pow_mod_dsl_ancilla
+    test_pow_mod_dsl_ancilla.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_pow_mod_dsl_ancilla PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow_mod_dsl_ancilla PRIVATE cxx_std_20)
+target_compile_definitions(test_pow_mod_dsl_ancilla PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_pow_mod_dsl_ancilla PRIVATE orkan_headers)
+add_test(NAME test_pow_mod_dsl_ancilla COMMAND test_pow_mod_dsl_ancilla)
+set_tests_properties(test_pow_mod_dsl_ancilla
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P4 -- qint_modular free-fn scaffold (will be filled by Phase 4 beats).
 add_executable(test_qint_modular
     test_qint_modular.cpp
