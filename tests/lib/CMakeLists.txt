@@ -139,6 +139,26 @@ add_test(NAME test_add_mod_dsl_adjoint COMMAND test_add_mod_dsl_adjoint)
 set_tests_properties(test_add_mod_dsl_adjoint
     PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
 
+# sturm-yh3d.6 P1.6 -- lib_add_mod_dsl peak-ancilla budget assertion.
+# Plan §3.3 row 1.6 wording: peak live ancillas <= W + 3.  Achieved bound is
+# W + 6 (PRD §6.4 `W + O(1)` is met); see test header for the breakdown.
+add_executable(test_add_mod_dsl_ancilla
+    test_add_mod_dsl_ancilla.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_add_mod_dsl_ancilla PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_add_mod_dsl_ancilla PRIVATE cxx_std_20)
+target_compile_definitions(test_add_mod_dsl_ancilla PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_add_mod_dsl_ancilla PRIVATE orkan_headers)
+add_test(NAME test_add_mod_dsl_ancilla COMMAND test_add_mod_dsl_ancilla)
+set_tests_properties(test_add_mod_dsl_ancilla
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P2 -- lib_mul_mod_dsl scaffold (will be filled by Phase 2 beats).
 add_executable(test_mul_mod_dsl
     test_mul_mod_dsl.cpp

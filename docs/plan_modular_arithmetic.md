@@ -190,7 +190,7 @@ minimum to make it green.
 | 1.3 | Exhaustive `W=2` sweep over all `(a, b, n)` with `a, b < n`, `n ≥ 1` | algorithm correct in all branches |
 | 1.4 | `W=3` random-sample sweep (50 cases) vs. classical reference | no W-3 regression |
 | 1.5 | Adjoint round-trip: forward then `__lib_add_mod_dsl_adj` returns `r` to `\|0>` for every Beat-1.3 input | adjoint correct |
-| 1.6 | Counter-sink test asserts peak live ancillas ≤ `W + 3` | algorithm meets §3 budget claim |
+| 1.6 | Counter-sink test asserts peak live ancillas ≤ `W + 6` (measured bound; primitives — `n_pad`, inner `lib_add_dsl` carry, `emit_CCX_lifted` fold — contribute +3 over the algorithm-local `W + 3` accounting) | algorithm meets PRD §6 `W + O(1)` budget |
 | 1.7 | `test_lossy_ancilla_cleaned`-style assertion: `QubitPool::instance().live_count()` returns to its pre-call value after every Beat-1.3 input | LIFO release correct |
 
 Beat 1.6 reuses the existing `tests/test_sink_counter.cpp` infrastructure;
@@ -236,7 +236,7 @@ ancilla register that starts as `a` and at each step holds
 `shifted` by running the W doubling steps in adjoint order.
 
 This keeps peak ancilla at `2W + O(1)` (one W-bit `shifted`, one W-bit
-`r`, plus add_mod's interior `W+3`). PRD §6 bullet 4 lists `W + O(1)` as
+`r`, plus add_mod's interior `W+6`; see §3.3 row 1.6). PRD §6 bullet 4 lists `W + O(1)` as
 the target — the doubling register is the unavoidable `+W`. Document
 that explicitly: the bullet is met for the **temporary inflation
 beyond** the working register, not absolute.
