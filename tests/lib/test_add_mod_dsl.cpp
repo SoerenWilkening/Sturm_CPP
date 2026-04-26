@@ -1,31 +1,28 @@
-// test_add_mod_dsl.cpp -- sturm-yh3d.{1,2,3} P1 beats 1.1, 1.2, 1.3.
+// test_add_mod_dsl.cpp -- sturm-yh3d.{1,2,3,4} P1 beats 1.1, 1.2, 1.3, 1.4.
 //
-// Plan §3.3 beat 1.1: assert that `lib_add_mod_dsl` short-circuits when the
-// width parameter `n` is 0 and leaves the `r` register unchanged.
+// Plan §3.3 beat 1.1: `lib_add_mod_dsl(... n=0 ...)` short-circuits and
+// leaves r (and a, b, n) unchanged.
+// Plan §3.3 beat 1.2: full algorithm produces r = (a+b) mod n for the
+// single classical W=2 case (a=1, b=1, n=3) -> r=2.
+// Plan §3.3 beat 1.3: exhaustive W=2 sweep over all (a, b, n) with
+// PRD §5 precondition `a, b < n` and `n >= 1` (14 cases total).
+// Plan §3.3 beat 1.4: W=3 random sweep (50 cases, fixed std::mt19937
+// seed = 42 per plan §12 risk mitigation) of (a, b, n) with a, b in
+// [0, n) and n in [1, 2^3=8) vs. the classical reference.
 //
-// Plan §3.3 beat 1.2: assert that the full algorithm computes
-// (a + b) mod n correctly for the single classical case W=2, (a=1, b=1, n=3).
-// The expected result is r = 2.  The implementation must (per plan §3.1):
-//   1. allocate a (W+1)-bit sum register `s`,
-//   2. copy a into s_low via per-bit XOR,
-//   3. lib_add_dsl(b, s_low, s_high, W) so s = a+b,
-//   4. compute a "needs subtract" flag from a (W+1)-bit comparison
-//      against n_extended,
-//   5. controlled subtract of n via the gate-reverse of lib_add_dsl,
-//   6. copy s_low into r via per-bit XOR,
-//   7. paired uncompute of the flag and the controlled subtract,
-//   8. uncompute s LIFO so the pool returns to its pre-call state.
+// Each call asserts r == (a+b) mod n, that a, b, n are unchanged
+// (reversibility of inputs), and that QubitPool::in_use() returns to its
+// pre-call value (no leaked ancillas).
 //
-// Plan §3.3 beat 1.3: exhaustive W=2 sweep over all (a, b, n) with the
-// PRD §5 precondition `a, b < n` and `n >= 1`.  For W=2 that's 14 inputs
-// (n=1: 1, n=2: 4, n=3: 9 = 14 total).  Each call must produce
-// r = (a+b) mod n while leaving a, b, n unchanged and returning the qubit
-// pool to its pre-call live-count (no leaked ancillas).
-//
-// In addition to checking r, the test asserts that a, b, n are unchanged
-// (reversibility of inputs) and that QubitPool::live_count() returns to its
-// pre-call value (no leaked ancillas).  Beats 1.4..1.7 expand the coverage
-// (W=3 random, adjoint round-trip, ancilla counter, pool live-count).
+// At W=3 the algorithm peaks at 21 live qubits (4*W = 12 input regs +
+// (W+1) = 4 sum reg + n_pad + lt_flag + carry_anc + 1 transient inside
+// lib_add_dsl/adj + 1 fold-ancilla emitted by emit_CCX_lifted under the
+// WHEN(lt_flag) push in steps 7/11).  This exceeds the kMaxQubits=17 cap
+// that OrkanBridge::allocate enforces, so the W=3 harness allocates the
+// orkan::state_t directly via orkan::allocate(bridge.state(), 21) —
+// within the orkan stub's 30-qubit ceiling and the qbool super_mask's
+// 32-qubit limit.  Beats 1.5..1.7 expand coverage (adjoint round-trip,
+// ancilla counter, pool live-count).
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/add_mod_dsl.hpp"
@@ -42,6 +39,7 @@
 #include <complex>
 #include <cstdio>
 #include <cstdint>
+#include <random>
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
@@ -176,6 +174,77 @@ static void run_classical_case(uint32_t a_val, uint32_t b_val,
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// ── Beat 1.4 — W=3 random sweep harness ──────────────────────────────────
+// W=3 peaks at 21 live qubits, exceeding OrkanBridge::allocate's
+// kMaxQubits=17 cap; Beat 1.4 calls orkan::allocate directly on the
+// bridge's state to bypass the cap (orkan stub permits up to 30 qubits).
+static constexpr std::size_t W3        = 3u;
+static constexpr uint32_t    n_orkan_w3 = 21u;
+
+struct Reg3 {
+    std::array<int, W3>             qi;
+    std::array<sturm::qbool, W3>    owners;
+    std::array<sturm::BitProxy, W3> bits;
+};
+
+static Reg3 make_reg3(int base, uint32_t val, orkan::state_t& sv) {
+    Reg3 r;
+    for (std::size_t i = 0; i < W3; ++i) {
+        r.qi[i] = base + static_cast<int>(i);
+        if ((val >> i) & 1u) orkan::apply_x(sv, static_cast<uint32_t>(r.qi[i]));
+    }
+    for (std::size_t i = 0; i < W3; ++i) {
+        r.owners[i] = sturm::qbool::make_non_owning(r.qi[i]);
+        r.bits[i]   = sturm::BitProxy(r.owners[i]);
+    }
+    return r;
+}
+
+// Beat 1.4 driver — mirrors run_classical_case but sized for W=3 and uses
+// the bypass-cap simulator (orkan::allocate called directly on the bridge
+// state).  Asserts r==(a+b) mod n, inputs unchanged, pool live-count clean.
+static void run_classical_case_w3(uint32_t a_val, uint32_t b_val,
+                                  uint32_t n_val) {
+    assert(a_val < n_val && b_val < n_val && n_val < (1u << W3));
+    sturm::QubitPool::instance().reset_for_testing();
+    const uint32_t n_reg = 4u * static_cast<uint32_t>(W3);
+    int reserved[n_reg];
+    for (uint32_t k = 0; k < n_reg; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    sturm::OrkanBridge bridge;
+    orkan::allocate(bridge.state(), n_orkan_w3);  // bypass kMaxQubits=17 cap
+    sturm_backend_context_t* ctx =
+        sturm_backend_create(STURM_MODE_SIMULATE, 64u);
+    assert(ctx);
+    ctx->orkan_state_ptr = &bridge;
+    sturm_backend_context_t* prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+    orkan::state_t& sv = bridge.state();
+    Reg3 a = make_reg3(0,                          a_val, sv);
+    Reg3 b = make_reg3(static_cast<int>(W3),       b_val, sv);
+    Reg3 n = make_reg3(static_cast<int>(2u * W3),  n_val, sv);
+    Reg3 r = make_reg3(static_cast<int>(3u * W3),  0u,    sv);
+    sturm::lib_add_mod_dsl<sturm::BitProxy>(a.bits.data(), b.bits.data(),
+                                            n.bits.data(), W3,
+                                            r.bits.data());
+    const uint32_t expect_r = (a_val + b_val) % n_val;
+    assert(read_reg(sv, a.qi.data(), W3, n_orkan_w3) == a_val
+           && "W=3: a unchanged");
+    assert(read_reg(sv, b.qi.data(), W3, n_orkan_w3) == b_val
+           && "W=3: b unchanged");
+    assert(read_reg(sv, n.qi.data(), W3, n_orkan_w3) == n_val
+           && "W=3: n unchanged");
+    assert(read_reg(sv, r.qi.data(), W3, n_orkan_w3) == expect_r
+           && "W=3: r == (a+b) mod n");
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "W=3: pool live-count returns to pre-call value");
+    sturm_set_thread_context(prev);
+    sturm_backend_destroy(ctx);
+    for (uint32_t k = 0; k < n_reg; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+}
+
 int main() {
     std::printf("sturm-yh3d.1 P1.1 add-mod-dsl: n==0 no-op tests:\n");
     run_n_zero_case(/*a=*/1u, /*b=*/2u, /*n=*/3u, /*r=*/0u);
@@ -206,6 +275,24 @@ int main() {
     std::printf("  PASS: %zu W=2 cases covering every (a, b, n) "
                 "with a, b < n, n >= 1\n", cases_run);
 
-    std::printf("All sturm-yh3d.{1,2,3} tests passed.\n");
+    // ── Beat 1.4 — W=3 random sweep (50 cases, fixed seed=42) ────────────
+    constexpr uint32_t    kW3Seed  = 42u;  // plan §12 risk mitigation
+    constexpr std::size_t kW3Cases = 50u;
+    std::printf("sturm-yh3d.4 P1.4 add-mod-dsl: W=3 random sweep "
+                "(%zu cases, seed=%u, n in [1, 8)):\n",
+                kW3Cases, kW3Seed);
+    std::mt19937 rng(kW3Seed);
+    std::uniform_int_distribution<uint32_t> n_dist(1u, (1u << W3) - 1u);
+    for (std::size_t i = 0; i < kW3Cases; ++i) {
+        uint32_t n_val = n_dist(rng);
+        std::uniform_int_distribution<uint32_t> ab_dist(0u, n_val - 1u);
+        uint32_t a_val = ab_dist(rng);
+        uint32_t b_val = ab_dist(rng);
+        run_classical_case_w3(a_val, b_val, n_val);
+    }
+    std::printf("  PASS: %zu W=3 random cases (a + b) mod n matches "
+                "classical reference\n", kW3Cases);
+
+    std::printf("All sturm-yh3d.{1,2,3,4} tests passed.\n");
     return 0;
 }
