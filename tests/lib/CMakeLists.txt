@@ -159,6 +159,28 @@ add_test(NAME test_add_mod_dsl_ancilla COMMAND test_add_mod_dsl_ancilla)
 set_tests_properties(test_add_mod_dsl_ancilla
     PROPERTIES LABELS "lib;modular-arith")
 
+# sturm-yh3d.7 P1.7 -- lib_add_mod_dsl pool live-count round-trip / LIFO
+# release.  Dedicated drain test mirroring tests/backend/test_lossy_ancilla_cleaned
+# (sturm-qoq0): every Beat-1.3 input (W=2 exhaustive sweep) is run inside its
+# own scope and the post-call QubitPool::in_use() is asserted equal to the
+# pre-call value, plus a LIFO-recycle witness.  See test header for rationale.
+add_executable(test_add_mod_dsl_pool_drain
+    test_add_mod_dsl_pool_drain.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_add_mod_dsl_pool_drain PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_add_mod_dsl_pool_drain PRIVATE cxx_std_20)
+target_compile_definitions(test_add_mod_dsl_pool_drain PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_add_mod_dsl_pool_drain PRIVATE orkan_headers)
+add_test(NAME test_add_mod_dsl_pool_drain COMMAND test_add_mod_dsl_pool_drain)
+set_tests_properties(test_add_mod_dsl_pool_drain
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P2 -- lib_mul_mod_dsl scaffold (will be filled by Phase 2 beats).
 add_executable(test_mul_mod_dsl
     test_mul_mod_dsl.cpp
