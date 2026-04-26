@@ -207,6 +207,33 @@ set_tests_properties(test_mul_mod_dsl
     PROPERTIES LABELS "lib;modular-arith"
                TIMEOUT 3600)
 
+# sturm-kubb.5 P2.5 -- lib_mul_mod_dsl adjoint round-trip.
+# Plan §4.3 row 2.5: forward + adjoint must zero r, preserve a/b/n, and
+# return the QubitPool live-count to its pre-call value.  W=2 uses the
+# orkan simulator (25-qubit state vector — chain mul_mod peaks above the
+# kMaxQubits=17 cap); W=3 uses the APPEND-mode classical-trace harness
+# from beat 2.4 (sturm-kubb.4) because the simulator is infeasible at
+# W=3 (~35 live qubits).  Each W=2 case runs ~125 s on the dev box (14
+# cases ≈ 30 min) and the W=3 sweep runs in seconds — set TIMEOUT to
+# 3600 s to mirror the forward test_mul_mod_dsl budget.
+add_executable(test_mul_mod_dsl_adjoint
+    test_mul_mod_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_dsl_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_mod_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_dsl_adjoint COMMAND test_mul_mod_dsl_adjoint)
+set_tests_properties(test_mul_mod_dsl_adjoint
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility"
+               TIMEOUT 3600)
+
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
     test_pow_mod_dsl.cpp
