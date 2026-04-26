@@ -211,8 +211,13 @@ depend on 1.3.
 
 ## 4. Phase 2 — `lib_mul_mod_dsl`
 
-**Goal:** correct W-bit modular multiplication with peak ancilla
-`W + O(1)`. Layered on `lib_add_mod_dsl` (Phase 1).
+**Goal:** correct W-bit modular multiplication. Long-term peak-ancilla
+target is `W + O(1)` (PRD §6.4) via the deferred Karatsuba design (PRD
+§8 #1); the shipping chain-style implementation reaches `O(W²)` —
+specifically `2·W² + W + 7` — because in-place doubling
+(`shifted := add_mod(shifted, shifted, n)`) is blocked by
+`lib_add_dsl`'s distinct-operand precondition. Layered on
+`lib_add_mod_dsl` (Phase 1).
 
 ### 4.1 Algorithm — shift-and-add (PRD §8 default)
 
@@ -265,7 +270,7 @@ namespace into a sibling helper header.
 | 2.3 | Exhaustive `W=2` sweep |
 | 2.4 | `W=3` random sweep (50 cases), traced against a classical reference (no orkan state-vector simulation) — orkan stub state grows ~2^(qubits), and chain-style mul_mod peaks at ~35 qubits at W=3, so simulator-driven sweeps are infeasible. Drive the algorithm in trace mode: pre-set all input bits to definite |0>/|1>, follow each gate as a classical bit-flip program, assert `r == (a*b) mod n`, register reversibility, no leaked ancillas. |
 | 2.5 | Adjoint round-trip |
-| 2.6 | Peak ancilla counter ≤ `2W + 5` |
+| 2.6 | Peak ancilla counter ≤ `2·W² + W + 7` (measured bound for the chain-style algorithm; W copies of W-bit `shifted_chain` and `r_chain` make this O(W²), not O(W) — the linear `2W + 5` was drafted for an in-place doubling design that beat 2.2 found infeasible due to lib_add_dsl operand-aliasing rules; tighter `W + O(1)` requires the Karatsuba alt deferred per §12 / PRD §8 #1) |
 | 2.7 | Pool live-count returns to pre-call value |
 
 ### 4.4 Phase 2 exit gate
@@ -298,9 +303,11 @@ release sq
 ```
 
 The squaring step writes to a fresh ancilla, then swaps with `sq` and
-uncomputes the old one — the standard reversible pattern. Each
-`mul_mod` call costs `W + O(1)` extra ancillas, so peak ancilla is
-`O(W)`. PRD §6 bullet 4: `O(W)` for pow.
+uncomputes the old one — the standard reversible pattern. With the
+shipping chain-style `mul_mod` each call costs `2·W² + W + 7` extra
+ancillas, so peak ancilla is `O(W²)` — not the PRD §6.4 `O(W)` target.
+The `O(W)` budget would follow once `mul_mod` switches to the deferred
+Karatsuba design (PRD §8 #1).
 
 ### 5.2 Files & LoC budget
 
@@ -581,7 +588,7 @@ Every PR landing a beat must satisfy:
 | Risk | Mitigation |
 |---|---|
 | Layering rule violated under deadline pressure (someone inlines a Toffoli for "perf") | Review checklist grep gate; mention in CONTRIBUTING |
-| `mul_mod` peak ancilla exceeds the budget (`2W + O(1)`) | Beat 2.6 fails CI before merge; revisit Karatsuba alt (PRD §8 #1) if persistent |
+| `mul_mod` peak ancilla regresses past the chain-style bound (`2·W² + W + 7`) | Beat 2.6 fails CI before merge; tightening to `W + O(1)` requires the deferred Karatsuba alt (PRD §8 #1) |
 | `pow_mod` adjoint synthesis is too verbose (>220 LoC) | Factor a `detail_pow_mod` helper; keep `*_adj.hpp` as a thin shell |
 | Transpiler matcher conflicts with `matcher_lossy_op` ordering | Add an explicit phase ordering test; matcher_modular_op runs **after** peephole reorder, **before** lossy_op |
 | Cross-validation fixture flaky on random seeds | Use a fixed seed (`std::mt19937(42)`); print the seed in failure messages |

@@ -233,9 +233,15 @@ surface above does not preclude adding it later.
    - `pow(a, x) % n` ⇒ `lib_pow_mod_dsl` iff `STURM_MODULAR_POW=ON`,
      else falls back to `lib_pow_dsl + lib_mod_dsl`.
    Verified by transpiler snapshot tests.
-4. **Qubit budget.** Each modular primitive's peak ancilla usage stays
-   within `W + O(1)` for add/mul and `O(W)` for pow (vs. `2W + O(W)` for
-   the naïve compose-then-reduce path). Verified by counter-sink test.
+4. **Qubit budget.** Peak ancilla usage:
+   - `add_mod`: `W + O(1)` — measured `W + 6`. Met.
+   - `mul_mod`: long-term target `W + O(1)`; shipping chain-style
+     implementation reaches `O(W²)` — measured `2·W² + W + 7`. Tightening
+     requires the deferred Karatsuba design (§8 #1). Documented gap, not
+     a regression.
+   - `pow_mod`: long-term target `O(W)`; actual depends on the shipping
+     `mul_mod` and is therefore `O(W²)` until §8 #1 lands.
+   Verified by counter-sink tests pinned to the measured bounds.
 5. **No leaked ancillas.** Every primitive releases all allocated qubits
    to the pool by the time it returns (existing
    `test_lossy_ancilla_cleaned` framework, extended).

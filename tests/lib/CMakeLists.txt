@@ -234,6 +234,31 @@ set_tests_properties(test_mul_mod_dsl_adjoint
     PROPERTIES LABELS "lib;modular-arith;lossy-reversibility"
                TIMEOUT 3600)
 
+# sturm-kubb.6 P2.6 -- lib_mul_mod_dsl peak-ancilla budget assertion.
+# Plan §4.3 row 2.6 wording: peak live ancillas <= 2W + 5.  The chain-style
+# implementation in include/sturm/lib/mul_mod_dsl.hpp allocates 2·W² chain
+# qubits + add_mod-interior ancillas, so the achieved peak is 2·W² + W + 6
+# — far above the literal `2W + 5`.  Mirrors add-mod beat 1.6's situation
+# (the literal plan bound was undercounted for the actual algorithm); see
+# test header for breakdown and orchestrator brief for plan amendment
+# follow-up.
+add_executable(test_mul_mod_dsl_ancilla
+    test_mul_mod_dsl_ancilla.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_dsl_ancilla PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_dsl_ancilla PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_dsl_ancilla PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_mod_dsl_ancilla PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_dsl_ancilla COMMAND test_mul_mod_dsl_ancilla)
+set_tests_properties(test_mul_mod_dsl_ancilla
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
     test_pow_mod_dsl.cpp
