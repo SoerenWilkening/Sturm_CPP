@@ -230,6 +230,29 @@ target_compile_definitions(sturm-transpile PRIVATE
     STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
     STURM_LLVM_VERSION_MAJOR_STR="${LLVM_VERSION_MAJOR}")
 
+# ── sturm-r5pn.3: STURM_MODULAR_POW propagation (driver-only) ──────────────
+# Plan §2.2 / PRD §3.4: when the top-level option `STURM_MODULAR_POW`
+# is ON, propagate it as a preprocessor define to the transpiler
+# driver target so the Phase 5 matcher can `#ifdef STURM_MODULAR_POW`
+# its `pow(a, x) % n => lib_pow_mod_dsl` rewrite path. The define is
+# intentionally NOT applied to:
+#   - `sturm` (the header-only INTERFACE library) — modular primitives
+#     are compiled unconditionally; only the rewrite is gated;
+#   - `sturm-transpile-plugin` — the plugin currently shares the same
+#     consumer pipeline as the standalone driver but does not yet
+#     embed the modular matcher; when Phase 5 wires it in, a
+#     parallel block here will mirror the propagation. Keeping the
+#     plugin out today preserves the contract pinned by
+#     `cmake_modular_pow_flag` (driver-only propagation);
+#   - any test or example target — those exercise the lib layer
+#     directly and the lib layer is flag-agnostic.
+# The `cmake_modular_pow_flag` ctest (tests/cmake_modular_pow_flag.cmake)
+# pins this contract by inspecting `compile_commands.json` for both
+# `STURM_MODULAR_POW=ON` and `OFF` configures.
+if(STURM_MODULAR_POW)
+    target_compile_definitions(sturm-transpile PRIVATE STURM_MODULAR_POW)
+endif()
+
 # Link against the shared libclang-cpp + libLLVM when available. The
 # distro-shipped LLVM layout (Debian / Ubuntu / Homebrew `llvm@17`)
 # contains both static component archives (libclangTooling.a, ...) AND a

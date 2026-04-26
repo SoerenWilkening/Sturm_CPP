@@ -151,3 +151,42 @@ add_subdirectory(lib)
 # The transpiler binary's own unit tests live under transpiler/tests/ and are
 # added via the top-level add_subdirectory(transpiler).
 add_subdirectory(transpiler)
+
+# ── sturm-r5pn.3 — STURM_MODULAR_POW CMake option propagation test ───────────
+#
+# Drives the Phase 0.3 plan §2.2 contract for the STURM_MODULAR_POW
+# CMake option:
+#   - exists (BOOL, default OFF) at top-level configure;
+#   - propagates as `-DSTURM_MODULAR_POW` to the transpiler driver
+#     target (sturm-transpile) when ON;
+#   - does NOT propagate to the header-only `sturm` library, the
+#     transpiler plugin, or any tests/** target;
+#   - both ON and OFF configure cleanly.
+#
+# Implementation: the script (`cmake_modular_pow_flag.cmake`) runs two
+# out-of-tree configures of the STURM source tree (one per flag value)
+# with `CMAKE_EXPORT_COMPILE_COMMANDS=ON`, then parses each
+# compile_commands.json and verifies the propagation footprint.
+# Configure-only (no compilation), so the test stays fast.
+#
+# Pass-through args: the parent build's resolved LLVM_DIR / Clang_DIR
+# / CMAKE_*_COMPILER are forwarded so the child configure picks up the
+# same toolchain (find_package(LLVM CONFIG) is distro-specific without
+# LLVM_DIR — see transpiler/CMakeLists.txt:34-44).
+add_test(NAME cmake_modular_pow_flag
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_flag"
+        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+        "-DPARENT_CLANG_DIR=${Clang_DIR}"
+        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_flag.cmake"
+)
+set_tests_properties(cmake_modular_pow_flag PROPERTIES
+    LABELS "cmake;modular-arith"
+    # The two child configures run sequentially within the script and
+    # are themselves single-threaded; reserve the whole CTest job slot
+    # for the test so we do not blow past the project's `--parallel 6`
+    # cap when CMake spawns its own internal helpers.
+    PROCESSORS 2)

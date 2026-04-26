@@ -19,6 +19,37 @@ if(NOT DEFINED STURM_ANCILLA_CAPACITY)
 endif()
 add_compile_definitions(STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY})
 
+# ── sturm-r5pn.3 — Modular pow rewrite gate ───────────────────────────────────
+# Plan §2.2 / PRD §3.4: STURM_MODULAR_POW gates the transpiler's
+# `pow(a, x) % n  =>  lib_pow_mod_dsl(a, x, n)` rewrite (Phase 5).
+# When OFF (the default), the transpiler leaves `pow %` untouched so
+# the existing two-step lowering (`lib_pow_dsl` + `lib_mod_dsl`) is
+# preserved bit-exactly. When ON, the matcher folds the pair into a
+# single `lib_pow_mod_dsl` call without the wide intermediate.
+#
+# The flag is propagated as a preprocessor define `-DSTURM_MODULAR_POW`
+# ONLY to the transpiler driver target (`sturm-transpile`, see
+# `transpiler/CMakeLists.txt`). The header-only `sturm` library, the
+# transpiler plugin, and every test target compile WITHOUT the define
+# regardless of its value — the library primitives ship
+# unconditionally; only the transpiler's pattern selection is gated.
+# This restriction is pinned by the `cmake_modular_pow_flag` ctest
+# (see `tests/cmake_modular_pow_flag.cmake`).
+#
+# The narrow naming (`STURM_MODULAR_POW`, not `STURM_FAST_MATH`)
+# preserves room for future per-region scope if a real use case
+# demands it (PRD §7).
+option(STURM_MODULAR_POW
+    "Enable transpiler rewrite of `pow(a, x) % n` to `lib_pow_mod_dsl`. \
+Plan §2.2 / PRD §3.4. OFF preserves the two-step lowering; ON folds the \
+pair into a single `lib_pow_mod_dsl` call. The add/mul modular rewrites \
+are unconditional (always on); only the pow rewrite is gated."
+    OFF)
+if(STURM_MODULAR_POW)
+    message(STATUS "sturm: STURM_MODULAR_POW=ON — transpiler will "
+                   "rewrite `pow(a, x) % n` into `lib_pow_mod_dsl`.")
+endif()
+
 # ── Interface library (header-only) ───────────────────────────────────────────
 add_library(sturm INTERFACE)
 target_include_directories(sturm INTERFACE ${CMAKE_SOURCE_DIR}/include)
