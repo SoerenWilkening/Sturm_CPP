@@ -1,10 +1,10 @@
 # TODO — Reversibility Deferrals (PRD §9)
 
-**Status:** Backlog. No implementation planned. File child bd issues when a concrete use case motivates tackling any of these four.
+**Status:** Backlog. No implementation planned. File child bd issues when a concrete use case motivates tackling any of these five.
 
 **Source:** Carried forward from bd issue `sturm-spv8` (P4) and the Phase T completion blockquote in `docs/roadmap_transpiler_post_mvp.md` (2026-04-24).
 
-**Baseline at deferral:** Phase T closed green with 314/314 CTests passing (0 failed) under `ctest --parallel 6`. Every `[[clang::annotate("sturm::reversible")]]` forward that P-C / Q-B accept and R-A / R-B / S-A can emit for now gets an auto-synthesised adjoint sibling through the transpiler's normal pipeline, with no user-side `STURM_REGISTER_ADJOINT` call required. The four items below are the remaining shape-envelope gaps.
+**Baseline at deferral:** Phase T closed green with 314/314 CTests passing (0 failed) under `ctest --parallel 6`. Every `[[clang::annotate("sturm::reversible")]]` forward that P-C / Q-B accept and R-A / R-B / S-A can emit for now gets an auto-synthesised adjoint sibling through the transpiler's normal pipeline, with no user-side `STURM_REGISTER_ADJOINT` call required. The five items below are the remaining shape-envelope gaps.
 
 ---
 
@@ -69,40 +69,42 @@ Template-dependent reversible forwards (e.g., `template<int N> void fn(qint<N>&)
 
 ---
 
-## 5. LO-2 OOP wrapper backends (`mul_oop` / `and_oop` / `or_oop`)
+## 5. Free-function predicates inside `WHEN(...)`
 
-**Category note.** Items 1–4 above are *synthesis-pipeline* deferrals (recursion / cross-TU / member / template). This item is a different category: a *runtime-target* deferral on the LO-2 transpiler's emitted output. It is grouped here because both deferral kinds gate the same end-to-end reversibility story.
+The WHEN-lift matcher does not recognise free-function calls as the predicate shape — e.g. `WHEN(marked(x, T)) { ... }` is not lifted, even though `marked` is a fully-supported reversible forward elsewhere in the pipeline.
 
-**Status:** Scoped (bd epic `sturm-ph6f`).
+**Current behaviour.** `transpiler/src/matcher_when_lift.cpp:374-380` lifts predicate expressions into a fresh `qbool __stu_tN` temp, runs the body controlled on it, and auto-uncomputes the temp at the close-brace. The matcher only handles operator shapes (comparators like `a == b`, bitwise compounds like `(b | c) & d`); on any other shape — including free-function calls and bare literals — it bails with the comment `// Not a supported shape (e.g. WHEN(foo(a)) or a literal).` Today the user must lift manually:
 
-**Source.** Surfaced during `sturm-czfi` (LO-2 emitter fix that made the example consumers compile). The classical / TODO(backend) posture is documented in-source at `include/sturm/qtypes/lossy_oop.hpp:14-23` and on the `mul_oop` body at `lossy_oop.hpp:66`.
+```cpp
+qbool m = marked(x, T);   // user-named, NOT auto-uncomputed
+WHEN(m) { ... }           // bare named qbool — supported shape
+```
 
-**Current behaviour.** The LO-2 transpiler emits calls to `mul_oop` / `and_oop` / `or_oop` / `divide_oop` (and `*_oop_adj` counterparts) for desugared compound-assigns on `qint_t<W>`. `divide_oop` already has a real reversible implementation in `include/sturm/qtypes/divide_oop.hpp`. The other three forwards in `lossy_oop.hpp` classically update `tmp.value` / `tmp.super_mask` and leave `tmp.qubits` at the default-constructed `-1` sentinel. All four `*_oop_adj` helpers (mul / and / or / divide) just zero `tmp` rather than running a structural inverse. This is sufficient for the example targets that drove `sturm-czfi` (`example_qint_arith`, `example_phase_abc_demo`) because both keep their operands on the classical short-circuit path (`qubits[0] < 0` throughout `main`); on that path the simulator never enters the gate-emitting fast path, and the wrappers only need to honour the classical bookkeeping invariants.
+**Required work.** Extend the WHEN-lift matcher to recognise `CallExpr` predicates whose callee is a reversible forward returning `qbool` (or, more generally, anything the auto-adjoint pipeline already handles), synthesise a lifted temp, and emit the structural inverse of the call at the close-brace via the existing scope-exit framework.
 
-**Required work.** For each of `mul_oop` / `and_oop` / `or_oop`:
-
-1. Allocate `W` qubits for `tmp` (replace the `qubits left at -1` shortcut) when at least one operand is on the gate-emitting path.
-2. Dispatch into the matching `lib_*_dsl` to emit the reversible network (controlled-add ladder / Toffoli per bit / De Morgan ladder respectively). The DSLs already exist in tree (`include/sturm/lib/{mul,c_and,or}_dsl.hpp`) with adjoint registrations extracted into `*_dsl_adj.hpp` siblings via `sturm-nmf1`.
-3. Register `*_oop_adj` as the structural inverse via `STURM_REGISTER_ADJOINT`, mirroring `divide_oop`'s pattern, so `sturm::invert<&mul_oop<W>>()` resolves to the proper adjoint instead of the classical zeroer.
-
-`include/sturm/qtypes/divide_oop.hpp` is the worked reference for what each wrapper should look like (fast-path / classical-path split, qubit allocation, DSL dispatch, adjoint registration).
-
-**Tracking.**
-- **Epic:** `sturm-ph6f` — *LO-2 backend: replace classical-only `*_oop` wrappers with reversible gate networks.*
-- **Children:** `sturm-ph6f.2` (mul / `lib_mul_dsl`), `sturm-ph6f.3` (and / `c_and_dsl`), `sturm-ph6f.1` (or / `or_dsl`).
+**Scope boundary.** This deferral covers only the *predicate position* of `WHEN(...)`, where the lifted result is a compiler-introduced temporary. It does NOT extend auto-uncompute to standalone user-named results (see "Out of scope" note below).
 
 **References.**
-- `include/sturm/qtypes/lossy_oop.hpp:14-23` — preamble explaining the classical / TODO(backend) posture.
-- `include/sturm/qtypes/lossy_oop.hpp:66` — `TODO(backend)` marker on `mul_oop`.
-- `include/sturm/qtypes/divide_oop.hpp` — reference implementation.
-- bd `sturm-czfi` — LO-2 emitter fix that made this scope visible.
-- bd `sturm-nmf1` — extracted `*_dsl_adj.hpp` siblings, prerequisite for clean dispatch.
+- `transpiler/src/matcher_when_lift.cpp:374-380` — current bail-out on unsupported predicate shapes.
+- Existing supported shapes: `examples/when_integration.cpp`, `examples/nested_when.cpp`, `examples/rotations.cpp`.
+- `marked` as a reversible forward: `tests/transpiler/fixtures/reversible_return_style_qbool.expected.cpp` (return-style) and `reversible_out_param_canonical.expected.cpp` (out-param style).
+
+---
+
+## Out of scope: user-named results (e.g. `pow(qint, int)`)
+
+The auto-uncompute / scope-exit reversibility machinery exists to clean up **compiler-introduced temporaries** that the user never named — ancillae born inside compound ops (`mul`, `divide_oop`, etc.) that would otherwise leak. It is **not** a general-purpose "delete the user's data at scope exit" mechanism.
+
+A free function like `pow(qint_t<W> base, int64_t exp)` returns a first-class, user-named `qint_t<W>` result. Auto-reversing it at scope exit would mean the transpiler erasing the user's data behind their back, which is not the contract anywhere else in the language (a local `int x` doesn't get auto-zeroed at scope exit either).
+
+If a user wants to uncompute such a result, they invert the call themselves via `sturm::invert<&pow<W>>()` (or the equivalent for whichever forward they used). For functions more exotic than the in-tree primitives, the user is expected to provide their own inverse.
+
+This is a deliberate boundary, not a deferral — it does not belong on the list above.
 
 ---
 
 ## Cross-references
 
-- **PRD:** `docs/prd_automatic_adjoint_synthesis.md` §9 (locked reversibility-scope decisions).
 - **Roadmap:** `docs/roadmap_transpiler_post_mvp.md` — Phase T completion blockquote (2026-04-24 entry) is the authoritative deferral list.
 - **Closed epic:** bd `sturm-xrob` (Phase T — Transpiler integration of automatic adjoint synthesis).
 - **Tracker issue:** bd `sturm-spv8` (this document is its materialised form).
@@ -113,6 +115,6 @@ Template-dependent reversible forwards (e.g., `template<int N> void fn(qint<N>&)
 
 When a concrete use case lands:
 
-1. Open a new bd issue for the specific deferral (recursion / cross-TU / member / template).
+1. Open a new bd issue for the specific deferral (recursion / cross-TU / member / template / WHEN free-call predicate).
 2. Link it to the roadmap entry and to this document.
 3. Update this file's entry for that deferral once work is scoped (move status from **Backlog** → **Scoped (bd issue <id>)** → remove once closed).
