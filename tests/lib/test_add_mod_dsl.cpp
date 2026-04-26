@@ -1,4 +1,4 @@
-// test_add_mod_dsl.cpp -- sturm-yh3d.1 beat 1.1 + sturm-yh3d.2 beat 1.2.
+// test_add_mod_dsl.cpp -- sturm-yh3d.{1,2,3} P1 beats 1.1, 1.2, 1.3.
 //
 // Plan §3.3 beat 1.1: assert that `lib_add_mod_dsl` short-circuits when the
 // width parameter `n` is 0 and leaves the `r` register unchanged.
@@ -16,11 +16,16 @@
 //   7. paired uncompute of the flag and the controlled subtract,
 //   8. uncompute s LIFO so the pool returns to its pre-call state.
 //
+// Plan §3.3 beat 1.3: exhaustive W=2 sweep over all (a, b, n) with the
+// PRD §5 precondition `a, b < n` and `n >= 1`.  For W=2 that's 14 inputs
+// (n=1: 1, n=2: 4, n=3: 9 = 14 total).  Each call must produce
+// r = (a+b) mod n while leaving a, b, n unchanged and returning the qubit
+// pool to its pre-call live-count (no leaked ancillas).
+//
 // In addition to checking r, the test asserts that a, b, n are unchanged
 // (reversibility of inputs) and that QubitPool::live_count() returns to its
-// pre-call value (no leaked ancillas).  Beats 1.3..1.7 expand the coverage
-// (exhaustive sweep, W=3 random, adjoint round-trip, ancilla counter, pool
-// live-count).
+// pre-call value (no leaked ancillas).  Beats 1.4..1.7 expand the coverage
+// (W=3 random, adjoint round-trip, ancilla counter, pool live-count).
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/add_mod_dsl.hpp"
@@ -183,6 +188,24 @@ int main() {
     std::printf("sturm-yh3d.2 P1.2 add-mod-dsl: single classical case:\n");
     run_classical_case(/*a=*/1u, /*b=*/1u, /*n=*/3u);
     std::puts("  PASS: (1 + 1) mod 3 == 2");
-    std::printf("All sturm-yh3d.1 + sturm-yh3d.2 tests passed.\n");
+
+    std::printf("sturm-yh3d.3 P1.3 add-mod-dsl: W=2 exhaustive sweep "
+                "(all a, b in [0, n) for n in [1, 4)):\n");
+    std::size_t cases_run = 0u;
+    for (uint32_t n_val = 1u; n_val < (1u << W); ++n_val) {
+        for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
+            for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
+                run_classical_case(a_val, b_val, n_val);
+                ++cases_run;
+            }
+        }
+    }
+    // n=1 → 1 case; n=2 → 4 cases; n=3 → 9 cases; total = 14 cases.
+    assert(cases_run == 14u && "W=2 sweep covered every (a, b, n) "
+                                "with a, b < n and n >= 1");
+    std::printf("  PASS: %zu W=2 cases covering every (a, b, n) "
+                "with a, b < n, n >= 1\n", cases_run);
+
+    std::printf("All sturm-yh3d.{1,2,3} tests passed.\n");
     return 0;
 }
