@@ -400,3 +400,28 @@ target_link_libraries(test_qint_modular PRIVATE orkan_headers)
 add_test(NAME test_qint_modular COMMAND test_qint_modular)
 set_tests_properties(test_qint_modular
     PROPERTIES LABELS "lib;modular-arith")
+
+# sturm-bjt2.2 P6.2 -- lib_pow_dsl + lib_mod_dsl  vs  lib_pow_mod_dsl
+# cross-validation oracle (plan §8.2 / PRD §6 #6).  20 random (a, x, n)
+# with a < n at fixed seed std::mt19937(42); failure messages print the
+# seed (plan §12 risk row).  Library targets do not propagate
+# `-DSTURM_MODULAR_POW`, so this test compiles identically in both
+# `STURM_MODULAR_POW=OFF` and `=ON` configures and discharges the plan
+# §8.3 exit gate from the lib side (the transpiler-side two-build coverage
+# is handled by tests/transpiler/cmake_modular_pow_flag.cmake).
+add_executable(test_pow_mod_xval
+    test_pow_mod_xval.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_pow_mod_xval PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow_mod_xval PRIVATE cxx_std_20)
+target_compile_definitions(test_pow_mod_xval PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_pow_mod_xval PRIVATE orkan_headers)
+add_test(NAME test_pow_mod_xval COMMAND test_pow_mod_xval)
+set_tests_properties(test_pow_mod_xval
+    PROPERTIES LABELS "lib;modular-arith")
