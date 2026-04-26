@@ -259,6 +259,33 @@ add_test(NAME test_mul_mod_dsl_ancilla COMMAND test_mul_mod_dsl_ancilla)
 set_tests_properties(test_mul_mod_dsl_ancilla
     PROPERTIES LABELS "lib;modular-arith")
 
+# sturm-kubb.7 P2.7 -- lib_mul_mod_dsl pool live-count round-trip / LIFO
+# release.  Dedicated drain test mirroring beat 1.7
+# (test_add_mod_dsl_pool_drain.cpp) for the chain-style mul_mod algorithm.
+# W=2 leg is the 14-case exhaustive sweep (matches beat 2.3); W=3 leg is
+# the 50-case fixed-seed random sweep (matches beats 2.4 / 2.5).  Both legs
+# use the APPEND-mode classical-trace harness (the orkan simulator is
+# infeasible at W=3 per beat 2.4; trace mode is also faster than the
+# simulator at W=2 -- ~ms per case vs. ~125 s).  No statevector simulation
+# needed: QubitPool tracks allocate/release independent of executor, so
+# the drain / LIFO assertions are valid against the IR-recording context.
+add_executable(test_mul_mod_dsl_pool_drain
+    test_mul_mod_dsl_pool_drain.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_dsl_pool_drain PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_dsl_pool_drain PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_dsl_pool_drain PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_mod_dsl_pool_drain PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_dsl_pool_drain COMMAND test_mul_mod_dsl_pool_drain)
+set_tests_properties(test_mul_mod_dsl_pool_drain
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
     test_pow_mod_dsl.cpp
