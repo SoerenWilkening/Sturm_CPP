@@ -4490,3 +4490,95 @@ add_test(
 set_tests_properties(snapshot_modular_pow_int_exp PROPERTIES
     LABELS "transpiler;modular-arith"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-qzab.7 (P5 beat 5.7): modular-arith idempotence ─────────────────
+# PRD acceptance criterion #4 / plan §7.4 beat 5.7: applying the matcher
+# twice produces a byte-identical result. For each modular fixture the
+# sibling snapshot test produces `gen/<fixture>/<fixture>.cpp` (the
+# already-rewritten output). The idempotency check feeds that file back
+# through sturm-transpile and asserts byte-equality with the input — the
+# AUTO-GENERATED sentinel in main.cpp's skip detection is the runtime
+# enforcement, but pinning the contract end-to-end here regresses any
+# matcher/emitter change that would re-rewrite an already-rewritten form.
+#
+# Each test DEPENDS on its sibling snapshot so the input file is
+# guaranteed to exist (the snapshot is the producer; the idempotency
+# check is the consumer). The pow fixtures reuse the same producer
+# regardless of `STURM_MODULAR_POW`: under both flag values the snapshot
+# emits a generated file, and that file's idempotency contract holds in
+# both modes — under OFF the input is the identity output (no rewrite,
+# so re-transpile is trivially identical), under ON the input is the
+# rewritten `::sturm::pow_mod(...)` form (and the re-transpile must
+# leave it untouched because the AUTO-GENERATED sentinel triggers a
+# verbatim copy).
+add_test(
+    NAME transpiler_idempotent_modular_add_op
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_add_op/modular_add_op.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_add_op_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_add_op PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_add_op"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_modular_mul_op
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_mul_op/modular_mul_op.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_mul_op_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_mul_op PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_mul_op"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_modular_compound_collapse
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_compound_collapse/modular_compound_collapse.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_compound_collapse_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_compound_collapse PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_compound_collapse"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_modular_pow_op_default
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_default/modular_pow_op_default.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_default_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_pow_op_default PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_pow_op_default"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_modular_pow_op_flag
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_flag/modular_pow_op_flag.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_op_flag_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_pow_op_flag PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_pow_op_flag"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME transpiler_idempotent_modular_pow_int_exp
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_int_exp/modular_pow_int_exp.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_int_exp_idem
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/check_idempotent.cmake)
+set_tests_properties(transpiler_idempotent_modular_pow_int_exp PROPERTIES
+    LABELS "transpiler;modular-arith"
+    DEPENDS "snapshot_modular_pow_int_exp"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
