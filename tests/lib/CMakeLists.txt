@@ -121,6 +121,24 @@ add_test(NAME test_add_mod_dsl COMMAND test_add_mod_dsl)
 set_tests_properties(test_add_mod_dsl
     PROPERTIES LABELS "lib;modular-arith")
 
+# sturm-yh3d.5 P1.5 -- lib_add_mod_dsl adjoint round-trip.
+add_executable(test_add_mod_dsl_adjoint
+    test_add_mod_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_add_mod_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_add_mod_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_add_mod_dsl_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_add_mod_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_add_mod_dsl_adjoint COMMAND test_add_mod_dsl_adjoint)
+set_tests_properties(test_add_mod_dsl_adjoint
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
+
 # sturm-r5pn P2 -- lib_mul_mod_dsl scaffold (will be filled by Phase 2 beats).
 add_executable(test_mul_mod_dsl
     test_mul_mod_dsl.cpp
