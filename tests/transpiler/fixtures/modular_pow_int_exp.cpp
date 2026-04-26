@@ -1,0 +1,58 @@
+// sturm-qzab.6 (P5 beat 5.6) input — `pow(a, x) % n` modular-pow
+// snapshot for the int64-exponent overload. Combines the OFF and ON
+// configurations under one fixture: the same input round-trips
+// byte-identical (modulo the AUTO-GENERATED header) under
+// `STURM_MODULAR_POW=OFF` (lib_pow_dsl + lib_mod_dsl fallback) and
+// rewrites to `::sturm::pow_mod(a, x, n)` under `STURM_MODULAR_POW=ON`.
+//
+// Plan §7.4 / PRD §3.4: the matcher's PowMod arm (gated on
+// `STURM_MODULAR_POW`) recognises BOTH exponent forms — the qint-qint
+// form pinned by `modular_pow_op_default.cpp` / `modular_pow_op_flag.cpp`
+// (sturm-qzab.4 / sturm-qzab.5) and the qint-int64 form pinned here.
+// Beat 5.6 extends the matcher with a second registration arm whose
+// pattern relaxes the second `pow` argument from `qint_dre` to a
+// generic `Expr` (with a `unless(qint_dre)` guard so the two arms are
+// structurally disjoint), and whose callback recovers the verbatim
+// source text of the exponent expression via `Lexer::getSourceText` so
+// the emitter can splice it back into the rewrite as
+// `pow_mod(a, 3LL, n)`.
+//
+// The driver target's `STURM_MODULAR_POW` propagation is binary-level
+// (compile-time, not runtime), so the snapshot wiring picks the
+// per-mode `EXPECTED` golden via `if(STURM_MODULAR_POW)` in
+// `tests/transpiler/CMakeLists.txt` — the same dual-config scaffolding
+// landed for `modular_pow_op_default` / `modular_pow_op_flag` in
+// sturm-qzab.5.
+//
+// The hermetic `pow` / `pow_mod` stubs below avoid any `<cmath>` or
+// `sturm/ops/qint_modular.hpp` include — the transpiler's
+// FixedCompilationDatabase carries no system include paths, and the
+// snapshot compares source text so the stubs need only typecheck the
+// input.
+namespace sturm {
+template <int W>
+class qint_t {
+public:
+    qint_t() {}
+    qint_t(const qint_t&) {}
+    qint_t& operator=(const qint_t&) { return *this; }
+};
+template <int W>
+inline qint_t<W> operator%(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+template <int W>
+inline qint_t<W> pow(const qint_t<W>&, long long) {
+    return qint_t<W>{};
+}
+template <int W>
+inline qint_t<W> pow_mod(const qint_t<W>&, long long, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+} // namespace sturm
+using qint = sturm::qint_t<2>;
+
+void demo(qint a, qint n) {
+    qint r = sturm::pow(a, 3LL) % n;
+    (void)r;
+}

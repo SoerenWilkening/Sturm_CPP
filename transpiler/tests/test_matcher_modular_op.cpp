@@ -752,6 +752,110 @@ void test_pow_mod_enclosing_block_tracks_inner_scope_under_flag_on() {
     CHECK(hits[0].kind == ModularOpKind::PowMod);
     CHECK(hits[0].enclosing_block != nullptr);
 }
+
+// ── sturm-qzab.6 (P5 beat 5.6): PowMod int-exponent positive path ──────────
+//
+// Plan §7.4 / PRD §3.4: under `STURM_MODULAR_POW=ON` the matcher MUST
+// also recognise the int64-exponent overload `pow(qint, long long)`,
+// i.e. the AST shape `qint_t<W> r = sturm::pow(a, 3LL) % n;` where the
+// second argument of `pow` is an integer literal (or any non-qint
+// expression) instead of a qint DeclRefExpr. The matcher emits ONE
+// `ModularOpHit` with `kind == PowMod`, populates `b_name` with the
+// VERBATIM source text of the exponent expression (e.g. "3LL") so the
+// emitter splices it back into the rewrite as `pow_mod(a, 3LL, n)`.
+//
+// Same OFF-mode contract applies to this shape — beat 5.4's
+// `test_pow_mod_int_exponent_does_not_match_under_flag_off` test pins
+// the negative path. Beat 5.6 adds the positive-path coverage; the
+// matcher arm registration is gated on `STURM_MODULAR_POW` exactly the
+// same way the qint-exponent arm is.
+void test_pow_mod_int_exponent_basic_match_under_flag_on() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint n) {\n"
+        "    qint r = sturm::pow(a, 3LL) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    CHECK_EQ_STR(hits[0].result_name, std::string("r"));
+    CHECK_EQ_STR(hits[0].a_name, std::string("a"));
+    CHECK_EQ_STR(hits[0].b_name, std::string("3LL"));
+    CHECK_EQ_STR(hits[0].n_name, std::string("n"));
+    CHECK(hits[0].result_width == 2);
+    CHECK(hits[0].mod_expr != nullptr);
+    CHECK(hits[0].pow_call != nullptr);
+    CHECK(hits[0].result_var != nullptr);
+    CHECK(hits[0].enclosing_block != nullptr);
+}
+
+void test_pow_mod_int_exponent_distinct_widths_resolve_under_flag_on() {
+    // Width resolution mirrors the qint-exponent sibling: qint_t<5>
+    // in the source must surface as result_width=5 even when the
+    // exponent is an int literal.
+    auto hits = run_matcher(
+        "using qint5 = sturm::qint_t<5>;\n"
+        "void demo(qint5 a, qint5 n) {\n"
+        "    qint5 r = sturm::pow(a, 7LL) % n;\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    CHECK(hits[0].result_width == 5);
+    CHECK_EQ_STR(hits[0].b_name, std::string("7LL"));
+}
+
+void test_pow_mod_int_exponent_outer_mul_does_not_match_under_flag_on() {
+    // `sturm::pow(a, 3LL) * n` has outer `*`, not `%` — same
+    // negative-shape contract as the qint-exponent sibling.
+    auto hits = run_matcher(
+        "void demo(qint a, qint n) {\n"
+        "    qint r = sturm::pow(a, 3LL) * n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+void test_pow_mod_int_exponent_enclosing_block_tracks_inner_scope_under_flag_on() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint n) {\n"
+        "    {\n"
+        "        qint r = sturm::pow(a, 5LL) % n;\n"
+        "        (void)r;\n"
+        "    }\n"
+        "}\n");
+    CHECK(hits.size() == 1);
+    if (hits.empty()) return;
+    CHECK(hits[0].kind == ModularOpKind::PowMod);
+    CHECK(hits[0].enclosing_block != nullptr);
+}
+
+void test_pow_mod_int_exponent_does_not_double_with_qint_exponent_under_flag_on() {
+    // A TU mixing both pow exponent forms must yield exactly TWO PowMod
+    // hits — one per site — with no spurious double-fire on either site.
+    // This pins that the int-exponent arm and the qint-exponent arm are
+    // structurally disjoint (the qint arm requires a qint DRE on arg1;
+    // the int arm requires a non-qint expression on arg1).
+    auto hits = run_matcher(
+        "void demo(qint a, qint x, qint n) {\n"
+        "    qint p = sturm::pow(a, x) % n;\n"
+        "    qint q = sturm::pow(a, 4LL) % n;\n"
+        "    (void)p; (void)q;\n"
+        "}\n");
+    CHECK(hits.size() == 2);
+    if (hits.size() != 2) return;
+    int pow_count = 0;
+    bool saw_qint_exp = false;
+    bool saw_int_exp  = false;
+    for (const auto& h : hits) {
+        if (h.kind == ModularOpKind::PowMod) ++pow_count;
+        if (h.b_name == "x")   saw_qint_exp = true;
+        if (h.b_name == "4LL") saw_int_exp  = true;
+    }
+    CHECK(pow_count == 2);
+    CHECK(saw_qint_exp);
+    CHECK(saw_int_exp);
+}
 #endif // STURM_TEST_MODULAR_POW_ON
 // Note: the flag-on test guards use `STURM_TEST_MODULAR_POW_ON` (a
 // test-only macro distinct from the production `STURM_MODULAR_POW`
@@ -803,6 +907,11 @@ int main() {
     test_pow_mod_coexists_with_addmod_mulmod_under_flag_on();
     test_pow_mod_non_qint_operands_do_not_match_under_flag_on();
     test_pow_mod_enclosing_block_tracks_inner_scope_under_flag_on();
+    test_pow_mod_int_exponent_basic_match_under_flag_on();
+    test_pow_mod_int_exponent_distinct_widths_resolve_under_flag_on();
+    test_pow_mod_int_exponent_outer_mul_does_not_match_under_flag_on();
+    test_pow_mod_int_exponent_enclosing_block_tracks_inner_scope_under_flag_on();
+    test_pow_mod_int_exponent_does_not_double_with_qint_exponent_under_flag_on();
 #endif
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;

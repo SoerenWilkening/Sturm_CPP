@@ -4462,3 +4462,31 @@ add_test(
 set_tests_properties(snapshot_modular_pow_op_flag PROPERTIES
     LABELS "transpiler;modular-arith"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# sturm-qzab.6 (P5 beat 5.6): int64-exponent variant snapshot. Same
+# dual-config wiring as the .4 / .5 fixtures — the matcher's PowMod arm
+# is gated on `STURM_MODULAR_POW` and so is the rewrite, so the
+# `EXPECTED` golden flips between the identity output (OFF, the lib_pow_dsl
+# + lib_mod_dsl fallback) and the rewritten `::sturm::pow_mod(a, x, n)`
+# form (ON). The matcher binds the second `pow` argument as a generic
+# `Expr` (rather than a qint `DeclRefExpr`) and the callback recovers the
+# exponent's verbatim source text via `Lexer::getSourceText` so the
+# `3LL` literal flows through the emitter unchanged.
+if(STURM_MODULAR_POW)
+    set(_modular_pow_int_exp_expected
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_int_exp.expected.flag_on.cpp)
+else()
+    set(_modular_pow_int_exp_expected
+        ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_int_exp.expected.cpp)
+endif()
+add_test(
+    NAME snapshot_modular_pow_int_exp
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/modular_pow_int_exp.cpp
+            -DEXPECTED=${_modular_pow_int_exp_expected}
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/modular_pow_int_exp
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_modular_pow_int_exp PROPERTIES
+    LABELS "transpiler;modular-arith"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

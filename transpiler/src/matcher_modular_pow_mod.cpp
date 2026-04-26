@@ -41,7 +41,11 @@
 #include "clang/AST/Type.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
+#include "clang/Basic/SourceLocation.h"
+#include "clang/Basic/SourceManager.h"
+#include "clang/Lex/Lexer.h"
 #include "llvm/ADT/APSInt.h"
+#include "llvm/ADT/StringRef.h"
 #include "llvm/Support/Casting.h"
 
 #include <cstdint>
@@ -131,6 +135,52 @@ void populate_pow_mod_hit(const MatchFinder::MatchResult& r,
     hits->push_back(std::move(hit));
 }
 
+// sturm-qzab.6 (P5 beat 5.6): int-exponent PowMod arm callback.
+//
+// For the AST shape `pow(qint, <non-qint expr>) % qint` the second
+// argument of `pow` is NOT a `DeclRefExpr` to a qint variable — it is
+// an integer literal (`3LL`) or any other non-qint expression matching
+// the `pow(qint_t<W>, long long)` overload. We bind it as a generic
+// `Expr` (not a `DeclRefExpr`), then recover its verbatim source text
+// via `Lexer::getSourceText` so the emitter can splice it back into
+// the rewrite as `pow_mod(a, 3LL, n)`. This mirrors the
+// `matcher_qint_const.cpp::QIntAssignConstCallback` pattern for
+// constant-RHS extraction.
+void populate_pow_mod_int_exp_hit(const MatchFinder::MatchResult& r,
+                                  std::vector<ModularOpHit>* hits) {
+    const auto* var    = r.Nodes.getNodeAs<VarDecl>("var");
+    const auto* outer  = r.Nodes.getNodeAs<CXXOperatorCallExpr>("outer");
+    const auto* pow    = r.Nodes.getNodeAs<CallExpr>("pow");
+    const auto* a      = r.Nodes.getNodeAs<DeclRefExpr>("a");
+    const auto* b_expr = r.Nodes.getNodeAs<Expr>("b_expr");
+    const auto* n      = r.Nodes.getNodeAs<DeclRefExpr>("n");
+    if (!var || !outer || !pow || !a || !b_expr || !n || !r.Context) return;
+
+    const CompoundStmt* block =
+        nearest_compound_stmt_for_decl(*var, *r.Context);
+    if (!block) return;
+
+    const SourceManager& sm = r.Context->getSourceManager();
+    const LangOptions& lang = r.Context->getLangOpts();
+    auto b_text = clang::Lexer::getSourceText(
+        clang::CharSourceRange::getTokenRange(b_expr->getSourceRange()),
+        sm, lang);
+    if (b_text.empty()) return;
+
+    ModularOpHit hit;
+    hit.kind = ModularOpKind::PowMod;
+    hit.result_name = var->getNameAsString();
+    if (const NamedDecl* nd = a->getDecl()) hit.a_name = nd->getNameAsString();
+    hit.b_name = b_text.str();
+    if (const NamedDecl* nd = n->getDecl()) hit.n_name = nd->getNameAsString();
+    hit.result_width = extract_qint_width_from_vd(*var);
+    hit.mod_expr = outer;
+    hit.pow_call = pow;
+    hit.result_var = var;
+    hit.enclosing_block = block;
+    hits->push_back(std::move(hit));
+}
+
 class PowModCallback : public MatchFinder::MatchCallback {
 public:
     explicit PowModCallback(std::vector<ModularOpHit>* hits) : hits_(hits) {}
@@ -143,8 +193,26 @@ private:
     std::vector<ModularOpHit>* hits_;
 };
 
+class PowModIntExpCallback : public MatchFinder::MatchCallback {
+public:
+    explicit PowModIntExpCallback(std::vector<ModularOpHit>* hits)
+        : hits_(hits) {}
+
+    void run(const MatchFinder::MatchResult& r) override {
+        populate_pow_mod_int_exp_hit(r, hits_);
+    }
+
+private:
+    std::vector<ModularOpHit>* hits_;
+};
+
 std::vector<std::unique_ptr<PowModCallback>>& pow_mod_pool() {
     static std::vector<std::unique_ptr<PowModCallback>> pool;
+    return pool;
+}
+
+std::vector<std::unique_ptr<PowModIntExpCallback>>& pow_mod_int_exp_pool() {
+    static std::vector<std::unique_ptr<PowModIntExpCallback>> pool;
     return pool;
 }
 
@@ -183,13 +251,61 @@ auto pow_mod_pattern() {
     ).bind("var");
 }
 
+// sturm-qzab.6 (P5 beat 5.6): int-exponent variant pattern.
+//
+// Same outer shape as `pow_mod_pattern` (varDecl whose initializer is
+// `pow(qint, ?) % qint`) but the second argument of `pow` is bound as a
+// generic `Expr` rather than constrained to a qint `DeclRefExpr`. The
+// `unless(ignoringImplicit(qint_dre(...)))` guard structurally disjoins
+// this arm from the qint-exponent arm above so a single site cannot
+// fire both — a `pow(qint, qint) % qint` site routes to the qint arm
+// (its arg1 IS a qint DRE), and a `pow(qint, 3LL) % qint` site routes
+// here (its arg1 is NOT a qint DRE). The exponent's verbatim source
+// text is recovered by the callback via `Lexer::getSourceText` —
+// matching the `matcher_qint_const.cpp` constant-RHS extraction shape.
+auto pow_mod_int_exp_pattern() {
+    auto pow_call = callExpr(
+        callee(functionDecl(hasName("pow"))),
+        hasType(hasCanonicalType(hasDeclaration(
+            cxxRecordDecl(hasName("qint_t"))))),
+        argumentCountIs(2),
+        hasArgument(0, ignoringImplicit(qint_dre("a"))),
+        hasArgument(1, expr(unless(ignoringImplicit(declRefExpr(
+            hasType(hasCanonicalType(hasDeclaration(
+                cxxRecordDecl(hasName("qint_t"))))))))).bind("b_expr"))
+    ).bind("pow");
+
+    auto outer_mod = cxxOperatorCallExpr(
+        hasOverloadedOperatorName("%"),
+        argumentCountIs(2),
+        hasArgument(0, ignoringParenImpCasts(pow_call)),
+        hasArgument(1, ignoringImplicit(qint_dre("n")))
+    ).bind("outer");
+
+    return varDecl(
+        hasType(hasCanonicalType(hasDeclaration(
+            cxxRecordDecl(hasName("qint_t"))))),
+        hasInitializer(ignoringImplicit(outer_mod))
+    ).bind("var");
+}
+
 } // namespace
 
 void register_pow_mod_arm(clang::ast_matchers::MatchFinder& finder,
                           std::vector<ModularOpHit>& hits) {
-    auto& pool = pow_mod_pool();
-    pool.push_back(std::make_unique<PowModCallback>(&hits));
-    finder.addMatcher(pow_mod_pattern(), pool.back().get());
+    {
+        auto& pool = pow_mod_pool();
+        pool.push_back(std::make_unique<PowModCallback>(&hits));
+        finder.addMatcher(pow_mod_pattern(), pool.back().get());
+    }
+    // sturm-qzab.6 (P5 beat 5.6): register the int-exponent variant. Both
+    // arms share the same hits vector — the consumer drain dispatches on
+    // `ModularOpKind::PowMod` regardless of which variant fired.
+    {
+        auto& pool = pow_mod_int_exp_pool();
+        pool.push_back(std::make_unique<PowModIntExpCallback>(&hits));
+        finder.addMatcher(pow_mod_int_exp_pattern(), pool.back().get());
+    }
 }
 
 } // namespace sturm::transpile
