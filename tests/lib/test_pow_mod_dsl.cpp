@@ -1,4 +1,5 @@
-// test_pow_mod_dsl.cpp -- sturm-a5te.{1,2} P3.{1,2} pow-mod-dsl beats 3.1, 3.2.
+// test_pow_mod_dsl.cpp -- sturm-a5te.{1,2,3} P3.{1,2,3} pow-mod-dsl beats
+// 3.1, 3.2, 3.3.
 //
 // Beat 3.1 (plan §5.3): `lib_pow_mod_dsl(... n=0 ...)` short-circuits and
 // leaves r (and base, exp, n) unchanged.  Mirrors PRD §8 #3 and the shape
@@ -12,6 +13,16 @@
 // replay (cheapest executor) — at W=2 the chain-style algorithm peaks
 // above orkan's 30-qubit ceiling so simulator-based testing is
 // infeasible; the trace harness mirrors test_mul_mod_dsl.cpp's W=3 sweep.
+//
+// Beat 3.3 (plan §5.3): `pow_mod(2, 3, 5) == 3` — single-classical-case
+// proof that the chain-style repeated-squaring algorithm in
+// lib_pow_mod_dsl computes (base^exp) mod n correctly.  Plan §5.3 row 3.3
+// literally says "W=2 single case", but the modulus n=5 (binary 101)
+// does not fit in 2 bits — the minimum width to represent n=5 is W=3.
+// The plan typo will be corrected in a follow-up; we use W=3 here.  At
+// W=3 chain-style pow_mod peaks far above orkan's 30-qubit ceiling, so
+// simulator-driven verification is infeasible; we use APPEND-mode
+// classical replay (same pattern as beat 2.4 / beat 3.2).
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/lib/pow_mod_dsl.hpp"
@@ -264,6 +275,133 @@ static void run_pow_zero_zero_case(uint32_t n_val) {
         sturm::QubitPool::instance().release(qi_base[i]);
 }
 
+// ── Beat 3.3 — W=3 single classical case `pow_mod(2, 3, 5) == 3` ─────────
+//
+// APPEND-mode capture + classical replay (same harness as beat 2.4 /
+// beat 3.2).  At W=3 the chain-style pow_mod algorithm peaks far above
+// orkan's 30-qubit ceiling, so simulator-based verification is
+// infeasible.  Instead we run lib_pow_mod_dsl in APPEND mode (no
+// statevector), capture the X/CX/CCX gate stream into ctx.ir, then
+// replay the stream as a deterministic bit-flip program over a
+// classical bit-vector seeded with the chosen (base, exp, n) values.
+//
+// Asserts:
+//   - r register holds (base^exp) mod n,
+//   - base, exp, n registers unchanged (reversibility of inputs),
+//   - every ancilla bit (qubits beyond the 4*W input slots) is back to 0,
+//   - QubitPool::in_use() returns to its pre-call value (no leaked
+//     ancillas; the algorithm cleans up after itself).
+
+static constexpr std::size_t W3 = 3u;
+
+static void run_pow_classical_case_w3(uint32_t base_val, uint32_t exp_val,
+                                      uint32_t n_val) {
+    assert(n_val < (1u << W3) && "test precondition: n fits in W3 bits");
+    assert(base_val < n_val && "test precondition: base < n (PRD §5)");
+    assert(exp_val < n_val && "test precondition: exp < n (PRD §5)");
+
+    sturm::QubitPool::instance().reset_for_testing();
+
+    // Reserve the 4*W=12 lowest qubit indices for base, exp, n, r so we
+    // know exactly which slots in the classical bit-vector hold the
+    // inputs.
+    constexpr uint32_t n_reg = 4u * static_cast<uint32_t>(W3);
+    int qi_base[W3], qi_exp[W3], qi_n[W3], qi_r[W3];
+    for (std::size_t i = 0; i < W3; ++i)
+        qi_base[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W3; ++i)
+        qi_exp[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W3; ++i)
+        qi_n[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W3; ++i)
+        qi_r[i] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    assert(pre_in_use == static_cast<int>(n_reg));
+
+    // Wrap the reserved indices as non-owning qbools / BitProxies so the
+    // algorithm sees them as quantum (is_quantum() == true) and emits
+    // gates rather than classical-folding.
+    sturm::qbool base_own[W3], exp_own[W3], n_own[W3], r_own[W3];
+    sturm::BitProxy base_bits[W3], exp_bits[W3], n_bits[W3], r_bits[W3];
+    for (std::size_t i = 0; i < W3; ++i) {
+        base_own[i] = sturm::qbool::make_non_owning(qi_base[i]);
+        exp_own[i]  = sturm::qbool::make_non_owning(qi_exp[i]);
+        n_own[i]    = sturm::qbool::make_non_owning(qi_n[i]);
+        r_own[i]    = sturm::qbool::make_non_owning(qi_r[i]);
+        base_bits[i] = sturm::BitProxy(base_own[i]);
+        exp_bits[i]  = sturm::BitProxy(exp_own[i]);
+        n_bits[i]    = sturm::BitProxy(n_own[i]);
+        r_bits[i]    = sturm::BitProxy(r_own[i]);
+    }
+
+    // Install an APPEND-mode context (no orkan needed: in APPEND mode
+    // execute_gate just records to ctx.ir).
+    sturm_backend_context_t* ctx =
+        sturm_backend_create(STURM_MODE_APPEND, 64u);
+    assert(ctx);
+    sturm_backend_context_t* prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+
+    sturm::lib_pow_mod_dsl<sturm::BitProxy>(base_bits, exp_bits, n_bits,
+                                            W3, r_bits);
+
+    // Snapshot the high-water mark before tearing down the context so
+    // we know how wide to size the classical bit-vector.
+    const int high_water = sturm::QubitPool::instance().high_water();
+
+    // Replay the captured gate stream classically.  Seed base/exp/n
+    // bits at the qubit indices reserved above; r starts at |0>.
+    std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
+    for (std::size_t i = 0; i < W3; ++i) {
+        if ((base_val >> i) & 1u) bits[static_cast<std::size_t>(qi_base[i])] = 1u;
+        if ((exp_val  >> i) & 1u) bits[static_cast<std::size_t>(qi_exp[i])]  = 1u;
+        if ((n_val    >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])]    = 1u;
+        // r starts at |0> (per PRD §5 precondition).
+    }
+    for (std::size_t i = 0; i < ctx->ir.size(); ++i) {
+        apply_gate_classical(bits, ctx->ir.at(i));
+    }
+
+    // Verify result.  Reference: (base^exp) mod n via repeated unsigned
+    // multiplication (uint64_t guards against overflow at small values).
+    uint64_t expect_r64 = 1u;
+    for (uint32_t k = 0; k < exp_val; ++k)
+        expect_r64 = (expect_r64 * static_cast<uint64_t>(base_val))
+                     % static_cast<uint64_t>(n_val);
+    const uint32_t expect_r = static_cast<uint32_t>(expect_r64);
+
+    const uint32_t base_out = read_reg_classical(bits, qi_base, W3);
+    const uint32_t exp_out  = read_reg_classical(bits, qi_exp,  W3);
+    const uint32_t n_out    = read_reg_classical(bits, qi_n,    W3);
+    const uint32_t r_out    = read_reg_classical(bits, qi_r,    W3);
+    assert(base_out == base_val && "W=3 trace: base register unchanged");
+    assert(exp_out  == exp_val  && "W=3 trace: exp register unchanged");
+    assert(n_out    == n_val    && "W=3 trace: n register unchanged");
+    assert(r_out    == expect_r && "W=3 trace: r == (base^exp) mod n");
+
+    // Verify every ancilla bit (qubits beyond the 4*W input slots) is
+    // back to 0 — the algorithm must clean up after itself.
+    for (std::size_t q = static_cast<std::size_t>(n_reg);
+         q < bits.size(); ++q) {
+        assert(bits[q] == 0u && "W=3 trace: ancilla bit not cleaned up");
+    }
+
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "W=3 trace: pool live-count returns to pre-call value");
+
+    sturm_set_thread_context(prev);
+    sturm_backend_destroy(ctx);
+
+    for (std::size_t i = W3; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_r[i]);
+    for (std::size_t i = W3; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_n[i]);
+    for (std::size_t i = W3; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_exp[i]);
+    for (std::size_t i = W3; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_base[i]);
+}
+
 int main() {
     std::printf("sturm-a5te.1 P3.1 pow-mod-dsl: n==0 no-op tests:\n");
     run_n_zero_case(/*base=*/1u, /*exp=*/2u, /*n=*/3u, /*r=*/0u);
@@ -280,6 +418,15 @@ int main() {
     run_pow_zero_zero_case(/*n=*/2u);
     std::puts("  PASS: pow_mod(0, 0, 2) == 1");
 
-    std::printf("All sturm-a5te.{1,2} tests passed.\n");
+    // Beat 3.3 — single classical case `pow_mod(2, 3, 5) == 3`.  Plan
+    // §5.3 row 3.3 says "W=2 single case", but n=5 (binary 101) does
+    // not fit in 2 bits — minimum width to represent n=5 is W=3.  We
+    // use W=3 for this test (plan typo to be corrected in follow-up).
+    std::printf("sturm-a5te.3 P3.3 pow-mod-dsl: W=3 single case "
+                "(APPEND-mode classical trace):\n");
+    run_pow_classical_case_w3(/*base=*/2u, /*exp=*/3u, /*n=*/5u);
+    std::puts("  PASS: pow_mod(2, 3, 5) == 3");
+
+    std::printf("All sturm-a5te.{1,2,3} tests passed.\n");
     return 0;
 }
