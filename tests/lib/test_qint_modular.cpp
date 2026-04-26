@@ -11,8 +11,15 @@
 // Beat 4.3 (sturm-kgwx.3): `sturm::pow_mod(base, exp, n)` matches
 // lib_pow_mod_dsl for one W=2 case.  Uses APPEND-mode classical-trace replay
 // because lib_pow_mod_dsl peaks far above 17 qubits at W>=2 (mirrors beat
-// 4.2 harness; same harness as test_pow_mod_dsl.cpp beat 3.4).  Beat 4.4
-// fills in move/copy.
+// 4.2 harness; same harness as test_pow_mod_dsl.cpp beat 3.4).
+// Beat 4.4 (sturm-kgwx.4): each free fn is move/copy-correct — no ancilla
+// leak through qint_t's ctor/dtor.  Plan §6.3 row 4.4: invoke each wrapper
+// in scenarios that exercise move construction, copy construction,
+// move/copy assignment, and return-by-value.  Asserts QubitPool::in_use()
+// returns to its pre-call value in each case, both inside the call's enclosing
+// scope (drain + result's W qubits live) and after the result(s) destruct
+// (pool fully drained back to pre-call).  Mirrors test_qint_owning.cpp's
+// move/copy harness applied at the wrapper boundary.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/ops/qint_modular.hpp"
@@ -352,6 +359,221 @@ static void run_pow_mod_case(uint32_t base_val, uint32_t exp_val,
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// ── Beat 4.4 — move/copy correctness across the wrapper boundary ─────────
+// Plan §6.3 row 4.4: "Each free fn is move/copy-correct (no ancilla leak
+// through qint_t's ctor/dtor)."  We exercise the four post-return paths:
+//   (a) return-by-value + destroy at scope end       -- baseline drain
+//   (b) move-construct + destroy both at scope end   -- ownership transfer
+//   (c) copy-construct + destroy both at scope end   -- copy gets fresh -1s
+//   (d) move-assign     + destroy both at scope end  -- ownership transfer
+//   (e) copy-assign     + destroy both at scope end  -- copy gets fresh -1s
+//
+// In every case the in-scope pool live-count must equal pre_in_use + W
+// (only the result register's W qubits remain live; every algorithm-internal
+// ancilla is drained by the wrapper itself), and after the qint_t<W>
+// destructors fire the pool live-count must equal pre_in_use.
+//
+// Driven via a function pointer parameter so the same harness exercises
+// add_mod, mul_mod, and pow_mod.  APPEND-mode context drives all three
+// because mul_mod / pow_mod peak above the 17-qubit simulator cap; for
+// move/copy correctness we only care about pool semantics, not gate
+// correctness, so APPEND is adequate (and simpler: no orkan bridge).
+
+using WrapperFn = sturm::qint_t<W>(*)(const sturm::qint_t<W>&,
+                                      const sturm::qint_t<W>&,
+                                      const sturm::qint_t<W>&);
+
+// Set up an APPEND-mode context, three non-owning input qint_t<W>s at the
+// reserved qubit slots, and return them via out-params.  Caller is
+// responsible for tearing down `ctx` (sturm_backend_destroy).
+static void prepare_inputs(sturm_backend_context_t*& ctx,
+                           sturm_backend_context_t*& prev,
+                           sturm::qint_t<W>& a, sturm::qint_t<W>& b,
+                           sturm::qint_t<W>& n,
+                           const std::array<int, W>& qi_a,
+                           const std::array<int, W>& qi_b,
+                           const std::array<int, W>& qi_n,
+                           uint32_t a_val, uint32_t b_val, uint32_t n_val) {
+    ctx = sturm_backend_create(STURM_MODE_APPEND, 64u);
+    assert(ctx);
+    prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+    const uint64_t full_mask = (1ULL << W) - 1ULL;
+    a = sturm::qint_t<W>::make_non_owning(qi_a, static_cast<int64_t>(a_val),
+                                          full_mask);
+    b = sturm::qint_t<W>::make_non_owning(qi_b, static_cast<int64_t>(b_val),
+                                          full_mask);
+    n = sturm::qint_t<W>::make_non_owning(qi_n, static_cast<int64_t>(n_val),
+                                          full_mask);
+}
+
+// Drives one (wrapper, label) pair through paths (a)..(e).  After every
+// path the pool live-count must drain back to pre_in_use; inside the
+// scope where the result(s) are alive it must equal pre_in_use + W.
+static void run_move_copy_case(WrapperFn wrapper, const char* label,
+                               uint32_t a_val, uint32_t b_val,
+                               uint32_t n_val) {
+    sturm::QubitPool::instance().reset_for_testing();
+    constexpr uint32_t n_input = 3u * W;
+    int reserved[n_input];
+    for (uint32_t k = 0; k < n_input; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    std::array<int, W> qi_a{}, qi_b{}, qi_n{};
+    for (std::size_t i = 0; i < W; ++i) {
+        qi_a[i] = reserved[i];
+        qi_b[i] = reserved[W + i];
+        qi_n[i] = reserved[2 * W + i];
+    }
+
+    // (a) return-by-value baseline
+    {
+        sturm_backend_context_t* ctx; sturm_backend_context_t* prev;
+        sturm::qint_t<W> a, b, n;
+        prepare_inputs(ctx, prev, a, b, n, qi_a, qi_b, qi_n,
+                       a_val, b_val, n_val);
+        {
+            sturm::qint_t<W> r = wrapper(a, b, n);
+            assert(r.owning_ == true && "[a] returned r owns its qubits");
+            assert(sturm::QubitPool::instance().in_use()
+                   == pre_in_use + static_cast<int>(W)
+                   && "[a] only result's W qubits remain live after the call");
+        }
+        assert(sturm::QubitPool::instance().in_use() == pre_in_use
+               && "[a] pool drains fully after r's destructor");
+        sturm_set_thread_context(prev);
+        sturm_backend_destroy(ctx);
+    }
+
+    // (b) move-construct: src becomes non-owning, dst takes ownership;
+    //     destroying both must release exactly W qubits, no double-free.
+    {
+        sturm_backend_context_t* ctx; sturm_backend_context_t* prev;
+        sturm::qint_t<W> a, b, n;
+        prepare_inputs(ctx, prev, a, b, n, qi_a, qi_b, qi_n,
+                       a_val, b_val, n_val);
+        {
+            sturm::qint_t<W> r = wrapper(a, b, n);
+            std::array<int, W> saved_q = r.qubits;
+            sturm::qint_t<W> r2(std::move(r));
+            assert(r.owning_ == false
+                   && "[b] move-source becomes non-owning");
+            assert(r2.owning_ == true
+                   && "[b] move-destination owns the qubits");
+            for (std::size_t i = 0; i < W; ++i) {
+                assert(r.qubits[i] == -1
+                       && "[b] move-source qubit indices cleared");
+                assert(r2.qubits[i] == saved_q[i]
+                       && "[b] move-destination retains original indices");
+            }
+            assert(sturm::QubitPool::instance().in_use()
+                   == pre_in_use + static_cast<int>(W)
+                   && "[b] move-construct does not allocate or leak qubits");
+        }
+        assert(sturm::QubitPool::instance().in_use() == pre_in_use
+               && "[b] pool drains fully after both r/r2 destructors "
+                  "(exactly one release per qubit, no double-free)");
+        sturm_set_thread_context(prev);
+        sturm_backend_destroy(ctx);
+    }
+
+    // (c) copy-construct: copy starts owning_ = true with all -1 qubits;
+    //     original retains ownership.  Both destructors run, only original
+    //     releases.  Pool live-count must drain to pre_in_use.
+    {
+        sturm_backend_context_t* ctx; sturm_backend_context_t* prev;
+        sturm::qint_t<W> a, b, n;
+        prepare_inputs(ctx, prev, a, b, n, qi_a, qi_b, qi_n,
+                       a_val, b_val, n_val);
+        {
+            sturm::qint_t<W> r = wrapper(a, b, n);
+            sturm::qint_t<W> r2(r);  // copy-construct
+            assert(r2.owning_ == true
+                   && "[c] copy-destination starts owning (its own fresh slots)");
+            for (std::size_t i = 0; i < W; ++i) {
+                assert(r2.qubits[i] == -1
+                       && "[c] copy-destination has no qubits (fresh -1s)");
+            }
+            assert(r.owning_ == true
+                   && "[c] copy-source retains ownership of its qubits");
+            assert(sturm::QubitPool::instance().in_use()
+                   == pre_in_use + static_cast<int>(W)
+                   && "[c] copy-construct allocates no new qubits");
+        }
+        assert(sturm::QubitPool::instance().in_use() == pre_in_use
+               && "[c] pool drains fully after r/r2 destructors "
+                  "(only r releases its qubits; r2 had none)");
+        sturm_set_thread_context(prev);
+        sturm_backend_destroy(ctx);
+    }
+
+    // (d) move-assignment: like (b) but onto a default-constructed dst.
+    {
+        sturm_backend_context_t* ctx; sturm_backend_context_t* prev;
+        sturm::qint_t<W> a, b, n;
+        prepare_inputs(ctx, prev, a, b, n, qi_a, qi_b, qi_n,
+                       a_val, b_val, n_val);
+        {
+            sturm::qint_t<W> r = wrapper(a, b, n);
+            std::array<int, W> saved_q = r.qubits;
+            sturm::qint_t<W> dst;
+            dst = std::move(r);
+            assert(r.owning_ == false
+                   && "[d] move-assign-source becomes non-owning");
+            assert(dst.owning_ == true
+                   && "[d] move-assign-destination owns the qubits");
+            for (std::size_t i = 0; i < W; ++i) {
+                assert(r.qubits[i] == -1
+                       && "[d] move-assign-source qubit indices cleared");
+                assert(dst.qubits[i] == saved_q[i]
+                       && "[d] move-assign-destination has original indices");
+            }
+            assert(sturm::QubitPool::instance().in_use()
+                   == pre_in_use + static_cast<int>(W)
+                   && "[d] move-assign does not allocate or leak qubits");
+        }
+        assert(sturm::QubitPool::instance().in_use() == pre_in_use
+               && "[d] pool drains fully after r/dst destructors");
+        sturm_set_thread_context(prev);
+        sturm_backend_destroy(ctx);
+    }
+
+    // (e) copy-assignment: copy gets fresh -1 qubits; original retains
+    //     ownership.  Pool live-count must drain to pre_in_use.
+    {
+        sturm_backend_context_t* ctx; sturm_backend_context_t* prev;
+        sturm::qint_t<W> a, b, n;
+        prepare_inputs(ctx, prev, a, b, n, qi_a, qi_b, qi_n,
+                       a_val, b_val, n_val);
+        {
+            sturm::qint_t<W> r = wrapper(a, b, n);
+            sturm::qint_t<W> dst;
+            dst = r;  // copy-assign
+            assert(dst.owning_ == true
+                   && "[e] copy-assign-destination owns its own fresh slots");
+            for (std::size_t i = 0; i < W; ++i) {
+                assert(dst.qubits[i] == -1
+                       && "[e] copy-assign-destination has no qubits");
+            }
+            assert(r.owning_ == true
+                   && "[e] copy-assign-source retains ownership");
+            assert(sturm::QubitPool::instance().in_use()
+                   == pre_in_use + static_cast<int>(W)
+                   && "[e] copy-assign allocates no new qubits");
+        }
+        assert(sturm::QubitPool::instance().in_use() == pre_in_use
+               && "[e] pool drains fully after r/dst destructors");
+        sturm_set_thread_context(prev);
+        sturm_backend_destroy(ctx);
+    }
+
+    // Manual cleanup of pre-reserved input slots (mirrors beats 4.1-4.3).
+    for (uint32_t k = 0; k < n_input; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+    std::printf("  PASS: %s — paths (a)..(e) drain pool to pre-call value\n",
+                label);
+}
+
 int main() {
     std::printf("sturm-kgwx.1 P4.1 qint_modular: add_mod wrapper test:\n");
     run_add_mod_case(/*a=*/1u, /*b=*/1u, /*n=*/3u);
@@ -365,6 +587,15 @@ int main() {
     run_pow_mod_case(/*base=*/2u, /*exp=*/3u, /*n=*/3u);
     std::puts("  PASS: pow_mod(2, 3, 3) == 2 matches lib_pow_mod_dsl");
 
-    std::printf("All sturm-kgwx.{1,2,3} tests passed.\n");
+    std::printf("sturm-kgwx.4 P4.4 qint_modular: move/copy correctness "
+                "(no ancilla leak through qint_t's ctor/dtor):\n");
+    run_move_copy_case(&sturm::add_mod<W>, "add_mod",
+                       /*a=*/1u, /*b=*/1u, /*n=*/3u);
+    run_move_copy_case(&sturm::mul_mod<W>, "mul_mod",
+                       /*a=*/2u, /*b=*/2u, /*n=*/3u);
+    run_move_copy_case(&sturm::pow_mod<W>, "pow_mod",
+                       /*base=*/2u, /*exp=*/3u, /*n=*/3u);
+
+    std::printf("All sturm-kgwx.{1,2,3,4} tests passed.\n");
     return 0;
 }
