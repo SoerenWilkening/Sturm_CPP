@@ -38,8 +38,15 @@ git clone https://github.com/SoerenWilkening/Sturm_CPP.git
 cd Sturm_CPP
 cmake -S . -B build -DLLVM_DIR=$(llvm-config-17 --cmakedir) \
       -DClang_DIR=/usr/lib/llvm-17/lib/cmake/clang
-cmake --build build -j
+cmake --build build -j6
 ```
+
+Build-time options (pass with `-D<NAME>=<VALUE>` at configure time; run `cmake -LH build` for the full list):
+
+| Flag | Default | Effect |
+|---|---|---|
+| `STURM_MODULAR_POW` | `OFF` | Gates the transpiler rewrite of `pow(a, x) % n` to the single `lib_pow_mod_dsl` primitive. With the default `OFF`, the two-step `lib_pow_dsl + lib_mod_dsl` lowering is preserved bit-exactly; with `ON`, the matcher folds the pair into one call without the wide intermediate. The companion `add` / `mul` modular rewrites are unconditional — only `pow` is gated. The library does not check the precondition `a, b ∈ [0, n)`; calling the modular operators with unreduced operands is undefined behaviour. See [docs/prd_modular_arithmetic.md](docs/prd_modular_arithmetic.md) §3.4 / §5. |
+| `STURM_ANCILLA_CAPACITY` | `256` | Ancilla pool capacity (qubits) compiled into the runtime. |
 
 ## Getting started
 

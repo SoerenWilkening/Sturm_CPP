@@ -40,10 +40,7 @@ add_compile_definitions(STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY})
 # preserves room for future per-region scope if a real use case
 # demands it (PRD §7).
 option(STURM_MODULAR_POW
-    "Enable transpiler rewrite of `pow(a, x) % n` to `lib_pow_mod_dsl`. \
-Plan §2.2 / PRD §3.4. OFF preserves the two-step lowering; ON folds the \
-pair into a single `lib_pow_mod_dsl` call. The add/mul modular rewrites \
-are unconditional (always on); only the pow rewrite is gated."
+    "Gate the transpiler rewrite of `pow(a, x) % n` to `lib_pow_mod_dsl` (Plan §8.1 / PRD §3.4); default OFF preserves the two-step `lib_pow_dsl + lib_mod_dsl` lowering, ON folds the pair into a single primitive. The add/mul modular rewrites are unconditional."
     OFF)
 if(STURM_MODULAR_POW)
     message(STATUS "sturm: STURM_MODULAR_POW=ON — transpiler will "

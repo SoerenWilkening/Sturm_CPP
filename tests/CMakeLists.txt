@@ -190,3 +190,33 @@ set_tests_properties(cmake_modular_pow_flag PROPERTIES
     # for the test so we do not blow past the project's `--parallel 6`
     # cap when CMake spawns its own internal helpers.
     PROCESSORS 2)
+
+# ── sturm-bjt2.1 — STURM_MODULAR_POW CMake help text + README docs ───────────
+#
+# Drives the Phase 6 plan §8.1 / PRD §3.4 contract for the user-facing
+# documentation of the STURM_MODULAR_POW option:
+#   - the option's CMake help string (visible via `cmake -LH`) names
+#     the gated rewrite (pow / lib_pow_mod_dsl) and the default (OFF);
+#   - the top-level README.md `Build` section documents the flag with
+#     the same three needles.
+#
+# Implementation: the script (`cmake_modular_pow_help_text.cmake`)
+# runs one out-of-tree configure of the STURM source tree, queries
+# `cmake -LH -N` for the option block, and scans README.md. No
+# compilation runs (configure-only), so the test stays fast.
+add_test(NAME cmake_modular_pow_help_text
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_help_text"
+        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+        "-DPARENT_CLANG_DIR=${Clang_DIR}"
+        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_help_text.cmake"
+)
+set_tests_properties(cmake_modular_pow_help_text PROPERTIES
+    LABELS "cmake;modular-arith;docs"
+    # Same reasoning as cmake_modular_pow_flag: the child configure
+    # spawns its own helpers; reserve a job slot to stay under the
+    # project's `--parallel 6` cap.
+    PROCESSORS 2)
