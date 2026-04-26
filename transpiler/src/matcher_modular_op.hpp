@@ -14,9 +14,14 @@
 //   1. `(qint + qint) % qint` → AddMod                  (beat 5.1, landed)
 //   2. `(qint * qint) % qint` → MulMod                  (beat 5.2, landed)
 //   3. peephole-collapsed `r = a + b; r %= n;` → AddMod (beat 5.3, landed)
-//   4. `pow(qint, qint) % qint` → PowMod                (beats 5.4–5.6,
-//                                                        gated on
-//                                                        STURM_MODULAR_POW)
+//   4. `pow(qint, qint) % qint` → PowMod                (gated on
+//                                                        STURM_MODULAR_POW;
+//                                                        beat 5.4 landed
+//                                                        the OFF-mode
+//                                                        no-op contract,
+//                                                        beats 5.5/5.6
+//                                                        land the flag-on
+//                                                        rewrite)
 //
 // Each beat's per-pattern callback is appended to a shared hits vector;
 // the consumer drain in `transpile_consumer.cpp` dispatches on the

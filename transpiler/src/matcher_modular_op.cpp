@@ -275,6 +275,29 @@ void register_modular_op_matcher(clang::ast_matchers::MatchFinder& finder,
         finder.addMatcher(binary_mod_pattern("*"), pool.back().get());
     }
     register_compound_collapse_addmod_arm(finder, hits);
+
+    // Beat 5.4 (sturm-qzab.4): PowMod negative-path contract.
+    //
+    // Plan §7.4 / PRD §3.4: when the top-level CMake option
+    // `STURM_MODULAR_POW` is OFF (the default), the matcher MUST NOT
+    // register any arm that fires on `pow(a, x) % n` — the AST flows
+    // through the transpiler untouched and the lib layer's
+    // `lib_pow_dsl + lib_mod_dsl` lowering takes over at codegen.
+    //
+    // The `#ifdef STURM_MODULAR_POW` block below is intentionally empty
+    // at this beat: it pins the gate at the matcher TU level and gives
+    // beat 5.5 (sturm-qzab.5) one place to land the `register_one<...>`
+    // call for the flag-on PowMod arm without any additional CMake or
+    // include surgery. Negative coverage is asserted by the
+    // `test_pow_mod_*_does_not_match_under_flag_off` cases in
+    // `transpiler/tests/test_matcher_modular_op.cpp`; the snapshot
+    // fixture `tests/transpiler/fixtures/modular_pow_op_default.cpp`
+    // pins the byte-level identity output.
+#ifdef STURM_MODULAR_POW
+    // Beat 5.5 (sturm-qzab.5) lands the PowMod arm registration here.
+    // Intentionally empty under sturm-qzab.4 — the negative-path beat
+    // owns only the OFF-mode contract.
+#endif
 }
 
 } // namespace sturm::transpile

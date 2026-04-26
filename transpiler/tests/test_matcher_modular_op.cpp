@@ -36,7 +36,13 @@
 //     match.
 //
 // PowMod arm lands in beats 5.4-5.6 — it shares the matcher TU but
-// each beat ships its own set of asserts.
+// each beat ships its own set of asserts. Beat 5.4 (sturm-qzab.4) is
+// the negative-path beat: under the default `STURM_MODULAR_POW=OFF`
+// build configuration the matcher MUST NOT register a PowMod arm, so a
+// site shaped `qint r = sturm::pow(a, x) % n;` produces ZERO hits and
+// the transpiler leaves the AST untouched (the lib-layer fallback to
+// `lib_pow_dsl + lib_mod_dsl` is what runs at codegen). The flag-on
+// rewrite ships in beat 5.5 (sturm-qzab.5).
 
 #include "matcher_modular_op.hpp"
 
@@ -82,6 +88,19 @@ inline qint_t<W> operator*(const qint_t<W>&, const qint_t<W>&) {
 }
 template <int W>
 inline qint_t<W> operator%(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+// Hermetic `pow` stubs (qint exponent + int64 exponent) for the
+// sturm-qzab.4 negative-coverage beat. Mirrors the
+// `tests/transpiler/fixtures/modular_pow_op_default.cpp` stub shape so
+// the matcher sees the same `pow(qint, qint) % qint` AST shape it must
+// LEAVE ALONE under `STURM_MODULAR_POW=OFF`.
+template <int W>
+inline qint_t<W> pow(const qint_t<W>&, const qint_t<W>&) {
+    return qint_t<W>{};
+}
+template <int W>
+inline qint_t<W> pow(const qint_t<W>&, long long) {
     return qint_t<W>{};
 }
 } // namespace sturm
@@ -524,6 +543,73 @@ void test_compound_collapse_coexists_with_in_init_form() {
     CHECK(in_init_seen == 1);
 }
 
+// ── sturm-qzab.4 (P5 beat 5.4): PowMod negative path (flag OFF) ─────────────
+//
+// Plan §7.4 / PRD §3.4: under the default `STURM_MODULAR_POW=OFF`
+// build configuration the modular-op matcher MUST NOT recognise the
+// `pow(a, x) % n` AST shape — neither the qint-qint exponent form nor
+// the qint-int64 exponent form fires a PowMod hit. With no PowMod arm
+// registered, the existing AddMod / MulMod arms also reject the shape
+// (no inner `+`/`*` op-call between operator overloads), so the entire
+// declaration round-trips through the transpiler untouched and falls
+// back to the lib-layer `lib_pow_dsl + lib_mod_dsl` lowering at codegen.
+// Beat 5.5 (sturm-qzab.5) lands the flag-on PowMod arm; this beat pins
+// the OFF-mode contract that the flag-on diff is measured against.
+//
+// The matcher TU is built without `STURM_MODULAR_POW` defined for this
+// test executable (the define is propagated only to the `sturm-transpile`
+// driver target — see `transpiler/CMakeLists.txt` line ~264). Asserting
+// `hits.empty()` here therefore directly exercises the OFF-mode branch.
+void test_pow_mod_qint_exponent_does_not_match_under_flag_off() {
+    auto hits = run_matcher(
+        "void demo(qint a, qint x, qint n) {\n"
+        "    qint r = sturm::pow(a, x) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+void test_pow_mod_int_exponent_does_not_match_under_flag_off() {
+    // The matched-fixture variant uses an int64 exponent — the
+    // `qint_t<W> pow(qint_t<W>, long long)` overload. Same OFF-mode
+    // contract: matcher emits no PowMod hit, the `pow(...) % n` site
+    // falls back to the lib_pow_dsl + lib_mod_dsl lowering.
+    auto hits = run_matcher(
+        "void demo(qint a, qint n) {\n"
+        "    qint r = sturm::pow(a, 3LL) % n;\n"
+        "    (void)r;\n"
+        "}\n");
+    CHECK(hits.empty());
+}
+
+void test_pow_mod_does_not_collide_with_addmod_mulmod_under_flag_off() {
+    // A TU mixing AddMod + MulMod (rewritten under both flag modes) and
+    // PowMod (rewritten only under flag ON) must, under flag OFF,
+    // produce exactly TWO hits — one per binary-op site — with no
+    // spurious PowMod hit on the `pow(...) % n` site. Confirms the
+    // OFF-mode PowMod branch does not bleed into the always-on arms.
+    auto hits = run_matcher(
+        "void demo(qint a, qint b, qint x, qint n) {\n"
+        "    qint s = (a + b) % n;\n"
+        "    qint p = (a * b) % n;\n"
+        "    qint q = sturm::pow(a, x) % n;\n"
+        "    (void)s; (void)p; (void)q;\n"
+        "}\n");
+    CHECK(hits.size() == 2);
+    if (hits.size() != 2) return;
+    bool saw_add = false;
+    bool saw_mul = false;
+    bool saw_pow = false;
+    for (const auto& h : hits) {
+        if (h.kind == ModularOpKind::AddMod) saw_add = true;
+        if (h.kind == ModularOpKind::MulMod) saw_mul = true;
+        if (h.kind == ModularOpKind::PowMod) saw_pow = true;
+    }
+    CHECK(saw_add);
+    CHECK(saw_mul);
+    CHECK(!saw_pow);
+}
+
 } // namespace
 
 int main() {
@@ -551,6 +637,9 @@ int main() {
     test_compound_collapse_inner_sub_does_not_match();
     test_compound_collapse_non_qint_operands_do_not_match();
     test_compound_collapse_coexists_with_in_init_form();
+    test_pow_mod_qint_exponent_does_not_match_under_flag_off();
+    test_pow_mod_int_exponent_does_not_match_under_flag_off();
+    test_pow_mod_does_not_collide_with_addmod_mulmod_under_flag_off();
     std::printf("PASS: %d/%d\n", tests_pass, tests_run);
     return tests_pass == tests_run ? 0 : 1;
 }
