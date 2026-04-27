@@ -139,3 +139,21 @@ target_compile_features(test_umbrella_only PRIVATE cxx_std_20)
 add_test(NAME test_umbrella_only COMMAND test_umbrella_only)
 set_tests_properties(test_umbrella_only PROPERTIES
     LABELS "packaging")
+
+# ── sturm-zmfk.2 / E3.M2 — prelude header acceptance test ───────────────────
+# Pins the opt-in `<sturm/prelude.hpp>` contract (PRD §3.4 / D7): a TU
+# that includes ONLY the prelude must reach `qint` and `qbool` without
+# the `sturm::` qualifier (because the prelude does
+# `using sturm::qint; using sturm::qbool;`) AND must NOT see `add_mod`
+# unqualified — free functions are intentionally kept sturm::-prefixed
+# to avoid global-namespace pollution and ADL surprises. The
+# detection-idiom guard in test_prelude.cpp fails to compile if a
+# future edit ever silently adds `using sturm::add_mod;` (or any
+# other free-function using-declaration) to the prelude.
+# Header-only build linking against the `sturm` INTERFACE target.
+add_executable(test_prelude test_prelude.cpp)
+target_link_libraries(test_prelude PRIVATE sturm)
+target_compile_features(test_prelude PRIVATE cxx_std_20)
+add_test(NAME test_prelude COMMAND test_prelude)
+set_tests_properties(test_prelude PROPERTIES
+    LABELS "packaging")
