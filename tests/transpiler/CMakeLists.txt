@@ -4627,3 +4627,65 @@ set_tests_properties(transpiler_idempotent_modular_unrelated PROPERTIES
     LABELS "transpiler;modular-arith"
     DEPENDS "snapshot_modular_unrelated"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-va3z.1 (E7.M1): WHEN free-variable read-set extractor unit test ──
+# Pure unit test for `compute_when_freevar_readset` in
+# `transpiler/src/when_freevar_readset.{hpp,cpp}`. The harness drives the
+# extractor against in-memory C++ snippets via `runToolOnCodeWithArgs`,
+# the same Clang Tooling pattern the transpiler's matcher unit-tests
+# use (see `transpiler/tests/test_matcher_*.cpp`). LLVM / Clang config
+# packages are re-found here because the per-package variables defined
+# under `transpiler/CMakeLists.txt` do not propagate up to this scope;
+# `find_package(... CONFIG)` is idempotent and re-uses the cached
+# LLVM_DIR / Clang_DIR set by the parent configure.
+find_package(LLVM CONFIG REQUIRED)
+find_package(Clang CONFIG REQUIRED)
+
+add_executable(test_when_freevar_readset
+    test_when_freevar_readset.cpp
+    ${CMAKE_SOURCE_DIR}/transpiler/src/when_freevar_readset.cpp
+)
+target_include_directories(test_when_freevar_readset PRIVATE
+    ${CMAKE_SOURCE_DIR}/transpiler/src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_when_freevar_readset PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_when_freevar_readset PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_WHEN_FVRS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_when_freevar_readset PRIVATE
+    ${LLVM_DEFS_LIST_WHEN_FVRS})
+# Mirror the matcher unit-test target's shared-vs-static LLVM link
+# discipline so we do not double-register cl::opt tables when a shared
+# libclang-cpp / libLLVM is also on the link line via the parent build.
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_when_freevar_readset PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_when_freevar_readset PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_WHEN_FVRS support)
+    target_link_libraries(test_when_freevar_readset PRIVATE
+        ${LLVM_LIBS_WHEN_FVRS})
+endif()
+add_test(NAME test_when_freevar_readset
+         COMMAND test_when_freevar_readset)
+set_tests_properties(test_when_freevar_readset PROPERTIES
+    LABELS "transpiler")
