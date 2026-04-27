@@ -67,6 +67,8 @@ No entanglement graphs, no global state analysis, no per-call caching.
 
 **B5. Primitives have uncontrolled and singly-controlled forms only.** No multi-controlled variants exist in the primitive set. Nested `WHEN` scopes collapse their control chain into a single ancilla via AND at scope entry, so the innermost control is always one bit.
 
+**B5a. Depth-1 control-stack invariant (sturm-a3t4).** The thread-local control stack is bounded to depth ≤ 1: at any point in execution, at most one control bit is live on the stack. Library and user code that needs effectively higher-arity control must lift via the *outer flag + `WHEN`* pattern — compute an outer `qbool` flag (e.g. `qbool f = a & b;`), then enter a single `WHEN(f) { ... }` whose body uses at most one further `WHEN` level. The lifted emitters (`emit_X_lifted`, `emit_CX_lifted`, `emit_CCX_lifted` in `include/sturm/qtypes/qbool_ops.hpp`) assert `depth <= 1`; depth ≥ 2 is a programmer error, not a supported runtime path.
+
 **B6. Ancillas and control temporaries are scope-bound via C++ RAII.** Classical control expressions allocate no ancillas; superposed control expressions allocate one ancilla per `WHEN` scope and uncompute it on scope exit. Allocation is invisible in the user-level IR — it is folded into the operations that need it.
 
 **B7. Qubit indices are backend-managed.** User code never sees, allocates, or names qubits. The backend assigns physical indices to the bits of a `qint`/`qbool` at construction.
