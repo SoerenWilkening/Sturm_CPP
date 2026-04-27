@@ -15,6 +15,16 @@
 # time and provides the set_and_check() / check_required_components()
 # helpers plus a _IMPORT_PREFIX anchored at the install root (i.e. the
 # directory containing lib/cmake/sturm/).
+#
+# Version export (sturm-mjr2.2 / E4.M2). The `sturm_VERSION` variable seen
+# by `find_package(sturm REQUIRED)` callers is populated by CMake itself
+# from the side-by-side `sturmConfigVersion.cmake` produced by
+# `write_basic_package_version_file(... VERSION ${PROJECT_VERSION} ...)`
+# in the top-level CMakeLists.txt. No version-specific code is needed
+# here; the contract is that the version-file ships next to this file
+# under `<prefix>/lib/cmake/sturm/`. Pinned by the `find_package_version`
+# ctest in tests/packaging/. Keep this comment in sync with the install
+# rule in the root CMakeLists.txt §3 ("Package config + version config").
 
 # ── 1. Public include directory ───────────────────────────────────────────
 # Resolve the install include dir relative to this config file and expose

@@ -84,3 +84,27 @@ target_compile_definitions(test_version PRIVATE
 add_test(NAME test_version COMMAND test_version)
 set_tests_properties(test_version PROPERTIES
     LABELS "packaging;version")
+
+# ── sturm-mjr2.2 / E4.M2 — find_package(sturm) populates sturm_VERSION ──────
+# Install-and-consume integration test: cmake --install into a temp prefix,
+# then configure a minimal downstream project that does
+# `find_package(sturm REQUIRED)` and FATAL_ERRORs unless sturm_VERSION is
+# non-empty AND equal to PROJECT_VERSION. The assertion runs at downstream
+# *configure* time (no compilation needed) — see test_find_package_version.py.
+#
+# Reuses the `sturmc_artifacts_built` fixture so cmake --install does not
+# silently skip targets whose build step has not yet run. STURM_EXPECTED_VERSION
+# is fed in from the top-level project's ${PROJECT_VERSION} so the test stays
+# bytewise pinned to CMake's source-of-truth (cf. test_version.cpp pattern).
+add_test(
+    NAME find_package_version
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_CURRENT_SOURCE_DIR}/test_find_package_version.py")
+set_tests_properties(find_package_version PROPERTIES
+    LABELS "packaging;version"
+    FIXTURES_REQUIRED "sturmc_artifacts_built"
+    TIMEOUT 300
+    ENVIRONMENT
+        "STURMC_BUILD_DIR=${CMAKE_BINARY_DIR};\
+STURMC_CMAKE=${CMAKE_COMMAND};\
+STURM_EXPECTED_VERSION=${PROJECT_VERSION}")
