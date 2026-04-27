@@ -62,6 +62,45 @@ struct BitProxy;
 
 namespace sturm {
 
+/**
+ * @brief Gate-reverse adjoint of @ref lib_add_mod_dsl.
+ *
+ * Starting from `r_bits = (a_bits + b_bits) mod n_bits` (with the
+ * original `a_bits`, `b_bits`, `n_bits` preserved by the forward call),
+ * this routine returns `r_bits` to |0> while leaving the input
+ * registers unchanged.  Implementation runs the forward gate sequence
+ * in reverse, swapping each `lib_add_dsl` for `lib_add_adj` (and
+ * vice-versa); self-inverse XOR / control-stack steps stay as-is.
+ *
+ * Built strictly on top of `lib_add_dsl` + `detail_div::lib_add_adj`
+ * per the PRD §4 layering rule — emits no gates of its own.
+ *
+ * @param a_bits Left addend register (W qubits, read but restored).
+ * @param b_bits Right addend register (W qubits, read but restored).
+ * @param n_bits Modulus register (W qubits, read but restored).
+ * @param n      Register width.  `n == 0` short-circuits to a no-op.
+ * @param r_bits Result register (W qubits).  Must enter holding
+ *               `(a + b) mod n`; exits in |0>.
+ *
+ * @pre `a, b ∈ [0, n)` and `n ≥ 1` (when `n == 0`, the call is a
+ *      no-op).  `r_bits` must enter the routine holding the value
+ *      produced by a paired `lib_add_mod_dsl` call on the same
+ *      `(a_bits, b_bits, n_bits)` operands.  `a_bits`, `b_bits`,
+ *      `n_bits`, and `r_bits` must refer to physically distinct qubit
+ *      registers.
+ *
+ * @par Behavior on precondition violation
+ * The library does **not** check the precondition.  Calling
+ * `__lib_add_mod_dsl_adj` with operands outside `[0, n)`, with
+ * `r_bits` not equal to the paired forward output, or with aliased
+ * registers is **undefined behavior** — the routine still emits a
+ * well-formed gate sequence, but `r_bits` will not return to |0> and
+ * the input registers may be corrupted.  This matches the trust model
+ * shared with the public `add_mod` wrapper (PRD §5).
+ *
+ * @sa lib_add_mod_dsl, __lib_mul_mod_dsl_adj, sturm::add_mod
+ * @see PRD §5 (Trust model and precondition contract).
+ */
 template <typename Bit>
 inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
                                   Bit* n_bits, std::size_t n,

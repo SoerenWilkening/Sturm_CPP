@@ -117,11 +117,46 @@ inline void push_flag(BackendContext& ctx, Bit& flag) {
 
 }  // namespace detail_pow_mod
 
-// lib_pow_mod_dsl: out-of-place W-bit modular exponentiation.  See header
-// preamble for the algorithm.  `n` is the register width (NOT the modulus);
-// the modulus is encoded in n_bits[0..n-1].  r_bits must start in |0>.
-// Inputs base_bits, exp_bits, n_bits are unchanged.  n == 0 is a no-op.
-// Convention: 0^0 = 1 (matches lib_pow_dsl).
+/**
+ * @brief Out-of-place W-bit modular exponentiation primitive:
+ *        `r_bits = (base_bits ^ exp_bits) mod n_bits`.
+ *
+ * This is the lib-level primitive backing the public `sturm::pow_mod`
+ * free function (see `include/sturm/ops/qint_modular.hpp`).  Built
+ * strictly on top of `lib_mul_mod_dsl` + per-bit XOR copies per the
+ * PRD §4 layering rule — emits no gates of its own.  See the header
+ * preamble for the chain-style repeated-squaring algorithm.
+ *
+ * Convention: `0^0 == 1` (matches `lib_pow_dsl` and Python's
+ * three-argument `pow`).
+ *
+ * @param base_bits Base register (W qubits, read but restored).
+ * @param exp_bits  Exponent register (W qubits, read but restored).
+ * @param n_bits    Modulus register (W qubits, read but restored).
+ * @param n         Register width (NOT the modulus; the modulus is
+ *                  encoded in `n_bits[0..n-1]`).  `n == 0`
+ *                  short-circuits to a no-op (matches PRD §5 / §8 #3).
+ * @param r_bits    Result register (W qubits).  Must start in |0>.
+ *                  On exit, holds `(base ^ exp) mod n`.
+ *
+ * @pre `base ∈ [0, n)` and `n ≥ 1` (when `n == 0`, the call is a
+ *      no-op — see PRD §5 / §8 #3).  The exponent `exp` is
+ *      unconstrained beyond fitting in W bits.  `r_bits` must enter
+ *      the routine in |0>.  `base_bits`, `exp_bits`, `n_bits`, and
+ *      `r_bits` must refer to physically distinct qubit registers.
+ *
+ * @par Behavior on precondition violation
+ * The library does **not** check the precondition.  Calling
+ * `lib_pow_mod_dsl` with `base` outside `[0, n)` is **undefined
+ * behavior** — the routine still emits a well-formed gate sequence,
+ * but the resulting `r_bits` are not the mathematical answer and the
+ * input registers may not be restored.  This matches the trust model
+ * of the public `pow_mod` wrapper and of classical `pow(a, b, c)` /
+ * GMP / OpenSSL (PRD §5).
+ *
+ * @sa __lib_pow_mod_dsl_adj, lib_mul_mod_dsl, sturm::pow_mod
+ * @see PRD §5 (Trust model and precondition contract).
+ */
 template <typename Bit>
 inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
                             Bit* n_bits, std::size_t n,

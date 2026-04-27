@@ -76,6 +76,48 @@ struct BitProxy;
 
 namespace sturm {
 
+/**
+ * @brief Gate-reverse adjoint of @ref lib_pow_mod_dsl.
+ *
+ * Starting from `r_bits = (base_bits ^ exp_bits) mod n_bits` (with the
+ * original `base_bits`, `exp_bits`, `n_bits` preserved by the forward
+ * call), this routine returns `r_bits` to |0> while leaving the input
+ * registers unchanged.  Implementation runs the forward gate sequence
+ * in reverse, swapping each `lib_mul_mod_dsl` for
+ * `__lib_mul_mod_dsl_adj` (and vice-versa); self-inverse XOR /
+ * `flip()` / control-stack steps stay as-is.
+ *
+ * Built strictly on top of `lib_mul_mod_dsl` + `__lib_mul_mod_dsl_adj`
+ * per the PRD §4 layering rule — emits no gates of its own.  Honors
+ * the same `0^0 == 1` convention as the forward primitive.
+ *
+ * @param base_bits Base register (W qubits, read but restored).
+ * @param exp_bits  Exponent register (W qubits, read but restored).
+ * @param n_bits    Modulus register (W qubits, read but restored).
+ * @param n         Register width.  `n == 0` short-circuits to a no-op.
+ * @param r_bits    Result register (W qubits).  Must enter holding
+ *                  `(base ^ exp) mod n`; exits in |0>.
+ *
+ * @pre `base ∈ [0, n)` and `n ≥ 1` (when `n == 0`, the call is a
+ *      no-op).  The exponent `exp` is unconstrained beyond fitting in
+ *      W bits.  `r_bits` must enter the routine holding the value
+ *      produced by a paired `lib_pow_mod_dsl` call on the same
+ *      `(base_bits, exp_bits, n_bits)` operands.  `base_bits`,
+ *      `exp_bits`, `n_bits`, and `r_bits` must refer to physically
+ *      distinct qubit registers.
+ *
+ * @par Behavior on precondition violation
+ * The library does **not** check the precondition.  Calling
+ * `__lib_pow_mod_dsl_adj` with `base` outside `[0, n)`, with
+ * `r_bits` not equal to the paired forward output, or with aliased
+ * registers is **undefined behavior** — the routine still emits a
+ * well-formed gate sequence, but `r_bits` will not return to |0> and
+ * the input registers may be corrupted.  This matches the trust model
+ * shared with the public `pow_mod` wrapper (PRD §5).
+ *
+ * @sa lib_pow_mod_dsl, __lib_mul_mod_dsl_adj, sturm::pow_mod
+ * @see PRD §5 (Trust model and precondition contract).
+ */
 template <typename Bit>
 inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
                                   Bit* n_bits, std::size_t n,

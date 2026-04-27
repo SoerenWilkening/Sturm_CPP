@@ -119,10 +119,45 @@ inline void push_flag(BackendContext& ctx, Bit& flag) {
 
 }  // namespace detail_mul_mod
 
-// lib_mul_mod_dsl: out-of-place W-bit modular multiplication.  See header
-// preamble for the algorithm.  `n` is the register width (NOT the modulus);
-// the modulus is encoded in n_bits[0..n-1].  r_bits must start in |0>.
-// Inputs a_bits, b_bits, n_bits are unchanged.  n == 0 is a no-op.
+/**
+ * @brief Out-of-place W-bit modular multiplication primitive:
+ *        `r_bits = (a_bits * b_bits) mod n_bits`.
+ *
+ * This is the lib-level primitive backing the public `sturm::mul_mod`
+ * free function (see `include/sturm/ops/qint_modular.hpp`).  Built
+ * strictly on top of `lib_add_mod_dsl` + per-bit XOR copies per the
+ * PRD §4 layering rule — emits no gates of its own.  See the header
+ * preamble for the chain-style shift-and-add algorithm.
+ *
+ * @param a_bits Left factor register (W qubits, read but restored).
+ * @param b_bits Right factor register (W qubits, read but restored).
+ * @param n_bits Modulus register (W qubits, read but restored).
+ * @param n      Register width (NOT the modulus; the modulus is encoded
+ *               in `n_bits[0..n-1]`).  `n == 0` short-circuits to a
+ *               no-op (matches PRD §5 / §8 #3).
+ * @param r_bits Result register (W qubits).  Must start in |0>.
+ *               On exit, holds `(a * b) mod n`.
+ *
+ * @pre `a, b ∈ [0, n)` and `n ≥ 1` (when `n == 0`, the call is a
+ *      no-op — see PRD §5 / §8 #3).  `r_bits` must enter the routine
+ *      in |0>.  `a_bits`, `b_bits`, `n_bits`, and `r_bits` must refer
+ *      to physically distinct qubit registers.  Note: `a_bits` and
+ *      `b_bits` may alias (the chain-style internal allocation handles
+ *      the squaring case used by `lib_pow_mod_dsl`).
+ *
+ * @par Behavior on precondition violation
+ * The library does **not** check the precondition.  Calling
+ * `lib_mul_mod_dsl` with operands outside `[0, n)` is **undefined
+ * behavior** — the routine still emits a well-formed gate sequence,
+ * but the resulting `r_bits` are not the mathematical answer and the
+ * input registers may not be restored.  This matches the trust model
+ * of the public `mul_mod` wrapper and of classical `pow(a, b, c)` /
+ * GMP / OpenSSL (PRD §5).
+ *
+ * @sa __lib_mul_mod_dsl_adj, lib_add_mod_dsl, lib_pow_mod_dsl,
+ *     sturm::mul_mod
+ * @see PRD §5 (Trust model and precondition contract).
+ */
 template <typename Bit>
 inline void lib_mul_mod_dsl(Bit* a_bits, Bit* b_bits,
                             Bit* n_bits, std::size_t n,

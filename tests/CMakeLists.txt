@@ -242,3 +242,26 @@ add_test(NAME check_doxygen_qint_modular
 )
 set_tests_properties(check_doxygen_qint_modular PROPERTIES
     LABELS "cmake;modular-arith;docs")
+
+# ── sturm-6ov3.3 — Doxygen on each lib_*_mod_dsl primitive header ─────────
+#
+# Drives the Phase 7 plan §9.1 #3 / PRD §5 contract for the modular-
+# arithmetic lib-level primitives:
+#   - each of `lib_add_mod_dsl`, `__lib_add_mod_dsl_adj`,
+#     `lib_mul_mod_dsl`, `__lib_mul_mod_dsl_adj`, `lib_pow_mod_dsl`, and
+#     `__lib_pow_mod_dsl_adj` in `include/sturm/lib/*_mod_dsl*.hpp` must
+#     carry a Doxygen comment block that names (a) the `@pre` clause
+#     stating the operand precondition, (b) the behavior under violation
+#     (undefined), and (c) a citation pointing at PRD §5 (trust model).
+#
+# Implementation: the script (`check_doxygen_lib_mod_dsl.cmake`) reads
+# each header and walks the function declarations with CMake regex/string
+# ops. Pure file scan — no compilation, no child cmake invocation —
+# so the test runs in <100ms and needs no PROCESSORS reservation.
+add_test(NAME check_doxygen_lib_mod_dsl
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/check_doxygen_lib_mod_dsl.cmake"
+)
+set_tests_properties(check_doxygen_lib_mod_dsl PROPERTIES
+    LABELS "cmake;modular-arith;docs")
