@@ -78,3 +78,9 @@ No entanglement graphs, no global state analysis, no per-call caching.
 **B10. Uncomputation is a compile-time concern, not a runtime concern.** Inverses are emitted by the transpiler as explicit uncompute_* / ccnot_inplace / invert(routine)(...) calls in the generated source file. Destructors release qubit indices to the pool; they do not emit gates. Ancilla scope (B6) still uses C++ RAII, but scope exit and uncomputation are now separate concerns.
 
 **B11. Adjoint synthesis reverses statement order AND loop iteration order.** Within a scope, ops are uncomputed in LIFO order (already enforced by `uncompute_pass.cpp`). Within a classical loop whose body contains quantum mutations, the synthesized adjoint reverses the iteration (negates stride, swaps init/cond bounds) and emits the adjoint of each body op in reverse iteration order. Nested loops reverse innermost-first. Gate parameters in the adjoint reference the *value* the forward emitted (captured at dispatch or recomputed from unchanged inputs), not a re-derived expression over mutated state — this guarantees `Rθ(v) · Rθ(-v) = I` bit-exactly at the gate-stream level.
+
+---
+
+## Modular arithmetic contract
+
+Modular arithmetic primitives on `qint_t` (`add_mod`, `mul_mod`, `pow_mod`, and the transpiler-folded forms `(a + b) % n`, `(a * b) % n`, `pow(a, x) % n`) require that all operands satisfy the precondition `a, b ∈ [0, n)` (and for `pow_mod`, the base `a ∈ [0, n)`; the exponent `x` may be any non-negative integer up to the register width). The library does not check this precondition at runtime; supplying out-of-range operands is undefined behavior, in the same trust model as classical C/C++ modular reduction. See `docs/prd_modular_arithmetic.md` for the full specification, the rationale for omitting the check, and the per-primitive contract details.
