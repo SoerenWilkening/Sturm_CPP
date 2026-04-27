@@ -145,6 +145,12 @@ add_subdirectory(qtypes)
 # DSL-level adjoint roundtrip tests for include/sturm/lib/*_dsl.hpp primitives.
 add_subdirectory(lib)
 
+# ── Control test subdirectory (sturm-a3t4 depth-1 invariant) ─────────────────
+# Tests that pin properties of the depth-1 control stack invariant introduced
+# by the sturm-a3t4 epic.  Initially holds the P0 baseline gate-count capture
+# (sturm-a3t4.1).
+add_subdirectory(control)
+
 # ── Transpiler-MVP Group C tests (M10+) ───────────────────────────────────────
 # Holds consumer-facing tests that exercise the transpiler toolchain from the
 # outside (add_quantum_executable, snapshot fixtures, gate-stream equivalence).

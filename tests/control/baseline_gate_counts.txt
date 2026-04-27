@@ -1,0 +1,12 @@
+# sturm-a3t4.1 P0 baseline gate counts.
+# Captured by tests/control/test_baseline_gate_counts.cpp.
+# Format: <primitive> <n> <bare_gates> <when_gates>
+# bare_gates  : sturm_gate_count delta with no enclosing WHEN.
+# when_gates  : sturm_gate_count delta inside a single WHEN(c).
+# 'N/A' rows  : primitive's kMaxN cap forbids that width.
+lib_add_mod_dsl 8 416 772
+lib_mul_mod_dsl 8 16812 31684
+lib_pow_mod_dsl 8 742498 1214770
+lib_add_mod_dsl 16 792 1468
+lib_mul_mod_dsl 16 N/A N/A # kMaxN=8 in mul_mod_dsl.hpp
+lib_pow_mod_dsl 16 N/A N/A # kMaxN=8 in pow_mod_dsl.hpp
