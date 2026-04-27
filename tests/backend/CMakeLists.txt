@@ -442,6 +442,13 @@ add_executable(test_instantiations
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    # sturm-a3t4.4: instantiations.cpp explicitly instantiates div_kernel /
+    # mul_kernel template specialisations (via qint.hpp), which under the
+    # depth-1 lift refactor now reference sturm::uncompute_and.  The free
+    # function is defined in src/sturm/uncompute/uncompute_api.cpp; without
+    # it linked here, test_instantiations fails with an "undefined reference
+    # to sturm::uncompute_and" at div_dsl.hpp:180 / mul_dsl.hpp:107.
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 target_include_directories(test_instantiations PRIVATE
     ${CMAKE_SOURCE_DIR}/include
