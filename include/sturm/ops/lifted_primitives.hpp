@@ -3,7 +3,8 @@
 // Rotation-gate emitters that respect the active WHEN control stack:
 //   depth 0  → emit bare RY / RZ (1-qubit)
 //   depth 1  → emit CRY / CRZ (2-qubit, ctrl = control_stack.controls()[0])
-//   depth >= 2 → assertion failure (not yet supported)
+//   depth >= 2 → assertion failure (depth-1 invariant; library must lift
+//                via outer & flag + WHEN)
 //
 // Pattern mirrors emit_X_lifted in qtypes/qbool_ops.hpp.
 // Target: ~40 LoC.

@@ -7,7 +7,7 @@
 //   WHEN(expr)              — macro matching PRD §11 spec exactly
 //   WhenGuard::active_control() — static accessor for the thread-local control
 //
-// M24 / principle B5 update (Phase G, sturm-ewto):
+// M24 / principle B5 update (Phase G, sturm-ewto / sturm-a3t4):
 //   Nested WHEN AND-fold has been **moved to the sturm-transpile compile-time
 //   lowering** (Phase G, matcher_when_nested).  The transpiler rewrites
 //     WHEN(outer) { WHEN(inner) { body } }
@@ -19,10 +19,14 @@
 //   No ancilla allocation, no runtime CCX — the complexity lives in the
 //   transpiler where it can be inspected and optimised.
 //
-//   WhenGuard therefore retains only the control_stack pop/push **swap** in the
-//   nested case: if an outer control is already on the stack, pop it and push
-//   the inner expr qubit in its place, preserving the depth-1 invariant
-//   (principle B5: at most one active control qubit at a time).
+//   The runtime stack is depth-<=-1 by invariant (sturm-a3t4, ControlStack
+//   asserts depth_ == 0 on push). Library ops compose with the active WHEN
+//   control by computing outer & flag into a fresh qbool and entering a
+//   nested WHEN — never by raw-pushing a second control onto the stack.
+//   WhenGuard preserves this by pop/pushing on entry to a nested WHEN: the
+//   outer control is popped before the inner is pushed in its place, so
+//   the stack is momentarily empty across the push, satisfying the
+//   depth_ == 0 precondition.
 //
 // Depends on:
 //   when_fwd.hpp  — declares thread_local current_control (Step 5)
@@ -62,13 +66,17 @@ namespace sturm {
 //   - Superposed       → run_=true,  expr.ensure_qubit() is called, prev_control_
 //                        is saved, current_control is set to &expr.
 //
-// Nested WHEN (Phase G, sturm-ewto) — control_stack swap:
-//   When superposed and an outer control already exists (prev_control_ != nullptr):
-//     - Pop the outer control qubit from ctx->control_stack.
-//     - Push expr.qubits[0] (the inner control qubit) in its place.
-//   The inner expr qubit goes on the stack *directly*; no ancilla, no CCX.  The
+// Nested WHEN (Phase G, sturm-ewto / sturm-a3t4) — depth-1 preservation:
+//   The runtime stack is depth-<=-1 by invariant. Library ops compose with the
+//   active WHEN control by computing outer & flag into a fresh qbool and
+//   entering a nested WHEN. When superposed and an outer control already
+//   exists (prev_control_ != nullptr):
+//     - Pop the outer control qubit from ctx->control_stack (stack now empty).
+//     - Push expr.qubits[0] (the inner control qubit) into the empty stack.
+//   The inner expr qubit goes on the stack *directly*; no ancilla, no CCX. The
 //   transpiler has already lowered nested WHEN to an AND temp, so expr IS the
-//   combined __stu_ctrl<N> qbool.  Depth-1 invariant preserved.
+//   combined __stu_ctrl<N> qbool. Depth-1 invariant preserved (push_control
+//   asserts depth_ == 0 — pop must precede push).
 //   Destructor reverses: pop inner, push outer.
 //
 // Destructor restores prev_control_ iff the TLS was modified (i.e. is_super was
@@ -98,10 +106,13 @@ struct WhenGuard {
             prev_control_qubit_ = detail::current_control_qubit;
 
 #ifdef STURM_BACKEND_ENABLED
-            // Swap path (sturm-d9n / sturm-ewto): if an outer control exists on
-            // the context stack, pop it and push the inner expr qubit in its
-            // place.  Otherwise, just push expr.  Either way, the stack reflects
-            // exactly one active control qubit (depth invariant).
+            // Depth-1 preservation (sturm-d9n / sturm-ewto / sturm-a3t4): the
+            // runtime stack is depth-<=-1 by invariant. If an outer control
+            // already occupies the stack, pop it before pushing the inner
+            // expr qubit — push_control asserts depth_ == 0. Library ops
+            // compose with the active WHEN control by computing outer & flag
+            // into a fresh qbool and entering a nested WHEN, never by raw
+            // stacking.
             if (sturm_backend_context_t* ctx = sturm_get_thread_context()) {
                 if (prev_control_ != nullptr && prev_control_->qubits[0] >= 0) {
                     ctx->control_stack.pop_control();
