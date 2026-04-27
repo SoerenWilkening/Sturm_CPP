@@ -49,8 +49,21 @@ endif()
 
 # ── Interface library (header-only) ───────────────────────────────────────────
 add_library(sturm INTERFACE)
-target_include_directories(sturm INTERFACE ${CMAKE_SOURCE_DIR}/include)
+target_include_directories(sturm INTERFACE
+    ${CMAKE_SOURCE_DIR}/include
+    ${CMAKE_BINARY_DIR}/include)
 target_compile_features(sturm INTERFACE cxx_std_20)
+
+# ── sturm-mjr2.1 / E4.M1 — versioning macros header ──────────────────────────
+# Generates `${CMAKE_BINARY_DIR}/include/sturm/version.hpp` from the template
+# in `include/sturm/version.hpp.in`, expanding @PROJECT_VERSION_*@ from the
+# top-level `project(... VERSION x.y.z)` declaration above. Single source of
+# truth — see PRD §3.8 / Plan §E4.M1. The @ONLY form keeps `${...}` shell
+# substitutions in the template untouched (none today, but defensive).
+configure_file(
+    "${CMAKE_SOURCE_DIR}/include/sturm/version.hpp.in"
+    "${CMAKE_BINARY_DIR}/include/sturm/version.hpp"
+    @ONLY)
 
 # ── Transpiler glue helper (M10) ──────────────────────────────────────────────
 # Define the add_quantum_executable() function for downstream consumers.
@@ -97,6 +110,13 @@ install(DIRECTORY include/sturm/
         FILES_MATCHING
             PATTERN "*.hpp"
             PATTERN "*.h")
+
+# 1b. Generated version header (sturm-mjr2.1 / E4.M1). Lives in the build
+#     tree because it is produced by configure_file at configure time;
+#     ships into ${CMAKE_INSTALL_INCLUDEDIR}/sturm/version.hpp so installed
+#     consumers see it under the same `<sturm/...>` prefix.
+install(FILES "${CMAKE_BINARY_DIR}/include/sturm/version.hpp"
+        DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sturm)
 
 # 2. The add_quantum_executable() helper. This is the public entry point
 #    exposed to consumers via find_package; the sturmConfig.cmake include()s

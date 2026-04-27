@@ -64,3 +64,23 @@ set_tests_properties(sturmc_installed_prefix PROPERTIES
 STURMC_CXX=${CMAKE_CXX_COMPILER};\
 STURMC_FIXTURE_CPP=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/hello_sturmc.cpp;\
 STURMC_CMAKE=${CMAKE_COMMAND}")
+
+# ── sturm-mjr2.1 / E4.M1 — versioning macros header acceptance test ─────────
+# Pins the contract for include/sturm/version.hpp (generated from
+# include/sturm/version.hpp.in via configure_file from the top-level
+# `project(... VERSION x.y.z)`). The test consumes the header via
+# `<sturm/version.hpp>` and matches STURM_VERSION_STRING against
+# ${PROJECT_VERSION} (fed in via -DEXPECTED_VERSION) so any drift between
+# the template's @PROJECT_VERSION@ expansion and CMake's source-of-truth
+# surfaces as a runtime failure.
+add_executable(test_version test_version.cpp)
+# Public headers (link against the header-only `sturm` interface target so
+# the build-tree binary include dir carrying the generated version.hpp is
+# on the search path; no need to repeat it here).
+target_link_libraries(test_version PRIVATE sturm)
+target_compile_features(test_version PRIVATE cxx_std_20)
+target_compile_definitions(test_version PRIVATE
+    "EXPECTED_VERSION=\"${PROJECT_VERSION}\"")
+add_test(NAME test_version COMMAND test_version)
+set_tests_properties(test_version PROPERTIES
+    LABELS "packaging;version")

@@ -1,0 +1,10 @@
+#pragma once
+
+// version.hpp — generated from include/sturm/version.hpp.in by configure_file.
+// Single source of truth: top-level CMakeLists.txt `project(... VERSION x.y.z)`.
+// See PRD §3.8 / Plan §E4.M1.
+
+#define STURM_VERSION_MAJOR @PROJECT_VERSION_MAJOR@
+#define STURM_VERSION_MINOR @PROJECT_VERSION_MINOR@
+#define STURM_VERSION_PATCH @PROJECT_VERSION_PATCH@
+#define STURM_VERSION_STRING "@PROJECT_VERSION@"
