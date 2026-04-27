@@ -157,3 +157,30 @@ target_compile_features(test_prelude PRIVATE cxx_std_20)
 add_test(NAME test_prelude COMMAND test_prelude)
 set_tests_properties(test_prelude PROPERTIES
     LABELS "packaging")
+
+# ── sturm-795j.1 / E6.M1 — external_consumer standalone smoke project ──────
+# Drives `tests/external_consumer/` end-to-end against an installed STURM
+# prefix: cmake --install into a tmp prefix, configure + build the
+# standalone consumer there with `-DCMAKE_PREFIX_PATH=<prefix>`, run the
+# produced binary, diff its stdout against tests/external_consumer/golden.txt.
+# PRD §3.6 / Plan §E6.M1.
+#
+# Reuses the `sturmc_artifacts_built` ctest fixture from sturm-vr0v.2 so the
+# install step does not silently skip targets that have not been built yet
+# (sturm-transpile, sturm-transpile-plugin) — the consumer's
+# `add_quantum_executable` requires both to land in <prefix>/bin and
+# <prefix>/lib respectively.
+add_test(
+    NAME external_consumer_smoke
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/external_consumer/run_smoke.py")
+set_tests_properties(external_consumer_smoke PROPERTIES
+    LABELS "packaging;external_consumer"
+    FIXTURES_REQUIRED "sturmc_artifacts_built"
+    # Configure + build of the consumer can take a while on a clean tree
+    # (Clang plugin parses the prelude umbrella ⇒ all of <sturm/...>).
+    TIMEOUT 600
+    ENVIRONMENT
+        "STURMC_BUILD_DIR=${CMAKE_BINARY_DIR};\
+STURMC_CXX=${CMAKE_CXX_COMPILER};\
+STURMC_CMAKE=${CMAKE_COMMAND}")
