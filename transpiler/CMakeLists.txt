@@ -85,6 +85,13 @@ add_executable(sturm-transpile
     src/matcher_when_lift.cpp
     src/matcher_when_nested.cpp
     src/matcher_when_operand_mutation.cpp
+    # E7 (sturm-va3z): WHEN free-variable mutation diagnostic. M1 = read-
+    # set extractor, M2 = write-set checker, M3 = matcher wiring. Linked
+    # into the standalone driver here so the consumer's
+    # `register_when_freevar_matcher` call resolves at link time.
+    src/when_freevar_readset.cpp
+    src/when_freevar_check.cpp
+    src/matcher_when_freevar.cpp
     src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp
@@ -386,6 +393,12 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_when_lift.cpp
     src/matcher_when_nested.cpp
     src/matcher_when_operand_mutation.cpp
+    # E7 (sturm-va3z): mirror the main binary — the plugin-path consumer
+    # (same TranspileConsumer) calls `register_when_freevar_matcher` and
+    # needs the M1 / M2 helpers + M3 matcher resolved at dlopen.
+    src/when_freevar_readset.cpp
+    src/when_freevar_check.cpp
+    src/matcher_when_freevar.cpp
     src/matcher_quantum_to_classical_cond.cpp
     src/matcher_brace_wrap.cpp
     src/matcher_outer_var_guard.cpp

@@ -667,6 +667,27 @@ void register_when_operand_mutation_matcher(
     QUnit& unit,
     DiagContext& diag);
 
+/// E7.M3 (sturm-va3z.3): Register the WHEN free-variable mutation
+/// diagnostic matcher. Anchors on the same three-`if` WHEN tower as
+/// `register_when_lift_matcher` and `register_when_operand_mutation_
+/// matcher`; on match the callback computes the read-set of the WHEN
+/// control expression via E7.M1's `compute_when_freevar_readset`,
+/// descends to the body CompoundStmt, and runs E7.M2's
+/// `check_when_freevar_writes` against it.
+///
+/// Each detected write becomes a hard-error
+/// `DiagnosticsEngine::Error` reported through the parent
+/// CompilerInstance's engine — the M2 helper owns severity registration
+/// and the file-loc funnelling, so the standalone driver exits non-zero
+/// the moment a free variable of the WHEN control expression is
+/// mutated inside the body. The matcher does NOT mutate `unit.scopes`
+/// (advisory only); it is wired in `transpile_consumer.cpp` AFTER
+/// `register_when_lift_matcher` so the WHEN scope identification has
+/// completed before the diagnostic runs.
+void register_when_freevar_matcher(
+    clang::ast_matchers::MatchFinder& finder,
+    QUnit& unit);
+
 /// PM3-5 / Class 2: Register the quantum->classical-in-branch-condition
 /// diagnostic matcher. Anchors on any explicit cast
 /// (`cxxStaticCastExpr`, `cStyleCastExpr`, or `cxxFunctionalCastExpr`)

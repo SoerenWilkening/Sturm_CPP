@@ -280,6 +280,19 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     sturm::transpile::register_compound_qbool_matcher(finder_, unit_);
     sturm::transpile::register_when_lift_matcher(finder_, unit_);
     sturm::transpile::register_when_nested_matcher(finder_, unit_);
+    // E7.M3 (sturm-va3z.3): WHEN free-variable mutation diagnostic.
+    // Hard-error pass that runs AFTER `register_when_lift_matcher`
+    // identifies the WHEN scope structurally — the freevar callback
+    // anchors on the same three-`if` WHEN tower but is registered
+    // immediately after the lift matcher so MatchFinder fires the
+    // lift callback first (the WHEN scope's structural rewrite is
+    // already in the QUnit by the time the freevar callback runs).
+    // Pure diagnostic — does NOT mutate `unit_.scopes`. Diagnostics
+    // route through the parent CompilerInstance's
+    // `DiagnosticsEngine` (the same one fronting the PM3-1
+    // `TextDiagnosticPrinter` under StandaloneFile mode), so the
+    // standalone driver exits non-zero on every detected write.
+    sturm::transpile::register_when_freevar_matcher(finder_, unit_);
     // Phase H PH-2: the brace-wrap matcher appends `{` + `}` raw
     // insertions for braceless for/while/if/else bodies containing
     // quantum ops. Order relative to the per-op matchers does NOT

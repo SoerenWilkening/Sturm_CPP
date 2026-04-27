@@ -4752,3 +4752,74 @@ add_test(NAME test_when_freevar_check
          COMMAND test_when_freevar_check)
 set_tests_properties(test_when_freevar_check PROPERTIES
     LABELS "transpiler")
+
+# ── sturm-va3z.3 (E7.M3): WHEN free-variable mutation diagnostic, integration ─
+#
+# Three positive CTests + one negative CTest exercise the new
+# `register_when_freevar_matcher` (E7.M3) end-to-end via the standalone
+# `sturm-transpile` driver. Each positive fixture mutates a different
+# AST shape from the E7.M2 `WriteFinder` (BinaryOperator `=`,
+# CompoundAssignOperator `+=`, UnaryOperator `++`); the negative
+# fixture mutates a body-local variable so the body-local exclusion in
+# `check_when_freevar_writes` keeps the driver silent.
+#
+# Positive contracts (per CTest):
+#   - sturm-transpile exits non-zero (Error severity).
+#   - stderr contains the locked-down format substring naming the
+#     offending free variable.
+#   - stderr cites `<basename>:<line>:` so the file-loc plumbing in
+#     `when_freevar_check.cpp::WriteFinder::check` is pinned.
+#
+# Negative contract (clean fixture):
+#   - sturm-transpile exits zero.
+#   - stderr does NOT contain `is mutated inside the WHEN body`.
+add_test(
+    NAME plugin_diagnostic_when_freevar_mutation_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_freevar_mutation_input.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_when_freevar_mutation_fires"
+            "-DMUST_CONTAIN=WHEN free variable 'threshold' is mutated inside the WHEN body"
+            "-DEXPECTED_LINE=78"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_when_freevar_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_when_freevar_mutation_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_when_freevar_compound_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_freevar_compound_input.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_when_freevar_compound_fires"
+            "-DMUST_CONTAIN=WHEN free variable 'counter' is mutated inside the WHEN body"
+            "-DEXPECTED_LINE=42"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_when_freevar_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_when_freevar_compound_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_when_freevar_increment_fires
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_freevar_increment_input.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_when_freevar_increment_fires"
+            "-DMUST_CONTAIN=WHEN free variable 'tick' is mutated inside the WHEN body"
+            "-DEXPECTED_LINE=43"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_when_freevar_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_when_freevar_increment_fires PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME plugin_diagnostic_when_freevar_mutation_clean
+    COMMAND "${CMAKE_COMMAND}"
+            "-DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>"
+            "-DSOURCE=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/when_freevar_clean.cpp"
+            "-DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/plugin_diagnostic_when_freevar_mutation_clean"
+            "-DMUST_NOT_CONTAIN=is mutated inside the WHEN body"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_when_freevar_diagnostic.cmake")
+set_tests_properties(plugin_diagnostic_when_freevar_mutation_clean PROPERTIES
+    LABELS "transpiler"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

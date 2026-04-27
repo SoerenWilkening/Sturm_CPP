@@ -1762,6 +1762,13 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_lift.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_operand_mutation.cpp
+    # E7 (sturm-va3z): WHEN free-variable mutation diagnostic. M1 read-set
+    # extractor + M2 write-set checker + M3 matcher wiring. Linked here so
+    # `test_transpile_consumer` resolves the new
+    # `register_when_freevar_matcher` symbol the consumer ctor invokes.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_readset.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_check.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_freevar.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
     # Phase S S-B (sturm-ha2k.3): matcher_outer_var_guard.cpp now calls
