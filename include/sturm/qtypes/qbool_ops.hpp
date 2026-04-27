@@ -12,7 +12,9 @@
 // explicit `uncompute_and` / `uncompute_or` calls at scope exit (see
 // include/sturm/uncompute/uncompute_api.hpp).
 //
-// WHEN lifting: 0 controls→direct, 1→lift×1, 2+→c_AND fold (emit_*_lifted).
+// WHEN lifting (sturm-a3t4 depth-1 invariant): 0 controls→direct, 1→lift×1.
+// Library code MUST lift higher-arity controls via outer flag + WHEN; the
+// emit_*_lifted helpers assert depth <= 1.
 // Target: <300 LoC.
 #pragma once
 #include "sturm/qtypes/qbool.hpp"
@@ -32,78 +34,56 @@ inline BackendContext& get_ctx() {
 }
 
 // ── emit_X_lifted ─────────────────────────────────────────────────────────────
-// 0 controls→X, 1→CX, 2→CCX, 3+→c_AND fold with borrowed ancilla.
+// Depth-1 invariant (sturm-a3t4): library code MUST lift via outer flag & WHEN
+// so this emitter only ever sees depth 0 or 1. depth >= 2 is a programmer error.
+//   0 controls → X
+//   1 control  → CX
 inline void emit_X_lifted(BackendContext& ctx, uint32_t target) {
     const auto     ctrls = ctx.control_stack.controls();
     const uint32_t depth = static_cast<uint32_t>(ctrls.size());
+    assert(depth <= 1u && "depth-1 invariant violated; library code must lift via outer & flag + WHEN");
     if (depth == 0u) {
         primitive_X(ctx, target);
-    } else if (depth == 1u) {
-        primitive_XOR(ctx, ctrls[0], target);
-    } else if (depth == 2u) {
-        primitive_AND(ctx, ctrls[0], ctrls[1], target);
     } else {
-        // 3+ controls: Nielsen-Chuang sandwich with borrowed ancilla.
-        int anc_idx = QubitPool::instance().allocate();
-        const auto anc = static_cast<uint32_t>(anc_idx);
-        primitive_AND(ctx, ctrls[0], ctrls[1], anc);   // compute
-        if (depth == 3u) {
-            primitive_AND(ctx, anc, ctrls[2], target);
-        } else {
-            // depth 4+: one more ancilla level.
-            int anc2_idx = QubitPool::instance().allocate();
-            const auto anc2 = static_cast<uint32_t>(anc2_idx);
-            primitive_AND(ctx, anc, ctrls[2], anc2);
-            primitive_AND(ctx, anc2, ctrls[3], target); // TODO(backend): depth>4
-            primitive_AND(ctx, anc, ctrls[2], anc2);    // uncompute anc2
-            QubitPool::instance().release(anc2_idx);
-        }
-        primitive_AND(ctx, ctrls[0], ctrls[1], anc);   // uncompute
-        QubitPool::instance().release(anc_idx);
+        primitive_XOR(ctx, ctrls[0], target);
     }
 }
 
 // ── emit_CX_lifted ────────────────────────────────────────────────────────────
-// 0→CX, 1→CCX, 2+→c_AND fold.
+// Depth-1 invariant (sturm-a3t4): see emit_X_lifted.
+//   0 controls → CX (primitive_XOR)
+//   1 control  → CCX (primitive_AND)
 inline void emit_CX_lifted(BackendContext& ctx, uint32_t ctrl, uint32_t target) {
     const auto     ctrls = ctx.control_stack.controls();
     const uint32_t depth = static_cast<uint32_t>(ctrls.size());
+    assert(depth <= 1u && "depth-1 invariant violated; library code must lift via outer & flag + WHEN");
     if (depth == 0u) {
         primitive_XOR(ctx, ctrl, target);
-    } else if (depth == 1u) {
-        primitive_AND(ctx, ctrls[0], ctrl, target);
     } else {
-        int anc_idx = QubitPool::instance().allocate();
-        const auto anc = static_cast<uint32_t>(anc_idx);
-        primitive_AND(ctx, ctrls[0], ctrl, anc);        // compute
-        if (depth == 2u) {
-            primitive_AND(ctx, anc, ctrls[1], target);
-        } else {
-            int anc2_idx = QubitPool::instance().allocate();
-            const auto anc2 = static_cast<uint32_t>(anc2_idx);
-            primitive_AND(ctx, anc, ctrls[1], anc2);
-            primitive_AND(ctx, anc2, ctrls[2], target); // TODO(backend): depth>3
-            primitive_AND(ctx, anc, ctrls[1], anc2);    // uncompute anc2
-            QubitPool::instance().release(anc2_idx);
-        }
-        primitive_AND(ctx, ctrls[0], ctrl, anc);        // uncompute
-        QubitPool::instance().release(anc_idx);
+        primitive_AND(ctx, ctrls[0], ctrl, target);
     }
 }
 
 // ── emit_CCX_lifted ───────────────────────────────────────────────────────────
-// 0→CCX, 1+→fold c0&c1 into ancilla then emit_X_lifted.
+// Depth-1 invariant (sturm-a3t4): only depth 0 or 1 is supported.
+//   depth 0 → bare primitive_AND (CCX)
+//   depth 1 → fold c0 & c1 into a borrowed ancilla, then CCX(outer_ctrl, anc,
+//             target). This is the "internal AND-ancilla fold" preserved from
+//             the pre-invariant emitter; it is NOT a recursion site
+//             (emit_X_lifted is no longer invoked). Refactoring callers to
+//             pass qbool instead of uint32_t is out of scope.
 inline void emit_CCX_lifted(BackendContext& ctx,
                              uint32_t c0, uint32_t c1, uint32_t target) {
-    if (ctx.control_stack.depth() == 0u) {
+    const auto     ctrls = ctx.control_stack.controls();
+    const uint32_t depth = static_cast<uint32_t>(ctrls.size());
+    assert(depth <= 1u && "depth-1 invariant violated; library code must lift via outer & flag + WHEN");
+    if (depth == 0u) {
         primitive_AND(ctx, c0, c1, target);
     } else {
         int anc_idx = QubitPool::instance().allocate();
         const auto anc = static_cast<uint32_t>(anc_idx);
         primitive_AND(ctx, c0, c1, anc);                // compute c0&c1
-        ctx.control_stack.push_control(anc);
-        emit_X_lifted(ctx, target);                     // lift under all controls+anc
-        ctx.control_stack.pop_control();
+        primitive_AND(ctx, ctrls[0], anc, target);      // CCX under outer ctrl
         primitive_AND(ctx, c0, c1, anc);                // uncompute
         QubitPool::instance().release(anc_idx);
     }

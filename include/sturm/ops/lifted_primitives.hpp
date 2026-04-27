@@ -19,38 +19,36 @@
 namespace sturm {
 
 // ── emit_RY_lifted ────────────────────────────────────────────────────────────
+// Depth-1 invariant (sturm-a3t4): library code must lift via outer flag + WHEN.
 // 0 controls → RY(theta, target)
 // 1 control  → CRY(theta, ctrl, target)
-// 2+ controls → assertion failure (TODO(backend): multi-control decomposition)
 
 inline void emit_RY_lifted(BackendContext& ctx, uint32_t target, double theta) {
     const auto     ctrls = ctx.control_stack.controls();
     const uint32_t depth = static_cast<uint32_t>(ctrls.size());
+    assert(depth <= 1u && "depth-1 invariant violated; library code must lift via outer & flag + WHEN");
     if (depth == 0u) {
         execute_gate(ctx, STURM_GATE_RY, &target, 1u, theta);
-    } else if (depth == 1u) {
+    } else {
         uint32_t qs[2] = {ctrls[0], target};
         execute_gate(ctx, STURM_GATE_CRY, qs, 2u, theta);
-    } else {
-        assert(false && "emit_RY_lifted: depth >= 2 not yet supported");
     }
 }
 
 // ── emit_RZ_lifted ────────────────────────────────────────────────────────────
+// Depth-1 invariant (sturm-a3t4): library code must lift via outer flag + WHEN.
 // 0 controls → RZ(theta, target)
 // 1 control  → CRZ(theta, ctrl, target)
-// 2+ controls → assertion failure (TODO(backend): multi-control decomposition)
 
 inline void emit_RZ_lifted(BackendContext& ctx, uint32_t target, double theta) {
     const auto     ctrls = ctx.control_stack.controls();
     const uint32_t depth = static_cast<uint32_t>(ctrls.size());
+    assert(depth <= 1u && "depth-1 invariant violated; library code must lift via outer & flag + WHEN");
     if (depth == 0u) {
         execute_gate(ctx, STURM_GATE_RZ, &target, 1u, theta);
-    } else if (depth == 1u) {
+    } else {
         uint32_t qs[2] = {ctrls[0], target};
         execute_gate(ctx, STURM_GATE_CRZ, qs, 2u, theta);
-    } else {
-        assert(false && "emit_RZ_lifted: depth >= 2 not yet supported");
     }
 }
 
