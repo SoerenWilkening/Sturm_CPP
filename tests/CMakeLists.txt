@@ -158,6 +158,14 @@ add_subdirectory(control)
 # added via the top-level add_subdirectory(transpiler).
 add_subdirectory(transpiler)
 
+# ── sturm-vr0v.2: packaging acceptance tests (sturmc CLI driver) ─────────────
+# Lives in `tests/packaging/`; the suite installs into a temp prefix and
+# exercises the installed sturmc binary end-to-end. Gated on the
+# `sturmc_artifacts_built` ctest fixture so a bare `ctest -R sturmc`
+# from a freshly configured tree still works without a manual
+# `cmake --build` first.
+add_subdirectory(packaging)
+
 # ── sturm-r5pn.3 — STURM_MODULAR_POW CMake option propagation test ───────────
 #
 # Drives the Phase 0.3 plan §2.2 contract for the STURM_MODULAR_POW

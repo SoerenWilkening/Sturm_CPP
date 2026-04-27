@@ -128,3 +128,16 @@ install(FILES
         "${CMAKE_CURRENT_BINARY_DIR}/sturmConfig.cmake"
         "${CMAKE_CURRENT_BINARY_DIR}/sturmConfigVersion.cmake"
         DESTINATION "${STURM_CMAKE_CONFIG_DESTINATION}")
+
+# ── sturm-vr0v.2: sturmc CLI driver ──────────────────────────────────────────
+# Install the Python driver as `${prefix}/bin/sturmc` (no `.py` suffix —
+# matches the PRD §3.5 contract and how Homebrew packagers expect bin
+# entries to look). PROGRAMS sets the executable bit on every platform
+# CMake supports. The driver expects to live exactly two levels under
+# `prefix` (i.e. `<prefix>/bin/sturmc`) so it can resolve sibling
+# artifacts via parent(parent(realpath(__file__))) — see the script
+# header. Tests live in `tests/packaging/test_sturmc.py` and gate on a
+# `cmake --install` of this very target via a ctest fixture.
+install(PROGRAMS tools/sturmc.py
+        DESTINATION ${CMAKE_INSTALL_BINDIR}
+        RENAME sturmc)
