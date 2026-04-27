@@ -125,3 +125,17 @@ target_compile_features(test_detail_layout PRIVATE cxx_std_20)
 add_test(NAME test_detail_layout COMMAND test_detail_layout)
 set_tests_properties(test_detail_layout PROPERTIES
     LABELS "packaging")
+
+# ── sturm-zmfk.1 / E3.M1 — umbrella header acceptance test ──────────────────
+# Pins the public-API surface promised by `<sturm/sturm.hpp>`: a TU that
+# includes ONLY the umbrella must reach `sturm::qint`, `sturm::qbool`,
+# `WHEN(...)`, `sturm::add_mod`, and `sturm::invert<&fn>()`. If the
+# umbrella ever drops a public header, the corresponding probe in
+# test_umbrella_only.cpp stops compiling. Header-only build linking
+# against the `sturm` INTERFACE target.
+add_executable(test_umbrella_only test_umbrella_only.cpp)
+target_link_libraries(test_umbrella_only PRIVATE sturm)
+target_compile_features(test_umbrella_only PRIVATE cxx_std_20)
+add_test(NAME test_umbrella_only COMMAND test_umbrella_only)
+set_tests_properties(test_umbrella_only PROPERTIES
+    LABELS "packaging")
