@@ -1,0 +1,42 @@
+name: ci
+
+# Lightweight push/PR checks. Currently runs the emit-target audit
+# drift-check (Epic E1.M3, sturm-xq05.3): re-runs
+# tools/audit_emit_targets.py and diffs against the committed
+# docs/transpiler_emit_targets.tsv side-table. This catches matchers
+# that start emitting new symbols (or moved defining headers) without
+# the committed TSV + classification doc being updated.
+#
+# Subsequent packaging-export milestones will add more drift checks
+# (E2.M2 public-header lint, E8.M1 public-API drift, E8.M2 doc-snippet
+# drift) as additional steps in this workflow.
+#
+# Per project rule: every cmake/ctest/make invocation is capped at 6
+# threads (`--parallel 6` / `-j6`). The drift-check itself is a pure
+# Python+shell pipeline and does not invoke cmake, but that cap still
+# applies to any future build step added to this job.
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  drift-checks:
+    name: drift-checks
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Emit-target audit drift-check (E1.M3)
+        run: ./tools/check_emit_targets_drift.sh
+
+      - name: Emit-target audit unit tests
+        run: python3 -m unittest tests.tools.test_audit_emit_targets tests.tools.test_emit_targets_drift
