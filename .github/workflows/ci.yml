@@ -61,3 +61,32 @@ jobs:
 
       - name: Getting-started doc drift unit tests
         run: python3 -m unittest tests.tools.test_extract_md_code_blocks
+
+  external-smoke:
+    # E6.M2 (sturm-795j.2): drives `tests/external_consumer/` end-to-end
+    # against an installed STURM prefix. The shell entry point lives at
+    # `ci/run_external_smoke.sh`; it configures + builds STURM into a temp
+    # tree, `cmake --install`s into a temp prefix, then hands off to
+    # `tests/external_consumer/run_smoke.py` for the standalone consumer
+    # configure/build/run/golden-diff. Every cmake step inside is hard-
+    # capped at --parallel 6 per CLAUDE.md.
+    name: external-consumer-smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install LLVM-17 + CMake
+        # The Clang plugin path of `add_quantum_executable` requires a
+        # matching libclang/llvm; ubuntu-24.04 ships clang/llvm via apt.
+        # cmake/python3 are already on the runner image.
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 llvm-17-dev libclang-17-dev cmake
+
+      - name: Run external_consumer smoke (E6.M2)
+        env:
+          STURMC_CXX: clang++-17
+        run: ./ci/run_external_smoke.sh
