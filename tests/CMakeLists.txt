@@ -220,3 +220,25 @@ set_tests_properties(cmake_modular_pow_help_text PROPERTIES
     # spawns its own helpers; reserve a job slot to stay under the
     # project's `--parallel 6` cap.
     PROCESSORS 2)
+
+# ── sturm-6ov3.2 — Doxygen on each free function in qint_modular.hpp ─────
+#
+# Drives the Phase 7 plan §9.1 #2 / PRD §5 contract for the public
+# modular-arithmetic free functions:
+#   - each of `add_mod`, `mul_mod`, `pow_mod` in
+#     `include/sturm/ops/qint_modular.hpp` must carry a Doxygen comment
+#     block that names (a) the `@pre` clause stating the operand
+#     precondition, (b) the behavior under violation (undefined), and
+#     (c) a citation pointing at PRD §5 (the trust-model section).
+#
+# Implementation: the script (`check_doxygen_qint_modular.cmake`) reads
+# the header and walks each function declaration with CMake regex/string
+# ops. Pure file scan — no compilation, no child cmake invocation —
+# so the test runs in <100ms and needs no PROCESSORS reservation.
+add_test(NAME check_doxygen_qint_modular
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/check_doxygen_qint_modular.cmake"
+)
+set_tests_properties(check_doxygen_qint_modular PROPERTIES
+    LABELS "cmake;modular-arith;docs")
