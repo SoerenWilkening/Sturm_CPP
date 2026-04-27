@@ -88,8 +88,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
-#include "sturm/control/when.hpp"          // sturm-a3t4.3: WHEN + WhenGuard::active_control
-#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.3: uncompute_and
+#include "sturm/control/lift.hpp"          // sturm-k8f2: shared lift_under
 
 #include <cstddef>
 #include <cassert>
@@ -108,37 +107,6 @@ inline Bit make_ancilla_view(qbool& owner) {
         return qbool::make_non_owning(owner.qubits[0]);
     } else {
         return Bit(owner);
-    }
-}
-
-// sturm-a3t4.3: build a non-owning qbool view of `flag`'s qubit suitable
-// as the AND/WHEN operand in the depth-1 lift pattern.  Mirrors the
-// detail_mul_mod helper of the same name (see mul_mod_dsl.hpp).
-template <typename Bit>
-inline qbool flag_qbool_view(Bit& flag) {
-    if constexpr (std::is_same_v<Bit, qbool>) {
-        return qbool::make_non_owning(flag.qubits[0],
-                                       flag.value, /*mask=*/1ULL);
-    } else {
-        flag.ensure_quantum();
-        return qbool::make_non_owning(flag.qubit_index(),
-                                       /*val=*/0,
-                                       /*mask=*/1ULL);
-    }
-}
-
-// sturm-a3t4.3: depth-1 lift around `body` controlled on `flag`.  Mirrors
-// detail_mul_mod::lift_under_flag verbatim — kept local so pow_mod_dsl can
-// be included without dragging in the mul_mod helper namespace.
-template <typename Bit, typename Body>
-inline void lift_under_flag(Bit& flag, Body body) {
-    qbool flag_q = flag_qbool_view<Bit>(flag);
-    if (qbool* outer = WhenGuard::active_control()) {
-        qbool tmp = (*outer) & flag_q;
-        WHEN(tmp) { body(); }
-        sturm::uncompute_and(tmp, *outer, flag_q);
-    } else {
-        WHEN(flag_q) { body(); }
     }
 }
 
@@ -245,12 +213,12 @@ inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
     //      idiom that mul_mod uses for r_chain.
     //
     // sturm-a3t4.3: each push(exp[i])/pop becomes the depth-1 lift via
-    // detail_pow_mod::lift_under_flag.  Inside an outer WHEN(c), each
+    // sturm::lift_under.  Inside an outer WHEN(c), each
     // iteration allocates+uncomputes its own AND ancilla — one extra
     // Toffoli/iteration but no control-stack depth growth.
     for (std::size_t i = 0u; i < n; ++i) {
         // First call: when exp[i]=1, write mul_mod into acc_chain[i+1].
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             lib_mul_mod_dsl(acc_bits[i], sq_bits[i],
                             n_bits, n, acc_bits[i + 1u]);
         });
@@ -258,7 +226,7 @@ inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
         // Second call: flip exp[i], lift, XOR-copy acc[i] into acc[i+1]
         // (propagates acc[i] forward when original exp[i]=0), then unflip.
         exp_bits[i].flip();
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             for (std::size_t j = 0u; j < n; ++j)
                 acc_bits[i + 1u][j] ^= acc_bits[i][j];
         });
@@ -275,14 +243,14 @@ inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
 
         // Reverse the second call (XOR-copy under flipped control).
         exp_bits[i].flip();
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             for (std::size_t j = 0u; j < n; ++j)
                 acc_bits[i + 1u][j] ^= acc_bits[i][j];
         });
         exp_bits[i].flip();
 
         // Reverse the first call (lib_mul_mod_dsl) with __lib_mul_mod_dsl_adj.
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             __lib_mul_mod_dsl_adj(acc_bits[i], sq_bits[i],
                                   n_bits, n, acc_bits[i + 1u]);
         });

@@ -47,8 +47,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
-#include "sturm/control/when.hpp"          // sturm-a3t4.2: WHEN + WhenGuard::active_control
-#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.2: uncompute_and
+#include "sturm/control/lift.hpp"          // sturm-k8f2: shared lift_under
 #include "sturm/routines/invert.hpp"
 
 #include <cstddef>
@@ -165,20 +164,12 @@ inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
     // (5') Reverse forward step 11 (controlled lib_add_adj):
     //      controlled lib_add_dsl on the same operands.
     //
-    // sturm-a3t4.2 lift pattern: same depth-1 collapse as the forward.  The
-    // qbool anchor `lt_flag_own` (not the Bit view) is the AND operand so
-    // operator& / uncompute_and see qbool inputs.
-    if (qbool* outer = WhenGuard::active_control()) {
-        qbool tmp = (*outer) & lt_flag_own;
-        WHEN(tmp) {
-            lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
-        }
-        sturm::uncompute_and(tmp, *outer, lt_flag_own);
-    } else {
-        WHEN(lt_flag_own) {
-            lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
-        }
-    }
+    // sturm-k8f2: same shared sturm::lift_under as the forward; the qbool
+    // anchor `lt_flag_own` (not the Bit view) is the operand so the helper
+    // drives operator& / uncompute_and on qbool inputs.
+    sturm::lift_under(lt_flag_own, [&]() {
+        lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
+    });
 
     // (6') Reverse forward step 10 (carry_anc ^= lt_flag is self-inverse).
     carry_anc ^= lt_flag;
@@ -191,18 +182,10 @@ inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
     carry_anc ^= lt_flag;
 
     // (9') Reverse forward step 7 (controlled lib_add_dsl):
-    //      controlled lib_add_adj on the same operands.  Same depth-1 lift.
-    if (qbool* outer = WhenGuard::active_control()) {
-        qbool tmp = (*outer) & lt_flag_own;
-        WHEN(tmp) {
-            detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
-        }
-        sturm::uncompute_and(tmp, *outer, lt_flag_own);
-    } else {
-        WHEN(lt_flag_own) {
-            detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
-        }
-    }
+    //      controlled lib_add_adj on the same operands.  Same shared lift.
+    sturm::lift_under(lt_flag_own, [&]() {
+        detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
+    });
 
     // (10') Reverse forward step 6 (lib_add_adj(n_ext, s_full, lt_flag, n+1)):
     //       lib_add_dsl on the same operands restores s to s + n and clears

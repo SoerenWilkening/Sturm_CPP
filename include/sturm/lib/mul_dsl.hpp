@@ -14,12 +14,13 @@
 //   the loop order and the add/add_adj choice.  Shared via a `Forward`
 //   template kernel.
 //
-// sturm-a3t4.4 P3: per-call push_b_i / pop_control triple replaced with
-// the depth-1 lift pattern adopted under sturm-a3t4.[1-3].  When wrapped
-// in an outer WHEN(c), each iteration allocates+uncomputes its own AND
-// ancilla; otherwise we drop straight into WHEN(b[i]).
+// sturm-a3t4.4 P3: per-call push_b_i / pop_control triple replaced with the
+// depth-1 lift pattern adopted under sturm-a3t4.[1-3].  sturm-k8f2 (P7):
+// the duplicated lift idiom moved into the shared `sturm::lift_under` helper
+// in `sturm/control/lift.hpp`, so this header drops back below its 150-LoC
+// budget.
 //
-// Target: <250 LoC.
+// Target: <150 LoC.
 
 #pragma once
 
@@ -30,23 +31,11 @@
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/routines/invert.hpp"
-#include "sturm/control/when.hpp"          // sturm-a3t4.4: WHEN + WhenGuard::active_control
+#include "sturm/control/lift.hpp"          // sturm-k8f2: shared lift_under
 
 #include <cstddef>
 #include <cassert>
 #include <type_traits>
-
-// sturm-a3t4.4: forward-declare `uncompute_and` rather than pulling the
-// full uncompute_api.hpp.  The full header includes <qint.hpp>, which
-// transitively re-includes mul_dsl.hpp via qint_arith_v3.hpp.  Pragma-
-// once skips the second pass, so the recursive expansion would parse
-// `sturm::uncompute_and` calls below before its declaration is reached.
-// A bare forward declaration is sufficient: qbool is already a complete
-// type (qbool.hpp is included above via div_dsl.hpp); the implementation
-// lives in src/sturm/uncompute/uncompute_api.cpp.
-namespace sturm {
-void uncompute_and(qbool& r, const qbool& a, const qbool& b);
-}  // namespace sturm
 
 // Forward-declare BitProxy for the LO-1a adjoint registration (backend-only).
 namespace sturm {
@@ -72,48 +61,19 @@ inline void mul_kernel(Bit* a_bits, size_t a_width,
     (void)raw;  // sturm-a3t4.4: control_stack is now driven by WHEN/WhenGuard
                 // through the lift pattern; ctx is no longer poked directly.
 
-    // sturm-a3t4.4: build a non-owning qbool view of b[i] for use as the
-    // AND/WHEN operand in the depth-1 lift pattern.  Mirrors
-    // detail_mul_mod::flag_qbool_view.
-    auto flag_qbool_view = [](Bit& flag) -> qbool {
-        if constexpr (std::is_same_v<Bit, qbool>) {
-            return qbool::make_non_owning(flag.qubits[0],
-                                           flag.value, /*mask=*/1ULL);
-        } else {
-            flag.ensure_quantum();
-            return qbool::make_non_owning(flag.qubit_index(),
-                                           /*val=*/0,
-                                           /*mask=*/1ULL);
-        }
-    };
-
     for (size_t step = 0u; step < b_width; ++step) {
         size_t i      = Forward ? step : (b_width - 1u - step);
         Bit*   window = result_bits + i;            // [i..i+a_width-1]
         Bit&   carry  = result_bits[i + a_width];   // carry output slot
 
-        // sturm-a3t4.4: depth-1 lift around the controlled add.  Mirrors
-        // the lift idiom in add_mod_dsl.hpp / mul_mod_dsl.hpp verbatim.
-        qbool flag_q = flag_qbool_view(b_bits[i]);
-        if (qbool* outer = WhenGuard::active_control()) {
-            qbool tmp = (*outer) & flag_q;
-            WHEN(tmp) {
-                if constexpr (Forward) {
-                    lib_add_dsl(a_bits, window, carry, a_width);
-                } else {
-                    detail_div::lib_add_adj(a_bits, window, carry, a_width);
-                }
+        // sturm-k8f2: depth-1 lift collapsed into shared sturm::lift_under.
+        sturm::lift_under(b_bits[i], [&]() {
+            if constexpr (Forward) {
+                lib_add_dsl(a_bits, window, carry, a_width);
+            } else {
+                detail_div::lib_add_adj(a_bits, window, carry, a_width);
             }
-            sturm::uncompute_and(tmp, *outer, flag_q);
-        } else {
-            WHEN(flag_q) {
-                if constexpr (Forward) {
-                    lib_add_dsl(a_bits, window, carry, a_width);
-                } else {
-                    detail_div::lib_add_adj(a_bits, window, carry, a_width);
-                }
-            }
-        }
+        });
     }
 }
 

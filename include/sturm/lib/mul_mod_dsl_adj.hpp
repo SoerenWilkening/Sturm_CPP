@@ -44,8 +44,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
-#include "sturm/control/when.hpp"          // sturm-a3t4.3: WHEN + WhenGuard::active_control
-#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.3: uncompute_and
+#include "sturm/control/lift.hpp"          // sturm-k8f2: shared lift_under
 #include "sturm/routines/invert.hpp"
 
 #include <cstddef>
@@ -153,8 +152,8 @@ inline void __lib_mul_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
 
     // (4') Re-build r_chain[1] = b[0] ? shifted[0] : 0 (XOR self-inverse).
     //      sturm-a3t4.3: depth-1 lift over b[0] flag (see mul_mod_dsl.hpp's
-    //      detail_mul_mod::lift_under_flag for the idiom).
-    detail_mul_mod::lift_under_flag(b_bits[0], [&]() {
+    //      sturm::lift_under for the idiom).
+    sturm::lift_under(b_bits[0], [&]() {
         for (std::size_t j = 0u; j < n; ++j)
             r_chain_bits[1][j] ^= shifted_bits[0][j];
     });
@@ -164,14 +163,14 @@ inline void __lib_mul_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
     //      order; reverse runs F8b_inv then F8a_inv in i=1..W-1 order.
     for (std::size_t i = 1u; i < n; ++i) {
         // F8b_inv: lib_add_mod_dsl under control(b[i]).
-        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+        sturm::lift_under(b_bits[i], [&]() {
             lib_add_mod_dsl(r_chain_bits[i], shifted_bits[i],
                             n_bits, n, r_chain_bits[i + 1u]);
         });
 
         // F8a_inv: XOR-copy under control(flipped b[i]).
         b_bits[i].flip();
-        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+        sturm::lift_under(b_bits[i], [&]() {
             for (std::size_t j = 0u; j < n; ++j)
                 r_chain_bits[i + 1u][j] ^= r_chain_bits[i][j];
         });
@@ -191,21 +190,21 @@ inline void __lib_mul_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
 
         // F6b_inv: XOR-copy under control(flipped b[i]).
         b_bits[i].flip();
-        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+        sturm::lift_under(b_bits[i], [&]() {
             for (std::size_t j = 0u; j < n; ++j)
                 r_chain_bits[i + 1u][j] ^= r_chain_bits[i][j];
         });
         b_bits[i].flip();
 
         // F6a_inv: __lib_add_mod_dsl_adj under control(b[i]).
-        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+        sturm::lift_under(b_bits[i], [&]() {
             __lib_add_mod_dsl_adj(r_chain_bits[i], shifted_bits[i],
                                   n_bits, n, r_chain_bits[i + 1u]);
         });
     }
 
     // (8') Zero r_chain[1] (reverse of forward step 2a, XOR self-inverse).
-    detail_mul_mod::lift_under_flag(b_bits[0], [&]() {
+    sturm::lift_under(b_bits[0], [&]() {
         for (std::size_t j = 0u; j < n; ++j)
             r_chain_bits[1][j] ^= shifted_bits[0][j];
     });

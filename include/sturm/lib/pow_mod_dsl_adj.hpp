@@ -61,8 +61,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
-#include "sturm/control/when.hpp"          // sturm-a3t4.3: WHEN + WhenGuard::active_control
-#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.3: uncompute_and
+#include "sturm/control/lift.hpp"          // sturm-k8f2: shared lift_under
 #include "sturm/routines/invert.hpp"
 
 #include <cstddef>
@@ -175,17 +174,17 @@ inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
 
     // (6') Re-build acc_chain[i+1] for i=0..W-1 — gate-reverse of forward
     //      step 8's adjoint loop is the forward step 6's build loop.
-    //      sturm-a3t4.3: depth-1 lift via detail_pow_mod::lift_under_flag.
+    //      sturm-a3t4.3: depth-1 lift via sturm::lift_under.
     for (std::size_t i = 0u; i < n; ++i) {
         // F6a: under control(exp[i]), write mul_mod into acc_chain[i+1].
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             lib_mul_mod_dsl(acc_bits[i], sq_bits[i],
                             n_bits, n, acc_bits[i + 1u]);
         });
 
         // F6b: flip exp[i], lift, XOR-copy acc[i] into acc[i+1], unflip.
         exp_bits[i].flip();
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             for (std::size_t j = 0u; j < n; ++j)
                 acc_bits[i + 1u][j] ^= acc_bits[i][j];
         });
@@ -205,14 +204,14 @@ inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
 
         // F6b_inv: XOR-copy under control(flipped exp[i]).
         exp_bits[i].flip();
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             for (std::size_t j = 0u; j < n; ++j)
                 acc_bits[i + 1u][j] ^= acc_bits[i][j];
         });
         exp_bits[i].flip();
 
         // F6a_inv: __lib_mul_mod_dsl_adj under control(exp[i]).
-        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+        sturm::lift_under(exp_bits[i], [&]() {
             __lib_mul_mod_dsl_adj(acc_bits[i], sq_bits[i],
                                   n_bits, n, acc_bits[i + 1u]);
         });
