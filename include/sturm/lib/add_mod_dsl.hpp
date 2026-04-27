@@ -68,6 +68,8 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
+#include "sturm/control/when.hpp"          // sturm-a3t4.2: WHEN + WhenGuard::active_control
+#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.2: uncompute_and
 
 #include <cstddef>
 #include <cassert>
@@ -86,19 +88,6 @@ inline Bit make_ancilla_view(qbool& owner) {
         return qbool::make_non_owning(owner.qubits[0]);
     } else {
         return Bit(owner);
-    }
-}
-
-// Push the qubit underlying `flag` onto the active control stack.  Mirrors
-// the per-flag lambdas inside div_dsl.hpp / mul_dsl.hpp.
-template <typename Bit>
-inline void push_flag(BackendContext& ctx, Bit& flag) {
-    if constexpr (std::is_same_v<Bit, qbool>) {
-        ctx.control_stack.push_control(static_cast<uint32_t>(flag.qubits[0]));
-    } else {
-        flag.ensure_quantum();
-        ctx.control_stack.push_control(
-            static_cast<uint32_t>(flag.qubit_index()));
     }
 }
 
@@ -151,7 +140,8 @@ inline void lib_add_mod_dsl(Bit* a_bits, Bit* b_bits,
 
     sturm_backend_context_t* raw = sturm_get_thread_context();
     assert(raw && "lib_add_mod_dsl: no BackendContext installed");
-    BackendContext& ctx = *raw;
+    (void)raw;  // sturm-a3t4.2: control_stack is now driven by WHEN/WhenGuard
+                // through the lift pattern; ctx is no longer poked directly.
 
     // (1) Allocate the (W+1)-bit sum register `s`.
     int   s_idx[kMaxN + 1u];
@@ -182,6 +172,11 @@ inline void lib_add_mod_dsl(Bit* a_bits, Bit* b_bits,
     // (5) Allocate lt_flag and carry_anc_for_add (both |0>).
     int   lt_flag_idx     = QubitPool::instance().allocate();
     qbool lt_flag_own     = qbool::make_non_owning(lt_flag_idx);
+    // sturm-a3t4.2: lt_flag receives a data-dependent comparison bit at
+    // step (6); mark its qbool anchor as superposed so the lift pattern's
+    // `(*outer) & lt_flag_own` and `WHEN(lt_flag_own)` take the quantum
+    // branch instead of being short-circuited as classical |0>.
+    lt_flag_own.super_mask = 1ULL;
     Bit   lt_flag         = detail_add_mod::make_ancilla_view<Bit>(lt_flag_own);
     int   carry_anc_idx   = QubitPool::instance().allocate();
     qbool carry_anc_own   = qbool::make_non_owning(carry_anc_idx);
@@ -194,9 +189,26 @@ inline void lib_add_mod_dsl(Bit* a_bits, Bit* b_bits,
     // (7) Conditional add-back of n_extended controlled on lt_flag.
     //     When lt_flag=1, restores s to s_old (= a+b) and pushes overflow=1
     //     into carry_anc_for_add.  When lt_flag=0, no-op.
-    detail_add_mod::push_flag(ctx, lt_flag);
-    lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
-    ctx.control_stack.pop_control();
+    //
+    // sturm-a3t4.2 lift pattern: collapse outer-control + lt_flag into a
+    // single AND ancilla so the body runs under depth-1 control.  Mirrors
+    // the transpiler's nested-WHEN lowering (matcher_when_nested) so the
+    // primitives only ever see one control.
+    //
+    // Use lt_flag_own (the qbool anchor), not the Bit view, as the AND
+    // operand — the qbool form drives operator& / uncompute_and which expect
+    // qbool inputs.
+    if (qbool* outer = WhenGuard::active_control()) {
+        qbool tmp = (*outer) & lt_flag_own;
+        WHEN(tmp) {
+            lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
+        }
+        sturm::uncompute_and(tmp, *outer, lt_flag_own);
+    } else {
+        WHEN(lt_flag_own) {
+            lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
+        }
+    }
 
     // (8) carry_anc_for_add ^= lt_flag  ->  carry_anc_for_add returns to 0
     //     (in both branches) so that the controlled add is paired with a
@@ -211,9 +223,18 @@ inline void lib_add_mod_dsl(Bit* a_bits, Bit* b_bits,
     carry_anc ^= lt_flag;
 
     // (11) Reverse step 7: controlled (gate-reverse) of the add-back.
-    detail_add_mod::push_flag(ctx, lt_flag);
-    detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
-    ctx.control_stack.pop_control();
+    //      Same depth-1 lift as step (7).
+    if (qbool* outer = WhenGuard::active_control()) {
+        qbool tmp = (*outer) & lt_flag_own;
+        WHEN(tmp) {
+            detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
+        }
+        sturm::uncompute_and(tmp, *outer, lt_flag_own);
+    } else {
+        WHEN(lt_flag_own) {
+            detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
+        }
+    }
 
     // (12) Reverse step 6: unconditional add restores s to a+b and clears
     //      lt_flag back to |0>.

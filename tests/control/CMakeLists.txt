@@ -17,6 +17,8 @@ set(STURM_CONTROL_BACKEND_SOURCES
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    # sturm-a3t4.2: add_mod_dsl now uses uncompute_and for the depth-1 lift.
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 
 # sturm-a3t4.1 P0 -- baseline gate counts for add/mul/pow_mod_dsl.
@@ -60,3 +62,32 @@ add_test(NAME test_baseline_gate_counts
             "${CMAKE_CURRENT_BINARY_DIR}/baseline_gate_counts.txt")
 set_tests_properties(test_baseline_gate_counts
     PROPERTIES LABELS "control;modular-arith;baseline")
+
+# sturm-a3t4.2 P1 -- add_mod_dsl depth-1 lift pattern (forward + adjoint).
+#
+# Pins behavioural correctness of the new
+#   if (outer = active_control()) { tmp = outer & flag; WHEN(tmp) {...}; uncompute_and(...); }
+#   else                          { WHEN(flag) {...}; }
+# lift in both add_mod_dsl.hpp and add_mod_dsl_adj.hpp.  Bare runs exercise
+# the `else` branch; WHEN(c)-wrapped runs exercise the `if (outer)` AND-fold.
+add_executable(test_add_mod_when_lift
+    test_add_mod_when_lift.cpp
+    ${STURM_CONTROL_BACKEND_SOURCES}
+)
+target_include_directories(test_add_mod_when_lift PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_add_mod_when_lift PRIVATE cxx_std_20)
+target_compile_definitions(test_add_mod_when_lift PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+# Inherit the same STURM_ANCILLA_CAPACITY override pattern used by
+# test_baseline_gate_counts (project default 256 is fine for W=2 here, but
+# we reuse the silenced -U/-D dance for consistency).
+target_compile_options(test_add_mod_when_lift PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_add_mod_when_lift PRIVATE orkan_headers)
+add_test(NAME test_add_mod_when_lift COMMAND test_add_mod_when_lift)
+set_tests_properties(test_add_mod_when_lift
+    PROPERTIES LABELS "control;modular-arith;lift")

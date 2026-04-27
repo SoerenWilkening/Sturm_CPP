@@ -16,6 +16,8 @@ set(STURM_LIB_BACKEND_SOURCES
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    # sturm-a3t4.2: add_mod_dsl now uses uncompute_and for the depth-1 lift.
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 
 # sturm-le6w LO-1d -- lib_or_dsl adjoint roundtrip.

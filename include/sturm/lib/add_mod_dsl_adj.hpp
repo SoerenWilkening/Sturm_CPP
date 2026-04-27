@@ -47,6 +47,8 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
+#include "sturm/control/when.hpp"          // sturm-a3t4.2: WHEN + WhenGuard::active_control
+#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.2: uncompute_and
 #include "sturm/routines/invert.hpp"
 
 #include <cstddef>
@@ -112,7 +114,8 @@ inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
 
     sturm_backend_context_t* raw = sturm_get_thread_context();
     assert(raw && "__lib_add_mod_dsl_adj: no BackendContext installed");
-    BackendContext& ctx = *raw;
+    (void)raw;  // sturm-a3t4.2: control_stack is now driven by WHEN/WhenGuard
+                // through the lift pattern; ctx is no longer poked directly.
 
     // (1') Re-allocate the (W+1)-bit sum register `s` in forward order.
     int   s_idx[kMaxN + 1u];
@@ -137,6 +140,11 @@ inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
     // (1') Allocate lt_flag and carry_anc (both |0>).
     int   lt_flag_idx     = QubitPool::instance().allocate();
     qbool lt_flag_own     = qbool::make_non_owning(lt_flag_idx);
+    // sturm-a3t4.2: lt_flag receives a data-dependent comparison bit at
+    // step (4'); mark its qbool anchor as superposed so the lift pattern's
+    // `(*outer) & lt_flag_own` and `WHEN(lt_flag_own)` take the quantum
+    // branch instead of being short-circuited as classical |0>.
+    lt_flag_own.super_mask = 1ULL;
     Bit   lt_flag         = detail_add_mod::make_ancilla_view<Bit>(lt_flag_own);
     int   carry_anc_idx   = QubitPool::instance().allocate();
     qbool carry_anc_own   = qbool::make_non_owning(carry_anc_idx);
@@ -156,9 +164,21 @@ inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
 
     // (5') Reverse forward step 11 (controlled lib_add_adj):
     //      controlled lib_add_dsl on the same operands.
-    detail_add_mod::push_flag(ctx, lt_flag);
-    lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
-    ctx.control_stack.pop_control();
+    //
+    // sturm-a3t4.2 lift pattern: same depth-1 collapse as the forward.  The
+    // qbool anchor `lt_flag_own` (not the Bit view) is the AND operand so
+    // operator& / uncompute_and see qbool inputs.
+    if (qbool* outer = WhenGuard::active_control()) {
+        qbool tmp = (*outer) & lt_flag_own;
+        WHEN(tmp) {
+            lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
+        }
+        sturm::uncompute_and(tmp, *outer, lt_flag_own);
+    } else {
+        WHEN(lt_flag_own) {
+            lib_add_dsl(n_ext, s_bits, carry_anc, n + 1u);
+        }
+    }
 
     // (6') Reverse forward step 10 (carry_anc ^= lt_flag is self-inverse).
     carry_anc ^= lt_flag;
@@ -171,10 +191,18 @@ inline void __lib_add_mod_dsl_adj(Bit* a_bits, Bit* b_bits,
     carry_anc ^= lt_flag;
 
     // (9') Reverse forward step 7 (controlled lib_add_dsl):
-    //      controlled lib_add_adj on the same operands.
-    detail_add_mod::push_flag(ctx, lt_flag);
-    detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
-    ctx.control_stack.pop_control();
+    //      controlled lib_add_adj on the same operands.  Same depth-1 lift.
+    if (qbool* outer = WhenGuard::active_control()) {
+        qbool tmp = (*outer) & lt_flag_own;
+        WHEN(tmp) {
+            detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
+        }
+        sturm::uncompute_and(tmp, *outer, lt_flag_own);
+    } else {
+        WHEN(lt_flag_own) {
+            detail_div::lib_add_adj(n_ext, s_bits, carry_anc, n + 1u);
+        }
+    }
 
     // (10') Reverse forward step 6 (lib_add_adj(n_ext, s_full, lt_flag, n+1)):
     //       lib_add_dsl on the same operands restores s to s + n and clears
