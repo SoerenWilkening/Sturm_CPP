@@ -4689,3 +4689,66 @@ add_test(NAME test_when_freevar_readset
          COMMAND test_when_freevar_readset)
 set_tests_properties(test_when_freevar_readset PROPERTIES
     LABELS "transpiler")
+
+# ── sturm-va3z.2 (E7.M2): WHEN free-variable write-set checker unit test ──
+# Pure unit test for `check_when_freevar_writes` in
+# `transpiler/src/when_freevar_check.{hpp,cpp}`. The harness drives the
+# checker against in-memory C++ snippets via `runToolOnCodeWithArgs` and
+# captures diagnostics through a custom `DiagnosticConsumer` installed on
+# the tool's CompilerInstance — the same Clang Tooling pattern E7.M1's
+# `test_when_freevar_readset` uses, mirrored verbatim. LLVM / Clang config
+# packages are re-found here for the same scope-propagation reason E7.M1
+# documents above; `find_package(... CONFIG)` is idempotent against the
+# parent configure's cached LLVM_DIR / Clang_DIR.
+find_package(LLVM CONFIG REQUIRED)
+find_package(Clang CONFIG REQUIRED)
+
+add_executable(test_when_freevar_check
+    test_when_freevar_check.cpp
+    ${CMAKE_SOURCE_DIR}/transpiler/src/when_freevar_check.cpp
+    ${CMAKE_SOURCE_DIR}/transpiler/src/when_freevar_readset.cpp
+)
+target_include_directories(test_when_freevar_check PRIVATE
+    ${CMAKE_SOURCE_DIR}/transpiler/src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_when_freevar_check PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_when_freevar_check PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_WHEN_FVCHK NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_when_freevar_check PRIVATE
+    ${LLVM_DEFS_LIST_WHEN_FVCHK})
+# Mirror the matcher unit-test target's shared-vs-static LLVM link
+# discipline so we do not double-register cl::opt tables when a shared
+# libclang-cpp / libLLVM is also on the link line via the parent build.
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_when_freevar_check PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_when_freevar_check PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_WHEN_FVCHK support)
+    target_link_libraries(test_when_freevar_check PRIVATE
+        ${LLVM_LIBS_WHEN_FVCHK})
+endif()
+add_test(NAME test_when_freevar_check
+         COMMAND test_when_freevar_check)
+set_tests_properties(test_when_freevar_check PROPERTIES
+    LABELS "transpiler")
