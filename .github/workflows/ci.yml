@@ -7,9 +7,10 @@ name: ci
 # that start emitting new symbols (or moved defining headers) without
 # the committed TSV + classification doc being updated.
 #
-# Subsequent packaging-export milestones will add more drift checks
-# (E2.M2 public-header lint, E8.M1 public-API drift, E8.M2 doc-snippet
-# drift) as additional steps in this workflow.
+# E2.M2 (sturm-nalq.2) adds the public-header lint step. Subsequent
+# packaging-export milestones will add more drift checks (E8.M1
+# public-API drift, E8.M2 doc-snippet drift) as additional steps in
+# this workflow.
 #
 # Per project rule: every cmake/ctest/make invocation is capped at 6
 # threads (`--parallel 6` / `-j6`). The drift-check itself is a pure
@@ -40,3 +41,9 @@ jobs:
 
       - name: Emit-target audit unit tests
         run: python3 -m unittest tests.tools.test_audit_emit_targets tests.tools.test_emit_targets_drift
+
+      - name: Public-header lint (E2.M2)
+        run: python3 tools/lint_public_headers.py
+
+      - name: Public-header lint unit tests
+        run: python3 -m unittest tests.tools.test_lint_public_headers
