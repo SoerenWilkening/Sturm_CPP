@@ -265,3 +265,36 @@ add_test(NAME check_doxygen_lib_mod_dsl
 )
 set_tests_properties(check_doxygen_lib_mod_dsl PROPERTIES
     LABELS "cmake;modular-arith;docs")
+
+# ── sturm-6ov3.4 — STURM_MODULAR_POW help text + reversibility cross-check ─
+#
+# Drives the Phase 7 plan §9.1 #4 + #6 contracts that layer on top of the
+# Phase-6 `cmake_modular_pow_help_text` test:
+#   - the option's CMake help string must point a `cmake -LH` reader at
+#     the trust-model section (PRD §5) that defines the operand
+#     precondition `a, b ∈ [0, n)`;
+#   - `docs/TODO_reversibility_deferrals.md` must explicitly record the
+#     PRD §7 cross-check (i.e. that none of the modular-arith deferrals
+#     introduce a reversibility deferral) so a future reader cannot
+#     mistake silence for absence of review.
+#
+# Implementation: the script (`cmake_modular_pow_help_text_doc.cmake`)
+# runs one out-of-tree configure of the STURM source tree, queries
+# `cmake -LH -N` for the option block, and scans the deferrals doc.
+# No compilation runs (configure-only).
+add_test(NAME cmake_modular_pow_help_text_doc
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_help_text_doc"
+        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+        "-DPARENT_CLANG_DIR=${Clang_DIR}"
+        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_help_text_doc.cmake"
+)
+set_tests_properties(cmake_modular_pow_help_text_doc PROPERTIES
+    LABELS "cmake;modular-arith;docs"
+    # Same reasoning as cmake_modular_pow_flag / *_help_text: the child
+    # configure spawns its own helpers; reserve a job slot to stay under
+    # the project's `--parallel 6` cap.
+    PROCESSORS 2)

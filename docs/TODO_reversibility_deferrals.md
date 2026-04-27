@@ -111,6 +111,31 @@ This is a deliberate boundary, not a deferral — it does not belong on the list
 
 ---
 
+## Cross-check: modular-arithmetic PRD §7 (sturm-6ov3.4 / 2026-04-26)
+
+Plan `docs/plan_modular_arithmetic.md` §9.1 #6 instructs us to cross-
+check `docs/prd_modular_arithmetic.md` PRD §7 (non-goals / explicitly
+deferred) against this list and surface any deferred item that
+interacts with reversibility.
+
+**Result of the review.** None of the five PRD §7 deferrals introduces
+a reversibility deferral. For the record:
+
+| PRD §7 item | Reversibility impact |
+|---|---|
+| `qint_mod<N>` type wrapper | Pure type-system sugar over `qint_t<W>`; the underlying primitives (`lib_*_mod_dsl`) and their adjoints (`__lib_*_mod_dsl_adj`) are unchanged. |
+| Per-region modular flag scope | Build-time vs. region-time toggle of the same `pow %` rewrite; the rewrite target (`lib_pow_mod_dsl`) is reversible by construction (Phase 3 / sturm-pp7m). |
+| Compound modular assigns | Sugar over the existing free functions; lowering goes through the same reversible primitives. |
+| Modular subtraction / negation | Lowers to `add_mod(a, n - b, n)`, which is the same reversible primitive. |
+| Precondition-checking debug mode | Inserts reversible `compare(a, n)` guards (already a reversible primitive); does not change the modular ops themselves. |
+
+No items interact with the five reversibility deferrals listed above
+(recursion, cross-TU synthesis, member functions, templates, free-
+function predicates inside `WHEN(...)`). Re-run this cross-check if a
+new entry lands in PRD §7 of `prd_modular_arithmetic`.
+
+---
+
 ## Filing new work
 
 When a concrete use case lands:
