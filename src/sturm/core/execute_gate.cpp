@@ -31,6 +31,27 @@
 
 namespace sturm {
 
+// ── execute_gate observer hook (sturm-a3t4.7) ─────────────────────────────────
+//
+// Thread-local function pointer fired by execute_gate after the gate_count
+// increment and before the mode-dispatch switch.  Default-null: production
+// callers pay only the cost of a null check.  The depth-1 invariant test
+// installs a callback that polls current_control_stack().depth() so it can
+// observe the stack state at every gate emission site without instrumenting
+// the library primitives themselves.
+
+namespace {
+thread_local ExecuteGateHook s_execute_gate_hook = nullptr;
+}  // namespace
+
+void set_execute_gate_hook(ExecuteGateHook hook) noexcept {
+    s_execute_gate_hook = hook;
+}
+
+ExecuteGateHook get_execute_gate_hook() noexcept {
+    return s_execute_gate_hook;
+}
+
 // ── execute_gate — C++ helper ─────────────────────────────────────────────────
 //
 // Called by the C ABI entry point and (in future) directly from C++ Layer A
@@ -43,6 +64,13 @@ void execute_gate(BackendContext&   ctx,
                   double            param) {
     // Step 1: unconditional gate count (PRD §5).
     ctx.gate_count++;
+
+    // Step 1b: fire the optional observer hook (sturm-a3t4.7).  The hook is
+    // null in production builds; tests install one transiently to poll
+    // control_stack depth at every gate emission site.
+    if (auto hook = s_execute_gate_hook) {
+        hook(ctx, kind, qubits, n, param);
+    }
 
     // Step 2: mode dispatch.
     switch (ctx.mode) {

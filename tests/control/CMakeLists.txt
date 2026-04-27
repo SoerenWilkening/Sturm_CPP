@@ -185,3 +185,34 @@ target_link_libraries(test_div_when_lift PRIVATE orkan_headers)
 add_test(NAME test_div_when_lift COMMAND test_div_when_lift)
 set_tests_properties(test_div_when_lift
     PROPERTIES LABELS "control;arith;lift")
+
+# sturm-a3t4.7 P6 -- depth-1 control stack invariant regression net.
+#
+# Exercises every public op (add_mod, mul_mod, pow_mod, div, mul, plus
+# qbool::flip) bare and inside WHEN(c), polling
+# current_control_stack().depth() from the new execute_gate hook
+# (sturm::set_execute_gate_hook) on every emitted gate.  Asserts max
+# observed depth <= 1 across each invocation.  A future op that regresses
+# to raw control_stack.push_control() while a WHEN(c) is live would
+# observe depth=2 here and trip a clear depth>1 abort -- belt-and-braces
+# alongside the runtime push_control assert promoted in sturm-a3t4.6.
+add_executable(test_depth_invariant
+    depth_invariant_test.cpp
+    ${STURM_CONTROL_BACKEND_SOURCES}
+)
+target_include_directories(test_depth_invariant PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_depth_invariant PRIVATE cxx_std_20)
+target_compile_definitions(test_depth_invariant PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+# pow_mod's chain-style allocations balloon at W=2; bump the ancilla cap
+# to 512 to match test_baseline_gate_counts / test_pow_mod_when_lift.
+target_compile_options(test_depth_invariant PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=512
+)
+target_link_libraries(test_depth_invariant PRIVATE orkan_headers)
+add_test(NAME test_depth_invariant COMMAND test_depth_invariant)
+set_tests_properties(test_depth_invariant
+    PROPERTIES LABELS "control;invariant;depth")

@@ -98,6 +98,28 @@ void execute_gate(BackendContext&   ctx,
                   uint8_t           n,
                   double            param);
 
+// ── execute_gate observer hook (sturm-a3t4.7) ─────────────────────────────────
+//
+// Test-only thread-local hook fired by execute_gate after gate_count increment
+// and before mode dispatch.  Exists so the depth-1 invariant regression test
+// (tests/control/depth_invariant_test.cpp) can poll
+// current_control_stack().depth() at every gate site without interleaving
+// custom logic into the library primitives themselves.  Production callers
+// leave the hook null (default) and pay no overhead beyond a null check.
+//
+// Lifetime: caller-owned function pointer; reset to nullptr before tearing
+// down whatever state the callback closes over.  Defined in
+// src/sturm/core/execute_gate.cpp.
+
+using ExecuteGateHook = void (*)(BackendContext&,
+                                 sturm_gate_kind_t,
+                                 const uint32_t*,
+                                 uint8_t,
+                                 double);
+
+void             set_execute_gate_hook(ExecuteGateHook hook) noexcept;
+ExecuteGateHook  get_execute_gate_hook() noexcept;
+
 } // namespace sturm
 
 // ── C ABI concrete struct alias ───────────────────────────────────────────────
