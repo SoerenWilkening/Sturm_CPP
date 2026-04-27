@@ -559,6 +559,19 @@ endif()
 # expression (`$<TARGET_FILE:sturm-transpile-plugin>`) resolves to the
 # right thing on every platform without bespoke PREFIX massaging.
 
+# ── Namespaced aliases (sturm-vr0v.1 / E5.M1) ─────────────────────────────────
+# Expose the two transpiler targets under their `sturm::` namespace so
+# `cmake/SturmTranspile.cmake` can reference them via
+# `$<TARGET_FILE:sturm::transpiler>` and `$<TARGET_FILE:sturm::transpile-plugin>`
+# uniformly across:
+#   - in-tree builds (these aliases),
+#   - find_package(sturm) consumers (matching IMPORTED targets registered
+#     in cmake/sturmConfig.cmake.in).
+# The legacy bare names (`sturm-transpile`, `sturm-transpile-plugin`) remain
+# valid for any in-tree call site; the aliases are additive.
+add_executable(sturm::transpiler ALIAS sturm-transpile)
+add_library(sturm::transpile-plugin ALIAS sturm-transpile-plugin)
+
 # ── Install rule (Phase L PL-1) ───────────────────────────────────────────────
 # Ship the transpiler driver into <prefix>/bin so downstream consumers can
 # locate it via the IMPORTED `sturm-transpile` target wired up in

@@ -232,12 +232,15 @@ function(_sturm_add_quantum_executable_plugin target)
     set(plugins ${STURM_AQE_PLUGIN_PLUGINS})
 
     # The plugin must be a known target before we reference its
-    # TARGET_FILE. In the STURM monorepo the target is added by
-    # transpiler/CMakeLists.txt.
-    if(NOT TARGET sturm-transpile-plugin)
+    # TARGET_FILE. Both the in-tree build (transpiler/CMakeLists.txt
+    # ALIAS) and find_package(sturm) consumers (sturmConfig.cmake.in
+    # IMPORTED) register `sturm::transpile-plugin`; we prefer the
+    # namespaced spelling so installed-prefix users hit the same code
+    # path as in-tree builds (sturm-vr0v.1 / PRD §3.5).
+    if(NOT TARGET sturm::transpile-plugin)
         message(FATAL_ERROR
             "add_quantum_executable(${target}): the "
-            "`sturm-transpile-plugin` target is not defined. Ensure the "
+            "`sturm::transpile-plugin` target is not defined. Ensure the "
             "STURM transpiler subdirectory is added "
             "(add_subdirectory(transpiler) or find_package(sturm)) "
             "before calling add_quantum_executable, OR reconfigure with "
@@ -250,7 +253,7 @@ function(_sturm_add_quantum_executable_plugin target)
     # ignores duplicate `-fplugin=` entries — so appending here and
     # again per-source would be safe, but target-wide is cleaner.
     target_compile_options(${target} PRIVATE
-        "-fplugin=$<TARGET_FILE:sturm-transpile-plugin>")
+        "-fplugin=$<TARGET_FILE:sturm::transpile-plugin>")
 
     # STURM_BACKEND_ENABLED has to be visible to the PARENT clang parse
     # (the one that walks the AST and runs the matchers) as well as to
@@ -266,8 +269,17 @@ function(_sturm_add_quantum_executable_plugin target)
     # transpiler matcher source changed), every target using it must
     # recompile. Without this, CMake has no reason to rerun the
     # compile step on an unchanged user source — which would bake in
-    # the old plugin's rewrite behavior.
-    add_dependencies(${target} sturm-transpile-plugin)
+    # the old plugin's rewrite behavior. `add_dependencies` rejects
+    # ALIAS targets, so we resolve the underlying name first via
+    # ALIASED_TARGET (in-tree) and fall back to the namespaced spelling
+    # for IMPORTED targets registered by sturmConfig.cmake.in.
+    get_target_property(_sturm_aliased sturm::transpile-plugin ALIASED_TARGET)
+    if(_sturm_aliased)
+        add_dependencies(${target} ${_sturm_aliased})
+    else()
+        # IMPORTED target (find_package consumer): no build step to
+        # depend on, the file is shipped pre-built. Skip silently.
+    endif()
 
     # Per-source plumbing: wire a `-Xclang -plugin-arg-sturm-transpile
     # -Xclang dump-to=<path>` pair so the plugin mirrors the rewritten
@@ -398,14 +410,15 @@ function(_sturm_add_quantum_executable_dump target)
         # collapse any "../" segments the caller passed in.
         get_filename_component(abs_src "${abs_src}" ABSOLUTE)
 
-        # sturm-transpile must be a known target before we wire a
-        # custom-command DEPENDS on it. In the STURM monorepo the target is
-        # added by transpiler/CMakeLists.txt. External consumers must bring
-        # their own: fall back to a fatal-error with an actionable hint if
-        # the target is missing.
-        if(NOT TARGET sturm-transpile)
+        # sturm::transpiler must be a known target before we wire a
+        # custom-command DEPENDS on it. Both the in-tree build (ALIAS in
+        # transpiler/CMakeLists.txt) and find_package(sturm) consumers
+        # (IMPORTED in sturmConfig.cmake.in) register the namespaced
+        # spelling, so checking for it here covers both layouts uniformly
+        # (sturm-vr0v.1 / PRD §3.5).
+        if(NOT TARGET sturm::transpiler)
             message(FATAL_ERROR
-                "add_quantum_executable(${target}): the `sturm-transpile` "
+                "add_quantum_executable(${target}): the `sturm::transpiler` "
                 "target is not defined. Ensure the STURM transpiler "
                 "subdirectory is added (add_subdirectory(transpiler) or "
                 "find_package(sturm)) before calling add_quantum_executable.")
@@ -451,15 +464,27 @@ function(_sturm_add_quantum_executable_dump target)
             "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
             "--extra-arg=-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
 
+        # `add_custom_command(DEPENDS ...)` rejects ALIAS targets but
+        # accepts the underlying real target name; for IMPORTED targets
+        # there is no buildable dependency to express. Resolve once and
+        # gate the DEPENDS on the file/target accordingly.
+        get_target_property(_sturm_xpile_aliased sturm::transpiler
+            ALIASED_TARGET)
+        if(_sturm_xpile_aliased)
+            set(_sturm_xpile_dep "${_sturm_xpile_aliased}")
+        else()
+            set(_sturm_xpile_dep "")  # IMPORTED — file ships pre-built.
+        endif()
+
         add_custom_command(
             OUTPUT "${gen_src}"
             COMMAND "${CMAKE_COMMAND}" -E make_directory "${gen_dir}"
-            COMMAND $<TARGET_FILE:sturm-transpile>
+            COMMAND $<TARGET_FILE:sturm::transpiler>
                     "${_input_for_tool}"
                     --output-dir "${CMAKE_BINARY_DIR}/sturm_gen"
                     ${_xa_args}
             WORKING_DIRECTORY "${_working_dir}"
-            DEPENDS "${abs_src}" sturm-transpile
+            DEPENDS "${abs_src}" ${_sturm_xpile_dep}
             COMMENT "sturm-transpile ${rel_src}"
             VERBATIM)
 

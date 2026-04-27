@@ -116,7 +116,8 @@ configure_package_config_file(
     "${CMAKE_CURRENT_SOURCE_DIR}/cmake/sturmConfig.cmake.in"
     "${CMAKE_CURRENT_BINARY_DIR}/sturmConfig.cmake"
     INSTALL_DESTINATION "${STURM_CMAKE_CONFIG_DESTINATION}"
-    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_BINDIR)
+    PATH_VARS CMAKE_INSTALL_INCLUDEDIR CMAKE_INSTALL_BINDIR
+              CMAKE_INSTALL_LIBDIR)
 
 write_basic_package_version_file(
     "${CMAKE_CURRENT_BINARY_DIR}/sturmConfigVersion.cmake"

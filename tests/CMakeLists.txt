@@ -197,6 +197,31 @@ set_tests_properties(cmake_modular_pow_flag PROPERTIES
     # cap when CMake spawns its own internal helpers.
     PROCESSORS 2)
 
+# ── sturm-vr0v.1 — add_quantum_executable command-line unit test ─────────────
+#
+# Drives the E5.M1 contract that `add_quantum_executable` resolves the
+# transpiler binary via `$<TARGET_FILE:sturm::transpiler>` (the namespaced
+# exported target wired up by both `transpiler/CMakeLists.txt` ALIAS and
+# `cmake/sturmConfig.cmake.in` IMPORTED) so it works identically against
+# in-tree builds and `find_package(sturm)` consumers (PRD §3.5).
+#
+# The script (`tests/cmake/test_add_quantum_executable_command_line.cmake`)
+# spins up a mini CMake project that registers a MOCKED `sturm::transpiler`
+# IMPORTED executable, includes `cmake/SturmTranspile.cmake`, calls
+# `add_quantum_executable(...)` in dump mode, and inspects the generated
+# Makefile / build script for the resolved transpile recipe. Configure-only
+# (no compilation), so the test stays fast.
+add_test(NAME add_quantum_executable_command_line
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/add_quantum_executable_command_line"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/test_add_quantum_executable_command_line.cmake"
+)
+set_tests_properties(add_quantum_executable_command_line PROPERTIES
+    LABELS "cmake;packaging-export"
+    # The child configure is single-threaded; reserve one slot.
+    PROCESSORS 1)
+
 # ── sturm-bjt2.1 — STURM_MODULAR_POW CMake help text + README docs ───────────
 #
 # Drives the Phase 6 plan §8.1 / PRD §3.4 contract for the user-facing

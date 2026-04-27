@@ -47,16 +47,45 @@ if(NOT TARGET sturm)
 endif()
 
 # ── 2. sturm-transpile executable ─────────────────────────────────────────
-# Expose the installed sturm-transpile driver as an IMPORTED executable
-# target with the same name used by the in-tree build
-# (cmake/SturmTranspile.cmake references `sturm-transpile` by bare name),
-# so the helper works identically against installed and in-tree layouts.
+# Expose the installed sturm-transpile driver under both the legacy bare
+# name (`sturm-transpile`, used by in-tree call sites) and the namespaced
+# alias (`sturm::transpiler`, used by `cmake/SturmTranspile.cmake` per
+# sturm-vr0v.1 / PRD §3.5). CMake forbids ALIAS-of-IMPORTED, so we register
+# two IMPORTED executables sharing the same IMPORTED_LOCATION rather than
+# alias one onto the other. The plugin .so is exposed under the same shape.
 set_and_check(STURM_TRANSPILE_EXECUTABLE "@PACKAGE_CMAKE_INSTALL_BINDIR@/sturm-transpile")
 
 if(NOT TARGET sturm-transpile)
     add_executable(sturm-transpile IMPORTED)
     set_target_properties(sturm-transpile PROPERTIES
         IMPORTED_LOCATION "${STURM_TRANSPILE_EXECUTABLE}")
+endif()
+if(NOT TARGET sturm::transpiler)
+    add_executable(sturm::transpiler IMPORTED)
+    set_target_properties(sturm::transpiler PROPERTIES
+        IMPORTED_LOCATION "${STURM_TRANSPILE_EXECUTABLE}")
+endif()
+
+# Plugin shared library. Resolve the file extension at config-load time
+# from the host platform so consumers configured against the installed
+# package see the same TARGET_FILE shape the in-tree build produces.
+if(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
+    set(_sturm_plugin_ext "dylib")
+else()
+    set(_sturm_plugin_ext "so")
+endif()
+set(STURM_TRANSPILE_PLUGIN
+    "@PACKAGE_CMAKE_INSTALL_LIBDIR@/libsturm-transpile-plugin.${_sturm_plugin_ext}")
+
+if(NOT TARGET sturm-transpile-plugin)
+    add_library(sturm-transpile-plugin SHARED IMPORTED)
+    set_target_properties(sturm-transpile-plugin PROPERTIES
+        IMPORTED_LOCATION "${STURM_TRANSPILE_PLUGIN}")
+endif()
+if(NOT TARGET sturm::transpile-plugin)
+    add_library(sturm::transpile-plugin SHARED IMPORTED)
+    set_target_properties(sturm::transpile-plugin PROPERTIES
+        IMPORTED_LOCATION "${STURM_TRANSPILE_PLUGIN}")
 endif()
 
 # ── 3. The add_quantum_executable() helper ────────────────────────────────
