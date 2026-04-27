@@ -141,12 +141,24 @@ def main(argv: list[str] | None = None) -> int:
     # Step 1: transpile. We use --dump-transpiled so the rewritten buffer
     # lands at a known path regardless of the input's relative-path shape.
     transpiled = workdir / (args.input.stem + ".transpiled.cpp")
+    # Mirror the contract `add_quantum_executable` imposes on every
+    # consumer (cmake/SturmTranspile.cmake §plugin-mode):
+    #   * `STURM_BACKEND_ENABLED=1` — the public umbrella
+    #     `<sturm/sturm.hpp>` unconditionally pulls in
+    #     `qtypes/qint_arith_v3.hpp`, which `#error`s when the macro is
+    #     unset.
+    #   * `STURM_ANCILLA_CAPACITY=256` — `core/qubit_pool.hpp` uses it
+    #     as an array bound. Matches the parent CMakeLists.txt default.
+    # Setting both in the transpile parse and the compile step keeps
+    # sturmc consumable for arbitrary STURM sources (PRD §3.5 / D3).
     transpile_cmd = [
         str(transpiler),
         str(args.input.resolve()),
         "--dump-transpiled", str(transpiled),
         f"--extra-arg=-I{public_inc}",
         "--extra-arg=-std=c++20",
+        "--extra-arg=-DSTURM_BACKEND_ENABLED=1",
+        "--extra-arg=-DSTURM_ANCILLA_CAPACITY=256",
     ]
     for inc in _flatten_includes(args.include_dirs):
         transpile_cmd.append(f"--extra-arg=-I{inc}")
@@ -158,9 +170,12 @@ def main(argv: list[str] | None = None) -> int:
         )
         return 1
 
-    # Step 2: compile + link via ${CXX}.
-    compile_cmd: list[str] = [cxx, "-std=c++20", str(transpiled),
-                              f"-I{public_inc}"]
+    # Step 2: compile + link via ${CXX}. Same `STURM_BACKEND_ENABLED` /
+    # `STURM_ANCILLA_CAPACITY` rationale as the transpile parse above.
+    compile_cmd: list[str] = [cxx, "-std=c++20",
+                              "-DSTURM_BACKEND_ENABLED=1",
+                              "-DSTURM_ANCILLA_CAPACITY=256",
+                              str(transpiled), f"-I{public_inc}"]
     for inc in _flatten_includes(args.include_dirs):
         compile_cmd.append(f"-I{inc}")
 

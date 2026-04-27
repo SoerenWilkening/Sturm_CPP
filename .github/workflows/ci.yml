@@ -11,8 +11,11 @@ name: ci
 # (sturm-8gvh.1) adds the public-API drift-check. E8.M2
 # (sturm-8gvh.2) adds the getting_started.md walkthrough drift-check
 # (the doc's first C++ block must match tests/external_consumer/main.cpp
-# byte-for-byte). Subsequent packaging-export milestones will add
-# further drift checks as additional steps in this workflow.
+# byte-for-byte). E6.M3 (sturm-795j.3) adds the sturmc-driver smoke
+# variant alongside the M2 add_quantum_executable variant, so both
+# delivery paths from PRD §3.5 are exercised against an installed
+# prefix on every push/PR. Subsequent packaging-export milestones will
+# add further drift checks as additional steps in this workflow.
 #
 # Per project rule: every cmake/ctest/make invocation is capped at 6
 # threads (`--parallel 6` / `-j6`). The drift-check itself is a pure
@@ -90,3 +93,29 @@ jobs:
         env:
           STURMC_CXX: clang++-17
         run: ./ci/run_external_smoke.sh
+
+  sturmc-smoke:
+    # E6.M3 (sturm-795j.3): drives the SAME `tests/external_consumer/`
+    # source through the `sturmc` Python CLI rather than the
+    # `add_quantum_executable` CMake helper that E6.M2 exercises. Same
+    # golden output (tests/external_consumer/golden.txt), different
+    # delivery path — proves both PRD §3.5 entry points stay green
+    # against an installed STURM prefix. Hard-capped at --parallel 6
+    # per CLAUDE.md.
+    name: sturmc-smoke
+    runs-on: ubuntu-24.04
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Install LLVM-17 + CMake
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y clang-17 llvm-17-dev libclang-17-dev cmake
+
+      - name: Run sturmc smoke (E6.M3)
+        env:
+          STURMC_CXX: clang++-17
+        run: ./ci/run_sturmc_smoke.sh
