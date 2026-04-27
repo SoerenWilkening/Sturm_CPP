@@ -14,7 +14,7 @@
 // unqualified `swap(<lhs>, __sturm_tmp_<op>_<N>);` after every lossy
 // compound assignment. ADL resolves that to
 // `sturm::swap(qint_t<W>&, qint_t<W>&)` defined in
-// `include/sturm/qtypes/lossy_oop.hpp`, which today is NOT control-aware:
+// `include/sturm/detail/qtypes/lossy_oop.hpp`, which today is NOT control-aware:
 // it always relabels indices and emits zero gates regardless of WHEN
 // depth. This test pins the equivalence between the transpiler-emitted
 // shape (calls `sturm::swap(qint_t<W>&, qint_t<W>&)` under WHEN) and the
@@ -26,12 +26,12 @@
 // the two IRs become byte-for-byte equal and the test passes.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/c_and_dsl.hpp"
-#include "sturm/lib/logic_dsl.hpp"
-#include "sturm/lib/mul_dsl.hpp"
-#include "sturm/lib/swap_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
-#include "sturm/qtypes/lossy_oop.hpp"
+#include "sturm/detail/lib/c_and_dsl.hpp"
+#include "sturm/detail/lib/logic_dsl.hpp"
+#include "sturm/detail/lib/mul_dsl.hpp"
+#include "sturm/detail/lib/swap_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/lossy_oop.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/control/when.hpp"

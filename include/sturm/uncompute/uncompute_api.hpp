@@ -31,7 +31,7 @@
 
 #ifdef STURM_BACKEND_ENABLED
 #  include "sturm/qtypes/qint_compare_v3.hpp"   // detail::bit_array_view + promote
-#  include "sturm/lib/compare_dsl.hpp"          // lib_{eq,ne,lt,le,gt,ge}_dsl
+#  include "sturm/detail/lib/compare_dsl.hpp"          // lib_{eq,ne,lt,le,gt,ge}_dsl
 #  include "sturm/core/context.hpp"             // sturm_get_thread_context
 #endif
 
@@ -48,7 +48,7 @@ namespace sturm {
 // CX + CX + CCX sequence used by qbool_ops.hpp and bit_proxy.hpp.
 //
 // The mixed and classical cases follow the four-quadrant rules already
-// used by `materialize_or` (see include/sturm/qtypes/bit_proxy.hpp) and
+// used by `materialize_or` (see include/sturm/detail/qtypes/bit_proxy.hpp) and
 // each adjoint is the exact reversed gate list of the forward emission
 // with every gate replaced by its inverse (X, CX and CCX are each
 // self-inverse):
@@ -71,7 +71,7 @@ void uncompute_or(qbool& r, const qbool& a, const qbool& b);
 //
 // Uncompute a bitwise-AND ancilla produced by `r = a & b`.  Emits the
 // inverse of the forward AND decomposition (see
-// include/sturm/qtypes/bit_proxy.hpp `materialize_and`) against the
+// include/sturm/detail/qtypes/bit_proxy.hpp `materialize_and`) against the
 // active sink.  The forward decomposition is a *single* gate per
 // quadrant, so the adjoint is also a single gate — X, CX and CCX are
 // each self-inverse:

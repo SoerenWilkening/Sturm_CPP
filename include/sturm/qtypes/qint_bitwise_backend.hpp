@@ -18,7 +18,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 
 #include <cstddef>
 
@@ -81,7 +81,7 @@ qint_t<W> operator|(const qint_t<W>& a, const qint_t<W>& b) {
     // Emit per-bit OR: result[i] ^= (a[i] | b[i]) via BitProxy's
     // operator| / operator^= (CNOT(a,r) + CNOT(b,r) + Toffoli(a,b,r) per
     // bit). BitProxy still carries its own expression-template wrappers
-    // locally — see include/sturm/qtypes/bit_proxy.hpp.
+    // locally — see include/sturm/detail/qtypes/bit_proxy.hpp.
     // Uses BitProxy instead of raw qbool::make_non_owning to handle -1 qubit
     // indices (classical bits) via classical folding.
     if ((a.super_mask | b.super_mask) != 0 && sturm_get_thread_context()) {

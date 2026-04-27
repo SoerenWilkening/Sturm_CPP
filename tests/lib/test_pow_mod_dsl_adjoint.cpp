@@ -34,8 +34,8 @@
 //   - QubitPool::in_use() returns to its pre-call value.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/pow_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/pow_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/routines/invert.hpp"
 #include "sturm/core/context.hpp"

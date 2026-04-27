@@ -26,7 +26,7 @@
 // transpiler emits unqualified-by-ADL calls into. Backend-gated because
 // `divide_oop.hpp` is.
 #ifdef STURM_BACKEND_ENABLED
-#  include "sturm/qtypes/lossy_oop.hpp"
+#  include "sturm/detail/qtypes/lossy_oop.hpp"
 #endif
 
 // qint alias is already defined in qint_fwd.hpp via:

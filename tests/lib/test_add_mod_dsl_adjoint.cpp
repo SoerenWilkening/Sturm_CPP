@@ -15,8 +15,8 @@
 // (4) call the adjoint, (5) assert r is back to 0 and inputs are intact.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/add_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/add_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/routines/invert.hpp"
 #include "sturm/core/context.hpp"

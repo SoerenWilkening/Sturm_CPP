@@ -193,7 +193,7 @@ void register_mod_assign_qint_matcher(
 /// _QINT kind with two operands (LHS ident, RHS ident). The M8 pass emits
 /// a single `uncompute_{eq,ne,lt,le,gt,ge}_qint(c, a, b);` line as inverse,
 /// re-dispatching to the self-adjoint DSL comparators in
-/// include/sturm/lib/compare_dsl.hpp.
+/// include/sturm/detail/lib/compare_dsl.hpp.
 void register_eq_compare_qint_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit);
 void register_ne_compare_qint_matcher(

@@ -18,7 +18,7 @@
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
-#include "sturm/lib/adder_dsl.hpp"
+#include "sturm/detail/lib/adder_dsl.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 

@@ -2,7 +2,7 @@
 // (qint_t<W>) under a manually-pushed control stack at depth==1.
 //
 // Epic: sturm-8aq3 — `sturm::swap(qint_t<W>&, qint_t<W>&)` (defined in
-// `include/sturm/qtypes/lossy_oop.hpp`) is not control-aware. On main it
+// `include/sturm/detail/qtypes/lossy_oop.hpp`) is not control-aware. On main it
 // always relabels indices and emits zero gates regardless of the control
 // stack depth, violating PRD §5.1: under WHEN(ctrl) the LO-2 emitter
 // inserts `swap(<lhs>, __sturm_tmp_<op>_<N>)` between the forward `*_oop`
@@ -28,7 +28,7 @@
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/qtypes/qint.hpp"        // pulls in lossy_oop.hpp under STURM_BACKEND_ENABLED
-#include "sturm/qtypes/lossy_oop.hpp"   // sturm::swap(qint_t<W>&, qint_t<W>&)
+#include "sturm/detail/qtypes/lossy_oop.hpp"   // sturm::swap(qint_t<W>&, qint_t<W>&)
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"

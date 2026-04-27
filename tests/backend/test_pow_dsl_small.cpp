@@ -6,11 +6,11 @@
 //
 // Harness: plain assert + printf (no gtest).
 
-#include "sturm/lib/pow_dsl.hpp"
+#include "sturm/detail/lib/pow_dsl.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/backend/orkan_bridge.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"    // BitProxy complete type for lib_div_dsl<BitProxy> adjoint registration pulled in via pow_dsl -> mul_dsl -> div_dsl (sturm-f8xf)
+#include "sturm/detail/qtypes/bit_proxy.hpp"    // BitProxy complete type for lib_div_dsl<BitProxy> adjoint registration pulled in via pow_dsl -> mul_dsl -> div_dsl (sturm-f8xf)
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 

@@ -16,10 +16,10 @@
 #pragma once
 
 #include "sturm/qtypes/qint.hpp"
-#include "sturm/lib/add_mod_dsl.hpp"
-#include "sturm/lib/mul_mod_dsl.hpp"
-#include "sturm/lib/pow_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/add_mod_dsl.hpp"
+#include "sturm/detail/lib/mul_mod_dsl.hpp"
+#include "sturm/detail/lib/pow_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include <cstddef>
 #include <cstdint>

@@ -19,7 +19,7 @@
 // both operands are still on the `qubits[0] < 0` fast path
 // (`example_qint_arith`, `example_phase_abc_demo` rely on this). The
 // gate-path bodies dispatch into the matching `lib_*_dsl` from
-// `include/sturm/lib/`; the adjoints are registered via
+// `include/sturm/detail/lib/`; the adjoints are registered via
 // `STURM_REGISTER_ADJOINT` per width.
 //
 // Header-only. Requires STURM_BACKEND_ENABLED because divide_oop.hpp does;
@@ -33,14 +33,14 @@
 
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/qtypes/qint_core.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
-#include "sturm/qtypes/divide_oop.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/divide_oop.hpp"
 #include "sturm/core/qubit_pool.hpp"
-#include "sturm/lib/c_and_dsl.hpp"
-#include "sturm/lib/div_dsl.hpp"
-#include "sturm/lib/logic_dsl.hpp"
-#include "sturm/lib/mul_dsl.hpp"
-#include "sturm/lib/swap_dsl.hpp"
+#include "sturm/detail/lib/c_and_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
+#include "sturm/detail/lib/logic_dsl.hpp"
+#include "sturm/detail/lib/mul_dsl.hpp"
+#include "sturm/detail/lib/swap_dsl.hpp"
 #include "sturm/routines/invert.hpp"
 
 #include <array>

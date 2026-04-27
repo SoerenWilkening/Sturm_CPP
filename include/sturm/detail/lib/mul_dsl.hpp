@@ -24,8 +24,8 @@
 
 #pragma once
 
-#include "sturm/lib/adder_dsl.hpp"
-#include "sturm/lib/div_dsl.hpp"           // detail_div::lib_add_adj
+#include "sturm/detail/lib/adder_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"           // detail_div::lib_add_adj
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/context.hpp"

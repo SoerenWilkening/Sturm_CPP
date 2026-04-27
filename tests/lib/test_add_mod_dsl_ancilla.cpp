@@ -54,8 +54,8 @@
 // Stays inside the orkan stub's 30-qubit ceiling.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/add_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/add_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"

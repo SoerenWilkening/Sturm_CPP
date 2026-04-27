@@ -23,6 +23,18 @@ downstream packaging work:
 python3 tools/audit_emit_targets.py > /tmp/emit_targets.tsv
 ```
 
+> **Post-E2.M1 path note (sturm-nalq.1).** The `defining_header` column of
+> the table below preserves the original *pre-E2.M1* paths so the
+> `internal-public-template-dependency` reasoning stays readable. The
+> on-disk paths after the header split live under `include/sturm/detail/`
+> for every internal row (`qtypes/lossy_oop.hpp` →
+> `detail/qtypes/lossy_oop.hpp`, every `lib/*_dsl*.hpp` →
+> `detail/lib/*_dsl*.hpp`, plus `qtypes/divide_oop.hpp` /
+> `qtypes/bit_proxy.hpp` → `detail/qtypes/...`). The companion TSV at
+> `docs/transpiler_emit_targets.tsv` is regenerated from the script post-
+> move and IS the byte-equal source-of-truth that
+> `tools/check_emit_targets_drift.sh` enforces in CI.
+
 Each row of the resulting TSV (`matcher_file`, `emitted_symbol`,
 `defining_header`) is reproduced below verbatim, plus a fourth
 **classification** column filled in by the reviewer and a **notes** column

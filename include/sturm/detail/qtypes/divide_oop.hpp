@@ -19,9 +19,9 @@
 #endif
 
 #include "sturm/qtypes/qint_core.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
-#include "sturm/lib/div_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
 
 #include <cstddef>
 #include <cstdint>

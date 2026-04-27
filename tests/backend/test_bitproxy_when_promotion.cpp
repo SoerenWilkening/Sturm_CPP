@@ -24,7 +24,7 @@
 //
 // Harness: APPEND mode BackendContext + GateIR inspection.
 
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"

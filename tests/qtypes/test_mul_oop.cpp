@@ -22,7 +22,7 @@
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/qtypes/qint.hpp"
-#include "sturm/qtypes/lossy_oop.hpp"
+#include "sturm/detail/qtypes/lossy_oop.hpp"
 #include "sturm/routines/invert.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"

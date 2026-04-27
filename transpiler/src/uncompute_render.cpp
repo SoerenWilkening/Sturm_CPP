@@ -221,7 +221,7 @@ std::string render_uncompute(const QOperation& op,
         // qint identifier. The inverse is the `uncompute_eq_qint` free
         // function declared in include/sturm/uncompute/uncompute_api.hpp,
         // which re-dispatches to the self-adjoint DSL `lib_eq_dsl` in
-        // include/sturm/lib/compare_dsl.hpp. Two operands, not one, because
+        // include/sturm/detail/lib/compare_dsl.hpp. Two operands, not one, because
         // the comparator adjoint needs both inputs to flip the result bit
         // back to |0⟩.
         if (op.operands.size() != 2) return {};

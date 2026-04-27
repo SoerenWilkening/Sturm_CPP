@@ -11,7 +11,7 @@
 //
 // AC4 is verified by running the full suite; this file covers AC1-3, AC5-7.
 
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"

@@ -11,7 +11,7 @@
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/qtypes/qint.hpp"
-#include "sturm/qtypes/divide_oop.hpp"
+#include "sturm/detail/qtypes/divide_oop.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"

@@ -11,7 +11,7 @@
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
-#include "sturm/lib/compare_dsl.hpp"
+#include "sturm/detail/lib/compare_dsl.hpp"
 #include <array>
 #include <cstddef>
 

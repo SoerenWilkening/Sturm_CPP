@@ -6,7 +6,7 @@
 //
 // Harness: plain assert + printf (no gtest).
 
-#include "sturm/lib/swap_dsl.hpp"
+#include "sturm/detail/lib/swap_dsl.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/backend/orkan_bridge.hpp"

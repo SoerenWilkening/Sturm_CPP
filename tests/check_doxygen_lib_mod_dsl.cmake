@@ -72,7 +72,7 @@ foreach(_pair IN LISTS _primitives)
     list(GET _split 0 _fn)
     list(GET _split 1 _hdr_rel)
     set(_header
-        "${STURM_SOURCE_DIR}/include/sturm/lib/${_hdr_rel}")
+        "${STURM_SOURCE_DIR}/include/sturm/detail/lib/${_hdr_rel}")
     if(NOT EXISTS "${_header}")
         message(FATAL_ERROR
             "check_doxygen_lib_mod_dsl: header missing: ${_header}")

@@ -147,7 +147,7 @@ qbool qint_t<W>::operator[](std::size_t i) const {
 // BitProxy writes back to the parent register's qubit, value, and super_mask.
 // Only available when STURM_BACKEND_ENABLED is set (BitProxy is backend-only).
 #ifdef STURM_BACKEND_ENABLED
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 
 namespace sturm {
 

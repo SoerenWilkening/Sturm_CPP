@@ -143,4 +143,4 @@ inline void lib_c_n_AND_dsl(Bit* controls, size_t n_controls, Bit& tgt) {
 // Sibling header carries __lib_c_AND_dsl_adj + STURM_REGISTER_ADJOINT
 // (sturm-nmf1).  Auto-included so callers of lib_c_AND_dsl pick up the
 // adjoint-pair registration without an extra #include.
-#include "sturm/lib/c_and_dsl_adj.hpp"
+#include "sturm/detail/lib/c_and_dsl_adj.hpp"

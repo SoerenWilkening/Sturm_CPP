@@ -18,7 +18,7 @@
 
 #pragma once
 
-#include "sturm/lib/adder_dsl.hpp"
+#include "sturm/detail/lib/adder_dsl.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
@@ -281,4 +281,4 @@ inline void lib_div_dsl(Bit* dividend_bits, size_t n,
 } // namespace sturm
 
 // Adjoint sibling: __lib_div_dsl_adj + STURM_REGISTER_ADJOINT (sturm-nmf1).
-#include "sturm/lib/div_dsl_adj.hpp"
+#include "sturm/detail/lib/div_dsl_adj.hpp"

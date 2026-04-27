@@ -7,12 +7,12 @@
 // &=/|=; W=1 for *=//=/%=.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/c_and_dsl.hpp"
-#include "sturm/lib/div_dsl.hpp"
-#include "sturm/lib/logic_dsl.hpp"
-#include "sturm/lib/mul_dsl.hpp"
-#include "sturm/lib/swap_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/c_and_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
+#include "sturm/detail/lib/logic_dsl.hpp"
+#include "sturm/detail/lib/mul_dsl.hpp"
+#include "sturm/detail/lib/swap_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/control/when.hpp"

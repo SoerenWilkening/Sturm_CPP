@@ -20,8 +20,8 @@
 // `lib_*_mod_dsl` primitives? The plan §7.2 and PRD §2.1 phrase the
 // rewrite target as "`lib_add_mod_dsl`" / "`lib_mul_mod_dsl`", but the
 // actual lib-level primitives take raw `Bit*` arrays (see
-// `include/sturm/lib/add_mod_dsl.hpp:112` and
-// `include/sturm/lib/mul_mod_dsl.hpp`). The qint-friendly forms are
+// `include/sturm/detail/lib/add_mod_dsl.hpp:112` and
+// `include/sturm/detail/lib/mul_mod_dsl.hpp`). The qint-friendly forms are
 // the public free functions `sturm::add_mod(a, b, n)` /
 // `sturm::mul_mod(a, b, n)` (PRD §3.1, plan §6.2 / Phase 4) — thin
 // wrappers that allocate the fresh result register and dispatch to

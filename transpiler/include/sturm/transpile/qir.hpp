@@ -130,7 +130,7 @@ enum class QOpKind {
     // qint identifiers. The inverse is a free-function call of the form
     // `uncompute_{eq,ne,lt,le,gt,ge}_qint(c, a, b);` declared in
     // include/sturm/uncompute/uncompute_api.hpp, which re-dispatches to
-    // the self-adjoint DSL comparators in include/sturm/lib/compare_dsl.hpp.
+    // the self-adjoint DSL comparators in include/sturm/detail/lib/compare_dsl.hpp.
     // See docs/roadmap_transpiler_post_mvp.md Phase D.
     EQ_QINT,
     NE_QINT,

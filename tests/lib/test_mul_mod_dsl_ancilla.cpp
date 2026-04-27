@@ -5,7 +5,7 @@
 // `2W + 5` count was drafted for an in-place doubling design (one W-bit
 // `shifted` register + one W-bit `r` accumulator + add_mod interior).  The
 // shipping `lib_mul_mod_dsl` uses the chain-style algorithm documented at
-// the top of `include/sturm/lib/mul_mod_dsl.hpp`:
+// the top of `include/sturm/detail/lib/mul_mod_dsl.hpp`:
 //
 //   • `shifted_chain[0..W-1]`, each W bits   (W·W qubits)
 //   • `r_chain[1..W]`,         each W bits   (W·W qubits, index 0 unused)
@@ -55,8 +55,8 @@
 // beat 2.4's W=3 sweep.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/mul_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/mul_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"

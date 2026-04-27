@@ -63,18 +63,18 @@ static const ModuleBudget kBudgets[] = {
     // to cover the operator bodies inlined from the retired header.)
     { "include/sturm/qtypes/qbool_ops.hpp",             "qbool_ops.hpp",         300 },
     // M14
-    { "include/sturm/lib/adder_dsl.hpp",                "adder_dsl.hpp",         250 },
+    { "include/sturm/detail/lib/adder_dsl.hpp",                "adder_dsl.hpp",         250 },
     // M15
-    { "include/sturm/lib/logic_dsl.hpp",                "logic_dsl.hpp",         120 },
-    { "include/sturm/lib/c_and_dsl.hpp",                "c_and_dsl.hpp",         150 },
+    { "include/sturm/detail/lib/logic_dsl.hpp",                "logic_dsl.hpp",         120 },
+    { "include/sturm/detail/lib/c_and_dsl.hpp",                "c_and_dsl.hpp",         150 },
     // M16
-    { "include/sturm/lib/swap_dsl.hpp",                 "swap_dsl.hpp",          100 },
-    { "include/sturm/lib/mul_dsl.hpp",                  "mul_dsl.hpp",           150 },
-    { "include/sturm/lib/div_dsl.hpp",                  "div_dsl.hpp",           300 },
+    { "include/sturm/detail/lib/swap_dsl.hpp",                 "swap_dsl.hpp",          100 },
+    { "include/sturm/detail/lib/mul_dsl.hpp",                  "mul_dsl.hpp",           150 },
+    { "include/sturm/detail/lib/div_dsl.hpp",                  "div_dsl.hpp",           300 },
     // M17
-    { "include/sturm/lib/compare_dsl.hpp",              "compare_dsl.hpp",       200 },
-    { "include/sturm/lib/mod_dsl.hpp",                  "mod_dsl.hpp",           60  },
-    { "include/sturm/lib/pow_dsl.hpp",                  "pow_dsl.hpp",           200 },
+    { "include/sturm/detail/lib/compare_dsl.hpp",              "compare_dsl.hpp",       200 },
+    { "include/sturm/detail/lib/mod_dsl.hpp",                  "mod_dsl.hpp",           60  },
+    { "include/sturm/detail/lib/pow_dsl.hpp",                  "pow_dsl.hpp",           200 },
     // M19
     { "include/sturm/qtypes/qint_arith_v3.hpp",         "qint_arith_v3.hpp",     300 },
     { "include/sturm/qtypes/qint_bitwise_v3.hpp",       "qint_bitwise_v3.hpp",   220 },

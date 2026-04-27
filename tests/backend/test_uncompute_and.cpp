@@ -7,7 +7,7 @@
 //   void uncompute_and(qbool& r, const qbool& a, const qbool& b);
 // mirroring the Phase M3 `uncompute_or` (see
 // src/sturm/uncompute/uncompute_api.cpp).  The forward AND decomposition
-// lives in include/sturm/qtypes/bit_proxy.hpp `materialize_and`; the
+// lives in include/sturm/detail/qtypes/bit_proxy.hpp `materialize_and`; the
 // adjoint is the reversed forward list with each gate replaced by its
 // inverse (X, CX and CCX are each self-inverse).
 //

@@ -43,8 +43,8 @@
 // the test's goal of exercising the `(outer & lt_flag_own)` AND-fold.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/add_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/add_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/routines/invert.hpp"

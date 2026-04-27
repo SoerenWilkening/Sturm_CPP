@@ -8,12 +8,12 @@
 #include "sturm/qtypes/qint_core.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/core/qubit_pool.hpp"
-#include "sturm/lib/adder_dsl.hpp"
-#include "sturm/lib/mul_dsl.hpp"
-#include "sturm/lib/div_dsl.hpp"
-#include "sturm/lib/mod_dsl.hpp"
+#include "sturm/detail/lib/adder_dsl.hpp"
+#include "sturm/detail/lib/mul_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
+#include "sturm/detail/lib/mod_dsl.hpp"
 #include "sturm/control/when_fwd.hpp"
 #include <cstddef>
 

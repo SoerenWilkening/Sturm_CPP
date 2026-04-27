@@ -61,8 +61,8 @@
 
 #pragma once
 
-#include "sturm/lib/adder_dsl.hpp"
-#include "sturm/lib/div_dsl.hpp"          // detail_div::lib_add_adj
+#include "sturm/detail/lib/adder_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"          // detail_div::lib_add_adj
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
@@ -236,4 +236,4 @@ inline void lib_add_mod_dsl(Bit* a_bits, Bit* b_bits,
 
 } // namespace sturm
 
-#include "sturm/lib/add_mod_dsl_adj.hpp"
+#include "sturm/detail/lib/add_mod_dsl_adj.hpp"

@@ -39,8 +39,8 @@
 //   5. Repeat both passes for the adjoint to confirm round-trip cleanup.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/mul_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/mul_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/control/when.hpp"
 #include "sturm/routines/invert.hpp"

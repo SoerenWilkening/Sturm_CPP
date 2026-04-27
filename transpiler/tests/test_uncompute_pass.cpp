@@ -751,7 +751,7 @@ static void test_mod_assign_qint_emits_uncompute_mod_qint() {
 // render emits `uncompute_{eq,ne,lt,le,gt,ge}_qint(c, a, b);` — a free
 // function declared in include/sturm/uncompute/uncompute_api.hpp that
 // re-dispatches to the self-adjoint DSL routines in
-// include/sturm/lib/compare_dsl.hpp. The call shape matches the Phase C
+// include/sturm/detail/lib/compare_dsl.hpp. The call shape matches the Phase C
 // free-function convention but carries two operand names (LHS + RHS)
 // instead of one, because a comparator's inverse depends on both inputs.
 

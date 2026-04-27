@@ -32,7 +32,7 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/control/when_fwd.hpp"         // current_control TLS
 #include "sturm/backend/primitives.hpp"
-#include "sturm/lib/mod_dsl.hpp"
+#include "sturm/detail/lib/mod_dsl.hpp"
 
 #include <cstdint>
 

@@ -4,7 +4,7 @@
 // `operator|` emits in include/sturm/qtypes/qbool_ops.hpp (quantum-quantum
 // path: 2x CX + CCX onto the result qubit).  Mixed and classical cases
 // reuse the four-quadrant rules used by `materialize_or` in
-// include/sturm/qtypes/bit_proxy.hpp and the qbool-level `operator|` in
+// include/sturm/detail/qtypes/bit_proxy.hpp and the qbool-level `operator|` in
 // include/sturm/qtypes/qbool_ops.hpp.
 //
 // This file does NOT allocate or release qubits; the caller retains

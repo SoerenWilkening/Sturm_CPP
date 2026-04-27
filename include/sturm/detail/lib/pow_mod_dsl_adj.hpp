@@ -55,7 +55,7 @@
 
 #pragma once
 
-#include "sturm/lib/mul_mod_dsl.hpp"
+#include "sturm/detail/lib/mul_mod_dsl.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"

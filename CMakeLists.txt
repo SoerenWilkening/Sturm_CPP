@@ -105,6 +105,16 @@ add_custom_target(check
 #
 # 1. Public headers — ship the full include/sturm/ subtree verbatim so
 #    `#include <sturm/...>` resolves identically for installed consumers.
+#    The recursive install(DIRECTORY ...) walks BOTH the public top-level
+#    headers (sturm/qtypes/, sturm/ops/, sturm/control/, sturm/routines/,
+#    sturm/uncompute/, sturm/core/, sturm/dispatch/, sturm/backend/,
+#    sturm.hpp) AND the internal-public-template-dependency subtree
+#    (sturm/detail/) introduced by sturm-nalq.1 / E2.M1. The detail subtree
+#    MUST ship because public templates (e.g. `qint_modular.hpp`,
+#    `routines/invert.hpp`) transitively `#include "sturm/detail/..."` at
+#    consumer compile time; users never name those paths directly but the
+#    headers must be on disk for the compile to succeed. See
+#    docs/transpiler_emit_targets.md for the classification table.
 install(DIRECTORY include/sturm/
         DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}/sturm
         FILES_MATCHING

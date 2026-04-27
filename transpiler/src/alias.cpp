@@ -68,7 +68,7 @@
 // `qint_t<W>` VarDecl is the canonical BitProxy call shape; the
 // constructor
 //     `BitProxy(qint_t<W>& parent, size_t i)`
-// lives in `include/sturm/qtypes/bit_proxy.hpp` and is invoked by
+// lives in `include/sturm/detail/qtypes/bit_proxy.hpp` and is invoked by
 // the qint's `operator[](size_t)` to manufacture a BitProxy
 // reference. The peel evaluates `getArg(1)` via
 // `Expr::EvaluateAsInt`; success → `{k, k+1}` bit range, failure →
@@ -220,7 +220,7 @@ QubitFootprint universal_sentinel() {
 // PM5-3 — BitProxy constant-index peel helper. Given a raw operand
 // expression that may be a `CXXOperatorCallExpr` with the
 // `OO_Subscript` operator (the canonical `q[k]` BitProxy-
-// construction shape from `include/sturm/qtypes/bit_proxy.hpp`),
+// construction shape from `include/sturm/detail/qtypes/bit_proxy.hpp`),
 // attempt to extract a compile-time integer index. Returns:
 //   - `std::nullopt` when the expression is NOT a subscript call at
 //     all. Callers fall through to the bare-DRE path.

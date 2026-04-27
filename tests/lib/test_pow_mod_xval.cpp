@@ -13,10 +13,10 @@
 // the flag OFF and ON, discharging plan §8.3 from the lib side.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/pow_dsl.hpp"
-#include "sturm/lib/mod_dsl.hpp"
-#include "sturm/lib/pow_mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/pow_dsl.hpp"
+#include "sturm/detail/lib/mod_dsl.hpp"
+#include "sturm/detail/lib/pow_mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"

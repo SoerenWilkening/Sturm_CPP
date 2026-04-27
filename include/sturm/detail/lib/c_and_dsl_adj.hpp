@@ -13,7 +13,7 @@
 
 #pragma once
 
-#include "sturm/lib/c_and_dsl.hpp"
+#include "sturm/detail/lib/c_and_dsl.hpp"
 #include "sturm/routines/invert.hpp"
 
 // Forward-declare BitProxy for the LO-1c adjoint registration (backend-only).

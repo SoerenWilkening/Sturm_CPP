@@ -13,11 +13,11 @@
 //
 // Harness: plain assert + printf (no gtest).
 
-#include "sturm/qtypes/bit_proxy.hpp"
-#include "sturm/lib/logic_dsl.hpp"
-#include "sturm/lib/swap_dsl.hpp"
-#include "sturm/lib/compare_dsl.hpp"
-#include "sturm/lib/c_and_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/logic_dsl.hpp"
+#include "sturm/detail/lib/swap_dsl.hpp"
+#include "sturm/detail/lib/compare_dsl.hpp"
+#include "sturm/detail/lib/c_and_dsl.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/backend/orkan_bridge.hpp"

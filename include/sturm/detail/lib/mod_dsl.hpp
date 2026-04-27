@@ -9,7 +9,7 @@
 // bottom of this file; sturm-nmf1).
 
 #pragma once
-#include "sturm/lib/div_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
@@ -56,4 +56,4 @@ inline void lib_mod_dsl(Bit* dividend_bits, size_t n,
 // Sibling header carries __lib_mod_dsl_adj + STURM_REGISTER_ADJOINT
 // (sturm-nmf1).  Auto-included so callers of lib_mod_dsl pick up the
 // adjoint-pair registration without an extra #include.
-#include "sturm/lib/mod_dsl_adj.hpp"
+#include "sturm/detail/lib/mod_dsl_adj.hpp"

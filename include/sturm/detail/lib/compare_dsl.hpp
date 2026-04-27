@@ -15,9 +15,9 @@
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
-#include "sturm/lib/logic_dsl.hpp"
-#include "sturm/lib/c_and_dsl.hpp"
-#include "sturm/lib/adder_dsl.hpp"
+#include "sturm/detail/lib/logic_dsl.hpp"
+#include "sturm/detail/lib/c_and_dsl.hpp"
+#include "sturm/detail/lib/adder_dsl.hpp"
 
 #include <cstddef>
 #include <cassert>

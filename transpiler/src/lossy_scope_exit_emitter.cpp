@@ -82,7 +82,7 @@ const char* dsl_name(LossyOpKind k) {
 // sturm-czfi: width-aware adjoint helper name. The cleanup line for a
 // width-resolved hit calls the registered `*_oop_adj<W>` directly (ADL on
 // `qint_t<W>&` finds the using-promoted `sturm::*_oop_adj` from
-// `sturm/qtypes/lossy_oop.hpp`). We bypass the `invert<&fn>()` NTTP-keyed
+// `sturm/detail/qtypes/lossy_oop.hpp`). We bypass the `invert<&fn>()` NTTP-keyed
 // lookup because partial specialization of `adjoint_of<&fn<W>>` with a NTTP
 // whose type depends on `W` is ill-formed (the lossy_oop.hpp file-level
 // comment cites the standard reference). Mod shares `divide_oop_adj<W>`

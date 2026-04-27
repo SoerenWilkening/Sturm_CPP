@@ -82,7 +82,7 @@
 
 #pragma once
 
-#include "sturm/lib/mul_mod_dsl.hpp"
+#include "sturm/detail/lib/mul_mod_dsl.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"
@@ -286,4 +286,4 @@ inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
 
 } // namespace sturm
 
-#include "sturm/lib/pow_mod_dsl_adj.hpp"
+#include "sturm/detail/lib/pow_mod_dsl_adj.hpp"

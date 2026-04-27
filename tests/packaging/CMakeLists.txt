@@ -108,3 +108,20 @@ set_tests_properties(find_package_version PROPERTIES
         "STURMC_BUILD_DIR=${CMAKE_BINARY_DIR};\
 STURMC_CMAKE=${CMAKE_COMMAND};\
 STURM_EXPECTED_VERSION=${PROJECT_VERSION}")
+
+# ── sturm-nalq.1 / E2.M1 — public/detail header layout acceptance test ──────
+# Pins the public-vs-detail split established in E2.M1: this TU includes
+# only the headers classified `public` in docs/transpiler_emit_targets.md
+# and instantiates `sturm::qint_t<8>` plus probes `add_mod`'s public
+# signature. If a public header silently regains a direct #include of a
+# moved internal path (e.g. `sturm/lib/...` or
+# `sturm/qtypes/lossy_oop.hpp`), this TU fails to compile — the
+# regression net for the header reorganization. Header-only build
+# (links against the `sturm` INTERFACE target). See
+# docs/plan_packaging_export.md §E2.M1.
+add_executable(test_detail_layout test_detail_layout.cpp)
+target_link_libraries(test_detail_layout PRIVATE sturm)
+target_compile_features(test_detail_layout PRIVATE cxx_std_20)
+add_test(NAME test_detail_layout COMMAND test_detail_layout)
+set_tests_properties(test_detail_layout PROPERTIES
+    LABELS "packaging")

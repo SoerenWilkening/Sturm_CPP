@@ -18,9 +18,9 @@
 
 #pragma once
 
-#include "sturm/lib/mod_dsl.hpp"
-#include "sturm/lib/div_dsl.hpp"
-#include "sturm/lib/div_dsl_adj.hpp"
+#include "sturm/detail/lib/mod_dsl.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
+#include "sturm/detail/lib/div_dsl_adj.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/qubit_pool.hpp"

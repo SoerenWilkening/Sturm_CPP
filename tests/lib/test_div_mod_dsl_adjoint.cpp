@@ -21,9 +21,9 @@
 //   invariant: invert<&lib_mod_dsl>()(a, b, tmp_r) zeros tmp_r.
 
 #define STURM_BACKEND_ENABLED 1
-#include "sturm/lib/div_dsl.hpp"
-#include "sturm/lib/mod_dsl.hpp"
-#include "sturm/qtypes/bit_proxy.hpp"
+#include "sturm/detail/lib/div_dsl.hpp"
+#include "sturm/detail/lib/mod_dsl.hpp"
+#include "sturm/detail/qtypes/bit_proxy.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/routines/invert.hpp"
 #include "sturm/core/context.hpp"
