@@ -4,42 +4,60 @@ STURM is a C++ DSL for quantum-classical programming that lets you express rever
 
 See [docs/01_principles.md](docs/01_principles.md) for the design principles.
 
-## Install
+## Prerequisites
 
-**macOS (Homebrew):**
+STURM builds the transpiler against the LLVM/Clang development headers
+and consumes its own headers from a C++20 toolchain.
 
-```
-brew tap soerenwilkening/sturm
-brew install sturm-transpile
-```
+- **LLVM/Clang ≥ 17** — the transpiler links `libclang-cpp` and `libLLVM`
+  via `find_package(LLVM CONFIG)` / `find_package(Clang CONFIG)` and
+  hard-fails configure if `LLVM_PACKAGE_VERSION < 17.0`
+  (see `transpiler/CMakeLists.txt` §"Locate LLVM + Clang"). On
+  Debian/Ubuntu install `llvm-17-dev libclang-17-dev clang-17`; on
+  macOS `brew install llvm@17`.
+- **CMake ≥ 3.16** — matches `cmake_minimum_required(VERSION 3.16)` in
+  the project root and the transpiler subproject.
+- **A C++20 compiler** — needed both for building STURM and for any
+  consumer translation unit that includes `<sturm/sturm.hpp>` /
+  `<sturm/prelude.hpp>`. The default `add_quantum_executable` integration
+  routes consumer sources through Clang via the transpiler plugin, so a
+  C++20-capable Clang is required at consume time as well.
 
-**Linux / macOS (prebuilt binary):**
+## Install & consume
 
-```
-# Pick your platform triple:
-#   x86_64-linux, aarch64-linux, x86_64-macos, aarch64-macos
-TRIPLE=x86_64-linux
-curl -LO https://github.com/SoerenWilkening/Sturm_CPP/releases/latest/download/sturm-transpile-v0.1.2-${TRIPLE}.tar.gz
-tar xzf sturm-transpile-v0.1.2-${TRIPLE}.tar.gz
-sudo cp -r sturm-transpile-v0.1.2-${TRIPLE}/* /usr/local/
-```
+The supported flow is to install STURM into a prefix and `find_package`
+it from a standalone consumer project. The walkthrough in
+[docs/getting_started.md](docs/getting_started.md) shows the full
+consumer side end-to-end (mirrored byte-for-byte from
+`tests/external_consumer/`); the steps below build and install the
+prefix that walkthrough then consumes.
 
-**Docker:**
-
-```
-docker run -v $PWD:/w ghcr.io/soerenwilkening/sturm-transpile:latest /w/src.cpp \
-  --output-dir /w/out --extra-arg=-I/opt/sturm/include --extra-arg=-std=c++20
-```
-
-**Build from source (contributors):**
-
-```
+```bash
 git clone https://github.com/SoerenWilkening/Sturm_CPP.git
 cd Sturm_CPP
-cmake -S . -B build -DLLVM_DIR=$(llvm-config-17 --cmakedir) \
+cmake -S . -B build -DCMAKE_BUILD_TYPE=Release \
+      -DLLVM_DIR=$(llvm-config-17 --cmakedir) \
       -DClang_DIR=/usr/lib/llvm-17/lib/cmake/clang
-cmake --build build -j6
+cmake --build build --parallel 6
+cmake --install build --prefix /path/to/sturm-prefix
 ```
+
+After install the prefix contains:
+
+- `include/sturm/...` — public headers (umbrella `<sturm/sturm.hpp>`,
+  prelude `<sturm/prelude.hpp>`).
+- `lib/cmake/sturm/sturmConfig.cmake` + `SturmTranspile.cmake` — the
+  CMake package config and the `add_quantum_executable` helper.
+- `bin/sturm-transpile` and `lib/libsturm-transpile-plugin.{so,dylib}` —
+  the standalone transpiler binary and the Clang plugin.
+
+Then, from a standalone consumer project, `find_package(sturm REQUIRED)`
++ `add_quantum_executable(my_program main.cpp)` is the entire
+integration. See [docs/getting_started.md](docs/getting_started.md) for
+the complete walkthrough (consumer `CMakeLists.txt` + `main.cpp`,
+configure/build/run, expected output) and
+[docs/public_api.md](docs/public_api.md) for the authoritative list of
+public symbols exposed by the umbrella header.
 
 Build-time options (pass with `-D<NAME>=<VALUE>` at configure time; run `cmake -LH build` for the full list):
 
@@ -50,7 +68,10 @@ Build-time options (pass with `-D<NAME>=<VALUE>` at configure time; run `cmake -
 
 ## Getting started
 
-Write a quantum routine in plain C++ using `sturm::qbool`:
+A minimal consumer routine using the public headers (the
+[walkthrough](docs/getting_started.md) has the full standalone CMake
+project — including `find_package(sturm REQUIRED)` and
+`add_quantum_executable` — that compiles this code):
 
 ```cpp
 #define STURM_BACKEND_ENABLED 1
@@ -92,12 +113,41 @@ add_quantum_executable(my_program main.cpp)
 
 Or ad-hoc on the standalone binary with `--dump-transpiled=<path>`. Both paths converge on the same file-write code in `transpiler/src/io.cpp`, so the dump output is byte-identical to the in-memory buffer the plugin feeds to codegen.
 
-See [examples/or_circuit.cpp](examples/or_circuit.cpp) for a runnable demo covering OR, NOT, and XOR-assign patterns, and [examples/in_memory_transpile.cpp](examples/in_memory_transpile.cpp) for a single-TU tour of Phase E compound expressions, Phase F `WHEN`-lift, and Phase J PJ-1 zero-ancilla fusion compiled through the default plugin mode.
+In-tree examples [`examples/or_circuit.cpp`](examples/or_circuit.cpp)
+(OR, NOT, and XOR-assign patterns) and
+[`examples/in_memory_transpile.cpp`](examples/in_memory_transpile.cpp)
+(Phase E compound expressions, Phase F `WHEN`-lift, Phase J PJ-1
+zero-ancilla fusion through the default plugin mode) are wired into the
+in-tree build tree and intended for hacking on STURM itself; downstream
+consumers should follow the install + consume flow above instead.
 
 ## How it works
 
+- [docs/public_api.md](docs/public_api.md) — authoritative list of public symbols reachable through `<sturm/sturm.hpp>` (`qint`, `qbool`, `WHEN`, modular arithmetic, `invert<>`, `STURM_REGISTER_ADJOINT`, version macros).
+- [docs/getting_started.md](docs/getting_started.md) — install + standalone-consumer walkthrough.
 - [docs/01_principles.md](docs/01_principles.md) — core design principles (write-forward-only, compile-time uncompute, ancilla discipline).
 - [docs/roadmap_transpiler_post_mvp.md](docs/roadmap_transpiler_post_mvp.md) — phase-by-phase completion log for phases A through L.
+
+## Developer build (working on STURM itself)
+
+Contributors hacking on the transpiler or runtime can build and test
+in-tree without installing:
+
+```bash
+git clone https://github.com/SoerenWilkening/Sturm_CPP.git
+cd Sturm_CPP
+cmake -S . -B build -DLLVM_DIR=$(llvm-config-17 --cmakedir) \
+      -DClang_DIR=/usr/lib/llvm-17/lib/cmake/clang
+cmake --build build --parallel 6
+ctest --test-dir build --parallel 6 --output-on-failure
+```
+
+This is the workflow used by CI and the in-tree examples under
+`examples/`; it is **not** the recommended path for downstream
+consumers — they should follow [Install & consume](#install--consume)
+above and [docs/getting_started.md](docs/getting_started.md). All
+`cmake`/`ctest`/`make`/`ninja` invocations are capped at 6 threads per
+project policy ([CLAUDE.md](CLAUDE.md)).
 
 ## Contributing
 

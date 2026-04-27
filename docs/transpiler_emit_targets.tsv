@@ -12,7 +12,7 @@ transpiler/src/lossy_scope_exit_emitter.cpp	lib_mul_dsl	include/sturm/qtypes/qin
 transpiler/src/lossy_scope_exit_emitter.cpp	lib_or_dsl	include/sturm/detail/lib/compare_dsl.hpp
 transpiler/src/lossy_scope_exit_emitter.cpp	mul_oop_adj	include/sturm/detail/qtypes/lossy_oop.hpp
 transpiler/src/lossy_scope_exit_emitter.cpp	or_oop_adj	include/sturm/detail/qtypes/lossy_oop.hpp
-transpiler/src/matcher_dropped_quantum_return.cpp	qbool	include/sturm/control/when_fwd.hpp
+transpiler/src/matcher_dropped_quantum_return.cpp	qbool	include/sturm/prelude.hpp
 transpiler/src/matcher_dropped_quantum_return.cpp	qint_t	include/sturm/ops/qint_modular.hpp
 transpiler/src/matcher_lossy_op.cpp	qint_t	include/sturm/ops/qint_modular.hpp
 transpiler/src/matcher_modular_compound_collapse.cpp	qint_t	include/sturm/ops/qint_modular.hpp
