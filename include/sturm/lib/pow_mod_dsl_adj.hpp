@@ -48,7 +48,7 @@
 // BitProxy>>() to this adjoint, mirroring mul_mod_dsl_adj.hpp.
 //
 // LoC budget: target ≤ 220 (plan §5.2).  Reuses the
-// detail_pow_mod::make_ancilla_view / push_flag helpers from
+// detail_pow_mod::make_ancilla_view / flag_qbool_view helpers from
 // pow_mod_dsl.hpp so this header stays a thin gate-reverse shell.
 //
 // Auto-included from pow_mod_dsl.hpp.
@@ -61,6 +61,8 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
+#include "sturm/control/when.hpp"          // sturm-a3t4.3: WHEN + WhenGuard::active_control
+#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.3: uncompute_and
 #include "sturm/routines/invert.hpp"
 
 #include <cstddef>
@@ -129,7 +131,8 @@ inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
 
     sturm_backend_context_t* raw = sturm_get_thread_context();
     assert(raw && "__lib_pow_mod_dsl_adj: no BackendContext installed");
-    BackendContext& ctx = *raw;
+    (void)raw;  // sturm-a3t4.3: control_stack is now driven by WHEN/WhenGuard
+                // through the lift pattern; ctx is no longer poked directly.
 
     // (1') Re-allocate sq_chain[0..W-1] in forward order.
     int   sq_idx[kMaxN][kMaxN];
@@ -172,19 +175,20 @@ inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
 
     // (6') Re-build acc_chain[i+1] for i=0..W-1 — gate-reverse of forward
     //      step 8's adjoint loop is the forward step 6's build loop.
+    //      sturm-a3t4.3: depth-1 lift via detail_pow_mod::lift_under_flag.
     for (std::size_t i = 0u; i < n; ++i) {
-        // F6a: under push(exp[i]), write mul_mod into acc_chain[i+1].
-        detail_pow_mod::push_flag(ctx, exp_bits[i]);
-        lib_mul_mod_dsl(acc_bits[i], sq_bits[i],
-                        n_bits, n, acc_bits[i + 1u]);
-        ctx.control_stack.pop_control();
+        // F6a: under control(exp[i]), write mul_mod into acc_chain[i+1].
+        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+            lib_mul_mod_dsl(acc_bits[i], sq_bits[i],
+                            n_bits, n, acc_bits[i + 1u]);
+        });
 
-        // F6b: flip exp[i], push, XOR-copy acc[i] into acc[i+1], unflip.
+        // F6b: flip exp[i], lift, XOR-copy acc[i] into acc[i+1], unflip.
         exp_bits[i].flip();
-        detail_pow_mod::push_flag(ctx, exp_bits[i]);
-        for (std::size_t j = 0u; j < n; ++j)
-            acc_bits[i + 1u][j] ^= acc_bits[i][j];
-        ctx.control_stack.pop_control();
+        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+            for (std::size_t j = 0u; j < n; ++j)
+                acc_bits[i + 1u][j] ^= acc_bits[i][j];
+        });
         exp_bits[i].flip();
     }
 
@@ -199,19 +203,19 @@ inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
     for (std::size_t step = 0u; step < n; ++step) {
         std::size_t i = n - 1u - step;  // i goes W-1, W-2, ..., 0.
 
-        // F6b_inv: XOR-copy under push(flipped exp[i]).
+        // F6b_inv: XOR-copy under control(flipped exp[i]).
         exp_bits[i].flip();
-        detail_pow_mod::push_flag(ctx, exp_bits[i]);
-        for (std::size_t j = 0u; j < n; ++j)
-            acc_bits[i + 1u][j] ^= acc_bits[i][j];
-        ctx.control_stack.pop_control();
+        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+            for (std::size_t j = 0u; j < n; ++j)
+                acc_bits[i + 1u][j] ^= acc_bits[i][j];
+        });
         exp_bits[i].flip();
 
-        // F6a_inv: __lib_mul_mod_dsl_adj under push(exp[i]).
-        detail_pow_mod::push_flag(ctx, exp_bits[i]);
-        __lib_mul_mod_dsl_adj(acc_bits[i], sq_bits[i],
-                              n_bits, n, acc_bits[i + 1u]);
-        ctx.control_stack.pop_control();
+        // F6a_inv: __lib_mul_mod_dsl_adj under control(exp[i]).
+        detail_pow_mod::lift_under_flag(exp_bits[i], [&]() {
+            __lib_mul_mod_dsl_adj(acc_bits[i], sq_bits[i],
+                                  n_bits, n, acc_bits[i + 1u]);
+        });
     }
 
     // (9') acc[0][0].flip() (self-inverse): acc[0] = 0.

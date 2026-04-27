@@ -1,4 +1,7 @@
 // mul_mod_dsl.hpp -- P2 (sturm-kubb.2) lib_mul_mod_dsl forward primitive.
+// sturm-a3t4.3 P2: per-call push_flag/pop_control triples replaced with the
+// same depth-1 lift pattern add_mod_dsl.hpp adopted under sturm-a3t4.2 — see
+// the lift idiom comment block at each conversion site.
 //
 // Out-of-place modular multiplication: r = (a * b) mod n, all unsigned, all
 // W bits wide.  Built strictly on top of `lib_add_mod_dsl` and per-bit XOR
@@ -74,7 +77,8 @@
 // Sibling adjoint header is auto-included at the bottom (mirrors the
 // add_mod_dsl.hpp / add_mod_dsl_adj.hpp pairing pattern).
 //
-// Target: <=280 LoC.
+// Target: ~330 LoC after sturm-a3t4.3 added the depth-1 lift helper +
+// lift_under_flag wrappers around each push_flag site (originally <=280).
 
 #pragma once
 
@@ -84,6 +88,8 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
+#include "sturm/control/when.hpp"          // sturm-a3t4.3: WHEN + WhenGuard::active_control
+#include "sturm/uncompute/uncompute_api.hpp" // sturm-a3t4.3: uncompute_and
 
 #include <cstddef>
 #include <cassert>
@@ -105,15 +111,39 @@ inline Bit make_ancilla_view(qbool& owner) {
     }
 }
 
-// Push the qubit underlying `flag` onto the active control stack.
+// sturm-a3t4.3: build a non-owning qbool view of `flag`'s qubit suitable
+// as the AND/WHEN operand in the depth-1 lift pattern.  super_mask is
+// forced to 1 because the qubit is by construction a runtime control bit
+// (the original push_flag pushed it onto the control stack
+// unconditionally — operator& / WHEN need the Toffoli/superposed branch,
+// not the classical-fold short-circuit).
 template <typename Bit>
-inline void push_flag(BackendContext& ctx, Bit& flag) {
+inline qbool flag_qbool_view(Bit& flag) {
     if constexpr (std::is_same_v<Bit, qbool>) {
-        ctx.control_stack.push_control(static_cast<uint32_t>(flag.qubits[0]));
+        return qbool::make_non_owning(flag.qubits[0],
+                                       flag.value, /*mask=*/1ULL);
     } else {
         flag.ensure_quantum();
-        ctx.control_stack.push_control(
-            static_cast<uint32_t>(flag.qubit_index()));
+        return qbool::make_non_owning(flag.qubit_index(),
+                                       /*val=*/0,
+                                       /*mask=*/1ULL);
+    }
+}
+
+// sturm-a3t4.3: depth-1 lift around `body` controlled on `flag`.  When an
+// outer WHEN is active we collapse (outer ∧ flag) into a single AND ancilla
+// so the body runs under exactly one control qubit; otherwise we drop into
+// `WHEN(flag)` directly.  Mirrors the add_mod_dsl.hpp lift idiom verbatim
+// — see that header (and the sturm-a3t4 epic body) for the rationale.
+template <typename Bit, typename Body>
+inline void lift_under_flag(Bit& flag, Body body) {
+    qbool flag_q = flag_qbool_view<Bit>(flag);
+    if (qbool* outer = WhenGuard::active_control()) {
+        qbool tmp = (*outer) & flag_q;
+        WHEN(tmp) { body(); }
+        sturm::uncompute_and(tmp, *outer, flag_q);
+    } else {
+        WHEN(flag_q) { body(); }
     }
 }
 
@@ -169,7 +199,8 @@ inline void lib_mul_mod_dsl(Bit* a_bits, Bit* b_bits,
 
     sturm_backend_context_t* raw = sturm_get_thread_context();
     assert(raw && "lib_mul_mod_dsl: no BackendContext installed");
-    BackendContext& ctx = *raw;
+    (void)raw;  // sturm-a3t4.3: control_stack is now driven by WHEN/WhenGuard
+                // through the lift pattern; ctx is no longer poked directly.
 
     // (1) Allocate shifted_chain[0..W-1], each W bits.  Built lazily as
     //     shifted_chain[i] = (a · 2^i) mod n.
@@ -214,29 +245,33 @@ inline void lib_mul_mod_dsl(Bit* a_bits, Bit* b_bits,
     }
 
     // (2a) i = 0 special case: r_chain[1] := b[0] ? shifted_chain[0] : 0.
-    //      Plain XOR-copy under push(b[0]) — no modular reduction needed
+    //      Plain XOR-copy under control(b[0]) — no modular reduction needed
     //      because shifted_chain[0] in [0, n) and r_chain[0] = 0.
-    detail_mul_mod::push_flag(ctx, b_bits[0]);
-    for (std::size_t j = 0u; j < n; ++j)
-        r_chain_bits[1][j] ^= shifted_bits[0][j];
-    ctx.control_stack.pop_control();
+    //
+    // sturm-a3t4.3: each push(b[i])/pop becomes the depth-1 lift via
+    // detail_mul_mod::lift_under_flag — collapses outer-control + b[i]
+    // into a single AND ancilla so the body runs under one control qubit.
+    detail_mul_mod::lift_under_flag(b_bits[0], [&]() {
+        for (std::size_t j = 0u; j < n; ++j)
+            r_chain_bits[1][j] ^= shifted_bits[0][j];
+    });
 
     // (2b) i = 1..W-1: r_chain[i+1] := b[i] ? (r_chain[i] + shifted_chain[i])
     //                                       : r_chain[i].
     for (std::size_t i = 1u; i < n; ++i) {
         // First call: when b[i]=1, write the modular sum to r_chain[i+1].
-        detail_mul_mod::push_flag(ctx, b_bits[i]);
-        lib_add_mod_dsl(r_chain_bits[i], shifted_bits[i],
-                        n_bits, n, r_chain_bits[i + 1u]);
-        ctx.control_stack.pop_control();
+        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+            lib_add_mod_dsl(r_chain_bits[i], shifted_bits[i],
+                            n_bits, n, r_chain_bits[i + 1u]);
+        });
 
         // Second call: when b[i]=0, XOR-copy r_chain[i] into r_chain[i+1].
         // flip(b[i]) inverts the control polarity locally; unflipped at end.
         b_bits[i].flip();
-        detail_mul_mod::push_flag(ctx, b_bits[i]);
-        for (std::size_t j = 0u; j < n; ++j)
-            r_chain_bits[i + 1u][j] ^= r_chain_bits[i][j];
-        ctx.control_stack.pop_control();
+        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+            for (std::size_t j = 0u; j < n; ++j)
+                r_chain_bits[i + 1u][j] ^= r_chain_bits[i][j];
+        });
         b_bits[i].flip();
     }
 
@@ -250,24 +285,24 @@ inline void lib_mul_mod_dsl(Bit* a_bits, Bit* b_bits,
 
         // Reverse the second call (XOR-copy under flipped control).
         b_bits[i].flip();
-        detail_mul_mod::push_flag(ctx, b_bits[i]);
-        for (std::size_t j = 0u; j < n; ++j)
-            r_chain_bits[i + 1u][j] ^= r_chain_bits[i][j];
-        ctx.control_stack.pop_control();
+        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+            for (std::size_t j = 0u; j < n; ++j)
+                r_chain_bits[i + 1u][j] ^= r_chain_bits[i][j];
+        });
         b_bits[i].flip();
 
         // Reverse the first call (lib_add_mod_dsl) with __lib_add_mod_dsl_adj.
-        detail_mul_mod::push_flag(ctx, b_bits[i]);
-        __lib_add_mod_dsl_adj(r_chain_bits[i], shifted_bits[i],
-                              n_bits, n, r_chain_bits[i + 1u]);
-        ctx.control_stack.pop_control();
+        detail_mul_mod::lift_under_flag(b_bits[i], [&]() {
+            __lib_add_mod_dsl_adj(r_chain_bits[i], shifted_bits[i],
+                                  n_bits, n, r_chain_bits[i + 1u]);
+        });
     }
 
     // (4a) Reverse the i=0 XOR-copy (self-inverse).
-    detail_mul_mod::push_flag(ctx, b_bits[0]);
-    for (std::size_t j = 0u; j < n; ++j)
-        r_chain_bits[1][j] ^= shifted_bits[0][j];
-    ctx.control_stack.pop_control();
+    detail_mul_mod::lift_under_flag(b_bits[0], [&]() {
+        for (std::size_t j = 0u; j < n; ++j)
+            r_chain_bits[1][j] ^= shifted_bits[0][j];
+    });
 
     // (5) Release r_chain[1..W] LIFO.
     for (std::size_t i = n; i >= 1u; --i) {

@@ -91,3 +91,51 @@ target_link_libraries(test_add_mod_when_lift PRIVATE orkan_headers)
 add_test(NAME test_add_mod_when_lift COMMAND test_add_mod_when_lift)
 set_tests_properties(test_add_mod_when_lift
     PROPERTIES LABELS "control;modular-arith;lift")
+
+# sturm-a3t4.3 P2 -- mul_mod_dsl + pow_mod_dsl depth-1 lift pattern
+# (forward + adjoint).  Pins behavioural correctness of the same lift
+# applied to the b_bits[i] / exp_bits[i] flag operands in the chain-style
+# shift-and-add (mul_mod) and repeated-squaring (pow_mod) primitives.
+# Both bare runs (`else` branch -- WHEN(flag)) and WHEN(c)-wrapped runs
+# (`if (outer)` AND-fold) are exercised; coverage is intentionally minimal
+# per the issue's "reduce the modular-arithmetic test surface" guidance,
+# leaving exhaustive correctness to tests/lib/test_{mul,pow}_mod_dsl*.
+add_executable(test_mul_mod_when_lift
+    test_mul_mod_when_lift.cpp
+    ${STURM_CONTROL_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_when_lift PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_when_lift PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_when_lift PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_when_lift PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_mul_mod_when_lift PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_when_lift COMMAND test_mul_mod_when_lift)
+set_tests_properties(test_mul_mod_when_lift
+    PROPERTIES LABELS "control;modular-arith;lift")
+
+add_executable(test_pow_mod_when_lift
+    test_pow_mod_when_lift.cpp
+    ${STURM_CONTROL_BACKEND_SOURCES}
+)
+target_include_directories(test_pow_mod_when_lift PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow_mod_when_lift PRIVATE cxx_std_20)
+target_compile_definitions(test_pow_mod_when_lift PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+# pow_mod's chain-style allocations balloon at W=2; bump the ancilla cap to
+# 512 to match test_baseline_gate_counts' header budget.
+target_compile_options(test_pow_mod_when_lift PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=512
+)
+target_link_libraries(test_pow_mod_when_lift PRIVATE orkan_headers)
+add_test(NAME test_pow_mod_when_lift COMMAND test_pow_mod_when_lift)
+set_tests_properties(test_pow_mod_when_lift
+    PROPERTIES LABELS "control;modular-arith;lift")
