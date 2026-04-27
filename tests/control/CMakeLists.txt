@@ -139,3 +139,49 @@ target_link_libraries(test_pow_mod_when_lift PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_when_lift COMMAND test_pow_mod_when_lift)
 set_tests_properties(test_pow_mod_when_lift
     PROPERTIES LABELS "control;modular-arith;lift")
+
+# sturm-a3t4.4 P3 -- div_dsl + mul_dsl depth-1 lift pattern (forward +
+# adjoint).  Pins behavioural correctness of the same lift applied to the
+# overflow / sgn[i] / quotient[0] flag operands in lib_div_dsl and the
+# b_bits[i] flag operand in lib_mul_dsl.  Bare runs exercise the `else`
+# branch (WHEN(flag_q)); WHEN(c)-wrapped runs exercise the `if (outer)`
+# AND-fold.  Coverage is intentionally minimal per the issue's "reduce
+# surface as in P1/P2" guidance, leaving exhaustive correctness to
+# tests/lib/test_{mul,div_mod}_dsl_adjoint.
+add_executable(test_mul_when_lift
+    test_mul_when_lift.cpp
+    ${STURM_CONTROL_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_when_lift PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_when_lift PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_when_lift PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_when_lift PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_mul_when_lift PRIVATE orkan_headers)
+add_test(NAME test_mul_when_lift COMMAND test_mul_when_lift)
+set_tests_properties(test_mul_when_lift
+    PROPERTIES LABELS "control;arith;lift")
+
+add_executable(test_div_when_lift
+    test_div_when_lift.cpp
+    ${STURM_CONTROL_BACKEND_SOURCES}
+)
+target_include_directories(test_div_when_lift PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_div_when_lift PRIVATE cxx_std_20)
+target_compile_definitions(test_div_when_lift PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_div_when_lift PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_div_when_lift PRIVATE orkan_headers)
+add_test(NAME test_div_when_lift COMMAND test_div_when_lift)
+set_tests_properties(test_div_when_lift
+    PROPERTIES LABELS "control;arith;lift")

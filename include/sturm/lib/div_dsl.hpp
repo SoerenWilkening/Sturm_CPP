@@ -8,6 +8,21 @@
 //
 // __lib_div_dsl_adj + STURM_REGISTER_ADJOINT live in the sibling
 // div_dsl_adj.hpp header (auto-included at the bottom; sturm-nmf1).
+//
+// sturm-a3t4.4 P3: per-call push_control / body / pop_control triples
+// (push_ov / push_sgn_i / push_q0 lambdas) replaced with the depth-1 lift
+// pattern adopted under sturm-a3t4.[1-3] — see the lift idiom comment
+// blocks at each conversion site.  Each iteration under an outer
+// WHEN(c) allocates+uncomputes its own AND ancilla; the LIFO release
+// ordering of the AND ancilla is preserved because it is allocated and
+// released at the lift's lexical scope (before the explicit
+// QubitPool::release(sgn_idx[k]) calls at the end of div_kernel).
+//
+// LoC: header grew from ~300 (original sturm-nmf1 budget) to ~360 after
+// the depth-1 lift helpers (`flag_qbool_view`, `lift_under_flag`,
+// `lift_under_qbool`) were inlined into the kernel.  Mirrors the same
+// post-lift creep observed in mul_mod_dsl.hpp / pow_mod_dsl.hpp under
+// sturm-a3t4.3.
 
 #pragma once
 
@@ -17,11 +32,24 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
+#include "sturm/control/when.hpp"          // sturm-a3t4.4: WHEN + WhenGuard::active_control
 
 #include <cstddef>
 #include <cassert>
 #include <type_traits>
 #include <vector>
+
+// sturm-a3t4.4: forward-declare `uncompute_and` rather than pulling the
+// full uncompute_api.hpp.  The full header includes <qint.hpp>, which
+// transitively re-includes div_dsl.hpp via qint_arith_v3.hpp.  Pragma-
+// once skips the second pass, so the recursive expansion would parse
+// `sturm::uncompute_and` calls below before its declaration is reached.
+// A bare forward declaration is sufficient: qbool is already a complete
+// type (qbool.hpp is included above); the implementation lives in
+// src/sturm/uncompute/uncompute_api.cpp.
+namespace sturm {
+void uncompute_and(qbool& r, const qbool& a, const qbool& b);
+}  // namespace sturm
 
 namespace sturm {
 
@@ -88,48 +116,84 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
     qbool carry_anc_own = qbool::make_non_owning(carry_anc_idx);
     Bit   carry_anc     = detail_adder::make_ancilla_view<Bit>(carry_anc_own);
 
-    // Pushes overflow as a control; lambda captures to share across halves.
-    auto push_ov = [&]() {
+    (void)ctx;  // sturm-a3t4.4: control_stack is now driven by WHEN/WhenGuard
+                // through the lift pattern; ctx is no longer poked directly.
+
+    // sturm-a3t4.4: build a non-owning qbool view of `flag`'s qubit suitable
+    // as the AND/WHEN operand in the depth-1 lift pattern.  super_mask is
+    // forced to 1 because the qubit is by construction a runtime control bit
+    // (the original push_control pushed it onto the control stack
+    // unconditionally — operator& / WHEN need the Toffoli/superposed branch,
+    // not the classical-fold short-circuit).  Mirrors the
+    // detail_mul_mod::flag_qbool_view helper used by mul_mod_dsl.hpp.
+    auto flag_qbool_view = [](Bit& flag) -> qbool {
         if constexpr (std::is_same_v<Bit, qbool>) {
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(overflow.qubits[0]));
+            return qbool::make_non_owning(flag.qubits[0],
+                                           flag.value, /*mask=*/1ULL);
         } else {
-            overflow.ensure_quantum();
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(overflow.qubit_index()));
+            flag.ensure_quantum();
+            return qbool::make_non_owning(flag.qubit_index(),
+                                           /*val=*/0,
+                                           /*mask=*/1ULL);
         }
     };
-    auto push_sgn_i = [&](size_t i) {
-        if constexpr (std::is_same_v<Bit, qbool>) {
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(sgn[i].qubits[0]));
+
+    // sturm-a3t4.4: depth-1 lift around `body` controlled on a qbool view
+    // of `flag`.  Mirrors the lift idiom in add_mod_dsl.hpp /
+    // mul_mod_dsl.hpp / pow_mod_dsl.hpp verbatim:
+    //   if (qbool* outer = WhenGuard::active_control()) {
+    //       qbool tmp = (*outer) & flag_q;
+    //       WHEN(tmp) { body(); }
+    //       sturm::uncompute_and(tmp, *outer, flag_q);
+    //   } else {
+    //       WHEN(flag_q) { body(); }
+    //   }
+    // The AND ancilla is allocated+released at the lambda's scope close,
+    // which preserves the LIFO ordering relative to the explicit
+    // QubitPool::release(sgn_idx[k]) calls at the end of div_kernel
+    // (the AND ancilla is the most-recently-allocated qubit at the lift
+    // call site, so its scope-close release happens before any outer
+    // release).
+    auto lift_under_flag = [&](Bit& flag, auto body) {
+        qbool flag_q = flag_qbool_view(flag);
+        if (qbool* outer = WhenGuard::active_control()) {
+            qbool tmp = (*outer) & flag_q;
+            WHEN(tmp) { body(); }
+            sturm::uncompute_and(tmp, *outer, flag_q);
         } else {
-            sgn[i].ensure_quantum();
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(sgn[i].qubit_index()));
+            WHEN(flag_q) { body(); }
         }
     };
-    auto push_q0 = [&]() {
-        if constexpr (std::is_same_v<Bit, qbool>) {
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(quotient_bits[0].qubits[0]));
+    // Overload that takes a qbool directly — used for overflow_own and
+    // sgn_own[i], which are already qbool flags in the kernel's frame.
+    // The owning qbools were allocated via the 1-arg
+    // qbool::make_non_owning(idx) factory, which leaves super_mask=0.  We
+    // must rebuild a 3-arg view with super_mask=1 so WHEN's WhenGuard takes
+    // the superposed branch (otherwise the body short-circuits as
+    // classical false).
+    auto lift_under_qbool = [&](qbool& src, auto body) {
+        qbool flag_q = qbool::make_non_owning(src.qubits[0],
+                                               src.value, /*mask=*/1ULL);
+        if (qbool* outer = WhenGuard::active_control()) {
+            qbool tmp = (*outer) & flag_q;
+            WHEN(tmp) { body(); }
+            sturm::uncompute_and(tmp, *outer, flag_q);
         } else {
-            quotient_bits[0].ensure_quantum();
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(quotient_bits[0].qubit_index()));
+            WHEN(flag_q) { body(); }
         }
     };
 
     // Final-correction body (self-inverse halves except the add/add_adj).
     auto run_final = [&]() {
         quotient_bits[0].flip();
-        push_q0();
-        if constexpr (Forward) {
-            lib_add_dsl(divisor_bits, remainder_bits, carry_anc, n);
-        } else {
-            detail_div::lib_add_adj(divisor_bits, remainder_bits, carry_anc, n);
-        }
-        ctx.control_stack.pop_control();
+        lift_under_flag(quotient_bits[0], [&]() {
+            if constexpr (Forward) {
+                lib_add_dsl(divisor_bits, remainder_bits, carry_anc, n);
+            } else {
+                detail_div::lib_add_adj(divisor_bits, remainder_bits,
+                                        carry_anc, n);
+            }
+        });
         quotient_bits[0].flip();
         carry_anc ^= quotient_bits[0];
         carry_anc.flip();
@@ -139,9 +203,10 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
         carry_anc.flip();
         carry_anc ^= quotient_bits[0];
         quotient_bits[0].flip();
-        push_q0();
-        detail_div::lib_add_adj(divisor_bits, remainder_bits, carry_anc, n);
-        ctx.control_stack.pop_control();
+        lift_under_flag(quotient_bits[0], [&]() {
+            detail_div::lib_add_adj(divisor_bits, remainder_bits,
+                                    carry_anc, n);
+        });
         quotient_bits[0].flip();
     };
 
@@ -152,10 +217,10 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
             carry_anc.flip();
         } else {
             sgn[i].flip();
-            push_sgn_i(i);
-            for (size_t j = 0u; j < n; ++j) scratch[j].flip();
-            carry_anc.flip();
-            ctx.control_stack.pop_control();
+            lift_under_qbool(sgn_own[i], [&]() {
+                for (size_t j = 0u; j < n; ++j) scratch[j].flip();
+                carry_anc.flip();
+            });
             sgn[i].flip();
         }
     };
@@ -166,9 +231,9 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
         compute_overflow_or_dsl(overflow, divisor_bits, lo_prev, n);
         sgn[i] ^= quotient_bits[i + 1u];
         overflow.flip();
-        push_ov();
-        sgn[i].flip();
-        ctx.control_stack.pop_control();
+        lift_under_qbool(overflow_own, [&]() {
+            sgn[i].flip();
+        });
         overflow.flip();
         compute_overflow_or_dsl(overflow, divisor_bits, lo_prev, n);
     };
@@ -177,9 +242,9 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
         size_t lo_prev = lo - 1u;
         compute_overflow_or_dsl(overflow, divisor_bits, lo_prev, n);
         overflow.flip();
-        push_ov();
-        sgn[i].flip();
-        ctx.control_stack.pop_control();
+        lift_under_qbool(overflow_own, [&]() {
+            sgn[i].flip();
+        });
         overflow.flip();
         sgn[i] ^= quotient_bits[i + 1u];
         compute_overflow_or_dsl(overflow, divisor_bits, lo_prev, n);
@@ -201,30 +266,32 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
         if constexpr (Forward) {
             compute_overflow_or_dsl(overflow, divisor_bits, lo, n);
             overflow.flip();
-            push_ov();
-            for (size_t j = i; j < n; ++j) scratch[j] ^= divisor_bits[j - i];
-            negate_cond(i, first);
-            // Cuccaro MAJ/UMA add: r += scratch + carry_anc; q[i] ^= carry_out.
-            maj_dsl(carry_anc, remainder_bits[0], scratch[0]);
-            for (size_t k = 1u; k < n; ++k)
-                maj_dsl(scratch[k - 1u], remainder_bits[k], scratch[k]);
-            quotient_bits[i] ^= scratch[n - 1u];
-            for (size_t k = n - 1u; k >= 1u; --k)
-                uma_dsl(scratch[k - 1u], remainder_bits[k], scratch[k]);
-            uma_dsl(carry_anc, remainder_bits[0], scratch[0]);
-            negate_cond(i, first);  // self-inverse, undoes previous
-            for (size_t j = i; j < n; ++j) scratch[j] ^= divisor_bits[j - i];
-            if (i > 0u) {
-                quotient_bits[i].flip();
-                sgn[i - 1u] ^= quotient_bits[i];
-                quotient_bits[i].flip();
-            }
-            ctx.control_stack.pop_control();
+            lift_under_qbool(overflow_own, [&]() {
+                for (size_t j = i; j < n; ++j)
+                    scratch[j] ^= divisor_bits[j - i];
+                negate_cond(i, first);
+                // Cuccaro MAJ/UMA add: r += scratch + carry_anc; q[i] ^= carry_out.
+                maj_dsl(carry_anc, remainder_bits[0], scratch[0]);
+                for (size_t k = 1u; k < n; ++k)
+                    maj_dsl(scratch[k - 1u], remainder_bits[k], scratch[k]);
+                quotient_bits[i] ^= scratch[n - 1u];
+                for (size_t k = n - 1u; k >= 1u; --k)
+                    uma_dsl(scratch[k - 1u], remainder_bits[k], scratch[k]);
+                uma_dsl(carry_anc, remainder_bits[0], scratch[0]);
+                negate_cond(i, first);  // self-inverse, undoes previous
+                for (size_t j = i; j < n; ++j)
+                    scratch[j] ^= divisor_bits[j - i];
+                if (i > 0u) {
+                    quotient_bits[i].flip();
+                    sgn[i - 1u] ^= quotient_bits[i];
+                    quotient_bits[i].flip();
+                }
+            });
             overflow.flip();
             if (!first && i > 0u) {
-                push_ov();
-                sgn[i - 1u] ^= sgn[i];
-                ctx.control_stack.pop_control();
+                lift_under_qbool(overflow_own, [&]() {
+                    sgn[i - 1u] ^= sgn[i];
+                });
             }
             if (!first) uncompute_sgn_i(i, lo);
             compute_overflow_or_dsl(overflow, divisor_bits, lo, n);
@@ -233,32 +300,34 @@ inline void div_kernel(Bit* dividend_bits, size_t n, Bit* divisor_bits,
             compute_overflow_or_dsl(overflow, divisor_bits, lo, n);
             if (!first) uncompute_sgn_i_adj(i, lo);
             if (!first && i > 0u) {
-                push_ov();
-                sgn[i - 1u] ^= sgn[i];
-                ctx.control_stack.pop_control();
+                lift_under_qbool(overflow_own, [&]() {
+                    sgn[i - 1u] ^= sgn[i];
+                });
             }
             overflow.flip();
-            push_ov();
-            if (i > 0u) {
-                quotient_bits[i].flip();
-                sgn[i - 1u] ^= quotient_bits[i];
-                quotient_bits[i].flip();
-            }
-            for (size_t j = i; j < n; ++j) scratch[j] ^= divisor_bits[j - i];
-            negate_cond(i, first);
-            // Reverse MAJ/UMA chain: UMA^-1 first-run, then MAJ^-1 last-run.
-            detail_div::uma_adj(carry_anc, remainder_bits[0], scratch[0]);
-            for (size_t k = 1u; k < n; ++k)
-                detail_div::uma_adj(scratch[k - 1u], remainder_bits[k],
-                                    scratch[k]);
-            quotient_bits[i] ^= scratch[n - 1u];
-            for (size_t k = n - 1u; k >= 1u; --k)
-                detail_div::maj_adj(scratch[k - 1u], remainder_bits[k],
-                                    scratch[k]);
-            detail_div::maj_adj(carry_anc, remainder_bits[0], scratch[0]);
-            negate_cond(i, first);
-            for (size_t j = i; j < n; ++j) scratch[j] ^= divisor_bits[j - i];
-            ctx.control_stack.pop_control();
+            lift_under_qbool(overflow_own, [&]() {
+                if (i > 0u) {
+                    quotient_bits[i].flip();
+                    sgn[i - 1u] ^= quotient_bits[i];
+                    quotient_bits[i].flip();
+                }
+                for (size_t j = i; j < n; ++j)
+                    scratch[j] ^= divisor_bits[j - i];
+                negate_cond(i, first);
+                // Reverse MAJ/UMA chain: UMA^-1 first-run, then MAJ^-1 last-run.
+                detail_div::uma_adj(carry_anc, remainder_bits[0], scratch[0]);
+                for (size_t k = 1u; k < n; ++k)
+                    detail_div::uma_adj(scratch[k - 1u], remainder_bits[k],
+                                        scratch[k]);
+                quotient_bits[i] ^= scratch[n - 1u];
+                for (size_t k = n - 1u; k >= 1u; --k)
+                    detail_div::maj_adj(scratch[k - 1u], remainder_bits[k],
+                                        scratch[k]);
+                detail_div::maj_adj(carry_anc, remainder_bits[0], scratch[0]);
+                negate_cond(i, first);
+                for (size_t j = i; j < n; ++j)
+                    scratch[j] ^= divisor_bits[j - i];
+            });
             overflow.flip();
             compute_overflow_or_dsl(overflow, divisor_bits, lo, n);
         }

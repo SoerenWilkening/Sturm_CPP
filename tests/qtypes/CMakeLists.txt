@@ -21,6 +21,11 @@ set(STURM_QTYPES_BACKEND_SOURCES
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    # sturm-a3t4.4: lib_div_dsl / lib_mul_dsl now use uncompute_and for
+    # the depth-1 lift, so any qtypes test that pulls these primitives
+    # (divide_oop / mul_oop / lossy_oop) needs the uncompute_api
+    # translation unit linked in.
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 
 # sturm-a3qp LO-1e — divide_oop out-of-place division free function.

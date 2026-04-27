@@ -763,6 +763,9 @@ add_executable(test_pow_dsl_small
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    # sturm-a3t4.4: lib_mul_dsl now uses uncompute_and for the depth-1
+    # lift; pow_dsl reuses lib_mul_dsl, so this TU is required at link.
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 target_include_directories(test_pow_dsl_small PRIVATE
     ${CMAKE_SOURCE_DIR}/include
@@ -793,6 +796,11 @@ set(M19_SOURCES
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    # sturm-a3t4.4: lib_div_dsl / lib_mul_dsl now use uncompute_and for the
+    # depth-1 lift (and lib_add_mod_dsl already did under sturm-a3t4.2),
+    # so any backend test that pulls these primitives needs the
+    # uncompute_api translation unit linked in.
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 
 # test_qint_add_e2e — operator+= and operator-= emit gates + correct arithmetic

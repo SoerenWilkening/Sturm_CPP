@@ -8,11 +8,16 @@
 //   STURM_REGISTER_ADJOINT so `invert<&lib_mul_dsl>()(…)` resolves at the LO
 //   rewrite's scope-exit cleanup.
 //
-// Forward: i = 0..bw-1: push b[i]; lib_add_dsl on shifted window; pop.
-// Adjoint: i = bw-1..0: push b[i]; detail_div::lib_add_adj on the same
-//   window; pop.  Per-bit body is otherwise identical (control push/pop is
-//   self-inverse), so direction toggles only the loop order and the
-//   add/add_adj choice.  Shared via a `Forward` template kernel.
+// Forward: i = 0..bw-1: lift on b[i]; lib_add_dsl on shifted window.
+// Adjoint: i = bw-1..0: lift on b[i]; detail_div::lib_add_adj on the same
+//   window.  Per-bit body is otherwise identical, so direction toggles only
+//   the loop order and the add/add_adj choice.  Shared via a `Forward`
+//   template kernel.
+//
+// sturm-a3t4.4 P3: per-call push_b_i / pop_control triple replaced with
+// the depth-1 lift pattern adopted under sturm-a3t4.[1-3].  When wrapped
+// in an outer WHEN(c), each iteration allocates+uncomputes its own AND
+// ancilla; otherwise we drop straight into WHEN(b[i]).
 //
 // Target: <250 LoC.
 
@@ -25,10 +30,23 @@
 #include "sturm/core/context.hpp"
 #include "sturm/core/core.h"
 #include "sturm/routines/invert.hpp"
+#include "sturm/control/when.hpp"          // sturm-a3t4.4: WHEN + WhenGuard::active_control
 
 #include <cstddef>
 #include <cassert>
 #include <type_traits>
+
+// sturm-a3t4.4: forward-declare `uncompute_and` rather than pulling the
+// full uncompute_api.hpp.  The full header includes <qint.hpp>, which
+// transitively re-includes mul_dsl.hpp via qint_arith_v3.hpp.  Pragma-
+// once skips the second pass, so the recursive expansion would parse
+// `sturm::uncompute_and` calls below before its declaration is reached.
+// A bare forward declaration is sufficient: qbool is already a complete
+// type (qbool.hpp is included above via div_dsl.hpp); the implementation
+// lives in src/sturm/uncompute/uncompute_api.cpp.
+namespace sturm {
+void uncompute_and(qbool& r, const qbool& a, const qbool& b);
+}  // namespace sturm
 
 // Forward-declare BitProxy for the LO-1a adjoint registration (backend-only).
 namespace sturm {
@@ -43,24 +61,29 @@ namespace detail_mul {
 
 // Shared body for forward + adjoint multiplication.  `Forward` toggles the
 // b-bit loop order and the add (forward Cuccaro) vs. add_adj (gate-reversed
-// Cuccaro) call.  push_control / pop_control are self-inverse, so they
-// appear unchanged in both directions.
+// Cuccaro) call.  The control lift is self-inverse so it appears unchanged
+// in both directions.
 template <typename Bit, bool Forward>
 inline void mul_kernel(Bit* a_bits, size_t a_width,
                        Bit* b_bits, size_t b_width,
                        Bit* result_bits) {
     sturm_backend_context_t* raw = sturm_get_thread_context();
     assert(raw && "lib_mul_dsl: no BackendContext installed");
-    BackendContext& ctx = *raw;
+    (void)raw;  // sturm-a3t4.4: control_stack is now driven by WHEN/WhenGuard
+                // through the lift pattern; ctx is no longer poked directly.
 
-    auto push_b_i = [&](size_t i) {
+    // sturm-a3t4.4: build a non-owning qbool view of b[i] for use as the
+    // AND/WHEN operand in the depth-1 lift pattern.  Mirrors
+    // detail_mul_mod::flag_qbool_view.
+    auto flag_qbool_view = [](Bit& flag) -> qbool {
         if constexpr (std::is_same_v<Bit, qbool>) {
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(b_bits[i].qubits[0]));
+            return qbool::make_non_owning(flag.qubits[0],
+                                           flag.value, /*mask=*/1ULL);
         } else {
-            b_bits[i].ensure_quantum();
-            ctx.control_stack.push_control(
-                static_cast<uint32_t>(b_bits[i].qubit_index()));
+            flag.ensure_quantum();
+            return qbool::make_non_owning(flag.qubit_index(),
+                                           /*val=*/0,
+                                           /*mask=*/1ULL);
         }
     };
 
@@ -69,13 +92,28 @@ inline void mul_kernel(Bit* a_bits, size_t a_width,
         Bit*   window = result_bits + i;            // [i..i+a_width-1]
         Bit&   carry  = result_bits[i + a_width];   // carry output slot
 
-        push_b_i(i);
-        if constexpr (Forward) {
-            lib_add_dsl(a_bits, window, carry, a_width);
+        // sturm-a3t4.4: depth-1 lift around the controlled add.  Mirrors
+        // the lift idiom in add_mod_dsl.hpp / mul_mod_dsl.hpp verbatim.
+        qbool flag_q = flag_qbool_view(b_bits[i]);
+        if (qbool* outer = WhenGuard::active_control()) {
+            qbool tmp = (*outer) & flag_q;
+            WHEN(tmp) {
+                if constexpr (Forward) {
+                    lib_add_dsl(a_bits, window, carry, a_width);
+                } else {
+                    detail_div::lib_add_adj(a_bits, window, carry, a_width);
+                }
+            }
+            sturm::uncompute_and(tmp, *outer, flag_q);
         } else {
-            detail_div::lib_add_adj(a_bits, window, carry, a_width);
+            WHEN(flag_q) {
+                if constexpr (Forward) {
+                    lib_add_dsl(a_bits, window, carry, a_width);
+                } else {
+                    detail_div::lib_add_adj(a_bits, window, carry, a_width);
+                }
+            }
         }
-        ctx.control_stack.pop_control();
     }
 }
 
