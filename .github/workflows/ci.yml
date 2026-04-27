@@ -47,3 +47,9 @@ jobs:
 
       - name: Public-header lint unit tests
         run: python3 -m unittest tests.tools.test_lint_public_headers
+
+      - name: Public-API drift-check (E8.M1)
+        run: ./tools/check_public_api_drift.sh
+
+      - name: Public-API drift unit tests
+        run: python3 -m unittest tests.tools.test_public_api_drift
