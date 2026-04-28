@@ -231,9 +231,7 @@ std::vector<std::unique_ptr<XorCallback>>& xor_callback_pool() {
 
 void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
                          QUnit& unit) {
-    // Widened AST pattern (LP4) — see
-    // `docs/archive/implementation_plan_transpiler_matcher_lazy_peel.md`
-    // and the LP2 AST calibration notes on issue sturm-ea7. Fires on both
+    // Widened AST pattern (LP4). Fires on both
     // initializer shapes the matcher has to cover:
     //   (a) EAGER: `operator|(...) -> qbool`. VarDecl initializer is the
     //       CXXOperatorCallExpr itself (modulo implicit glue). Standard

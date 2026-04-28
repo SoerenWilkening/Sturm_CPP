@@ -117,8 +117,7 @@ STURM_EXPECTED_VERSION=${PROJECT_VERSION}")
 # moved internal path (e.g. `sturm/lib/...` or
 # `sturm/qtypes/lossy_oop.hpp`), this TU fails to compile — the
 # regression net for the header reorganization. Header-only build
-# (links against the `sturm` INTERFACE target). See
-# docs/plan_packaging_export.md §E2.M1.
+# (links against the `sturm` INTERFACE target).
 add_executable(test_detail_layout test_detail_layout.cpp)
 target_link_libraries(test_detail_layout PRIVATE sturm)
 target_compile_features(test_detail_layout PRIVATE cxx_std_20)

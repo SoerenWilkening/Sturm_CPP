@@ -12,7 +12,7 @@ The TSV is the source-of-truth side-table for E1.M2's classification doc and
 E1.M3's drift-check CI step. Output is sorted on (matcher_file, emitted_symbol)
 so byte-identical reruns are stable across machines.
 
-LOC budget: <=200 (per docs/plan_packaging_export.md).
+LOC budget: <=200.
 """
 from __future__ import annotations
 

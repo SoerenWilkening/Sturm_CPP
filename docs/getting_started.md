@@ -2,9 +2,7 @@
 
 **Status:** Draft (2026-04-27).
 **Scope tag:** `packaging-export`.
-**Companion docs:** [`public_api.md`](public_api.md),
-[`prd_packaging_export.md`](prd_packaging_export.md),
-[`plan_packaging_export.md`](plan_packaging_export.md).
+**Companion doc:** [`public_api.md`](public_api.md).
 
 This walkthrough takes a fresh checkout of STURM, installs it into a
 local prefix, and consumes that prefix from a **standalone** CMake

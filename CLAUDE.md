@@ -19,8 +19,6 @@ At the start of every session, read:
 - `docs/01_principles.md` — core design principles
 - `docs/TODO_reversibility_deferrals.md` — outstanding reversibility deferrals
 
-**When archiving a document** (moving to `docs/archive/`), also remove its entry from this Required Reading list. A document in the archive must not be a session dependency.
-
 <!-- BEGIN BEADS INTEGRATION v:1 profile:minimal hash:ca08a54f -->
 ## Beads Issue Tracker
 

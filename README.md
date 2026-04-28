@@ -63,7 +63,7 @@ Build-time options (pass with `-D<NAME>=<VALUE>` at configure time; run `cmake -
 
 | Flag | Default | Effect |
 |---|---|---|
-| `STURM_MODULAR_POW` | `OFF` | Gates the transpiler rewrite of `pow(a, x) % n` to the single `lib_pow_mod_dsl` primitive. With the default `OFF`, the two-step `lib_pow_dsl + lib_mod_dsl` lowering is preserved bit-exactly; with `ON`, the matcher folds the pair into one call without the wide intermediate. The companion `add` / `mul` modular rewrites are unconditional — only `pow` is gated. The library does not check the precondition `a, b ∈ [0, n)`; calling the modular operators with unreduced operands is undefined behaviour. See [docs/archive/prd_modular_arithmetic.md](docs/archive/prd_modular_arithmetic.md) §3.4 / §5. |
+| `STURM_MODULAR_POW` | `OFF` | Gates the transpiler rewrite of `pow(a, x) % n` to the single `lib_pow_mod_dsl` primitive. With the default `OFF`, the two-step `lib_pow_dsl + lib_mod_dsl` lowering is preserved bit-exactly; with `ON`, the matcher folds the pair into one call without the wide intermediate. The companion `add` / `mul` modular rewrites are unconditional — only `pow` is gated. The library does not check the precondition `a, b ∈ [0, n)`; calling the modular operators with unreduced operands is undefined behaviour. |
 | `STURM_ANCILLA_CAPACITY` | `256` | Ancilla pool capacity (qubits) compiled into the runtime. |
 
 ## Getting started

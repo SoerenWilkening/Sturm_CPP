@@ -2,8 +2,6 @@
 
 **Status:** Draft (2026-04-27).
 **Scope tag:** `packaging-export`.
-**Companion docs:** [`prd_packaging_export.md`](prd_packaging_export.md),
-[`plan_packaging_export.md`](plan_packaging_export.md).
 
 This document is the human-classified output of E1.M1's enumeration script
 (`tools/audit_emit_targets.py`). It enumerates every C++ identifier that the
@@ -44,8 +42,7 @@ pass before merge.
 
 ## Classification taxonomy
 
-Per `prd_packaging_export.md` §3.2 / `plan_packaging_export.md` §E1.M2 the
-classification column takes exactly one of three values:
+The classification column takes exactly one of three values:
 
 - **`public`** — the symbol appears in the user-visible API surface listed in
   PRD §3.3 (the four primitives, `qint`/`qbool`/`WHEN`, `add_mod` /

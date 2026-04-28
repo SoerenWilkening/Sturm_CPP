@@ -2,9 +2,7 @@
 
 **Status:** Draft (2026-04-27).
 **Scope tag:** `packaging-export`.
-**Companion docs:** [`prd_packaging_export.md`](prd_packaging_export.md),
-[`plan_packaging_export.md`](plan_packaging_export.md),
-[`transpiler_emit_targets.md`](transpiler_emit_targets.md).
+**Companion doc:** [`transpiler_emit_targets.md`](transpiler_emit_targets.md).
 **Machine-readable snapshot:** [`public_api.txt`](public_api.txt).
 
 This document is the authoritative list of public symbols exposed by
