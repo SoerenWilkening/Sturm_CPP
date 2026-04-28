@@ -58,12 +58,19 @@ configure/build/run, expected output) and
 [docs/public_api.md](docs/public_api.md) for the authoritative list of
 public symbols exposed by the umbrella header.
 
+## Build
+
 Build-time options (pass with `-D<NAME>=<VALUE>` at configure time; run `cmake -LH build` for the full list):
 
 | Flag | Default | Effect |
 |---|---|---|
 | `STURM_MODULAR_POW` | `OFF` | Gates the transpiler rewrite of `pow(a, x) % n` to the single `lib_pow_mod_dsl` primitive. With the default `OFF`, the two-step `lib_pow_dsl + lib_mod_dsl` lowering is preserved bit-exactly; with `ON`, the matcher folds the pair into one call without the wide intermediate. The companion `add` / `mul` modular rewrites are unconditional — only `pow` is gated. The library does not check the precondition `a, b ∈ [0, n)`; calling the modular operators with unreduced operands is undefined behaviour. |
 | `STURM_ANCILLA_CAPACITY` | `256` | Ancilla pool capacity (qubits) compiled into the runtime. |
+
+In short: `STURM_MODULAR_POW` (default `OFF`) gates the
+`lib_pow_mod_dsl` primitive — opt in if you need the fused
+`pow(a, x) % n` lowering instead of the default two-step
+`lib_pow_dsl + lib_mod_dsl` path.
 
 ## Getting started
 
