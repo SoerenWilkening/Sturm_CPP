@@ -1974,6 +1974,7 @@ if(STURM_PLUGIN_CLANGXX_BIN AND STURM_PLUGIN_OBJDUMP_BIN)
         STURM_PLUGIN_OBJDUMP="${STURM_PLUGIN_OBJDUMP_BIN}"
         STURM_PLUGIN_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
         STURM_PLUGIN_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
+        STURM_PLUGIN_GENERATED_INCLUDE_DIR="${CMAKE_BINARY_DIR}/include"
     )
     add_dependencies(test_plugin_nested
         sturm-transpile-plugin sturm-transpile)

@@ -56,6 +56,9 @@ namespace {
 #ifndef STURM_PLUGIN_INCLUDE_DIR
 #error "STURM_PLUGIN_INCLUDE_DIR must be defined to the project include dir"
 #endif
+#ifndef STURM_PLUGIN_GENERATED_INCLUDE_DIR
+#error "STURM_PLUGIN_GENERATED_INCLUDE_DIR must be defined to the build-tree include dir holding generated headers (e.g. sturm/version.hpp)"
+#endif
 
 const char* plugin_path()      { return STURM_PLUGIN_PATH; }
 const char* clangxx_bin()      { return STURM_PLUGIN_CLANGXX; }
@@ -63,6 +66,7 @@ const char* transpile_bin()    { return STURM_TRANSPILE_BIN; }
 const char* objdump_bin()      { return STURM_PLUGIN_OBJDUMP; }
 const char* examples_dir()     { return STURM_PLUGIN_EXAMPLES_DIR; }
 const char* include_dir()      { return STURM_PLUGIN_INCLUDE_DIR; }
+const char* generated_include_dir() { return STURM_PLUGIN_GENERATED_INCLUDE_DIR; }
 
 struct RunResult {
     int exit_code = -1;
@@ -157,6 +161,8 @@ std::string common_flags() {
     f += " -c";
     f += " -I";
     f += include_dir();
+    f += " -I";
+    f += generated_include_dir();
     f += " -DSTURM_BACKEND_ENABLED=1";
     // qubit_pool.hpp hard-requires this define at parse time; it is
     // set globally by the top-level CMakeLists.txt for the rest of
@@ -273,6 +279,7 @@ void compare_one(const std::string& dir, const char* name) {
             " " + src +
             " -- " +
             " -std=c++20 -I" + include_dir() +
+            " -I" + generated_include_dir() +
             " -DSTURM_BACKEND_ENABLED=1" +
             " -DSTURM_ANCILLA_CAPACITY=256";
         auto r = run(cmd);
