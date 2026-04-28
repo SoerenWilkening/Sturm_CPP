@@ -260,7 +260,7 @@ target_compile_definitions(test_uncompute_and PRIVATE
     STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
 )
-target_link_libraries(test_uncompute_and PRIVATE orkan_headers)
+target_link_libraries(test_uncompute_and PRIVATE sturm orkan_headers)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     PROPERTIES LANGUAGE C
@@ -287,7 +287,7 @@ target_compile_definitions(test_ccnot_inplace PRIVATE
     STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
 )
-target_link_libraries(test_ccnot_inplace PRIVATE orkan_headers)
+target_link_libraries(test_ccnot_inplace PRIVATE sturm orkan_headers)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     PROPERTIES LANGUAGE C
