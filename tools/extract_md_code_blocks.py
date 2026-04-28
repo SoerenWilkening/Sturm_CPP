@@ -3,9 +3,13 @@
 
 Extract the FIRST C++ fenced code block from a markdown file. With one
 positional arg, print the block to stdout. With two args, diff the
-extracted block against the second file's contents and exit non-zero on
-drift, so the walkthrough's first cpp block stays byte-for-byte in
-lockstep with `tests/external_consumer/main.cpp`. <= 80 LOC, stdlib.
+extracted block against the second file's contents and exit non-zero
+on drift. The extractor was originally introduced (sturm-8gvh.2) to
+keep docs/getting_started.md in lockstep with
+tests/external_consumer/main.cpp; sturm-b5t4 dissolved that byte-
+equality contract so the user-facing doc and the internal smoke test
+can diverge intentionally. The extractor itself remains useful for
+future doc-block tooling. <= 80 LOC, stdlib.
 
 Usage:
     python3 tools/extract_md_code_blocks.py <markdown>

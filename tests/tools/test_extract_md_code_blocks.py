@@ -1,12 +1,15 @@
-"""Tests for tools/extract_md_code_blocks.py + check_getting_started_drift.sh.
+"""Tests for tools/extract_md_code_blocks.py.
 
-Issue: sturm-8gvh.2 (E8.M2).
+Issue: sturm-8gvh.2 (E8.M2) introduced the extractor; sturm-b5t4
+dissolved the byte-equality contract between docs/getting_started.md
+and tests/external_consumer/main.cpp. The two tests that asserted that
+contract (and the companion drift-check shell wrapper) have been
+removed; the extractor itself remains useful for future doc block
+tooling and is still covered below.
 
 The extractor pulls the first ```cpp / ```c++ fenced block out of a
 markdown file. With one arg it prints the block; with two args it diffs
-the block against a source file and exits non-zero on drift. The
-companion shell wrapper points it at docs/getting_started.md vs.
-tests/external_consumer/main.cpp.
+the block against a source file and exits non-zero on drift.
 
 Run with::
 
@@ -23,9 +26,7 @@ from pathlib import Path
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 EXTRACTOR = REPO_ROOT / "tools" / "extract_md_code_blocks.py"
-DRIFT_SH = REPO_ROOT / "tools" / "check_getting_started_drift.sh"
 DOC = REPO_ROOT / "docs" / "getting_started.md"
-MAIN_CPP = REPO_ROOT / "tests" / "external_consumer" / "main.cpp"
 
 
 def _run(args: list[str]) -> subprocess.CompletedProcess[str]:
@@ -37,19 +38,12 @@ class ExtractMdCodeBlocksTest(unittest.TestCase):
         self.assertTrue(EXTRACTOR.is_file(), msg=f"missing: {EXTRACTOR}")
         self.assertTrue(os.access(EXTRACTOR, os.X_OK),
                         msg=f"not executable: {EXTRACTOR}")
-        self.assertTrue(DRIFT_SH.is_file(), msg=f"missing: {DRIFT_SH}")
-        self.assertTrue(os.access(DRIFT_SH, os.X_OK),
-                        msg=f"not executable: {DRIFT_SH}")
         self.assertTrue(DOC.is_file(), msg=f"missing: {DOC}")
 
     def test_extractor_loc_under_80(self) -> None:
         # Plan §E8.M2 caps the extractor at <=80 LOC.
         n = sum(1 for _ in EXTRACTOR.read_text().splitlines())
         self.assertLessEqual(n, 80, msg=f"extractor LOC={n}, budget is 80")
-
-    def test_drift_sh_loc_under_30(self) -> None:
-        n = sum(1 for _ in DRIFT_SH.read_text().splitlines())
-        self.assertLessEqual(n, 30, msg=f"drift script LOC={n}, budget is 30")
 
     def test_extract_single_cpp_block(self) -> None:
         with tempfile.TemporaryDirectory() as tmp:
@@ -131,24 +125,6 @@ class ExtractMdCodeBlocksTest(unittest.TestCase):
         proc = _run(["python3", str(EXTRACTOR)])
         self.assertEqual(proc.returncode, 2)
         self.assertIn("usage", proc.stderr)
-
-    def test_drift_check_passes_against_real_tree(self) -> None:
-        # The committed doc must match the committed main.cpp.
-        proc = _run([str(DRIFT_SH)])
-        self.assertEqual(
-            proc.returncode, 0,
-            msg=f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}",
-        )
-        self.assertIn("no drift", proc.stdout)
-
-    def test_doc_first_cpp_block_matches_main_cpp(self) -> None:
-        # Direct check on the extractor against the real files.
-        proc = _run(["python3", str(EXTRACTOR), str(DOC), str(MAIN_CPP)])
-        self.assertEqual(
-            proc.returncode, 0,
-            msg=f"stdout={proc.stdout!r}\nstderr={proc.stderr!r}",
-        )
-
 
 if __name__ == "__main__":
     unittest.main()

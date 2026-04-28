@@ -9,13 +9,16 @@ name: ci
 #
 # E2.M2 (sturm-nalq.2) adds the public-header lint step. E8.M1
 # (sturm-8gvh.1) adds the public-API drift-check. E8.M2
-# (sturm-8gvh.2) adds the getting_started.md walkthrough drift-check
-# (the doc's first C++ block must match tests/external_consumer/main.cpp
-# byte-for-byte). E6.M3 (sturm-795j.3) adds the sturmc-driver smoke
-# variant alongside the M2 add_quantum_executable variant, so both
-# delivery paths from PRD §3.5 are exercised against an installed
-# prefix on every push/PR. Subsequent packaging-export milestones will
-# add further drift checks as additional steps in this workflow.
+# (sturm-8gvh.2) introduced the getting_started.md walkthrough
+# extractor; sturm-b5t4 then dissolved the byte-equality drift-check
+# between the doc and tests/external_consumer/main.cpp so the user-
+# facing snippet and the internal smoke test can diverge intentionally
+# (the extractor unit tests still run below). E6.M3 (sturm-795j.3)
+# adds the sturmc-driver smoke variant alongside the M2
+# add_quantum_executable variant, so both delivery paths from PRD §3.5
+# are exercised against an installed prefix on every push/PR.
+# Subsequent packaging-export milestones will add further drift checks
+# as additional steps in this workflow.
 #
 # Per project rule: every cmake/ctest/make invocation is capped at 6
 # threads (`--parallel 6` / `-j6`). The drift-check itself is a pure
@@ -58,9 +61,6 @@ jobs:
 
       - name: Public-API drift unit tests
         run: python3 -m unittest tests.tools.test_public_api_drift
-
-      - name: Getting-started doc drift-check (E8.M2)
-        run: ./tools/check_getting_started_drift.sh
 
       - name: Getting-started doc drift unit tests
         run: python3 -m unittest tests.tools.test_extract_md_code_blocks
