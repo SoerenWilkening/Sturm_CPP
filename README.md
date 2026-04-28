@@ -28,9 +28,8 @@ and consumes its own headers from a C++20 toolchain.
 The supported flow is to install STURM into a prefix and `find_package`
 it from a standalone consumer project. The walkthrough in
 [docs/getting_started.md](docs/getting_started.md) shows the full
-consumer side end-to-end (mirrored byte-for-byte from
-`tests/external_consumer/`); the steps below build and install the
-prefix that walkthrough then consumes.
+consumer side end-to-end; the steps below build and install the prefix
+that walkthrough then consumes.
 
 ```bash
 git clone https://github.com/SoerenWilkening/Sturm_CPP.git
@@ -74,22 +73,19 @@ project — including `find_package(sturm REQUIRED)` and
 `add_quantum_executable` — that compiles this code):
 
 ```cpp
-#define STURM_BACKEND_ENABLED 1
-#include "sturm/sturm.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/qtypes/qint.hpp"
+#include <sturm/prelude.hpp>
+#include <cstdio>
 
 int main() {
-    auto *ctx = sturm_backend_create(STURM_MODE_APPEND, 32);
-    sturm_set_thread_context(ctx);
-    {
-        sturm::qbool a, b;
-        a.value = 1;
-        b.value = 0;
-        sturm::qbool c = a | b;   // transpiler injects OR-uncompute
+    qint a = 6, b = 5, n = 7;     // unprefixed `qint = qint_t<64>` via prelude
+    qbool flag = true;            // classical-true: WHEN body runs
+    int64_t r = static_cast<int64_t>(a);
+    WHEN(flag) {
+        r = (static_cast<int64_t>(a) + static_cast<int64_t>(b))
+            % static_cast<int64_t>(n);
     }
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    std::printf("external_consumer: r=%lld\n", static_cast<long long>(r));
+    return 0;
 }
 ```
 
