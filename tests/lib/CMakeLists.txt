@@ -465,6 +465,62 @@ add_test(NAME test_mul_mod_dsl_pool_drain COMMAND test_mul_mod_dsl_pool_drain)
 set_tests_properties(test_mul_mod_dsl_pool_drain
     PROPERTIES LABELS "lib;modular-arith")
 
+# ── sturm-7cix Beat C -- lib_mul_mod_dsl O(W) "oneshot" path tests.  Built
+#    on Beats A (lib_add_mod_inplace_dsl) + B (lib_double_mod_dsl); restricted
+#    to ODD n.  These tests exercise the new O(W) ancilla path directly,
+#    independent of the dispatcher in lib_mul_mod_dsl which routes based
+#    on the classical-tracked LSB of `n_bits[0]`.
+add_executable(test_mul_mod_dsl_oneshot
+    test_mul_mod_dsl_oneshot.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_dsl_oneshot PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_dsl_oneshot PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_dsl_oneshot PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_mod_dsl_oneshot PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_dsl_oneshot COMMAND test_mul_mod_dsl_oneshot)
+set_tests_properties(test_mul_mod_dsl_oneshot
+    PROPERTIES LABELS "lib;modular-arith")
+
+add_executable(test_mul_mod_dsl_oneshot_adjoint
+    test_mul_mod_dsl_oneshot_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_dsl_oneshot_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_dsl_oneshot_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_dsl_oneshot_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_mod_dsl_oneshot_adjoint PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_dsl_oneshot_adjoint COMMAND test_mul_mod_dsl_oneshot_adjoint)
+set_tests_properties(test_mul_mod_dsl_oneshot_adjoint
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
+
+add_executable(test_mul_mod_dsl_oneshot_ancilla
+    test_mul_mod_dsl_oneshot_ancilla.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_dsl_oneshot_ancilla PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_dsl_oneshot_ancilla PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_dsl_oneshot_ancilla PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_mul_mod_dsl_oneshot_ancilla PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_dsl_oneshot_ancilla COMMAND test_mul_mod_dsl_oneshot_ancilla)
+set_tests_properties(test_mul_mod_dsl_oneshot_ancilla
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
     test_pow_mod_dsl.cpp
