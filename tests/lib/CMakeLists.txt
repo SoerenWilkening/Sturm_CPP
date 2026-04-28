@@ -183,6 +183,93 @@ add_test(NAME test_add_mod_dsl_pool_drain COMMAND test_add_mod_dsl_pool_drain)
 set_tests_properties(test_add_mod_dsl_pool_drain
     PROPERTIES LABELS "lib;modular-arith")
 
+# ── sturm-wdas Beat B -- lib_double_mod_dsl + adjoint round-trip / ancilla /
+#    pool-drain tests for the in-place modular doubling primitive used by
+#    Beat C's lib_mul_mod_dsl rewrite (sturm-7cix).  Mirrors the
+#    test_add_mod_dsl_* family.
+
+# sturm-wdas Beat B -- lib_double_mod_dsl forward (n==0 no-op, single classical
+# case, W=2 odd-n exhaustive sweep, (n+1)/2 LSB-edge case, W=3 odd-n random
+# sweep).  See test header for the odd-n precondition rationale.
+add_executable(test_double_mod_dsl
+    test_double_mod_dsl.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_double_mod_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_double_mod_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_double_mod_dsl PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_double_mod_dsl PRIVATE orkan_headers)
+add_test(NAME test_double_mod_dsl COMMAND test_double_mod_dsl)
+set_tests_properties(test_double_mod_dsl
+    PROPERTIES LABELS "lib;modular-arith")
+
+# sturm-wdas Beat B -- lib_double_mod_dsl adjoint round-trip (W=2 odd-n
+# exhaustive + the (n+1)/2 LSB-edge case from design note #3).  Pins
+# `invert<&lib_double_mod_dsl<BitProxy>>()` resolution alongside the
+# round-trip behaviour.
+add_executable(test_double_mod_dsl_adjoint
+    test_double_mod_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_double_mod_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_double_mod_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_double_mod_dsl_adjoint PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_double_mod_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_double_mod_dsl_adjoint COMMAND test_double_mod_dsl_adjoint)
+set_tests_properties(test_double_mod_dsl_adjoint
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
+
+# sturm-wdas Beat B -- lib_double_mod_dsl peak-ancilla budget assertion.
+# Achieved bound is constant 5 above the (2W+1) inputs (n_pad + lt_flag +
+# carry_anc + inner adder transient + emit_CCX_lifted fold ancilla under
+# the lift_under(lt_flag) body).  PRD `W + O(1)` requirement is met.
+add_executable(test_double_mod_dsl_ancilla
+    test_double_mod_dsl_ancilla.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_double_mod_dsl_ancilla PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_double_mod_dsl_ancilla PRIVATE cxx_std_20)
+target_compile_definitions(test_double_mod_dsl_ancilla PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_double_mod_dsl_ancilla PRIVATE orkan_headers)
+add_test(NAME test_double_mod_dsl_ancilla COMMAND test_double_mod_dsl_ancilla)
+set_tests_properties(test_double_mod_dsl_ancilla
+    PROPERTIES LABELS "lib;modular-arith")
+
+# sturm-wdas Beat B -- lib_double_mod_dsl pool live-count round-trip / LIFO
+# release.  Dedicated drain test mirroring beat 1.7
+# (test_add_mod_dsl_pool_drain.cpp).  W=2 odd-n sweep + LIFO-recycle witness.
+add_executable(test_double_mod_dsl_pool_drain
+    test_double_mod_dsl_pool_drain.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_double_mod_dsl_pool_drain PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_double_mod_dsl_pool_drain PRIVATE cxx_std_20)
+target_compile_definitions(test_double_mod_dsl_pool_drain PRIVATE
+    STURM_ANCILLA_CAPACITY=256
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_double_mod_dsl_pool_drain PRIVATE orkan_headers)
+add_test(NAME test_double_mod_dsl_pool_drain COMMAND test_double_mod_dsl_pool_drain)
+set_tests_properties(test_double_mod_dsl_pool_drain
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-r5pn P2 -- lib_mul_mod_dsl scaffold (will be filled by Phase 2 beats).
 # Beat 2.3 (sturm-kubb.3): W=2 exhaustive sweep iterates 14 multiplications,
 # each on a 25-qubit state vector (2^25 = 33M amplitudes).  Single
