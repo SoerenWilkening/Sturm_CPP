@@ -191,6 +191,12 @@ inline void __lib_mul_mod_dsl_chain_adj(Bit* a_bits, Bit* b_bits,
  *      `lib_mul_mod_dsl` on the same `n_bits[0]` classical hint, both
  *      take the same path.
  *
+ * @par Behavior on precondition violation
+ * The library does **not** check the precondition.  Calling
+ * `__lib_mul_mod_dsl_adj` with `r_bits` not equal to the paired
+ * forward's output, or under a dispatch hint that disagrees with the
+ * forward's, is **undefined behavior**.
+ *
  * @sa lib_mul_mod_dsl, __lib_mul_mod_dsl_oneshot_adj,
  *     __lib_mul_mod_dsl_chain_adj, sturm::mul_mod
  * @see PRD §5 (Trust model and precondition contract).
