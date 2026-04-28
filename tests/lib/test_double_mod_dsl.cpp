@@ -1,25 +1,24 @@
 // test_double_mod_dsl.cpp -- Beat B (sturm-wdas) lib_double_mod_dsl forward
-//                              tests: n==0 no-op, single classical case,
-//                              W=2 exhaustive (odd-n) sweep, W=3 random
-//                              (odd-n) sweep, plus the (n+1)/2 LSB-edge
-//                              case from sturm-wdas's design note #3.
+//                              tests, post sturm-4oot.1 API rewrite.
 //
-// Mirrors `tests/lib/test_add_mod_dsl.cpp` (sturm-yh3d.{1,2,3,4}) adapted
-// for in-place modular doubling on a (W+1)-qubit register.  The forward
-// primitive's precondition restricts `n_value` to be ODD (see the
-// double_mod_dsl.hpp doxygen) — the lt_flag uncomputation step uses the
-// result LSB, which only carries the lt_flag bit when n is odd.  The W=2
-// exhaustive sweep therefore visits n in {1, 3} only; the W=3 random
-// sweep restricts to odd n in {1, 3, 5, 7}.  The (n+1)/2 case (n=3,
-// x=2) exercises the LSB=1 result (2·2 mod 3 = 1) flagged by sturm-wdas's
-// design note #3 — this is the input that breaks any naive "halve via
-// shift-right" forward; the conditional-add-back/lt_flag-uncompute path
-// in lib_double_mod_dsl handles it correctly.
+// As of sturm-4oot.1 (even-n-double-mod), the forward primitive takes an
+// extra `Bit& lt_flag_out` parameter; the LSB-trick uncompute is gone, the
+// internal lt_flag allocation is gone, and the odd-n precondition is
+// dropped from the header.  Forward XORs `(2x_orig < n_value)` into
+// `lt_flag_out`, so callers can pre-zero (clean write) or accumulate.  The
+// adjoint reads `lt_flag_out` to reverse the doubling and leaves it = 0
+// on exit.  This file exercises the forward direction; the adjoint
+// round-trip lives in `test_double_mod_dsl_adjoint.cpp`.
+//
+// The test sweeps below stay restricted to odd `n` (matching the original
+// sturm-wdas coverage); the sturm-4oot.2 issue extends them to even `n`.
+// This issue is the API rewrite only.
 //
 // Each call asserts:
 //   - x_bits[0..W-1] == (2 · x_orig) mod n_value,
 //   - x_bits[W] == 0 (overflow slot stays |0>),
 //   - n_bits unchanged (reversibility of the modulus register),
+//   - lt_flag_out == (2 · x_orig < n_value)  (NEW under sturm-4oot.1),
 //   - QubitPool::in_use() returns to its pre-call value (no leaked
 //     ancillas).
 //
@@ -49,10 +48,11 @@
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
-// W=2: x_bits has W+1 = 3 slots, n_bits has W = 2 slots → 5 input qubits.
-// Plus n_pad + lt_flag + carry_anc + inner adder transients ≈ 5 ancillas.
-// Sizing the simulator at the kMaxQubits=17 cap leaves headroom and
-// matches the add_mod_dsl test family.
+// W=2: x_bits has W+1 = 3 slots, n_bits has W = 2 slots, lt_flag = 1 slot
+// → 6 input qubits.  Plus n_pad + carry_anc + inner adder transients ≈ 4
+// ancillas (the lt_flag is now caller-owned per sturm-4oot.1, so the
+// internal peak drops by 1).  Sizing the simulator at the kMaxQubits=17
+// cap leaves headroom and matches the add_mod_dsl test family.
 static constexpr uint32_t n_orkan = 17u;
 
 struct SimCtx {
@@ -87,8 +87,6 @@ static uint32_t read_reg(orkan::state_t& sv, const int* qi, uint32_t n,
 }
 
 // ── W=2 register helpers (W+1 slots for x_bits, W slots for n_bits) ─────
-// x_bits has W+1 slots: bits 0..W-1 hold the input value x in [0, n_value);
-// bit W is the overflow slot (must enter |0>).
 struct RegX {
     std::array<int, W + 1u>             qi;
     std::array<sturm::qbool, W + 1u>    owners;
@@ -99,6 +97,14 @@ struct RegN {
     std::array<int, W>              qi;
     std::array<sturm::qbool, W>     owners;
     std::array<sturm::BitProxy, W>  bits;
+};
+
+// Caller-owned lt_flag_out register (1 qubit).  Allocated via the qubit
+// pool so it shows up in the in_use bookkeeping like every other input.
+struct RegLT {
+    int                qi;
+    sturm::qbool       own;
+    sturm::BitProxy    bit;
 };
 
 static RegX make_reg_x(int base, uint32_t val, orkan::state_t& sv) {
@@ -129,61 +135,83 @@ static RegN make_reg_n(int base, uint32_t val, orkan::state_t& sv) {
     return r;
 }
 
-// Beat sturm-wdas.1: n==0 short-circuits, leaves x_bits and n_bits unchanged.
+static RegLT make_reg_lt(int qi_base) {
+    RegLT r;
+    r.qi  = qi_base;
+    r.own = sturm::qbool::make_non_owning(qi_base);
+    r.bit = sturm::BitProxy(r.own);
+    return r;
+}
+
+// Beat sturm-wdas.1: n==0 short-circuits, leaves x_bits, n_bits and
+// lt_flag_out unchanged.
 static void run_n_zero_case(uint32_t x_val, uint32_t n_val) {
     sturm::QubitPool::instance().reset_for_testing();
-    // x_bits has W+1 slots, n_bits has W slots → 2W+1 inputs.
-    const uint32_t n_reg = (W + 1u) + W;
+    // x_bits has W+1 slots, n_bits has W slots, lt_flag has 1 slot →
+    // 2W+2 inputs.
+    const uint32_t n_reg = (W + 1u) + W + 1u;
     int reserved[n_reg];
     for (uint32_t k = 0; k < n_reg; ++k)
         reserved[k] = sturm::QubitPool::instance().allocate();
     SimCtx sc{n_orkan, 64u};
-    RegX x = make_reg_x(0, x_val, sc.sv());
-    RegN n = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+    RegX x   = make_reg_x(0, x_val, sc.sv());
+    RegN n   = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+    RegLT lt = make_reg_lt(static_cast<int>(W + 1u + W));
 
     // Call with width n == 0; stub must short-circuit silently.
     sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(), n.bits.data(),
-                                                /*n=*/0u);
+                                                /*n=*/0u, lt.bit);
 
     uint32_t x_low_sv = read_reg(sc.sv(), x.qi.data(), W, n_orkan);
     uint32_t x_top_sv = (read_reg(sc.sv(), x.qi.data() + W, 1u, n_orkan)) & 1u;
     uint32_t n_sv     = read_reg(sc.sv(), n.qi.data(), W, n_orkan);
+    uint32_t lt_sv    = read_reg(sc.sv(), &lt.qi, 1u, n_orkan);
     assert(x_low_sv == x_val && "n==0: x_bits[0..W-1] unchanged");
     assert(x_top_sv == 0u    && "n==0: x_bits[W] still |0>");
     assert(n_sv     == n_val && "n==0: n_bits unchanged");
+    assert(lt_sv    == 0u    && "n==0: lt_flag_out still |0>");
 
     for (uint32_t k = 0; k < n_reg; ++k)
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
-// Beat sturm-wdas.2: full algorithm, single classical case.  Asserts:
+// Beat sturm-wdas.2 (post sturm-4oot.1): full algorithm, single classical
+// case.  Asserts:
 //   - x_bits[0..W-1] holds (2·x) mod n,
 //   - x_bits[W] == 0 (overflow slot returned to |0>),
 //   - n_bits unchanged,
+//   - lt_flag_out == (2x_orig < n_value)  (XOR-into a |0> entry → clean
+//     write of the comparison bit per the new contract),
 //   - QubitPool::in_use() returns to its pre-call value.
-// Pre: x_val < n_val and n_val is odd.
+// Pre: x_val < n_val.  No parity restriction (sturm-4oot.1 lifted it),
+// but the W=2/W=3 sweeps below stay odd-only until sturm-4oot.2.
 static void run_classical_case(uint32_t x_val, uint32_t n_val) {
     assert(x_val < n_val && "test precondition: x < n");
-    assert((n_val & 1u) == 1u && "test precondition: n is odd");
     sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = (W + 1u) + W;
+    const uint32_t n_reg = (W + 1u) + W + 1u;
     int reserved[n_reg];
     for (uint32_t k = 0; k < n_reg; ++k)
         reserved[k] = sturm::QubitPool::instance().allocate();
     const int pre_in_use = sturm::QubitPool::instance().in_use();
     SimCtx sc{n_orkan, 64u};
-    RegX x = make_reg_x(0, x_val, sc.sv());
-    RegN n = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+    RegX x   = make_reg_x(0, x_val, sc.sv());
+    RegN n   = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+    RegLT lt = make_reg_lt(static_cast<int>(W + 1u + W));
 
-    sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(), n.bits.data(), W);
+    sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(), n.bits.data(), W,
+                                                lt.bit);
 
-    const uint32_t expect_x = (2u * x_val) % n_val;
+    const uint32_t expect_x  = (2u * x_val) % n_val;
+    const uint32_t expect_lt = (2u * x_val < n_val) ? 1u : 0u;
     uint32_t x_low_sv = read_reg(sc.sv(), x.qi.data(), W, n_orkan);
     uint32_t x_top_sv = read_reg(sc.sv(), x.qi.data() + W, 1u, n_orkan);
     uint32_t n_sv     = read_reg(sc.sv(), n.qi.data(), W, n_orkan);
-    assert(x_low_sv == expect_x && "forward: x_bits[0..W-1] == (2x) mod n");
-    assert(x_top_sv == 0u       && "forward: x_bits[W] returned to |0>");
-    assert(n_sv     == n_val    && "forward: n_bits unchanged");
+    uint32_t lt_sv    = read_reg(sc.sv(), &lt.qi, 1u, n_orkan);
+    assert(x_low_sv == expect_x  && "forward: x_bits[0..W-1] == (2x) mod n");
+    assert(x_top_sv == 0u        && "forward: x_bits[W] returned to |0>");
+    assert(n_sv     == n_val     && "forward: n_bits unchanged");
+    assert(lt_sv    == expect_lt &&
+           "forward: lt_flag_out == (2x_orig < n_value)");
     assert(sturm::QubitPool::instance().in_use() == pre_in_use
            && "forward: pool live-count returns to pre-call value");
 
@@ -191,8 +219,46 @@ static void run_classical_case(uint32_t x_val, uint32_t n_val) {
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// sturm-4oot.1: lt_flag_out is XOR-into.  Pre-flip the bit to |1>, run the
+// forward, and verify lt_flag_out_post == 1 XOR (2x_orig < n_value) — i.e.
+// the call accumulates rather than overwrites.  This pins the "XOR-into"
+// semantic in the new contract (without it, the adjoint round-trip would
+// silently still work via |0>-pre, but XOR-into is the documented
+// contract for cleaner caller-side composition).
+static void run_xor_into_case(uint32_t x_val, uint32_t n_val) {
+    assert(x_val < n_val && "test precondition: x < n");
+    sturm::QubitPool::instance().reset_for_testing();
+    const uint32_t n_reg = (W + 1u) + W + 1u;
+    int reserved[n_reg];
+    for (uint32_t k = 0; k < n_reg; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    SimCtx sc{n_orkan, 64u};
+    RegX x   = make_reg_x(0, x_val, sc.sv());
+    RegN n   = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+    RegLT lt = make_reg_lt(static_cast<int>(W + 1u + W));
+    // Pre-flip lt_flag_out to |1> so the forward's XOR is observable.
+    orkan::apply_x(sc.sv(), static_cast<uint32_t>(lt.qi));
+
+    sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(), n.bits.data(), W,
+                                                lt.bit);
+
+    const uint32_t cmp_bit   = (2u * x_val < n_val) ? 1u : 0u;
+    const uint32_t expect_lt = 1u ^ cmp_bit;
+    uint32_t lt_sv = read_reg(sc.sv(), &lt.qi, 1u, n_orkan);
+    assert(lt_sv == expect_lt &&
+           "forward XOR-into: lt_flag_out_post == lt_flag_out_pre XOR "
+           "(2x_orig < n_value)");
+
+    // Cleanup: flip lt back to |0> for LIFO release sanity.
+    if (lt_sv != 0u)
+        orkan::apply_x(sc.sv(), static_cast<uint32_t>(lt.qi));
+
+    for (uint32_t k = 0; k < n_reg; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+}
+
 // ── Beat sturm-wdas.4 — W=3 random sweep harness ─────────────────────────
-// W=3 peaks at ~16-20 live qubits (4 input + ~5 ancillas + transients);
+// W=3 peaks at ~16-20 live qubits (4 input + ~4 ancillas + transients);
 // stays inside orkan's 30-qubit ceiling.  We bypass kMaxQubits=17 cap by
 // calling `orkan::allocate(bridge.state(), n_orkan_w3)` directly (matches
 // the W=3 sweep workaround in test_add_mod_dsl.cpp).
@@ -239,13 +305,12 @@ static RegN3 make_reg_n3(int base, uint32_t val, orkan::state_t& sv) {
 }
 
 // W=3 driver — mirrors run_classical_case but sized for W=3 and uses the
-// bypass-cap simulator.  Asserts x_bits == (2·x) mod n, n unchanged, pool
-// live-count clean.  Pre: x_val < n_val, n_val odd.
+// bypass-cap simulator.  Asserts x_bits == (2·x) mod n, n unchanged,
+// lt_flag_out == (2x_orig < n_value), pool live-count clean.
 static void run_classical_case_w3(uint32_t x_val, uint32_t n_val) {
     assert(x_val < n_val && n_val < (1u << W3));
-    assert((n_val & 1u) == 1u && "test precondition: n is odd");
     sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = (W3 + 1u) + W3;
+    const uint32_t n_reg = (W3 + 1u) + W3 + 1u;
     int reserved[n_reg];
     for (uint32_t k = 0; k < n_reg; ++k)
         reserved[k] = sturm::QubitPool::instance().allocate();
@@ -259,17 +324,21 @@ static void run_classical_case_w3(uint32_t x_val, uint32_t n_val) {
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
     orkan::state_t& sv = bridge.state();
-    RegX3 x = make_reg_x3(0, x_val, sv);
-    RegN3 n = make_reg_n3(static_cast<int>(W3 + 1u), n_val, sv);
+    RegX3 x  = make_reg_x3(0, x_val, sv);
+    RegN3 n  = make_reg_n3(static_cast<int>(W3 + 1u), n_val, sv);
+    RegLT lt = make_reg_lt(static_cast<int>(W3 + 1u + W3));
     sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(), n.bits.data(),
-                                                W3);
-    const uint32_t expect_x = (2u * x_val) % n_val;
+                                                W3, lt.bit);
+    const uint32_t expect_x  = (2u * x_val) % n_val;
+    const uint32_t expect_lt = (2u * x_val < n_val) ? 1u : 0u;
     assert(read_reg(sv, x.qi.data(), W3, n_orkan_w3) == expect_x
            && "W=3: x_bits[0..W-1] == (2x) mod n");
     assert(read_reg(sv, x.qi.data() + W3, 1u, n_orkan_w3) == 0u
            && "W=3: x_bits[W] returned to |0>");
     assert(read_reg(sv, n.qi.data(), W3, n_orkan_w3) == n_val
            && "W=3: n_bits unchanged");
+    assert(read_reg(sv, &lt.qi, 1u, n_orkan_w3) == expect_lt
+           && "W=3: lt_flag_out == (2x_orig < n_value)");
     assert(sturm::QubitPool::instance().in_use() == pre_in_use
            && "W=3: pool live-count returns to pre-call value");
     sturm_set_thread_context(prev);
@@ -281,22 +350,31 @@ static void run_classical_case_w3(uint32_t x_val, uint32_t n_val) {
 int main() {
     std::printf("sturm-wdas.1 double-mod-dsl: n==0 no-op tests:\n");
     run_n_zero_case(/*x=*/1u, /*n=*/3u);
-    std::puts("  PASS: n==0 with x=1, n=3 leaves x and n unchanged");
+    std::puts("  PASS: n==0 with x=1, n=3 leaves x, n, lt_flag_out unchanged");
     run_n_zero_case(/*x=*/0u, /*n=*/0u);
-    std::puts("  PASS: n==0 with x=0, n=0 (all |0>) leaves x and n unchanged");
+    std::puts("  PASS: n==0 with x=0, n=0 (all |0>) leaves x, n, lt_flag_out unchanged");
 
     std::printf("sturm-wdas.2 double-mod-dsl: single classical case:\n");
     run_classical_case(/*x=*/1u, /*n=*/3u);
-    std::puts("  PASS: (2 · 1) mod 3 == 2");
+    std::puts("  PASS: (2 · 1) mod 3 == 2; lt_flag_out == 1 (since 2·1 < 3)");
 
     // sturm-wdas design note #3 — the (n+1)/2 case.
     // For n=3 (odd), (n+1)/2 = 2.  2 · 2 mod 3 = 1, with LSB = 1.  This
     // breaks any naive "halve via shift-right" forward; the conditional-
-    // add-back / lt_flag-uncompute path handles it correctly.
+    // add-back / lt_flag_out path handles it correctly.
     std::printf("sturm-wdas double-mod-dsl: (n+1)/2 LSB-edge case "
                 "(design note #3):\n");
     run_classical_case(/*x=*/2u, /*n=*/3u);
-    std::puts("  PASS: (2 · 2) mod 3 == 1 (LSB=1; design-note-3 edge case)");
+    std::puts("  PASS: (2 · 2) mod 3 == 1 (LSB=1; design-note-3 edge case); "
+              "lt_flag_out == 0 (since 2·2 >= 3)");
+
+    // sturm-4oot.1: lt_flag_out XOR-into semantic.  Pre-flip lt_flag_out
+    // to |1>, run forward, observe accumulation.
+    std::printf("sturm-4oot.1 double-mod-dsl: lt_flag_out XOR-into semantic:\n");
+    run_xor_into_case(/*x=*/1u, /*n=*/3u);
+    std::puts("  PASS: lt_flag_out_pre=1 XORs cleanly with (2·1 < 3)=1 → 0");
+    run_xor_into_case(/*x=*/2u, /*n=*/3u);
+    std::puts("  PASS: lt_flag_out_pre=1 XORs cleanly with (2·2 < 3)=0 → 1");
 
     std::printf("sturm-wdas.3 double-mod-dsl: W=2 exhaustive sweep "
                 "(odd n in [1, 4): n in {1, 3}, all x in [0, n)):\n");
@@ -313,9 +391,7 @@ int main() {
     std::printf("  PASS: %zu W=2 cases covering every (x, n) with x < n, "
                 "n in {1, 3}\n", cases_run);
 
-    // sturm-wdas.4 — W=3 random sweep (50 cases, fixed seed=42).  n is
-    // restricted to odd values in {1, 3, 5, 7} per the forward primitive's
-    // precondition (see double_mod_dsl.hpp).
+    // sturm-wdas.4 — W=3 random sweep (50 cases, fixed seed=42).
     constexpr uint32_t    kW3Seed  = 42u;  // plan §12 risk mitigation
     constexpr std::size_t kW3Cases = 50u;
     std::printf("sturm-wdas.4 double-mod-dsl: W=3 random sweep "
@@ -331,9 +407,10 @@ int main() {
         uint32_t x_val = x_dist(rng);
         run_classical_case_w3(x_val, n_val);
     }
-    std::printf("  PASS: %zu W=3 random cases (2 · x) mod n matches "
-                "classical reference\n", kW3Cases);
+    std::printf("  PASS: %zu W=3 random cases (2 · x) mod n + lt_flag_out "
+                "match classical reference\n", kW3Cases);
 
-    std::printf("All sturm-wdas double-mod-dsl forward tests passed.\n");
+    std::printf("All sturm-wdas/sturm-4oot.1 double-mod-dsl forward tests "
+                "passed.\n");
     return 0;
 }

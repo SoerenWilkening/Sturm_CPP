@@ -139,6 +139,22 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
     for (std::size_t j = 0u; j < n; ++j)
         shifted_bits[j] ^= a_bits[j];
 
+    // (1.5') Re-allocate lt_flags scaffolding in forward order
+    //        (sturm-4oot.1): each inner doubling uses one bit, held
+    //        across forward + uncompute pass.
+    int   lt_flag_idx[kMaxN];
+    qbool lt_flag_own[kMaxN];
+    Bit   lt_flag_bits[kMaxN];
+    if (n > 0u) {
+        for (std::size_t i = 0u; i + 1u < n; ++i) {
+            lt_flag_idx[i]  = QubitPool::instance().allocate();
+            lt_flag_own[i]  = qbool::make_non_owning(lt_flag_idx[i]);
+            lt_flag_own[i].super_mask = 1ULL;
+            lt_flag_bits[i] =
+                detail_mul_mod_oneshot::make_ancilla_view<Bit>(lt_flag_own[i]);
+        }
+    }
+
     // (3') Re-build the forward post-loop state: rebuild shifted_reg
     //      doubling chain and acc_reg sums.  The forward step (6)
     //      iterated i = W-1..0 and ran (undo_double, undo_add).  Reverse
@@ -150,8 +166,11 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
         });
 
         // (3b) Reverse forward step 6a: do the doubling (only at i < W-1).
+        //      Forward post-loop had each lt_flag_bits[i] = 0 (consumed),
+        //      so the doubling here writes the witness back into the
+        //      same slot for the matching consumption in step (5b).
         if (i + 1u < n) {
-            lib_double_mod_dsl(shifted_bits, n_bits, n);
+            lib_double_mod_dsl(shifted_bits, n_bits, n, lt_flag_bits[i]);
         }
     }
 
@@ -161,13 +180,14 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
 
     // (5') Forward step (4) reverse: zero acc_reg, restore shifted_reg
     //      back to a.  For i = W-1..0:
-    //        if i < W-1: undo doubling
+    //        if i < W-1: undo doubling (consumes lt_flag_bits[i])
     //        undo controlled add
     for (std::size_t step = 0u; step < n; ++step) {
         std::size_t i = n - 1u - step;  // i = W-1, W-2, ..., 0.
 
         if (i + 1u < n) {
-            __lib_double_mod_dsl_adj(shifted_bits, n_bits, n);
+            __lib_double_mod_dsl_adj(shifted_bits, n_bits, n,
+                                     lt_flag_bits[i]);
         }
 
         sturm::lift_under(b_bits[i], [&]() {
@@ -178,6 +198,14 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
     // (6') shifted_reg[0..W-1] ^= a (XOR self-inverse: zeros shifted_reg).
     for (std::size_t j = 0u; j < n; ++j)
         shifted_bits[j] ^= a_bits[j];
+
+    // (6'.5) Release lt_flags LIFO (all slots are back to |0>).
+    if (n > 0u) {
+        for (std::size_t step = 0u; step + 1u < n; ++step) {
+            std::size_t i = n - 2u - step;  // i = W-2, W-3, ..., 0.
+            QubitPool::instance().release(lt_flag_idx[i]);
+        }
+    }
 
     // (7') Release acc_reg, then shifted_reg LIFO.
     for (std::size_t j = n + 1u; j-- > 0u;)

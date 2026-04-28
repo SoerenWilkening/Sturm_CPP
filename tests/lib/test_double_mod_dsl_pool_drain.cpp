@@ -1,5 +1,6 @@
 // test_double_mod_dsl_pool_drain.cpp -- Beat B (sturm-wdas) pool live-count
-//                                         round-trip / LIFO release test.
+//                                         round-trip / LIFO release test,
+//                                         post sturm-4oot.1 API rewrite.
 //
 // `QubitPool::instance().in_use()` must return to its pre-call value after
 // every Beat-`sturm-wdas` input — i.e. all transient ancillas are released.
@@ -8,21 +9,23 @@
 //
 // Mirrors `tests/lib/test_add_mod_dsl_pool_drain.cpp` (sturm-yh3d.7) for
 // the in-place doubling primitive.  The W=2 sweep restricts to odd n
-// (n in {1, 3}) per the forward primitive's precondition (see
-// double_mod_dsl.hpp doxygen); each (x, n) input is run inside its own
-// scope and the post-call in_use() is asserted equal to the pre-call
+// (n in {1, 3}) because the issue scope here is the API rewrite only;
+// sturm-4oot.2 extends to even n.  Each (x, n) input is run inside its
+// own scope and the post-call in_use() is asserted equal to the pre-call
 // value, plus a LIFO-recycle witness.
 //
 // LIFO release verification technique
 // -----------------------------------
-// The forward primitive releases ancillas in this order (see
-// double_mod_dsl.hpp step (9)): carry_anc, lt_flag, n_pad.  The LAST
-// release is `n_pad`'s index, which equals `pre_in_use` (the first index
-// allocated after the input registers).  After the call, the next pool
-// `allocate()` must therefore return `pre_in_use`.  Combined with the
-// `in_use() == pre_in_use` assert, this pins both
+// Under sturm-4oot.1, the forward primitive releases ancillas in this
+// order (see double_mod_dsl.hpp step (9)): carry_anc, n_pad.  The LAST
+// release is `n_pad`'s index, which equals `pre_in_use` (the first
+// index allocated after the input registers).  After the call, the
+// next pool `allocate()` must therefore return `pre_in_use`.  Combined
+// with the `in_use() == pre_in_use` assert, this pins both
 //   (a) every transient ancilla was released, and
 //   (b) the release order was LIFO.
+// The previously-internal `lt_flag` is no longer in this LIFO chain
+// (sturm-4oot.1 externalised it as `lt_flag_out`).
 //
 // Coverage shape
 // --------------
@@ -31,7 +34,7 @@
 // running 4 lib_double_mod_dsl calls inside fresh scopes is enough to
 // catch any input-data-dependent leak.  The algorithm's allocation
 // footprint is data-independent (every branch allocates the same
-// n_pad/lt_flag/carry_anc set).
+// n_pad/carry_anc set).
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/detail/lib/double_mod_dsl.hpp"
@@ -96,6 +99,12 @@ struct RegN {
     std::array<sturm::BitProxy, W>  bits;
 };
 
+struct RegLT {
+    int                qi;
+    sturm::qbool       own;
+    sturm::BitProxy    bit;
+};
+
 static RegX make_reg_x(int base, uint32_t val, orkan::state_t& sv) {
     RegX r;
     for (std::size_t i = 0; i < W + 1u; ++i) {
@@ -123,6 +132,14 @@ static RegN make_reg_n(int base, uint32_t val, orkan::state_t& sv) {
     return r;
 }
 
+static RegLT make_reg_lt(int qi_base) {
+    RegLT r;
+    r.qi  = qi_base;
+    r.own = sturm::qbool::make_non_owning(qi_base);
+    r.bit = sturm::BitProxy(r.own);
+    return r;
+}
+
 // Run lib_double_mod_dsl<W> for one (x, n) input inside its own scope, and
 // pin the post-call pool live-count and LIFO-release contract:
 //   1. pool drain: post_in_use == pre_in_use (every transient released)
@@ -133,24 +150,25 @@ static void run_pool_drain_case(uint32_t x_val, uint32_t n_val) {
     assert(x_val < n_val && "test precondition: x < n");
     assert((n_val & 1u) == 1u && "test precondition: n is odd");
     sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = (W + 1u) + W;
+    const uint32_t n_reg = (W + 1u) + W + 1u;
     int reserved[n_reg];
     for (uint32_t k = 0; k < n_reg; ++k)
         reserved[k] = sturm::QubitPool::instance().allocate();
     const int pre_in_use = sturm::QubitPool::instance().in_use();
     {
-        // Inner scope: SimCtx, the two Regs, and every Bit/qbool view they
-        // own go out of scope at the closing brace.  We measure the pool
-        // state INSIDE this scope (right after the call), which is the
-        // strongest assertion: the algorithm itself must drain its
-        // transients before returning, not rely on caller-side destructor
-        // cleanup.
+        // Inner scope: SimCtx, the two Regs, the lt_flag_out, and every
+        // Bit/qbool view they own go out of scope at the closing brace.
+        // We measure the pool state INSIDE this scope (right after the
+        // call), which is the strongest assertion: the algorithm itself
+        // must drain its transients before returning, not rely on
+        // caller-side destructor cleanup.
         SimCtx sc{n_orkan, 128u};
-        RegX x = make_reg_x(0, x_val, sc.sv());
-        RegN n = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+        RegX x   = make_reg_x(0, x_val, sc.sv());
+        RegN n   = make_reg_n(static_cast<int>(W + 1u), n_val, sc.sv());
+        RegLT lt = make_reg_lt(static_cast<int>(W + 1u + W));
 
         sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(),
-                                                    n.bits.data(), W);
+                                                    n.bits.data(), W, lt.bit);
 
         // (1) Pool live-count returns to its pre-call value.
         const int post_in_use = sturm::QubitPool::instance().in_use();
@@ -164,14 +182,19 @@ static void run_pool_drain_case(uint32_t x_val, uint32_t n_val) {
         assert(post_in_use == pre_in_use
                && "lib_double_mod_dsl must drain every transient ancilla");
 
-        // (2) Sanity: correctness alongside the drain pin.
-        const uint32_t expect_x = (2u * x_val) % n_val;
+        // (2) Sanity: correctness alongside the drain pin (including
+        //     the new lt_flag_out contract).
+        const uint32_t expect_x  = (2u * x_val) % n_val;
+        const uint32_t expect_lt = (2u * x_val < n_val) ? 1u : 0u;
         uint32_t x_low = read_reg(sc.sv(), x.qi.data(), W, n_orkan);
         uint32_t x_top = read_reg(sc.sv(), x.qi.data() + W, 1u, n_orkan);
+        uint32_t lt_sv = read_reg(sc.sv(), &lt.qi, 1u, n_orkan);
         assert(x_low == expect_x
                && "drain test sanity: algorithm produced wrong x_bits");
         assert(x_top == 0u
                && "drain test sanity: x_bits[W] not |0> after call");
+        assert(lt_sv == expect_lt
+               && "drain test sanity: lt_flag_out wrong");
 
         // (3) LIFO-release witness: the next allocate() must return
         //     pre_in_use (the first index allocated after the n_reg
@@ -189,9 +212,9 @@ static void run_pool_drain_case(uint32_t x_val, uint32_t n_val) {
 }
 
 int main() {
-    std::printf("sturm-wdas double-mod-dsl: pool live-count round-trip "
-                "(W=2 exhaustive sweep, odd n in [1, 4): n in {1, 3}, "
-                "all x in [0, n)):\n");
+    std::printf("sturm-wdas/sturm-4oot.1 double-mod-dsl: pool live-count "
+                "round-trip (W=2 exhaustive sweep, odd n in [1, 4): "
+                "n in {1, 3}, all x in [0, n)):\n");
     std::size_t cases_run = 0u;
     for (uint32_t n_val = 1u; n_val < (1u << W); n_val += 2u) {  // odd-only
         for (uint32_t x_val = 0u; x_val < n_val; ++x_val) {
@@ -205,6 +228,7 @@ int main() {
     std::printf("  PASS: %zu W=2 cases, every transient ancilla released "
                 "LIFO, pool drain == pre_in_use\n", cases_run);
 
-    std::printf("All sturm-wdas double-mod-dsl pool-drain tests passed.\n");
+    std::printf("All sturm-wdas/sturm-4oot.1 double-mod-dsl pool-drain tests "
+                "passed.\n");
     return 0;
 }

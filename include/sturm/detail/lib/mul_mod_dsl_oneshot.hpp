@@ -194,6 +194,30 @@ inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
 
     // (4) For each bit i of b: optionally add the shifted value, then
     //     double the shifted register (except on the last iteration).
+    //
+    //     sturm-4oot.1 transitional: lib_double_mod_dsl now exports its
+    //     (2x_orig < n_value) comparison bit through an out-parameter.
+    //     We allocate a (W-1)-slot lt_flags array spanning the forward
+    //     pass and the matching uncompute pass; the paired adjoint in
+    //     step (6a) consumes lt_flags[i] and zeros it.  This mirrors
+    //     the lt_flags-register scheme that sturm-4oot.3 will document
+    //     and pin in the header preamble + ancilla budget; the body
+    //     here is the minimum scaffolding needed to keep the routine
+    //     compiling and correct under the new lib_double_mod_dsl
+    //     contract.  See docs/design_even_n_double_mod.md §8.
+    int   lt_flag_idx[kMaxN];
+    qbool lt_flag_own[kMaxN];
+    Bit   lt_flag_bits[kMaxN];
+    if (n > 0u) {
+        for (std::size_t i = 0u; i + 1u < n; ++i) {
+            lt_flag_idx[i]  = QubitPool::instance().allocate();
+            lt_flag_own[i]  = qbool::make_non_owning(lt_flag_idx[i]);
+            lt_flag_own[i].super_mask = 1ULL;
+            lt_flag_bits[i] =
+                detail_mul_mod_oneshot::make_ancilla_view<Bit>(lt_flag_own[i]);
+        }
+    }
+
     for (std::size_t i = 0u; i < n; ++i) {
         // (4a) Controlled add: acc := (acc + shifted) mod n if b[i] = 1.
         //      `shifted_bits` is W+1 wide but lib_add_mod_inplace_dsl
@@ -205,8 +229,10 @@ inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
         });
 
         // (4b) Double the shifted register modulo n (except on i = W-1).
+        //      The (2x_orig < n_value) witness goes into lt_flag_bits[i],
+        //      held across to the matching adjoint in step (6a).
         if (i + 1u < n) {
-            lib_double_mod_dsl(shifted_bits, n_bits, n);
+            lib_double_mod_dsl(shifted_bits, n_bits, n, lt_flag_bits[i]);
         }
     }
 
@@ -222,14 +248,25 @@ inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
         std::size_t i = n - 1u - step;  // i = W-1, W-2, ..., 0.
 
         // (6a) Reverse step 4b: undo the doubling (only present at i < W-1).
+        //      Consumes lt_flag_bits[i] back to |0>.
         if (i + 1u < n) {
-            __lib_double_mod_dsl_adj(shifted_bits, n_bits, n);
+            __lib_double_mod_dsl_adj(shifted_bits, n_bits, n,
+                                     lt_flag_bits[i]);
         }
 
         // (6b) Reverse step 4a: undo the controlled add.
         sturm::lift_under(b_bits[i], [&]() {
             __lib_add_mod_inplace_dsl_adj(shifted_bits, acc_bits, n_bits, n);
         });
+    }
+
+    // (6c) Release the lt_flags scaffolding LIFO.  All slots are |0>
+    //      after step (6a) consumed each in reverse order.
+    if (n > 0u) {
+        for (std::size_t step = 0u; step + 1u < n; ++step) {
+            std::size_t i = n - 2u - step;  // i = W-2, W-3, ..., 0.
+            QubitPool::instance().release(lt_flag_idx[i]);
+        }
     }
 
     // (7) shifted_reg[0..W-1] ^= a_bits[0..W-1]: zeros shifted_reg.

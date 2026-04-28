@@ -21,24 +21,29 @@
 //      = 2x as a (W+1)-bit unsigned integer.
 //   2. Conditional subtract n if the result is ≥ n.  Reuse the trial-
 //      subtract / conditional-add-back idiom from lib_add_mod_dsl steps
-//      6–11: `lib_add_adj(n_ext, s_view, lt_flag, W+1)` (gate-reverse of
-//      unconditional add — flips lt_flag if the subtract underflows),
-//      then `lift_under(lt_flag) { lib_add_dsl(n_ext, s_view, carry_anc,
-//      W+1); }` to add n back when the subtract underflowed.  carry_anc
-//      cleanup: `carry_anc ^= lt_flag` returns it to |0>.  After this the
-//      (W+1)-bit s_view holds (2x mod n) with bit W = 0 (since
-//      (2x mod n) ∈ [0, n) ⊂ [0, 2^W)).
+//      6–11: `lib_add_adj(n_ext, s_view, lt_flag_out, W+1)` (gate-reverse
+//      of unconditional add — flips lt_flag_out if the subtract underflows),
+//      then `lift_under(lt_flag_out_own) { lib_add_dsl(n_ext, s_view,
+//      carry_anc, W+1); }` to add n back when the subtract underflowed.
+//      carry_anc cleanup: `carry_anc ^= lt_flag_out` returns it to |0>.
+//      After this the (W+1)-bit s_view holds (2x mod n) with bit W = 0
+//      (since (2x mod n) ∈ [0, n) ⊂ [0, 2^W)).
 //   3. Rotate the physical x_bits to standard layout via a chain of W
 //      SWAPs (each SWAP = three CNOTs `a^=b; b^=a; a^=b`).  After the
 //      rotation: x_bits[i] holds bit i of (2x mod n) for i in 0..W-1, and
 //      x_bits[W] = 0 (the original x_bits[W-1], which became bit W of the
 //      shifted view, is now zeroed because (2x mod n) < 2^W).
-//   4. Uncompute lt_flag using x_bits[0] (the LSB of the result).  This
-//      step requires n to be ODD: when n is odd, (2x mod n) is even iff
-//      lt_flag = 1 (no reduction was applied) and odd iff lt_flag = 0
-//      (reduction was applied; 2x - n inherits LSB = LSB(n) = 1 since n
-//      is odd).  So `lt_flag ^= x_bits[0]; lt_flag.flip();` clears
-//      lt_flag back to |0>.  PRECONDITION: n must be odd.
+//
+// `lt_flag_out` contract (sturm-4oot.1, even-n-double-mod):
+//   Forward XORs `(2x_orig < n_value)` into the caller-owned `lt_flag_out`
+//   bit (so callers can pre-zero it for a clean write or accumulate into a
+//   pre-existing bit).  This bit is the witness that distinguishes the two
+//   pre-images of `(2x mod n)` when `n_value` is even (the map x → 2x mod n
+//   collapses x and x + n/2 to the same image), and is therefore necessary
+//   for reversibility of the in-place doubling.  For odd `n_value` it is
+//   strictly redundant (the result LSB suffices), but exposing it
+//   uniformly drops the odd-n precondition and avoids an LSB-trick branch
+//   inside the primitive.  See `docs/design_even_n_double_mod.md` §3.
 //
 // Crucially, this primitive does NOT call lib_add_dsl with aliased operands
 // at any point — the only adder use is the unconditional subtract of n
@@ -53,11 +58,12 @@
 //   (x = (n+1)/2 → 2x mod n = 1, LSB = 1) shows that the unconditional
 //   "halve via shift-right" claim is FALSE in general.  The adjoint is
 //   correct ONLY when paired with its forward call (used inside Beat C's
-//   uncompute pass): given x_bits = (2x mod n) — exactly the output of a
-//   paired forward call — the adjoint runs the gate-reverse and restores
-//   x_bits = x_orig.  See `__lib_double_mod_dsl_adj` in the sibling
-//   double_mod_dsl_adj.hpp header for the documented precondition and
-//   the per-step gate-reverse trace.
+//   uncompute pass): given x_bits = (2x mod n) and lt_flag_out = the value
+//   the paired forward wrote, the adjoint runs the gate-reverse and
+//   restores x_bits = x_orig with lt_flag_out = 0 on exit.  See
+//   `__lib_double_mod_dsl_adj` in the sibling double_mod_dsl_adj.hpp
+//   header for the documented precondition and the per-step gate-reverse
+//   trace.
 //
 // Why no `lib_ge_dsl` ancilla?  Same rationale as lib_add_mod_dsl: routing
 // the comparison through a dedicated `ge_flag` would push the live qubit
@@ -106,7 +112,9 @@ inline Bit make_ancilla_view(qbool& owner) {
 }  // namespace detail_double_mod
 
 /**
- * @brief In-place W-bit modular doubling primitive: `x_bits := (2 · x) mod n`.
+ * @brief In-place W-bit modular doubling primitive: `x_bits := (2 · x) mod n`,
+ *        with the comparison bit `(2x_orig < n_value)` exported via
+ *        `lt_flag_out`.
  *
  * This is the lib-level primitive used by Beat C (sturm-7cix) to rewrite
  * `lib_mul_mod_dsl` onto a single accumulator + single shifted register
@@ -116,32 +124,37 @@ inline Bit make_ancilla_view(qbool& owner) {
  * lib_add_dsl/lib_add_adj primitives).  See the header preamble for the
  * full algorithm.
  *
- * @param x_bits Input/output register of length `n + 1` qubits.  On
- *               entry `x_bits[0..n-1]` holds the value `x` in [0, n_value)
- *               and `x_bits[n]` (the overflow slot) is |0>.  On exit
- *               `x_bits[0..n-1]` holds `(2 · x) mod n_value` in [0,
- *               n_value) and `x_bits[n]` is |0>.
- * @param n_bits Modulus register (n qubits, read but restored).  Encodes
- *               the modulus value `n_value` in [1, 2^n).
- * @param n      Register width (NOT the modulus value; the modulus is
- *               encoded in `n_bits[0..n-1]`).  `n == 0` short-circuits
- *               to a no-op (matches PRD §5 / §8 #3).
+ * @param x_bits      Input/output register of length `n + 1` qubits.  On
+ *                    entry `x_bits[0..n-1]` holds the value `x` in
+ *                    [0, n_value) and `x_bits[n]` (the overflow slot) is
+ *                    |0>.  On exit `x_bits[0..n-1]` holds `(2 · x) mod
+ *                    n_value` in [0, n_value) and `x_bits[n]` is |0>.
+ * @param n_bits      Modulus register (n qubits, read but restored).
+ *                    Encodes the modulus value `n_value` in [1, 2^n).
+ * @param n           Register width (NOT the modulus value; the modulus
+ *                    is encoded in `n_bits[0..n-1]`).  `n == 0`
+ *                    short-circuits to a no-op (matches PRD §5 / §8 #3).
+ * @param lt_flag_out Caller-owned 1-qubit register receiving the
+ *                    comparison bit `(2x_orig < n_value)` via XOR.  The
+ *                    routine writes `lt_flag_out ^= (2x_orig < n_value)`
+ *                    so callers can pre-zero (clean write) or accumulate
+ *                    into an existing bit.  This bit must be preserved
+ *                    by the caller until the paired
+ *                    `__lib_double_mod_dsl_adj` consumes it.
  *
  * @pre `x ∈ [0, n_value)` and `n_value ≥ 1` (when `n == 0`, the call is a
  *      no-op).  `x_bits[n]` must enter the routine in |0>.  `x_bits` and
  *      `n_bits` must refer to physically distinct qubit registers.
- * @pre `n_value` must be **odd** — the lt_flag uncomputation step uses
- *      `x_bits[0]` (the result LSB) which is well-defined only when n is
- *      odd; for even n the LSB is always 0 and lt_flag cannot be cleaned
- *      up via a local XOR.  The Shor's-algorithm / ECC use cases have
- *      odd n (the integer to factor with factors of 2 removed; the curve
- *      order, typically prime).  For even n the call leaves lt_flag in
- *      a data-dependent state and the function does not return cleanly.
+ *      `lt_flag_out` must refer to a physically distinct qubit not in
+ *      `x_bits` or `n_bits`.  No parity restriction on `n_value`: this
+ *      primitive handles even and odd moduli uniformly via the
+ *      caller-owned `lt_flag_out` (see header preamble and
+ *      `docs/design_even_n_double_mod.md`).
  *
  * @par Behavior on precondition violation
  * The library does **not** check the precondition.  Calling
  * `lib_double_mod_dsl` with `x` outside `[0, n_value)`, with `x_bits[n]`
- * not in |0>, or with `n_value` even is **undefined behavior** — the
+ * not in |0>, or with aliased registers is **undefined behavior** — the
  * routine still emits a well-formed gate sequence, but `x_bits` is not
  * the mathematical answer and the input registers may not be restored.
  * This matches the trust model of the sibling `lib_add_mod_dsl`
@@ -149,9 +162,11 @@ inline Bit make_ancilla_view(qbool& owner) {
  *
  * @sa __lib_double_mod_dsl_adj, lib_add_mod_dsl, lib_mul_mod_dsl
  * @see PRD §5 (Trust model and precondition contract).
+ * @see docs/design_even_n_double_mod.md (sturm-fya1 / sturm-4oot.1).
  */
 template <typename Bit>
-inline void lib_double_mod_dsl(Bit* x_bits, Bit* n_bits, std::size_t n) {
+inline void lib_double_mod_dsl(Bit* x_bits, Bit* n_bits, std::size_t n,
+                               Bit& lt_flag_out) {
     if (n == 0u) return;
 
     static constexpr std::size_t kMaxN = 32u;
@@ -170,15 +185,10 @@ inline void lib_double_mod_dsl(Bit* x_bits, Bit* n_bits, std::size_t n) {
     for (std::size_t i = 0u; i < n; ++i) n_ext[i] = n_bits[i];
     n_ext[n] = n_pad;
 
-    // (2) Allocate lt_flag and carry_anc (both |0>).
-    int   lt_flag_idx     = QubitPool::instance().allocate();
-    qbool lt_flag_own     = qbool::make_non_owning(lt_flag_idx);
-    // lt_flag receives a data-dependent comparison bit at step (4); mark
-    // its qbool anchor as superposed so the lift pattern's
-    // `(*outer) & lt_flag_own` and `WHEN(lt_flag_own)` take the quantum
-    // branch instead of being short-circuited as classical |0>.
-    lt_flag_own.super_mask = 1ULL;
-    Bit   lt_flag         = detail_double_mod::make_ancilla_view<Bit>(lt_flag_own);
+    // (2) Allocate carry_anc (|0>).  The lt_flag bit is now caller-owned
+    //     (sturm-4oot.1): the forward XORs the comparison witness into
+    //     lt_flag_out and the adjoint reads it back, so no internal
+    //     allocation is needed and the routine becomes parity-agnostic.
     int   carry_anc_idx   = QubitPool::instance().allocate();
     qbool carry_anc_own   = qbool::make_non_owning(carry_anc_idx);
     Bit   carry_anc       = detail_double_mod::make_ancilla_view<Bit>(carry_anc_own);
@@ -192,23 +202,27 @@ inline void lib_double_mod_dsl(Bit* x_bits, Bit* n_bits, std::size_t n) {
     for (std::size_t i = 1u; i <= n; ++i) s_view[i] = x_bits[i - 1u];
 
     // (4) Gate-reverse of unconditional add: subtract n_ext from s_view.
-    //     Side-effect: lt_flag ^= (s_view_old < n_ext) = (2x < n).
-    detail_div::lib_add_adj(n_ext, s_view, lt_flag, n + 1u);
+    //     Side-effect: lt_flag_out ^= (s_view_old < n_ext) = (2x < n).
+    detail_div::lib_add_adj(n_ext, s_view, lt_flag_out, n + 1u);
 
-    // (5) Conditional add-back of n_ext controlled on lt_flag.  When
-    //     lt_flag=1, restores s_view to s_view_old (= 2x mod 2^(n+1) = 2x);
-    //     when lt_flag=0, no-op and s_view stays at (2x - n).  In both
-    //     cases the low n bits of s_view = (2x mod n).
-    sturm::lift_under(lt_flag_own, [&]() {
+    // (5) Conditional add-back of n_ext controlled on lt_flag_out.  When
+    //     lt_flag_out=1, restores s_view to s_view_old (= 2x mod 2^(n+1)
+    //     = 2x); when lt_flag_out=0, no-op and s_view stays at (2x - n).
+    //     In both cases the low n bits of s_view = (2x mod n).  The shared
+    //     `lift_under(Bit&, body)` overload promotes lt_flag_out to a
+    //     quantum qubit (if it isn't already), wraps it in a super_mask=1
+    //     qbool view, and runs the body under WhenGuard.
+    sturm::lift_under(lt_flag_out, [&]() {
         lib_add_dsl(n_ext, s_view, carry_anc, n + 1u);
     });
 
-    // (6) carry_anc ^= lt_flag  ->  carry_anc returns to 0 in both
-    //     branches.  When lt_flag=1, the controlled add-back caused a
-    //     (n+1)-bit overflow (s_view wrapped from 2x - n + 2^(n+1) back
-    //     to 2x), so carry_anc was set to 1 by the add; XORing with
-    //     lt_flag = 1 clears it.  When lt_flag=0, both sides are 0.
-    carry_anc ^= lt_flag;
+    // (6) carry_anc ^= lt_flag_out  ->  carry_anc returns to 0 in both
+    //     branches.  When lt_flag_out=1, the controlled add-back caused
+    //     a (n+1)-bit overflow (s_view wrapped from 2x - n + 2^(n+1)
+    //     back to 2x), so carry_anc was set to 1 by the add; XORing
+    //     with lt_flag_out = 1 clears it.  When lt_flag_out=0, both
+    //     sides are 0.
+    carry_anc ^= lt_flag_out;
 
     // (7) Rotate physical x_bits to standard layout via a chain of n
     //     SWAPs (each SWAP = three CNOTs `a^=b; b^=a; a^=b`).  Pre-
@@ -222,18 +236,16 @@ inline void lib_double_mod_dsl(Bit* x_bits, Bit* n_bits, std::size_t n) {
         x_bits[i] ^= x_bits[n];
     }
 
-    // (8) Uncompute lt_flag using x_bits[0] = bit_0 of (2x mod n).
-    //     For odd n: bit_0 of (2x mod n) = 0 iff lt_flag = 1 (no
-    //     reduction; 2x is always even), and bit_0 = 1 iff lt_flag = 0
-    //     (reduction; 2x - n inherits LSB = LSB(n) = 1 since n odd).
-    //     So `lt_flag ^= x_bits[0]; lt_flag.flip();` always clears
-    //     lt_flag.  PRECONDITION: n_value is odd (see header doxygen).
-    lt_flag ^= x_bits[0];
-    lt_flag.flip();
+    // (8) [REMOVED in sturm-4oot.1] The LSB-trick uncompute of lt_flag
+    //     (`lt_flag ^= x_bits[0]; lt_flag.flip()`) is gone — lt_flag is
+    //     now caller-owned (`lt_flag_out`) and the comparison bit is
+    //     intentionally left in `lt_flag_out` for the caller / paired
+    //     adjoint to consume.  This is the change that drops the odd-n
+    //     precondition.
 
-    // (9) Release ancillas LIFO (carry_anc, lt_flag, n_pad).
+    // (9) Release ancillas LIFO (carry_anc, n_pad).  lt_flag_out is
+    //     caller-owned and is NOT released here.
     QubitPool::instance().release(carry_anc_idx);
-    QubitPool::instance().release(lt_flag_idx);
     QubitPool::instance().release(n_pad_idx);
 }
 
