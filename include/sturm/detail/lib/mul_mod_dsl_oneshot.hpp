@@ -21,6 +21,10 @@
 //   3. Allocate acc_reg[0..W] (W+1 qubits).  All in |0>.  Bits 0..W-1 = the
 //      running accumulator value `acc` in [0, n_value); bit W is the overflow
 //      slot expected by lib_add_mod_inplace_dsl.
+//   3b. Allocate lt_flags[0..W-2] (W-1 qubits, all |0>).  One bit per inner
+//       doubling, held across the forward pass and the reverse uncompute
+//       pass to feed each `__lib_double_mod_dsl_adj`.  Pool allocation
+//       guarantees the |0> entry condition; see precondition note below.
 //   4. for i = 0..W-1:
 //        4a. lift_under(b_bits[i]) {
 //              lib_add_mod_inplace_dsl(shifted_reg, acc_reg, n_bits, W);
@@ -30,40 +34,44 @@
 //            // restores it.  acc_reg's bit W is the (W+1)-bit dest's overflow
 //            // slot per Beat A's contract.
 //        4b. if i < W-1:
-//              lib_double_mod_dsl(shifted_reg, n_bits, W);
-//              // shifted := (2 * shifted) mod n, in-place, requires n odd.
+//              lib_double_mod_dsl(shifted_reg, n_bits, W, lt_flags[i]);
+//              // shifted := (2 * shifted) mod n; the witness
+//              //   `(2·shifted_orig < n_value)` is XOR-written into
+//              //   lt_flags[i] and held across to the matching adjoint in
+//              //   step (6a).  As of sturm-4oot.1 the inner doubling is
+//              //   parity-agnostic.
 //   5. for j in 0..W-1: r_bits[j] ^= acc_reg[j]      (write the answer)
 //
 //   6. Uncompute (gate-reverse of step 4):
 //      for i = W-1..0:
 //        6a. if i < W-1:
-//              __lib_double_mod_dsl_adj(shifted_reg, n_bits, W);
+//              __lib_double_mod_dsl_adj(shifted_reg, n_bits, W, lt_flags[i]);
+//              // consumes lt_flags[i] back to |0>.
 //        6b. lift_under(b_bits[i]) {
 //              __lib_add_mod_inplace_dsl_adj(shifted_reg, acc_reg, n_bits, W);
 //            }
-//      After the loop, shifted_reg holds a (the original copy) and acc_reg
-//      is back to |0>.
+//      After the loop: shifted_reg = a, acc_reg = |0>, every lt_flags[i]
+//      = |0> (consumed in reverse order by the matched adjoint calls).
+//   6c. Release lt_flags LIFO.
 //   7. shifted_reg[0..W-1] ^= a_bits[0..W-1]   (XOR-uncopy; zeros shifted_reg)
 //   8. Release acc_reg, then shifted_reg LIFO.
 //
-// Total internal qubits at peak ≈ (W+1) [shifted] + (W+1) [acc] + 5
-// [lib_add_mod_inplace_dsl interior] + 1 [lift_under(b[i]) AND ancilla]
-// = 2W + 8.  This matches the issue's "≈ 4W + 10" estimate (the 4W counts
-// the 4·W input registers, our 2W counts only the algorithm's own ancillas).
-// Compared to the chain implementation's `2W² + W + 7` peak, the savings
-// at W=14 are 2·196 + 14 + 7 - (2·14 + 8) = 413 - 36 = 377 qubits.  See
-// `test_mul_mod_dsl_oneshot_ancilla.cpp` for the regression-pinned bound.
+// Total internal qubits at peak (sturm-4oot.3) ≈ (W+1) [shifted] + (W+1)
+// [acc] + (W−1) [lt_flags] + 5 [lib_add_mod_inplace_dsl interior peak]
+// + 1 [lift_under(b[i]) AND ancilla] = 3W + 7.  Pre-fix peak (Beat C as
+// originally landed) was 2W + 8; sturm-4oot.1 + sturm-4oot.3 added
+// (W−1) for `lt_flags` here and removed 1 from the inner double_mod's
+// internal `lt_flag`, net + (W − 2) qubits across both layers in
+// exchange for a parity-agnostic doubling primitive.  See
+// docs/design_even_n_double_mod.md §8 row 2; the pinned bound lives in
+// `test_mul_mod_dsl_oneshot_ancilla.cpp`.  Compared to the chain
+// implementation's `2W² + W + 7` peak, savings at W=14 are 413 − 49 =
+// 364 qubits — same asymptotic class change (O(W²) → O(W)).
 //
-// Precondition — ODD n only.  `lib_double_mod_dsl` (Beat B) requires
-// `n_value` to be odd; for even `n_value` its lt_flag uncompute step
-// (`lt_flag ^= x_bits[0]; lt_flag.flip()`) reads a 0-bit (since 2x and
-// 2x-n are both even when n is even) and leaves lt_flag dirty.  The
-// helper here therefore inherits the same precondition.  The DISPATCH
-// in `lib_mul_mod_dsl` (mul_mod_dsl.hpp) reads `n_bits[0].bit_value()`
-// classically; if the modulus is hinted odd this oneshot helper is
-// invoked, otherwise the chain helper handles even-n moduli (sturm-7cix
-// resolves the design-question by Option A — runtime fallback to the
-// O(W^2) chain when n parity is unknown or even).
+// Precondition — see @pre below.  This layer still requires `n_value`
+// odd; sturm-4oot.1 made the doubling primitive itself parity-agnostic,
+// but lifting this layer's odd-n restriction is sturm-4oot.4's
+// explicit job (which extends the tests to even n).
 //
 // Aliasing — the XOR-copy `shifted_reg ^= a_bits` happens before any
 // inner add/double call, so the algorithm naturally handles the
@@ -112,11 +120,12 @@ inline Bit make_ancilla_view(qbool& owner) {
  * @brief O(W)-ancilla helper for `lib_mul_mod_dsl` when `n` is ODD.
  *
  * This helper is the "oneshot" implementation of modular multiplication
- * referenced by sturm-7cix Beat C: a single (W+1)-bit shifted register
- * and a single (W+1)-bit accumulator, updated in-place via Beat A
+ * referenced by sturm-7cix Beat C: a single (W+1)-bit shifted register,
+ * a single (W+1)-bit accumulator, and a (W-1)-bit `lt_flags` register
+ * (one bit per inner doubling), updated in-place via Beat A
  * (`lib_add_mod_inplace_dsl`) and Beat B (`lib_double_mod_dsl`) primitives.
- * Total internal qubits at peak ≈ `2W + 8`, an O(W) bound that replaces
- * the chain implementation's `2W² + W + 7` peak.
+ * Total internal qubits at peak ≈ `3W + 7` (post sturm-4oot.3), an O(W)
+ * bound that replaces the chain implementation's `2W² + W + 7` peak.
  *
  * Built strictly on top of `lib_add_mod_inplace_dsl` and
  * `lib_double_mod_dsl` per the PRD §4 layering rule — emits no gates
@@ -132,11 +141,17 @@ inline Bit make_ancilla_view(qbool& owner) {
  *               On exit, holds `(a * b) mod n_value`.
  *
  * @pre `a, b ∈ [0, n_value)`, `n_value ≥ 1`, **AND `n_value` MUST be odd**
- *      (inherited from `lib_double_mod_dsl`'s precondition; see double_mod_dsl.hpp).
- *      `a_bits`, `n_bits`, and `r_bits` must refer to physically distinct
- *      qubit registers.  `a_bits` and `b_bits` may alias (the XOR-copy
- *      step makes a separate physical `shifted_reg`, naturally handling
- *      the squaring case used by `lib_pow_mod_dsl`).
+ *      (inherited from this layer's existing odd-n precondition; the
+ *      inner `lib_double_mod_dsl` is itself parity-agnostic as of
+ *      sturm-4oot.1, so lifting this layer's restriction is the
+ *      explicit subject of sturm-4oot.4).  `a_bits`, `n_bits`, and
+ *      `r_bits` must refer to physically distinct qubit registers.
+ *      `a_bits` and `b_bits` may alias (the XOR-copy step makes a
+ *      separate physical `shifted_reg`, naturally handling the squaring
+ *      case used by `lib_pow_mod_dsl`).  The internal (W-1)-bit
+ *      `lt_flags` register is allocated from the qubit pool and is
+ *      guaranteed to enter the routine in |0> by the pool contract; it
+ *      is consumed back to |0> and released LIFO before exit.
  *
  * @par Behavior on precondition violation
  * The library does **not** check the precondition.  Calling
@@ -149,6 +164,7 @@ inline Bit make_ancilla_view(qbool& owner) {
  * @sa __lib_mul_mod_dsl_oneshot_adj, lib_add_mod_inplace_dsl,
  *     lib_double_mod_dsl, lib_mul_mod_dsl
  * @see PRD §5 (Trust model and precondition contract).
+ * @see docs/design_even_n_double_mod.md §8 row 2 (sturm-4oot.3).
  */
 template <typename Bit>
 inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
@@ -192,19 +208,15 @@ inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
             detail_mul_mod_oneshot::make_ancilla_view<Bit>(acc_own[j]);
     }
 
-    // (4) For each bit i of b: optionally add the shifted value, then
-    //     double the shifted register (except on the last iteration).
-    //
-    //     sturm-4oot.1 transitional: lib_double_mod_dsl now exports its
-    //     (2x_orig < n_value) comparison bit through an out-parameter.
-    //     We allocate a (W-1)-slot lt_flags array spanning the forward
-    //     pass and the matching uncompute pass; the paired adjoint in
-    //     step (6a) consumes lt_flags[i] and zeros it.  This mirrors
-    //     the lt_flags-register scheme that sturm-4oot.3 will document
-    //     and pin in the header preamble + ancilla budget; the body
-    //     here is the minimum scaffolding needed to keep the routine
-    //     compiling and correct under the new lib_double_mod_dsl
-    //     contract.  See docs/design_even_n_double_mod.md §8.
+    // (3b) Allocate the (W-1)-bit lt_flags register.  Each
+    //      lib_double_mod_dsl call in step (4b) writes its `(2·shifted_orig
+    //      < n_value)` witness into lt_flags[i], held across to the
+    //      matched __lib_double_mod_dsl_adj in step (6a).  Pool allocation
+    //      guarantees the |0> entry condition required by the doubling
+    //      primitive's caller-owned-XOR-into contract — see
+    //      double_mod_dsl.hpp / docs/design_even_n_double_mod.md §3 + §8
+    //      row 2.  The register is released LIFO in step (6c) after
+    //      every slot has been consumed back to |0>.
     int   lt_flag_idx[kMaxN];
     qbool lt_flag_own[kMaxN];
     Bit   lt_flag_bits[kMaxN];
@@ -217,6 +229,9 @@ inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
                 detail_mul_mod_oneshot::make_ancilla_view<Bit>(lt_flag_own[i]);
         }
     }
+
+    // (4) For each bit i of b: optionally add the shifted value, then
+    //     double the shifted register (except on the last iteration).
 
     for (std::size_t i = 0u; i < n; ++i) {
         // (4a) Controlled add: acc := (acc + shifted) mod n if b[i] = 1.

@@ -2,15 +2,21 @@
 //                                          budget assertion for the new
 //                                          O(W) oneshot path.
 //
-// The oneshot algorithm allocates a (W+1)-bit shifted register and a
-// (W+1)-bit accumulator above the 4·W input registers, plus the
-// ancillas the inner Beat-A and Beat-B primitives consume during their
-// peak step.  Beat A's peak is constant 5; Beat B's peak is constant 5.
-// The dominant cost is therefore the two (W+1)-qubit registers,
-// yielding a peak above the 4·W inputs of:
+// The oneshot algorithm allocates a (W+1)-bit shifted register, a
+// (W+1)-bit accumulator, and a (W-1)-bit `lt_flags` register above the
+// 4·W input registers, plus the ancillas the inner Beat-A and Beat-B
+// primitives consume during their peak step.  Beat A's peak is
+// constant 5; Beat B's peak is constant 4 (post sturm-4oot.1, after
+// the internal `lt_flag` was externalised — see
+// docs/design_even_n_double_mod.md §8 row 1).  The dominant cost is
+// therefore the two (W+1)-qubit registers plus the (W-1)-bit
+// `lt_flags`, yielding a peak above the 4·W inputs of:
 //
-//   peak_oneshot ≈ 2·(W + 1) + 5 [Beat A interior] + 1 [lift_under fold]
-//                = 2·W + 8
+//   peak_oneshot ≈ 2·(W + 1) [shifted + acc]
+//                 + (W - 1)   [lt_flags register, sturm-4oot.3]
+//                 + 5         [Beat A interior peak]
+//                 + 1         [lift_under(b_bits[i]) fold ancilla]
+//                = 3·W + 7
 //
 // at the moment the inner `lib_add_mod_inplace_dsl` is mid-flight under
 // the `lift_under(b_bits[i])` body.  This is **independent of the chain
@@ -19,10 +25,16 @@
 // header in `include/sturm/detail/lib/mul_mod_dsl_oneshot.hpp` for the
 // algorithm summary and ancilla breakdown.
 //
-// PRD §6.4 `W + O(1)` requirement is met by `2W + 8` (still linear).
-// The plan-level `2W + 5` literal target is exceeded by a small constant
-// (3); this is consistent with the gap add-mod beat 1.6 / double-mod
-// (sturm-wdas) hit between plan literals and the achieved bound.
+// PRD §6.4 `W + O(1)` requirement is met by `3W + 7` (still linear).
+//
+// Pre-fix peak was `2W + 8` (with the doubling primitive's internal
+// `lt_flag` ancilla); sturm-4oot.3 raises this layer's peak by `(W-1)`
+// (the new lt_flags register at this layer) and lowers the inner
+// double_mod peak by `1` (its own lt_flag externalised).  Net total
+// across the two layers grows by `W − 2` qubits; in exchange the
+// doubling primitive — and therefore this oneshot helper — becomes
+// parity-agnostic, dropping the odd-n precondition.  See
+// docs/design_even_n_double_mod.md §8 row 2.
 //
 // Measurement technique mirrors test_double_mod_dsl_ancilla.cpp:
 // snapshot QubitPool::high_water() after the call and subtract pre-call
@@ -45,9 +57,10 @@
 
 // Achieved peak ancilla footprint of `lib_mul_mod_dsl_oneshot<W>`, in
 // qubits above the 4·W input registers.  See file-header analysis:
-// 2·(W+1) [shifted + acc] + 5 [Beat A interior peak] + 1 [lift_under fold]
-// = 2W + 8.  PRD `W + O(1)` requirement is met (linear in W).
-static constexpr int kOneshotAncillaSlack(int W) { return 2 * W + 8; }
+// 2·(W+1) [shifted + acc] + (W-1) [lt_flags register, sturm-4oot.3]
+// + 5 [Beat A interior peak] + 1 [lift_under fold] = 3W + 7.
+// PRD `W + O(1)` requirement is met (linear in W).
+static constexpr int kOneshotAncillaSlack(int W) { return 3 * W + 7; }
 
 template <std::size_t W>
 static int peak_ancilla_oneshot_for(uint32_t a_val, uint32_t b_val,
@@ -114,8 +127,8 @@ int main() {
     {
         constexpr std::size_t W       = 2u;
         constexpr int        kBudget  = kOneshotAncillaSlack(static_cast<int>(W));
-        std::printf("sturm-7cix Beat C oneshot: peak ancilla bound "
-                    "<= 2W + 8 (W=%zu, budget=%d):\n", W, kBudget);
+        std::printf("sturm-7cix/sturm-4oot.3 oneshot: peak ancilla bound "
+                    "<= 3W + 7 (W=%zu, budget=%d):\n", W, kBudget);
         const int peak = peak_ancilla_oneshot_for<W>(/*a=*/2u, /*b=*/2u,
                                                      /*n=*/3u);
         std::printf("  measured peak = %d ancillas above %u inputs\n",
@@ -129,8 +142,8 @@ int main() {
     {
         constexpr std::size_t W       = 3u;
         constexpr int        kBudget  = kOneshotAncillaSlack(static_cast<int>(W));
-        std::printf("sturm-7cix Beat C oneshot: peak ancilla bound "
-                    "<= 2W + 8 (W=%zu, budget=%d):\n", W, kBudget);
+        std::printf("sturm-7cix/sturm-4oot.3 oneshot: peak ancilla bound "
+                    "<= 3W + 7 (W=%zu, budget=%d):\n", W, kBudget);
         const int peak = peak_ancilla_oneshot_for<W>(/*a=*/2u, /*b=*/3u,
                                                      /*n=*/5u);
         std::printf("  measured peak = %d ancillas above %u inputs\n",

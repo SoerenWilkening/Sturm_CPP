@@ -9,33 +9,47 @@
 // `lib_double_mod_dsl` for `__lib_double_mod_dsl_adj`; self-inverse XOR
 // steps stay as-is.
 //
-// Re-allocation order for `shifted_reg` and `acc_reg` matches the forward
-// exactly so that, under TDD harnesses calling `reset_for_testing()`
-// between cases, the QubitPool's LIFO reuses the same indices.  Even when
-// the adjoint runs back-to-back with the forward (no reset), the
-// operations only touch ancillas the adjoint owns, so the order matters
-// only for LoC parity (mirrors `add_mod_dsl_adj.hpp`'s pattern).
+// Re-allocation order for `shifted_reg`, `acc_reg`, and the `lt_flags`
+// register matches the forward exactly so that, under TDD harnesses
+// calling `reset_for_testing()` between cases, the QubitPool's LIFO
+// reuses the same indices.  Even when the adjoint runs back-to-back
+// with the forward (no reset), the operations only touch ancillas the
+// adjoint owns, so the order matters only for LoC parity (mirrors
+// `add_mod_dsl_adj.hpp`'s pattern).
+//
+// Ancilla peak ≈ 3W + 7 (sturm-4oot.3): same accounting as the forward
+// — see mul_mod_dsl_oneshot.hpp's preamble and
+// `test_mul_mod_dsl_oneshot_ancilla.cpp` for the pinned bound.
 //
 // Algorithm — gate-reverse of mul_mod_dsl_oneshot.hpp's steps 1-8:
 //   1'. Re-allocate shifted_reg[0..W] and acc_reg[0..W] in forward order.
 //   2'. shifted_reg[0..W-1] ^= a_bits[0..W-1]  (XOR self-inverse: now
 //       shifted_reg[0..W-1] = a, shifted_reg[W] = 0).
+//   2'b. Re-allocate lt_flags[0..W-2] in forward order (one bit per
+//        inner doubling, all |0> by pool contract — same precondition
+//        as the forward).
 //   3'. Forward step (6) was the uncompute loop; its reverse rebuilds
 //       shifted_reg/acc_reg from |0>+a back to the post-loop state.
 //       Iterate i = 0..W-1 (the forward uncompute went W-1..0):
 //         3a. Run lift_under(b[i]) { lib_add_mod_inplace_dsl(...); }
 //             — gate-reverse of forward step 6b.
-//         3b. If i < W-1: lib_double_mod_dsl(shifted_reg, n)
+//         3b. If i < W-1: lib_double_mod_dsl(shifted_reg, n, lt_flags[i])
 //             — gate-reverse of forward step 6a (which was
-//             __lib_double_mod_dsl_adj).
+//             __lib_double_mod_dsl_adj).  Writes the (2·shifted_orig
+//             < n_value) witness back into lt_flags[i] for the matched
+//             consumption in step (5'a).
 //       After the loop: shifted_reg = (a · 2^(W-1)) mod n with bit W = 0,
-//       and acc_reg[0..W-1] = (a*b) mod n.
+//       acc_reg[0..W-1] = (a*b) mod n, and each lt_flags[i] holds the
+//       same witness the forward's pre-uncompute pass had stored.
 //   4'. r_bits[j] ^= acc_reg[j]   (XOR self-inverse: zeros r_bits).
 //   5'. Forward loop step (4) reverse: zero acc_reg back to |0> and
-//       shifted_reg back to a.  Iterate i = W-1..0:
-//         5a. If i < W-1: __lib_double_mod_dsl_adj(shifted_reg, n).
+//       shifted_reg back to a, consuming each lt_flags[i] back to |0>.
+//       Iterate i = W-1..0:
+//         5a. If i < W-1: __lib_double_mod_dsl_adj(shifted_reg, n,
+//                                                  lt_flags[i]).
 //         5b. lift_under(b[i]) { __lib_add_mod_inplace_dsl_adj(...); }
 //   6'. shifted_reg[0..W-1] ^= a_bits   (XOR self-inverse: zeros shifted_reg).
+//   6'b. Release lt_flags LIFO (every slot is back to |0>).
 //   7'. Release acc_reg, then shifted_reg LIFO.
 //
 // STURM_REGISTER_ADJOINT at the bottom hooks
@@ -81,7 +95,12 @@ namespace sturm {
  *
  * Built strictly on top of `lib_add_mod_inplace_dsl` and
  * `lib_double_mod_dsl` (and their adjoints) per the PRD §4 layering
- * rule — emits no gates of its own.
+ * rule — emits no gates of its own.  Re-allocates the same internal
+ * (W-1)-bit `lt_flags` register the forward used (also from the qubit
+ * pool, also guaranteed |0> at entry by the pool contract); each slot
+ * is written by the inner `lib_double_mod_dsl` of step (3'b) and
+ * consumed back to |0> by the matching `__lib_double_mod_dsl_adj` of
+ * step (5'a).  See preamble for the full step trace.
  *
  * @param a_bits Left factor register (W qubits, read but restored).
  * @param b_bits Right factor register (W qubits, read but restored).
@@ -91,14 +110,24 @@ namespace sturm {
  *               `(a * b) mod n`; exits in |0>.
  *
  * @pre `a, b ∈ [0, n_value)`, `n_value ≥ 1`, **AND `n_value` MUST be odd**
- *      (matches the forward's precondition; inherited from
- *      `lib_double_mod_dsl`).  `r_bits` must enter holding the value
+ *      (matches the forward's precondition; this layer's restriction
+ *      is inherited from sturm-7cix's original Beat C contract — the
+ *      doubling primitive itself is parity-agnostic as of sturm-4oot.1,
+ *      and lifting this layer's odd-n restriction is the explicit
+ *      subject of sturm-4oot.4).  `r_bits` must enter holding the value
  *      produced by a paired `lib_mul_mod_dsl_oneshot` call on the same
- *      `(a_bits, b_bits, n_bits)` operands.
+ *      `(a_bits, b_bits, n_bits)` operands.  The internal (W-1)-bit
+ *      `lt_flags` register is re-allocated from the qubit pool and is
+ *      guaranteed to enter the routine in |0> by the pool contract
+ *      (matching the forward's entry-time precondition); each slot is
+ *      written by step (3'b)'s `lib_double_mod_dsl` call and consumed
+ *      back to |0> by step (5'a)'s `__lib_double_mod_dsl_adj`, with
+ *      the register released LIFO before exit.
  *
  * @sa lib_mul_mod_dsl_oneshot, __lib_add_mod_inplace_dsl_adj,
  *     __lib_double_mod_dsl_adj
  * @see PRD §5 (Trust model and precondition contract).
+ * @see docs/design_even_n_double_mod.md §8 row 2 (sturm-4oot.3).
  */
 template <typename Bit>
 inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
@@ -139,9 +168,13 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
     for (std::size_t j = 0u; j < n; ++j)
         shifted_bits[j] ^= a_bits[j];
 
-    // (1.5') Re-allocate lt_flags scaffolding in forward order
-    //        (sturm-4oot.1): each inner doubling uses one bit, held
-    //        across forward + uncompute pass.
+    // (2'b) Re-allocate the (W-1)-bit lt_flags register in forward
+    //       order.  Each slot enters in |0> by the qubit-pool
+    //       contract, matching the forward's entry-time precondition
+    //       (sturm-4oot.3).  Slot i is written by the
+    //       lib_double_mod_dsl call inside step (3'b), held across to
+    //       step (5'a)'s matched __lib_double_mod_dsl_adj which
+    //       consumes it back to |0>.  Released LIFO in step (6'b).
     int   lt_flag_idx[kMaxN];
     qbool lt_flag_own[kMaxN];
     Bit   lt_flag_bits[kMaxN];
@@ -199,7 +232,7 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
     for (std::size_t j = 0u; j < n; ++j)
         shifted_bits[j] ^= a_bits[j];
 
-    // (6'.5) Release lt_flags LIFO (all slots are back to |0>).
+    // (6'b) Release lt_flags LIFO (all slots are back to |0>).
     if (n > 0u) {
         for (std::size_t step = 0u; step + 1u < n; ++step) {
             std::size_t i = n - 2u - step;  // i = W-2, W-3, ..., 0.
