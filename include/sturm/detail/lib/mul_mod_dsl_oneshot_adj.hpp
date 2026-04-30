@@ -109,13 +109,14 @@ namespace sturm {
  * @param r_bits Result register (W qubits).  Must enter holding
  *               `(a * b) mod n`; exits in |0>.
  *
- * @pre `a, b ∈ [0, n_value)`, `n_value ≥ 1`, **AND `n_value` MUST be odd**
- *      (matches the forward's precondition; this layer's restriction
- *      is inherited from sturm-7cix's original Beat C contract — the
- *      doubling primitive itself is parity-agnostic as of sturm-4oot.1,
- *      and lifting this layer's odd-n restriction is the explicit
- *      subject of sturm-4oot.4).  `r_bits` must enter holding the value
- *      produced by a paired `lib_mul_mod_dsl_oneshot` call on the same
+ * @pre `a, b ∈ [0, n_value)`, `n_value ≥ 1`.  As of sturm-4oot.4 the
+ *      odd-n restriction is **lifted**: `n_value` may be even or odd
+ *      (matches the forward's precondition; sturm-4oot.1 made the inner
+ *      doubling primitive parity-agnostic, sturm-4oot.3 threaded the
+ *      (W-1)-bit `lt_flags` register through forward and adjoint, and
+ *      sturm-4oot.4 dropped this layer's odd-n precondition).
+ *      `r_bits` must enter holding the value produced by a paired
+ *      `lib_mul_mod_dsl_oneshot` call on the same
  *      `(a_bits, b_bits, n_bits)` operands.  The internal (W-1)-bit
  *      `lt_flags` register is re-allocated from the qubit pool and is
  *      guaranteed to enter the routine in |0> by the pool contract

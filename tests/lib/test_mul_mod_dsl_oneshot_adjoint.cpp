@@ -4,8 +4,12 @@
 // Forward (lib_mul_mod_dsl_oneshot) followed by adjoint
 // (__lib_mul_mod_dsl_oneshot_adj) must zero r, preserve a/b/n, and return
 // the QubitPool live-count to its pre-call value, for every (a, b, n)
-// input the forward sweep covers (W=2 odd-n exhaustive sweep + W=3 random
-// sweep + the W=2 single (2, 2, 3) simulator witness + the squaring case).
+// input the forward sweep covers.  Mirrors the forward test's coverage
+// expansion in sturm-4oot.4: W=2 exhaustive over n in {1,2,3} (n=4 at
+// W=2 doesn't fit in the 2-bit modulus register), W=3 exhaustive over
+// even n in {4, 6} (n=8 hoisted to W=4 for the same reason), W=3
+// random odd-n sweep, W=4 exhaustive at n=8, plus W=4 and W=5 random
+// spot checks at even n in {10, 12, 14}.
 //
 // Mirrors `tests/lib/test_double_mod_dsl_adjoint.cpp` adapted for the
 // mul_mod oneshot helper.  Also exercises the
@@ -115,7 +119,7 @@ static Reg<W> make_reg_n_seeded(int base, uint32_t val, orkan::state_t& sv) {
 template <std::size_t W>
 static void run_roundtrip_sim(uint32_t a_val, uint32_t b_val, uint32_t n_val,
                               uint32_t n_orkan, bool bypass_cap) {
-    assert(a_val < n_val && b_val < n_val && (n_val & 1u) == 1u);
+    assert(a_val < n_val && b_val < n_val);
     sturm::QubitPool::instance().reset_for_testing();
     const uint32_t n_reg = 4u * static_cast<uint32_t>(W);
     int reserved[64];
@@ -185,7 +189,7 @@ static uint32_t read_reg_classical(const std::vector<uint8_t>& bits,
 template <std::size_t Wn>
 static void run_roundtrip_trace(uint32_t a_val, uint32_t b_val, uint32_t n_val) {
     assert(a_val < n_val && b_val < n_val && n_val < (1u << Wn));
-    assert((n_val & 1u) == 1u);
+    // sturm-4oot.4: parity-agnostic.
     sturm::QubitPool::instance().reset_for_testing();
 
     constexpr uint32_t n_reg = 4u * static_cast<uint32_t>(Wn);
@@ -272,9 +276,10 @@ int main() {
     std::puts("  PASS: orkan-simulator round-trip for (2, 2, 3)");
 
     std::printf("sturm-7cix Beat C oneshot: W=2 exhaustive trace round-trip "
-                "(odd n in {1, 3}):\n");
+                "(n in {1, 2, 3}, sturm-4oot.4 even-n n=2 included):\n");
     std::size_t cases_w2 = 0u;
-    for (uint32_t n_val : {1u, 3u}) {
+    // n_val < (1u << Wn) = 4 at W=2; n=4 exercised at W=3 below.
+    for (uint32_t n_val : {1u, 2u, 3u}) {
         for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
             for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
                 run_roundtrip_trace<W2>(a_val, b_val, n_val);
@@ -282,8 +287,26 @@ int main() {
             }
         }
     }
-    assert(cases_w2 == 10u);
+    // 1 + 4 + 9 = 14.
+    assert(cases_w2 == 14u);
     std::printf("  PASS: %zu W=2 oneshot round-trips\n", cases_w2);
+
+    // sturm-4oot.4: W=3 exhaustive even-n round-trip (n in {4, 6}; n=8
+    // doesn't fit in a 3-bit register, exercised at W=4 below).
+    std::printf("sturm-7cix/sturm-4oot.4 oneshot: W=3 exhaustive trace "
+                "round-trip (even n in {4, 6}):\n");
+    std::size_t cases_w3_even = 0u;
+    for (uint32_t n_val : {4u, 6u}) {
+        for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
+            for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
+                run_roundtrip_trace<W3>(a_val, b_val, n_val);
+                ++cases_w3_even;
+            }
+        }
+    }
+    assert(cases_w3_even == 52u);
+    std::printf("  PASS: %zu W=3 even-n oneshot round-trips\n",
+                cases_w3_even);
 
     std::printf("sturm-7cix Beat C oneshot: W=3 random trace round-trip "
                 "(50 cases, seed=42):\n");
@@ -300,6 +323,65 @@ int main() {
         run_roundtrip_trace<W3>(a_val, b_val, n_val);
     }
     std::printf("  PASS: %zu W=3 oneshot round-trips\n", kW3Cases);
+
+    // sturm-4oot.4: W=4 and W=5 random spot checks at even n in {10, 12, 14}.
+    constexpr std::size_t W4 = 4u;
+    constexpr std::size_t W5 = 5u;
+    std::array<uint32_t, 3> even_ns_4_5 = {10u, 12u, 14u};
+
+    // sturm-4oot.4: W=4 exhaustive round-trip at even n=8 (hoisted from
+    // the issue's "W=3: n=4, 6, 8" so the modulus fits in the register).
+    std::printf("sturm-7cix/sturm-4oot.4 oneshot: W=4 exhaustive trace "
+                "round-trip (even n=8):\n");
+    {
+        constexpr uint32_t n_val = 8u;
+        std::size_t cases_w4_n8 = 0u;
+        for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
+            for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
+                run_roundtrip_trace<W4>(a_val, b_val, n_val);
+                ++cases_w4_n8;
+            }
+        }
+        assert(cases_w4_n8 == 64u);
+        std::printf("  PASS: %zu W=4 oneshot round-trips at n=8\n",
+                    cases_w4_n8);
+    }
+
+    std::printf("sturm-7cix/sturm-4oot.4 oneshot: W=4 random round-trip spot "
+                "checks (20 cases, seed=4204, even n in {10, 12, 14}):\n");
+    {
+        constexpr uint32_t kSeed = 4204u;
+        constexpr std::size_t kCases = 20u;
+        std::mt19937 rng4(kSeed);
+        std::uniform_int_distribution<uint32_t> n_idx_4(0u, 2u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = even_ns_4_5[n_idx_4(rng4)];
+            std::uniform_int_distribution<uint32_t> ab_dist(0u, n_val - 1u);
+            uint32_t a_val = ab_dist(rng4);
+            uint32_t b_val = ab_dist(rng4);
+            run_roundtrip_trace<W4>(a_val, b_val, n_val);
+        }
+        std::printf("  PASS: %zu W=4 even-n oneshot round-trip spot checks\n",
+                    kCases);
+    }
+
+    std::printf("sturm-7cix/sturm-4oot.4 oneshot: W=5 random round-trip spot "
+                "checks (20 cases, seed=4205, even n in {10, 12, 14}):\n");
+    {
+        constexpr uint32_t kSeed = 4205u;
+        constexpr std::size_t kCases = 20u;
+        std::mt19937 rng5(kSeed);
+        std::uniform_int_distribution<uint32_t> n_idx_5(0u, 2u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = even_ns_4_5[n_idx_5(rng5)];
+            std::uniform_int_distribution<uint32_t> ab_dist(0u, n_val - 1u);
+            uint32_t a_val = ab_dist(rng5);
+            uint32_t b_val = ab_dist(rng5);
+            run_roundtrip_trace<W5>(a_val, b_val, n_val);
+        }
+        std::printf("  PASS: %zu W=5 even-n oneshot round-trip spot checks\n",
+                    kCases);
+    }
 
     std::printf("All sturm-7cix Beat C oneshot adjoint tests passed.\n");
     return 0;

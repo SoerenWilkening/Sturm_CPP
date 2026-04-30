@@ -65,7 +65,10 @@ static constexpr int kOneshotAncillaSlack(int W) { return 3 * W + 7; }
 template <std::size_t W>
 static int peak_ancilla_oneshot_for(uint32_t a_val, uint32_t b_val,
                                     uint32_t n_val) {
-    assert(a_val < n_val && b_val < n_val && (n_val & 1u) == 1u);
+    // sturm-4oot.4: parity-agnostic; the (W-1)-bit lt_flags register is
+    // allocated regardless of n parity, so the 3W + 7 peak holds for
+    // both odd and even n.
+    assert(a_val < n_val && b_val < n_val);
     sturm::QubitPool::instance().reset_for_testing();
 
     constexpr uint32_t n_reg = 4u * static_cast<uint32_t>(W);
@@ -128,30 +131,56 @@ int main() {
         constexpr std::size_t W       = 2u;
         constexpr int        kBudget  = kOneshotAncillaSlack(static_cast<int>(W));
         std::printf("sturm-7cix/sturm-4oot.3 oneshot: peak ancilla bound "
-                    "<= 3W + 7 (W=%zu, budget=%d):\n", W, kBudget);
+                    "<= 3W + 7 (W=%zu, odd n=3, budget=%d):\n", W, kBudget);
         const int peak = peak_ancilla_oneshot_for<W>(/*a=*/2u, /*b=*/2u,
                                                      /*n=*/3u);
         std::printf("  measured peak = %d ancillas above %u inputs\n",
                     peak, 4u * static_cast<uint32_t>(W));
         std::fflush(stdout);
         assert(peak <= kBudget
-               && "Beat C oneshot: peak ancilla exceeds budget at W=2");
-        std::puts("  PASS: W=2 oneshot peak ancilla within budget");
+               && "Beat C oneshot: peak ancilla exceeds budget at W=2 (odd n)");
+        std::puts("  PASS: W=2 oneshot peak ancilla within budget (odd n)");
+
+        // sturm-4oot.4: confirm the same 3W + 7 budget holds for even n
+        // — the (W-1)-bit lt_flags register is always allocated, so
+        // parity does not change the peak.
+        std::printf("sturm-7cix/sturm-4oot.4 oneshot: peak ancilla bound "
+                    "<= 3W + 7 (W=%zu, even n=4, budget=%d):\n", W, kBudget);
+        const int peak_even = peak_ancilla_oneshot_for<W>(/*a=*/1u, /*b=*/3u,
+                                                           /*n=*/4u);
+        std::printf("  measured peak = %d ancillas above %u inputs\n",
+                    peak_even, 4u * static_cast<uint32_t>(W));
+        std::fflush(stdout);
+        assert(peak_even <= kBudget
+               && "Beat C oneshot: peak ancilla exceeds budget at W=2 (even n)");
+        std::puts("  PASS: W=2 oneshot peak ancilla within budget (even n)");
     }
 
     {
         constexpr std::size_t W       = 3u;
         constexpr int        kBudget  = kOneshotAncillaSlack(static_cast<int>(W));
         std::printf("sturm-7cix/sturm-4oot.3 oneshot: peak ancilla bound "
-                    "<= 3W + 7 (W=%zu, budget=%d):\n", W, kBudget);
+                    "<= 3W + 7 (W=%zu, odd n=5, budget=%d):\n", W, kBudget);
         const int peak = peak_ancilla_oneshot_for<W>(/*a=*/2u, /*b=*/3u,
                                                      /*n=*/5u);
         std::printf("  measured peak = %d ancillas above %u inputs\n",
                     peak, 4u * static_cast<uint32_t>(W));
         std::fflush(stdout);
         assert(peak <= kBudget
-               && "Beat C oneshot: peak ancilla exceeds budget at W=3");
-        std::puts("  PASS: W=3 oneshot peak ancilla within budget");
+               && "Beat C oneshot: peak ancilla exceeds budget at W=3 (odd n)");
+        std::puts("  PASS: W=3 oneshot peak ancilla within budget (odd n)");
+
+        // sturm-4oot.4: even-n probe at W=3 (n=6).
+        std::printf("sturm-7cix/sturm-4oot.4 oneshot: peak ancilla bound "
+                    "<= 3W + 7 (W=%zu, even n=6, budget=%d):\n", W, kBudget);
+        const int peak_even = peak_ancilla_oneshot_for<W>(/*a=*/2u, /*b=*/5u,
+                                                           /*n=*/6u);
+        std::printf("  measured peak = %d ancillas above %u inputs\n",
+                    peak_even, 4u * static_cast<uint32_t>(W));
+        std::fflush(stdout);
+        assert(peak_even <= kBudget
+               && "Beat C oneshot: peak ancilla exceeds budget at W=3 (even n)");
+        std::puts("  PASS: W=3 oneshot peak ancilla within budget (even n)");
     }
 
     std::printf("All sturm-7cix Beat C oneshot ancilla tests passed.\n");

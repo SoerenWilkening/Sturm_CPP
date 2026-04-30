@@ -12,7 +12,12 @@
 // Algorithm — single-shifted-register / single-accumulator (issue brief):
 //
 //   inputs : a_bits[W], b_bits[W], n_bits[W], r_bits[W]   (r = |0>)
-//   precond: a, b in [0, n_value), n_value odd, n_value >= 1
+//   precond: a, b in [0, n_value), n_value >= 1   (parity-agnostic; see §3
+//            of docs/design_even_n_double_mod.md — the inner doubling is
+//            parity-agnostic as of sturm-4oot.1, the (W-1)-bit lt_flags
+//            register threaded through this layer absorbs the witness for
+//            even n, and sturm-4oot.4 dropped this layer's odd-n
+//            restriction once #1 and #3 had landed).
 //   output : r_bits = (a * b) mod n_value
 //
 //   1. Allocate shifted_reg[0..W] (W+1 qubits).  All start in |0>.
@@ -68,10 +73,14 @@
 // implementation's `2W² + W + 7` peak, savings at W=14 are 413 − 49 =
 // 364 qubits — same asymptotic class change (O(W²) → O(W)).
 //
-// Precondition — see @pre below.  This layer still requires `n_value`
-// odd; sturm-4oot.1 made the doubling primitive itself parity-agnostic,
-// but lifting this layer's odd-n restriction is sturm-4oot.4's
-// explicit job (which extends the tests to even n).
+// Precondition — see @pre below.  As of sturm-4oot.4 this layer is
+// parity-agnostic: `n_value` may be even or odd.  sturm-4oot.1 made the
+// inner doubling primitive itself parity-agnostic by externalising its
+// witness bit, sturm-4oot.3 threaded the (W-1)-bit `lt_flags` register
+// through forward and adjoint, and sturm-4oot.4 dropped the layer-level
+// odd-n restriction and extended the tests to even n.  The runtime
+// dispatcher in `lib_mul_mod_dsl` (`is_classical_odd_n_hint()`) becomes
+// dead code as a consequence — its removal lives in sturm-4oot.5.
 //
 // Aliasing — the XOR-copy `shifted_reg ^= a_bits` happens before any
 // inner add/double call, so the algorithm naturally handles the
@@ -117,7 +126,7 @@ inline Bit make_ancilla_view(qbool& owner) {
 }  // namespace detail_mul_mod_oneshot
 
 /**
- * @brief O(W)-ancilla helper for `lib_mul_mod_dsl` when `n` is ODD.
+ * @brief O(W)-ancilla helper for `lib_mul_mod_dsl` (parity-agnostic).
  *
  * This helper is the "oneshot" implementation of modular multiplication
  * referenced by sturm-7cix Beat C: a single (W+1)-bit shifted register,
@@ -140,24 +149,30 @@ inline Bit make_ancilla_view(qbool& owner) {
  * @param r_bits Result register (W qubits).  Must start in |0>.
  *               On exit, holds `(a * b) mod n_value`.
  *
- * @pre `a, b ∈ [0, n_value)`, `n_value ≥ 1`, **AND `n_value` MUST be odd**
- *      (inherited from this layer's existing odd-n precondition; the
- *      inner `lib_double_mod_dsl` is itself parity-agnostic as of
- *      sturm-4oot.1, so lifting this layer's restriction is the
- *      explicit subject of sturm-4oot.4).  `a_bits`, `n_bits`, and
- *      `r_bits` must refer to physically distinct qubit registers.
- *      `a_bits` and `b_bits` may alias (the XOR-copy step makes a
- *      separate physical `shifted_reg`, naturally handling the squaring
- *      case used by `lib_pow_mod_dsl`).  The internal (W-1)-bit
- *      `lt_flags` register is allocated from the qubit pool and is
- *      guaranteed to enter the routine in |0> by the pool contract; it
- *      is consumed back to |0> and released LIFO before exit.
+ * @pre `a, b ∈ [0, n_value)`, `n_value ≥ 1`.  As of sturm-4oot.4 the
+ *      odd-n restriction is **lifted**: `n_value` may be even or odd.
+ *      sturm-4oot.1 made the inner `lib_double_mod_dsl` itself
+ *      parity-agnostic by externalising its witness bit; sturm-4oot.3
+ *      threaded the (W-1)-bit `lt_flags` register through forward and
+ *      adjoint of this layer; sturm-4oot.4 dropped this layer's
+ *      odd-n precondition and extended the tests to even n.  The
+ *      runtime dispatcher in `lib_mul_mod_dsl`
+ *      (`is_classical_odd_n_hint()`) becomes dead code as a
+ *      consequence — its removal is sturm-4oot.5's job.
+ *      `a_bits`, `n_bits`, and `r_bits` must refer to physically
+ *      distinct qubit registers.  `a_bits` and `b_bits` may alias
+ *      (the XOR-copy step makes a separate physical `shifted_reg`,
+ *      naturally handling the squaring case used by `lib_pow_mod_dsl`).
+ *      The internal (W-1)-bit `lt_flags` register is allocated from the
+ *      qubit pool and is guaranteed to enter the routine in |0> by the
+ *      pool contract; it is consumed back to |0> and released LIFO
+ *      before exit.
  *
  * @par Behavior on precondition violation
  * The library does **not** check the precondition.  Calling
- * `lib_mul_mod_dsl_oneshot` with `n_value` even, with operands outside
- * `[0, n_value)`, or with aliased registers (other than `a_bits == b_bits`)
- * is **undefined behavior** — the routine still emits a well-formed
+ * `lib_mul_mod_dsl_oneshot` with operands outside `[0, n_value)` or
+ * with aliased registers (other than `a_bits == b_bits`) is
+ * **undefined behavior** — the routine still emits a well-formed
  * gate sequence, but `r_bits` will not be the mathematical answer and
  * the input registers may not be restored.
  *
