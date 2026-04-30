@@ -98,9 +98,9 @@ namespace sturm {
 
 namespace detail_pow_mod {
 
-// Bit-view helper mirroring detail_mul_mod::make_ancilla_view.  Local so
-// pow_mod_dsl can be included without dragging in the mul_mod helper
-// namespace from mul_mod_dsl.hpp.
+// Bit-view helper mirroring detail_mul_mod_oneshot::make_ancilla_view.
+// Local so pow_mod_dsl can be included without dragging in the mul_mod
+// oneshot helper namespace from mul_mod_dsl_oneshot.hpp.
 template <typename Bit>
 inline Bit make_ancilla_view(qbool& owner) {
     if constexpr (std::is_same_v<Bit, qbool>) {

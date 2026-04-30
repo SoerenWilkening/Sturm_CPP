@@ -78,9 +78,11 @@
 // inner doubling primitive itself parity-agnostic by externalising its
 // witness bit, sturm-4oot.3 threaded the (W-1)-bit `lt_flags` register
 // through forward and adjoint, and sturm-4oot.4 dropped the layer-level
-// odd-n restriction and extended the tests to even n.  The runtime
-// dispatcher in `lib_mul_mod_dsl` (`is_classical_odd_n_hint()`) becomes
-// dead code as a consequence — its removal lives in sturm-4oot.5.
+// odd-n restriction and extended the tests to even n.  sturm-4oot.5 then
+// retired the runtime dispatcher in `lib_mul_mod_dsl` (the former
+// `is_classical_odd_n_hint()` predicate) along with the chain-style
+// fallback helper, leaving `lib_mul_mod_dsl` as a thin wrapper that
+// delegates unconditionally to this oneshot path.
 //
 // Aliasing — the XOR-copy `shifted_reg ^= a_bits` happens before any
 // inner add/double call, so the algorithm naturally handles the
@@ -155,10 +157,10 @@ inline Bit make_ancilla_view(qbool& owner) {
  *      parity-agnostic by externalising its witness bit; sturm-4oot.3
  *      threaded the (W-1)-bit `lt_flags` register through forward and
  *      adjoint of this layer; sturm-4oot.4 dropped this layer's
- *      odd-n precondition and extended the tests to even n.  The
- *      runtime dispatcher in `lib_mul_mod_dsl`
- *      (`is_classical_odd_n_hint()`) becomes dead code as a
- *      consequence — its removal is sturm-4oot.5's job.
+ *      odd-n precondition and extended the tests to even n;
+ *      sturm-4oot.5 then retired the runtime dispatcher in
+ *      `lib_mul_mod_dsl` (and the chain-style fallback helper) so that
+ *      `lib_mul_mod_dsl` now delegates unconditionally to this helper.
  *      `a_bits`, `n_bits`, and `r_bits` must refer to physically
  *      distinct qubit registers.  `a_bits` and `b_bits` may alias
  *      (the XOR-copy step makes a separate physical `shifted_reg`,

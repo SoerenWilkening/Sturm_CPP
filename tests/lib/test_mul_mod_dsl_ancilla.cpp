@@ -1,40 +1,30 @@
 // test_mul_mod_dsl_ancilla.cpp -- sturm-kubb.6 P2.6 mul-mod-dsl 2.6
 //                                  ancilla-budget assertion.
 //
-// Plan §4.3 row 2.6 wording: "Peak ancilla counter ≤ 2W + 5."  The literal
-// `2W + 5` count was drafted for an in-place doubling design (one W-bit
-// `shifted` register + one W-bit `r` accumulator + add_mod interior).  The
-// shipping `lib_mul_mod_dsl` uses the chain-style algorithm documented at
-// the top of `include/sturm/detail/lib/mul_mod_dsl.hpp`:
+// Plan §4.3 row 2.6 wording was originally "Peak ancilla counter ≤ 2W + 5"
+// (an in-place doubling design's drafted bound).  After sturm-4oot.5
+// `lib_mul_mod_dsl` is a thin wrapper around `lib_mul_mod_dsl_oneshot`
+// (the chain-style fallback was retired), so this test pins the oneshot
+// bound:
 //
-//   • `shifted_chain[0..W-1]`, each W bits   (W·W qubits)
-//   • `r_chain[1..W]`,         each W bits   (W·W qubits, index 0 unused)
+//   peak_oneshot ≈ 2·(W + 1)  [shifted_reg + acc_reg, each W+1 wide]
+//                 + (W − 1)    [lt_flags register, sturm-4oot.3]
+//                 + 5          [Beat A interior peak, sturm-yh3d.6]
+//                 + 1          [lift_under(b_bits[i]) fold ancilla]
+//                = 3·W + 7
 //
-// plus the add_mod-interior peak when the innermost `lib_add_mod_dsl` call
-// is on the stack at the chain step that holds the largest number of
-// registers simultaneously.  Add-mod beat 1.6 (sturm-yh3d.6) pinned the
-// add_mod-only peak at `W + 6`; called from inside the mul_mod chain with
-// `b_bits[i]` already pushed as a control, the inner adder's `emit_X_lifted`
-// reaches depth=3 (mul_mod's b_bits[i] + add_mod's lt_flag + emit_CCX_lifted's
-// fold) and allocates one more ancilla via the depth==3 branch in
-// include/sturm/qtypes/qbool_ops.hpp, taking the per-call peak to `W + 7`.
+// at the moment the inner `lib_add_mod_inplace_dsl` is mid-flight under
+// the `lift_under(b_bits[i])` body.  This matches PRD §6.4's `W + O(1)`
+// requirement for mul_mod (still linear in W, ~3× the ideal coefficient
+// but no longer quadratic).  See
+// `tests/lib/test_mul_mod_dsl_oneshot_ancilla.cpp` for the dedicated
+// pin on the helper itself; this test pins the same bound through the
+// public `lib_mul_mod_dsl` entry point.
 //
-// So the algorithm's achieved peak ancilla footprint is
-//
-//   peak_chain  =  2·W·W + (W + 7)  =  2·W² + W + 7
-//
-// at the inner add_mod call inside the r_chain accumulator loop, far above
-// the literal `2W + 5`.  This mirrors the situation add-mod beat 1.6 hit:
-// the literal plan bound was undercounted relative to the actual algorithm.
-// The PRD §6 bullet 4 requirement — `W + O(1)` for mul_mod — is NOT met by
-// the chain implementation (it is `O(W²)`); plan §4.1 explicitly notes
-// "peak ancilla at `2W + O(1)`" as the design intent under the in-place
-// doubling alternative, and §12 says to revisit the Karatsuba alt
-// (PRD §8 #1) if the bound is exceeded.
-//
-// Per the orchestrator brief: do NOT silently relax to 2W+5; instead pin
-// the achieved bound here (regression guard) and let the autopilot surface
-// the discrepancy to the user for plan amendment.
+// Pre-history: prior to sturm-4oot.5 this test pinned the chain
+// implementation's `2·W² + W + 7` bound (see git history at commit
+// 644a5f8 or earlier).  The chain helper was retired once
+// `lib_mul_mod_dsl_oneshot` became parity-agnostic in sturm-4oot.4.
 //
 // Measurement technique (per orchestrator brief, "snapshots before / mid
 // (max) / after"):
@@ -49,10 +39,9 @@
 //      of transient ancillas the call ever required beyond the caller's
 //      pre-existing inputs.
 //
-// Asserts at W = 2 and W = 3.  W = 3 chain-style peaks at ~35 live qubits,
-// which would blow the orkan stub's 30-qubit ceiling; APPEND-mode capture
-// has no qubit cap.  Mirrors the pattern test_mul_mod_dsl.cpp uses for
-// beat 2.4's W=3 sweep.
+// Asserts at W = 2 and W = 3 with both odd and even moduli (oneshot is
+// parity-agnostic since sturm-4oot.4).  APPEND-mode capture has no qubit
+// cap.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/detail/lib/mul_mod_dsl.hpp"
@@ -67,30 +56,11 @@
 #include <cstdint>
 #include <cstddef>
 
-// Achieved peak ancilla footprint of `lib_mul_mod_dsl<W>`, in qubits above
-// the 4·W input registers.  Empirical peak (measured by this very test;
-// see W=2 / W=3 main bodies below):
-//
-//   • W = 2:  17 qubits
-//   • W = 3:  28 qubits
-//
-// fits the closed form `2·W² + W + 7`, which decomposes as
-//
-//   peak  =  W·W (shifted_chain[0..W-1])
-//        +  W·W (r_chain[1..W])
-//        +  W + 7 (add_mod-interior peak under one mul_mod control)
-//
-// where the `W + 7` add_mod-interior is the sturm-yh3d.6 `W + 6` plus one
-// extra ancilla from emit_X_lifted at depth ≥ 3 (mul_mod pushes `b_bits[i]`,
-// add_mod pushes `lt_flag`, and `emit_CCX_lifted` then pushes its fold
-// ancilla, taking the live control depth to 3 at the inner adder's CCX
-// gates — see include/sturm/qtypes/qbool_ops.hpp's emit_X_lifted depth==3
-// branch which allocates one more ancilla).
-//
-// Plan §4.3 row 2.6 wording (`2W + 5`) was drafted before the chain
-// implementation was settled — see PRD §8 #1 (Karatsuba alt) for the path
-// to a tighter bound.  Documented as a discrepancy to the user.
-static constexpr int kMulModAncillaSlack(int W) { return 2 * W * W + W + 7; }
+// Achieved peak ancilla footprint of `lib_mul_mod_dsl<W>` (= the oneshot
+// helper's footprint, since sturm-4oot.5 made the public entry a thin
+// wrapper).  See file header for the breakdown.  PRD §6.4 `W + O(1)`
+// requirement is met by `3W + 7` (linear).
+static constexpr int kMulModAncillaSlack(int W) { return 3 * W + 7; }
 
 // Run lib_mul_mod_dsl<W> for a single (a, b, n) with a, b < n and report
 // the peak live-ancilla count above the caller's pre-existing inputs.
@@ -181,42 +151,56 @@ static int peak_ancilla_for(uint32_t a_val, uint32_t b_val,
 
 int main() {
     // ── W = 2 ────────────────────────────────────────────────────────────
-    // Achieved bound = 2·W² + W + 6 = 2·4 + 2 + 6 = 16.  Pinned as the
-    // regression guard for the chain-style algorithm.  See the file
-    // header — plan §4.3 row 2.6's literal `2W + 5` is undercounted for
-    // the chain implementation; this test pins the actual achieved peak.
     {
         constexpr std::size_t W = 2u;
         constexpr int        kBudget = kMulModAncillaSlack(static_cast<int>(W));
         std::printf("sturm-kubb.6 P2.6 mul-mod-dsl: peak ancilla bound "
-                    "<= 2W^2 + W + 7 (W=%zu, budget=%d):\n", W, kBudget);
+                    "<= 3W + 7 (W=%zu, odd n=3, budget=%d):\n", W, kBudget);
         const int peak = peak_ancilla_for<W>(/*a=*/2u, /*b=*/2u, /*n=*/3u);
         std::printf("  measured peak = %d ancillas above %u inputs\n",
                     peak, 4u * static_cast<uint32_t>(W));
         std::fflush(stdout);
         assert(peak <= kBudget
-               && "Beat 2.6: peak ancilla exceeds achieved chain bound at W=2");
-        std::puts("  PASS: W=2 peak ancilla within achieved chain budget");
+               && "Beat 2.6: peak ancilla exceeds oneshot bound at W=2 (odd n)");
+        std::puts("  PASS: W=2 peak ancilla within oneshot budget (odd n)");
+
+        // sturm-4oot.5: confirm the same 3W + 7 budget holds for even n
+        // — the oneshot helper is parity-agnostic since sturm-4oot.4.
+        std::printf("sturm-kubb.6 P2.6 mul-mod-dsl: peak ancilla bound "
+                    "<= 3W + 7 (W=%zu, even n=4, budget=%d):\n", W, kBudget);
+        const int peak_even = peak_ancilla_for<W>(/*a=*/1u, /*b=*/3u, /*n=*/4u);
+        std::printf("  measured peak = %d ancillas above %u inputs\n",
+                    peak_even, 4u * static_cast<uint32_t>(W));
+        std::fflush(stdout);
+        assert(peak_even <= kBudget
+               && "Beat 2.6: peak ancilla exceeds oneshot bound at W=2 (even n)");
+        std::puts("  PASS: W=2 peak ancilla within oneshot budget (even n)");
     }
 
     // ── W = 3 ────────────────────────────────────────────────────────────
-    // Achieved bound = 2·W² + W + 6 = 2·9 + 3 + 6 = 27.  Chain-style
-    // mul_mod peaks at ~35 live qubits at W=3 (which exceeds the orkan
-    // stub's 30-qubit ceiling), but the APPEND-mode harness has no qubit
-    // cap and the ancilla peak comes from QubitPool, independent of
-    // executor — see file-header rationale.
     {
         constexpr std::size_t W = 3u;
         constexpr int        kBudget = kMulModAncillaSlack(static_cast<int>(W));
         std::printf("sturm-kubb.6 P2.6 mul-mod-dsl: peak ancilla bound "
-                    "<= 2W^2 + W + 7 (W=%zu, budget=%d):\n", W, kBudget);
+                    "<= 3W + 7 (W=%zu, odd n=5, budget=%d):\n", W, kBudget);
         const int peak = peak_ancilla_for<W>(/*a=*/2u, /*b=*/3u, /*n=*/5u);
         std::printf("  measured peak = %d ancillas above %u inputs\n",
                     peak, 4u * static_cast<uint32_t>(W));
         std::fflush(stdout);
         assert(peak <= kBudget
-               && "Beat 2.6: peak ancilla exceeds achieved chain bound at W=3");
-        std::puts("  PASS: W=3 peak ancilla within achieved chain budget");
+               && "Beat 2.6: peak ancilla exceeds oneshot bound at W=3 (odd n)");
+        std::puts("  PASS: W=3 peak ancilla within oneshot budget (odd n)");
+
+        // sturm-4oot.5: even-n probe at W=3 (n=6).
+        std::printf("sturm-kubb.6 P2.6 mul-mod-dsl: peak ancilla bound "
+                    "<= 3W + 7 (W=%zu, even n=6, budget=%d):\n", W, kBudget);
+        const int peak_even = peak_ancilla_for<W>(/*a=*/2u, /*b=*/5u, /*n=*/6u);
+        std::printf("  measured peak = %d ancillas above %u inputs\n",
+                    peak_even, 4u * static_cast<uint32_t>(W));
+        std::fflush(stdout);
+        assert(peak_even <= kBudget
+               && "Beat 2.6: peak ancilla exceeds oneshot bound at W=3 (even n)");
+        std::puts("  PASS: W=3 peak ancilla within oneshot budget (even n)");
     }
 
     std::printf("All sturm-kubb.6 tests passed.\n");
