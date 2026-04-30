@@ -189,7 +189,8 @@ inline void lib_mul_mod_dsl_oneshot(Bit* a_bits, Bit* b_bits,
                                     Bit* r_bits) {
     if (n == 0u) return;
 
-    static constexpr std::size_t kMaxN = 32u;
+    // sturm-8n73: kMaxN 32→64 for circuit generation; sim still bounded.
+    static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "lib_mul_mod_dsl_oneshot: register too wide");
 
     sturm_backend_context_t* raw = sturm_get_thread_context();

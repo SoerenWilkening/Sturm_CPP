@@ -182,7 +182,8 @@ inline void lib_add_mod_inplace_dsl(Bit* a_bits, Bit* dest_bits,
                                     Bit* n_bits, std::size_t n) {
     if (n == 0u) return;
 
-    static constexpr std::size_t kMaxN = 32u;
+    // sturm-8n73: kMaxN bumped 32 → 64 for circuit-generation use cases.
+    static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "lib_add_mod_inplace_dsl: register too wide");
 
     sturm_backend_context_t* raw = sturm_get_thread_context();

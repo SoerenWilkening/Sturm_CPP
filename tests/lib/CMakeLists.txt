@@ -660,3 +660,36 @@ target_link_libraries(test_pow_mod_xval PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_xval COMMAND test_pow_mod_xval)
 set_tests_properties(test_pow_mod_xval
     PROPERTIES LABELS "lib;modular-arith")
+
+# sturm-8n73 -- high-W (W=40, 48, 56, 64) APPEND-mode trace tests for
+# lib_double_mod_dsl, lib_add_mod_inplace_dsl, lib_mul_mod_dsl_oneshot.
+# Validates the lifted kMaxN=64 cap end-to-end.  Compiled with
+# STURM_ANCILLA_CAPACITY=1024 so the W=64 ancilla peak (~7W+7 = 455
+# live qubits) fits with comfortable headroom.  Statevector simulation
+# is infeasible past ~W=16 regardless of pool size, so this target is
+# trace-mode only.
+add_executable(test_modular_arith_highw_trace
+    test_modular_arith_highw_trace.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_modular_arith_highw_trace PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_modular_arith_highw_trace PRIVATE cxx_std_20)
+# Project-level CMakeLists.txt does add_compile_definitions(
+# STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}) which would otherwise
+# override our target-level setting (last `-D` wins on the command line).
+# Force-undefine first via -U, then redefine via -D, so this target gets
+# 1024 regardless of what the project default is set to.
+target_compile_options(test_modular_arith_highw_trace PRIVATE
+    -USTURM_ANCILLA_CAPACITY
+    -DSTURM_ANCILLA_CAPACITY=1024
+)
+target_compile_definitions(test_modular_arith_highw_trace PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_modular_arith_highw_trace PRIVATE orkan_headers)
+add_test(NAME test_modular_arith_highw_trace
+         COMMAND test_modular_arith_highw_trace)
+set_tests_properties(test_modular_arith_highw_trace
+    PROPERTIES LABELS "lib;modular-arith")

@@ -169,7 +169,8 @@ inline void lib_double_mod_dsl(Bit* x_bits, Bit* n_bits, std::size_t n,
                                Bit& lt_flag_out) {
     if (n == 0u) return;
 
-    static constexpr std::size_t kMaxN = 32u;
+    // sturm-8n73: kMaxN bumped 32 → 64 for circuit-generation use cases.
+    static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "lib_double_mod_dsl: register too wide");
 
     sturm_backend_context_t* raw = sturm_get_thread_context();

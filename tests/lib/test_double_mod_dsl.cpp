@@ -614,6 +614,49 @@ int main() {
         std::printf("  PASS: %zu W=5 even-n trace spot checks\n", kCases);
     }
 
+    // sturm-8n73: high-W trace spot checks validating kMaxN > 32 works.
+    // double_mod peaks at ~3W+5, well within the STURM_ANCILLA_CAPACITY=256
+    // budget for any W up to 80.  W=64 path is also exercised by the
+    // dedicated test_modular_arith_highw_trace target.
+    constexpr std::size_t W8_hi  = 8u;
+    constexpr std::size_t W16_hi = 16u;
+
+    std::printf("sturm-8n73 double-mod-dsl: W=8 random trace spot checks "
+                "(10 cases, seed=8073):\n");
+    {
+        constexpr uint32_t kSeed = 8073u;
+        constexpr std::size_t kCases = 10u;
+        std::mt19937 rng8(kSeed);
+        std::uniform_int_distribution<uint32_t> n_dist(2u,
+                                                        (1u << W8_hi) - 1u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = n_dist(rng8);
+            std::uniform_int_distribution<uint32_t> x_dist(0u, n_val - 1u);
+            uint32_t x_val = x_dist(rng8);
+            run_double_mod_trace_case<W8_hi>(x_val, n_val);
+        }
+        std::printf("  PASS: %zu W=8 double-mod trace spot checks\n",
+                    kCases);
+    }
+
+    std::printf("sturm-8n73 double-mod-dsl: W=16 random trace spot checks "
+                "(5 cases, seed=8074):\n");
+    {
+        constexpr uint32_t kSeed = 8074u;
+        constexpr std::size_t kCases = 5u;
+        std::mt19937 rng16(kSeed);
+        std::uniform_int_distribution<uint32_t> n_dist(2u,
+                                                        (1u << W16_hi) - 1u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = n_dist(rng16);
+            std::uniform_int_distribution<uint32_t> x_dist(0u, n_val - 1u);
+            uint32_t x_val = x_dist(rng16);
+            run_double_mod_trace_case<W16_hi>(x_val, n_val);
+        }
+        std::printf("  PASS: %zu W=16 double-mod trace spot checks\n",
+                    kCases);
+    }
+
     std::printf("All sturm-wdas/sturm-4oot.1/sturm-4oot.2 double-mod-dsl "
                 "forward tests passed.\n");
     return 0;

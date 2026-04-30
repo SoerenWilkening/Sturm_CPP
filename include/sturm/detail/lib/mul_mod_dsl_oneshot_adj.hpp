@@ -136,7 +136,8 @@ inline void __lib_mul_mod_dsl_oneshot_adj(Bit* a_bits, Bit* b_bits,
                                           Bit* r_bits) {
     if (n == 0u) return;
 
-    static constexpr std::size_t kMaxN = 32u;
+    // sturm-8n73: kMaxN bumped 32 → 64 to match the forward primitive.
+    static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "__lib_mul_mod_dsl_oneshot_adj: register too wide");
 
     sturm_backend_context_t* raw = sturm_get_thread_context();

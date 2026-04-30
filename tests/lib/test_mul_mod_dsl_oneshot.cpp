@@ -471,6 +471,49 @@ int main() {
                     kCases);
     }
 
+    // sturm-8n73: high-W trace spot checks validating that kMaxN > 32
+    // works.  These fit in the per-target STURM_ANCILLA_CAPACITY=256
+    // budget (peak live = 7W+7 ≤ 256 for W ≤ 35).  The W=64 path is
+    // exercised separately by test_modular_arith_highw_trace which
+    // overrides STURM_ANCILLA_CAPACITY=1024.
+    constexpr std::size_t W8  = 8u;
+    constexpr std::size_t W16 = 16u;
+
+    std::printf("sturm-8n73 oneshot: W=8 random trace spot checks "
+                "(10 cases, seed=8073):\n");
+    {
+        constexpr uint32_t kSeed = 8073u;
+        constexpr std::size_t kCases = 10u;
+        std::mt19937 rng8(kSeed);
+        std::uniform_int_distribution<uint32_t> n_dist(2u, (1u << W8) - 1u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = n_dist(rng8);
+            std::uniform_int_distribution<uint32_t> ab(0u, n_val - 1u);
+            uint32_t a_val = ab(rng8);
+            uint32_t b_val = ab(rng8);
+            run_oneshot_trace_case<W8>(a_val, b_val, n_val);
+        }
+        std::printf("  PASS: %zu W=8 oneshot trace spot checks\n", kCases);
+    }
+
+    std::printf("sturm-8n73 oneshot: W=16 random trace spot checks "
+                "(5 cases, seed=8074):\n");
+    {
+        constexpr uint32_t kSeed = 8074u;
+        constexpr std::size_t kCases = 5u;
+        std::mt19937 rng16(kSeed);
+        std::uniform_int_distribution<uint32_t> n_dist(2u,
+                                                        (1u << W16) - 1u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = n_dist(rng16);
+            std::uniform_int_distribution<uint32_t> ab(0u, n_val - 1u);
+            uint32_t a_val = ab(rng16);
+            uint32_t b_val = ab(rng16);
+            run_oneshot_trace_case<W16>(a_val, b_val, n_val);
+        }
+        std::printf("  PASS: %zu W=16 oneshot trace spot checks\n", kCases);
+    }
+
     std::printf("All sturm-7cix Beat C oneshot forward tests passed.\n");
     return 0;
 }

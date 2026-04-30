@@ -14,8 +14,13 @@ include(GNUInstallDirs)
 
 # ── Compile-time knobs ────────────────────────────────────────────────────────
 # Ancilla pool capacity; override with -DSTURM_ANCILLA_CAPACITY=N
+# sturm-8n73: bumped 256 → 512 to support W=64 modular-arith circuit
+# generation (peak ancilla in lib_mul_mod_dsl_oneshot is 7W+7 = 455 at
+# W=64; 512 fits with headroom). Higher caps available by override:
+# W=128 needs 1024, W=256 needs 2048. Statevector-mode simulator tests
+# remain infeasible past W~16 regardless of pool size.
 if(NOT DEFINED STURM_ANCILLA_CAPACITY)
-    set(STURM_ANCILLA_CAPACITY 256)
+    set(STURM_ANCILLA_CAPACITY 512)
 endif()
 add_compile_definitions(STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY})
 

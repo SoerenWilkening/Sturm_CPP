@@ -40,6 +40,8 @@
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
+#include "sturm/backend/ir.hpp"
+#include "sturm/core/gate_kind.h"
 
 #include <array>
 #include <cassert>
@@ -48,6 +50,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <random>
+#include <vector>
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
@@ -336,6 +339,123 @@ static void run_classical_case_w3(uint32_t a_val, uint32_t dest_val,
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// ── sturm-8n73 — APPEND-mode classical-trace harness ──────────────────────
+// W>=4 lands above orkan's 30-qubit ceiling, so we drive the primitive
+// in APPEND mode and replay the resulting IR bit-vector classically.
+// `lib_add_mod_inplace_dsl` only emits X / CX / CCX gates (it composes
+// lib_add_dsl + lift-pattern WHEN bodies, all classical-reversible).
+static void apply_gate_classical_inplace(std::vector<uint8_t>& bits,
+                                         const sturm::GateRecord& rec) {
+    switch (rec.kind) {
+    case STURM_GATE_X:
+        bits[rec.qubits[0]] ^= 1u; break;
+    case STURM_GATE_CX:
+        if (bits[rec.qubits[0]]) bits[rec.qubits[1]] ^= 1u; break;
+    case STURM_GATE_CCX:
+        if (bits[rec.qubits[0]] && bits[rec.qubits[1]])
+            bits[rec.qubits[2]] ^= 1u;
+        break;
+    default:
+        std::fprintf(stderr, "trace: unsupported gate kind %d\n",
+                     static_cast<int>(rec.kind));
+        std::abort();
+    }
+}
+
+static uint32_t read_reg_classical_inplace(const std::vector<uint8_t>& bits,
+                                           const int* qi, std::size_t n) {
+    uint32_t v = 0u;
+    for (std::size_t k = 0; k < n; ++k)
+        if (qi[k] >= 0 && bits[static_cast<std::size_t>(qi[k])])
+            v |= (1u << k);
+    return v;
+}
+
+// Run lib_add_mod_inplace_dsl<Wn> for one (a, dest_old, n) input via the
+// trace harness.  Asserts dest_bits == (dest_old + a) mod n,
+// dest_bits[Wn]==0, a / n preserved, every transient ancilla returned
+// to |0>, pool live-count restored.
+template <std::size_t Wn>
+static void run_inplace_trace_case(uint32_t a_val, uint32_t dest_val,
+                                   uint32_t n_val) {
+    assert(a_val    < n_val && "test precondition: a < n");
+    assert(dest_val < n_val && "test precondition: dest_old < n");
+    assert(n_val < (1u << Wn) && "test precondition: n fits in Wn bits");
+    sturm::QubitPool::instance().reset_for_testing();
+
+    constexpr uint32_t n_reg_a    = static_cast<uint32_t>(Wn);
+    constexpr uint32_t n_reg_dest = static_cast<uint32_t>(Wn) + 1u;
+    constexpr uint32_t n_reg_n    = static_cast<uint32_t>(Wn);
+    constexpr uint32_t n_reg      = n_reg_a + n_reg_dest + n_reg_n;
+    int qi_a[Wn], qi_dest[Wn + 1u], qi_n[Wn];
+    for (std::size_t i = 0; i < Wn; ++i)
+        qi_a[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < Wn + 1u; ++i)
+        qi_dest[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < Wn; ++i)
+        qi_n[i] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    assert(pre_in_use == static_cast<int>(n_reg));
+
+    sturm::qbool a_own[Wn], dest_own[Wn + 1u], n_own[Wn];
+    sturm::BitProxy a_bits[Wn], dest_bits[Wn + 1u], n_bits[Wn];
+    for (std::size_t i = 0; i < Wn; ++i) {
+        a_own[i]  = sturm::qbool::make_non_owning(qi_a[i]);
+        a_bits[i] = sturm::BitProxy(a_own[i]);
+        n_own[i]  = sturm::qbool::make_non_owning(qi_n[i]);
+        n_bits[i] = sturm::BitProxy(n_own[i]);
+    }
+    for (std::size_t i = 0; i < Wn + 1u; ++i) {
+        dest_own[i]  = sturm::qbool::make_non_owning(qi_dest[i]);
+        dest_bits[i] = sturm::BitProxy(dest_own[i]);
+    }
+
+    sturm_backend_context_t* ctx =
+        sturm_backend_create(STURM_MODE_APPEND, 64u);
+    assert(ctx);
+    sturm_backend_context_t* prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+
+    sturm::lib_add_mod_inplace_dsl<sturm::BitProxy>(a_bits, dest_bits,
+                                                    n_bits, Wn);
+
+    const int high_water = sturm::QubitPool::instance().high_water();
+    std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
+    for (std::size_t i = 0; i < Wn; ++i) {
+        if ((a_val    >> i) & 1u) bits[static_cast<std::size_t>(qi_a[i])]    = 1u;
+        if ((dest_val >> i) & 1u) bits[static_cast<std::size_t>(qi_dest[i])] = 1u;
+        if ((n_val    >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])]    = 1u;
+    }
+    // dest_bits[Wn] (overflow slot) starts |0> (already zero).
+    for (std::size_t i = 0; i < ctx->ir.size(); ++i)
+        apply_gate_classical_inplace(bits, ctx->ir.at(i));
+
+    const uint32_t expect_dest = (dest_val + a_val) % n_val;
+    assert(read_reg_classical_inplace(bits, qi_a, Wn) == a_val
+           && "trace: a unchanged");
+    assert(read_reg_classical_inplace(bits, qi_dest, Wn) == expect_dest
+           && "trace: dest_bits[0..Wn-1] == (dest_old + a) mod n");
+    assert(bits[static_cast<std::size_t>(qi_dest[Wn])] == 0u
+           && "trace: dest_bits[Wn] (overflow slot) returned to |0>");
+    assert(read_reg_classical_inplace(bits, qi_n, Wn) == n_val
+           && "trace: n unchanged");
+    for (std::size_t q = static_cast<std::size_t>(n_reg);
+         q < bits.size(); ++q) {
+        assert(bits[q] == 0u && "trace: ancilla not cleaned");
+    }
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "trace: pool live-count restored");
+
+    sturm_set_thread_context(prev);
+    sturm_backend_destroy(ctx);
+    for (std::size_t i = Wn; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_n[i]);
+    for (std::size_t i = Wn + 1u; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_dest[i]);
+    for (std::size_t i = Wn; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_a[i]);
+}
+
 int main() {
     std::printf("sturm-8lnp.1 add-mod-inplace-dsl: n==0 no-op tests:\n");
     run_n_zero_case(/*a=*/1u, /*dest=*/2u, /*n=*/3u);
@@ -383,6 +503,51 @@ int main() {
     }
     std::printf("  PASS: %zu W=3 random cases (dest_old + a) mod n matches "
                 "classical reference\n", kW3Cases);
+
+    // sturm-8n73: high-W trace spot checks validating kMaxN > 32 works.
+    // add_mod_inplace peak is ~3W+5; fits in STURM_ANCILLA_CAPACITY=256
+    // for any W up to 80.  W=64 path is exercised by the dedicated
+    // test_modular_arith_highw_trace target.
+    constexpr std::size_t W8_hi  = 8u;
+    constexpr std::size_t W16_hi = 16u;
+
+    std::printf("sturm-8n73 add-mod-inplace-dsl: W=8 random trace spot "
+                "checks (10 cases, seed=8073):\n");
+    {
+        constexpr uint32_t kSeed = 8073u;
+        constexpr std::size_t kCases = 10u;
+        std::mt19937 rng8(kSeed);
+        std::uniform_int_distribution<uint32_t> n_dist(2u,
+                                                        (1u << W8_hi) - 1u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = n_dist(rng8);
+            std::uniform_int_distribution<uint32_t> ab(0u, n_val - 1u);
+            uint32_t a_val    = ab(rng8);
+            uint32_t dest_val = ab(rng8);
+            run_inplace_trace_case<W8_hi>(a_val, dest_val, n_val);
+        }
+        std::printf("  PASS: %zu W=8 add-mod-inplace trace spot checks\n",
+                    kCases);
+    }
+
+    std::printf("sturm-8n73 add-mod-inplace-dsl: W=16 random trace spot "
+                "checks (5 cases, seed=8074):\n");
+    {
+        constexpr uint32_t kSeed = 8074u;
+        constexpr std::size_t kCases = 5u;
+        std::mt19937 rng16(kSeed);
+        std::uniform_int_distribution<uint32_t> n_dist(2u,
+                                                        (1u << W16_hi) - 1u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = n_dist(rng16);
+            std::uniform_int_distribution<uint32_t> ab(0u, n_val - 1u);
+            uint32_t a_val    = ab(rng16);
+            uint32_t dest_val = ab(rng16);
+            run_inplace_trace_case<W16_hi>(a_val, dest_val, n_val);
+        }
+        std::printf("  PASS: %zu W=16 add-mod-inplace trace spot checks\n",
+                    kCases);
+    }
 
     std::printf("All sturm-8lnp Beat A forward tests passed.\n");
     return 0;
