@@ -38,7 +38,6 @@ target_include_directories(test_divide_oop PRIVATE
 )
 target_compile_features(test_divide_oop PRIVATE cxx_std_20)
 target_compile_definitions(test_divide_oop PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_MAX_QUBITS=17
 )
@@ -65,7 +64,6 @@ target_include_directories(test_and_oop PRIVATE
 )
 target_compile_features(test_and_oop PRIVATE cxx_std_20)
 target_compile_definitions(test_and_oop PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_MAX_QUBITS=12
 )
@@ -91,7 +89,6 @@ target_include_directories(test_mul_oop PRIVATE
 )
 target_compile_features(test_mul_oop PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_oop PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_MAX_QUBITS=16
 )
@@ -114,7 +111,6 @@ target_include_directories(test_or_oop PRIVATE
 )
 target_compile_features(test_or_oop PRIVATE cxx_std_20)
 target_compile_definitions(test_or_oop PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_MAX_QUBITS=12
 )
@@ -138,7 +134,6 @@ target_include_directories(test_divide_oop_adj PRIVATE
 )
 target_compile_features(test_divide_oop_adj PRIVATE cxx_std_20)
 target_compile_definitions(test_divide_oop_adj PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_MAX_QUBITS=17
 )
@@ -161,7 +156,6 @@ target_include_directories(test_when_swap_qint PRIVATE
 )
 target_compile_features(test_when_swap_qint PRIVATE cxx_std_20)
 target_compile_definitions(test_when_swap_qint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_MAX_QUBITS=12
 )

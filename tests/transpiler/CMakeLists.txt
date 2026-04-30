@@ -2268,7 +2268,6 @@ target_include_directories(test_gate_equivalence_or_single PRIVATE
     ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(test_gate_equivalence_or_single PRIVATE cxx_std_20)
 target_compile_definitions(test_gate_equivalence_or_single PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     # STURM_BACKEND_ENABLED activates the quantum operator path in
     # qbool_ops.hpp (post-PK-2: operator| returns owning qbool directly,
     # allocating an ancilla and emitting CX + CX + CCX) and pulls in
@@ -2277,6 +2276,13 @@ target_compile_definitions(test_gate_equivalence_or_single PRIVATE
     # path in qbool_logic.hpp and the gate stream would be empty on
     # both sides — the test would pass trivially.
     STURM_BACKEND_ENABLED=1
+)
+# Per-target STURM_ANCILLA_CAPACITY=256 pin via the silenced -U/-D pair
+# (sturm-cgg5).  The post-sturm-8n73 project default is 512; this target
+# keeps the historical 256 cap explicit so future bumps to the project
+# default do not silently grow this test's pool footprint.
+target_compile_options(test_gate_equivalence_or_single PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_gate_equivalence_or_single PRIVATE sturm orkan_headers)
 set_source_files_properties(

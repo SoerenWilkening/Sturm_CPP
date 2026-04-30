@@ -54,8 +54,8 @@ target_include_directories(test_context PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_context PRIVATE cxx_std_20)
-target_compile_definitions(test_context PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_context PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -104,8 +104,8 @@ target_include_directories(test_exec_append PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_exec_append PRIVATE cxx_std_20)
-target_compile_definitions(test_exec_append PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_exec_append PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -125,8 +125,8 @@ target_include_directories(test_exec_count PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_exec_count PRIVATE cxx_std_20)
-target_compile_definitions(test_exec_count PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_exec_count PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -208,8 +208,8 @@ target_include_directories(test_execute_gate PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_execute_gate PRIVATE cxx_std_20)
-target_compile_definitions(test_execute_gate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_execute_gate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_execute_gate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -231,8 +231,8 @@ target_include_directories(test_qubit_cap PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_qubit_cap PRIVATE cxx_std_20)
-target_compile_definitions(test_qubit_cap PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_qubit_cap PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 add_test(NAME test_qubit_cap COMMAND test_qubit_cap)
 set_tests_properties(test_qubit_cap PROPERTIES LABELS "backend")
@@ -257,8 +257,10 @@ target_include_directories(test_uncompute_and PRIVATE
 )
 target_compile_features(test_uncompute_and PRIVATE cxx_std_20)
 target_compile_definitions(test_uncompute_and PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_uncompute_and PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_uncompute_and PRIVATE sturm orkan_headers)
 set_source_files_properties(
@@ -284,8 +286,10 @@ target_include_directories(test_ccnot_inplace PRIVATE
 )
 target_compile_features(test_ccnot_inplace PRIVATE cxx_std_20)
 target_compile_definitions(test_ccnot_inplace PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_ccnot_inplace PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_ccnot_inplace PRIVATE sturm orkan_headers)
 set_source_files_properties(
@@ -340,8 +344,8 @@ target_include_directories(test_dispatch_all_classical PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_dispatch_all_classical PRIVATE cxx_std_20)
-target_compile_definitions(test_dispatch_all_classical PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_dispatch_all_classical PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_dispatch_all_classical PRIVATE orkan_headers)
 set_source_files_properties(
@@ -367,8 +371,8 @@ target_include_directories(test_dispatch_mixed PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_dispatch_mixed PRIVATE cxx_std_20)
-target_compile_definitions(test_dispatch_mixed PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_dispatch_mixed PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_dispatch_mixed PRIVATE orkan_headers)
 set_source_files_properties(
@@ -393,8 +397,8 @@ target_include_directories(test_measure PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_measure PRIVATE cxx_std_20)
-target_compile_definitions(test_measure PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_measure PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_measure PRIVATE orkan_headers)
 set_source_files_properties(
@@ -416,8 +420,8 @@ target_include_directories(test_init PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_init PRIVATE cxx_std_20)
-target_compile_definitions(test_init PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_init PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -455,9 +459,11 @@ target_include_directories(test_instantiations PRIVATE
 )
 target_compile_features(test_instantiations PRIVATE cxx_std_20)
 target_compile_definitions(test_instantiations PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
     STURM_USE_EXPLICIT_INSTANTIATIONS=1
+)
+target_compile_options(test_instantiations PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_instantiations PRIVATE orkan_headers)
 set_source_files_properties(
@@ -482,8 +488,10 @@ target_include_directories(test_end_to_end PRIVATE
 )
 target_compile_features(test_end_to_end PRIVATE cxx_std_20)
 target_compile_definitions(test_end_to_end PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_end_to_end PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_end_to_end PRIVATE orkan_headers)
 set_source_files_properties(
@@ -526,8 +534,8 @@ target_include_directories(test_control_stack_push_pop PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_control_stack_push_pop PRIVATE cxx_std_20)
-target_compile_definitions(test_control_stack_push_pop PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_control_stack_push_pop PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -549,8 +557,8 @@ target_include_directories(test_control_stack_thread_local PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_control_stack_thread_local PRIVATE cxx_std_20)
-target_compile_definitions(test_control_stack_thread_local PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_control_stack_thread_local PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_control_stack_thread_local PRIVATE Threads::Threads)
 set_source_files_properties(
@@ -576,8 +584,8 @@ target_include_directories(test_primitives_v3_count PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_primitives_v3_count PRIVATE cxx_std_20)
-target_compile_definitions(test_primitives_v3_count PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_primitives_v3_count PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_primitives_v3_count PRIVATE orkan_headers)
 set_source_files_properties(
@@ -601,8 +609,8 @@ target_include_directories(test_primitives_v3_append PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_primitives_v3_append PRIVATE cxx_std_20)
-target_compile_definitions(test_primitives_v3_append PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_primitives_v3_append PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_primitives_v3_append PRIVATE orkan_headers)
 set_source_files_properties(
@@ -626,8 +634,8 @@ target_include_directories(test_primitives_v3_simulate PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_primitives_v3_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_primitives_v3_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
+target_compile_options(test_primitives_v3_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_primitives_v3_simulate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -653,8 +661,10 @@ target_include_directories(test_qbool_ops PRIVATE
 )
 target_compile_features(test_qbool_ops PRIVATE cxx_std_20)
 target_compile_definitions(test_qbool_ops PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qbool_ops PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qbool_ops PRIVATE orkan_headers)
 set_source_files_properties(
@@ -688,8 +698,10 @@ target_include_directories(test_subscript PRIVATE
 )
 target_compile_features(test_subscript PRIVATE cxx_std_20)
 target_compile_definitions(test_subscript PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_subscript PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_subscript PRIVATE orkan_headers)
 set_source_files_properties(
@@ -715,8 +727,10 @@ target_include_directories(test_subscript_count_simulate PRIVATE
 )
 target_compile_features(test_subscript_count_simulate PRIVATE cxx_std_20)
 target_compile_definitions(test_subscript_count_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_subscript_count_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_subscript_count_simulate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -742,8 +756,10 @@ target_include_directories(test_swap_dsl PRIVATE
 )
 target_compile_features(test_swap_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_swap_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_swap_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_swap_dsl PRIVATE orkan_headers)
 set_source_files_properties(
@@ -779,8 +795,10 @@ target_include_directories(test_pow_dsl_small PRIVATE
 )
 target_compile_features(test_pow_dsl_small PRIVATE cxx_std_20)
 target_compile_definitions(test_pow_dsl_small PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_pow_dsl_small PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_dsl_small PRIVATE orkan_headers)
 set_source_files_properties(
@@ -820,8 +838,10 @@ target_include_directories(test_qint_add_e2e PRIVATE
 )
 target_compile_features(test_qint_add_e2e PRIVATE cxx_std_20)
 target_compile_definitions(test_qint_add_e2e PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qint_add_e2e PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qint_add_e2e PRIVATE orkan_headers)
 set_source_files_properties(
@@ -842,8 +862,10 @@ target_include_directories(test_qint_mul_e2e PRIVATE
 )
 target_compile_features(test_qint_mul_e2e PRIVATE cxx_std_20)
 target_compile_definitions(test_qint_mul_e2e PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qint_mul_e2e PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qint_mul_e2e PRIVATE orkan_headers)
 set_source_files_properties(
@@ -864,8 +886,10 @@ target_include_directories(test_qint_compare_e2e PRIVATE
 )
 target_compile_features(test_qint_compare_e2e PRIVATE cxx_std_20)
 target_compile_definitions(test_qint_compare_e2e PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qint_compare_e2e PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qint_compare_e2e PRIVATE orkan_headers)
 set_source_files_properties(
@@ -893,8 +917,10 @@ target_include_directories(test_qint_bitwise_e2e PRIVATE
 )
 target_compile_features(test_qint_bitwise_e2e PRIVATE cxx_std_20)
 target_compile_definitions(test_qint_bitwise_e2e PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qint_bitwise_e2e PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qint_bitwise_e2e PRIVATE orkan_headers)
 set_source_files_properties(
@@ -919,8 +945,10 @@ target_include_directories(test_lossy_ancilla_cleaned PRIVATE
 )
 target_compile_features(test_lossy_ancilla_cleaned PRIVATE cxx_std_20)
 target_compile_definitions(test_lossy_ancilla_cleaned PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_lossy_ancilla_cleaned PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_lossy_ancilla_cleaned PRIVATE orkan_headers)
 set_source_files_properties(
@@ -945,8 +973,10 @@ target_include_directories(test_mul_div_upperw_clean PRIVATE
 )
 target_compile_features(test_mul_div_upperw_clean PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_div_upperw_clean PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_div_upperw_clean PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_div_upperw_clean PRIVATE orkan_headers)
 set_source_files_properties(
@@ -968,8 +998,10 @@ target_include_directories(test_when_inplace_nonlossy PRIVATE
 )
 target_compile_features(test_when_inplace_nonlossy PRIVATE cxx_std_20)
 target_compile_definitions(test_when_inplace_nonlossy PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_inplace_nonlossy PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_inplace_nonlossy PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1019,8 +1051,10 @@ target_include_directories(test_e2e_arithmetic PRIVATE
 )
 target_compile_features(test_e2e_arithmetic PRIVATE cxx_std_20)
 target_compile_definitions(test_e2e_arithmetic PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_e2e_arithmetic PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_e2e_arithmetic PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1048,8 +1082,10 @@ target_include_directories(test_e2e_all_modes PRIVATE
 )
 target_compile_features(test_e2e_all_modes PRIVATE cxx_std_20)
 target_compile_definitions(test_e2e_all_modes PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_e2e_all_modes PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_e2e_all_modes PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1086,8 +1122,10 @@ target_include_directories(test_free_op_simulate PRIVATE
 )
 target_compile_features(test_free_op_simulate PRIVATE cxx_std_20)
 target_compile_definitions(test_free_op_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_free_op_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_free_op_simulate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1110,8 +1148,10 @@ target_include_directories(test_free_op_gate_emission PRIVATE
 )
 target_compile_features(test_free_op_gate_emission PRIVATE cxx_std_20)
 target_compile_definitions(test_free_op_gate_emission PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_free_op_gate_emission PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_free_op_gate_emission PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1134,8 +1174,10 @@ target_include_directories(test_compound_assign_simulate PRIVATE
 )
 target_compile_features(test_compound_assign_simulate PRIVATE cxx_std_20)
 target_compile_definitions(test_compound_assign_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_compound_assign_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_compound_assign_simulate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1159,8 +1201,10 @@ target_include_directories(test_compound_assign_gate_emission PRIVATE
 )
 target_compile_features(test_compound_assign_gate_emission PRIVATE cxx_std_20)
 target_compile_definitions(test_compound_assign_gate_emission PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_compound_assign_gate_emission PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_compound_assign_gate_emission PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1183,8 +1227,10 @@ target_include_directories(test_shift_simulate PRIVATE
 )
 target_compile_features(test_shift_simulate PRIVATE cxx_std_20)
 target_compile_definitions(test_shift_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_shift_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_shift_simulate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1205,8 +1251,10 @@ target_include_directories(test_bitwise_not_operator PRIVATE
 )
 target_compile_features(test_bitwise_not_operator PRIVATE cxx_std_20)
 target_compile_definitions(test_bitwise_not_operator PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_bitwise_not_operator PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_bitwise_not_operator PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1228,8 +1276,10 @@ target_include_directories(test_bitwise_and_or_simulate PRIVATE
 )
 target_compile_features(test_bitwise_and_or_simulate PRIVATE cxx_std_20)
 target_compile_definitions(test_bitwise_and_or_simulate PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_bitwise_and_or_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_bitwise_and_or_simulate PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1257,8 +1307,10 @@ target_include_directories(test_qbool_acceptance_backend PRIVATE
 )
 target_compile_features(test_qbool_acceptance_backend PRIVATE cxx_std_20)
 target_compile_definitions(test_qbool_acceptance_backend PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qbool_acceptance_backend PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qbool_acceptance_backend PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1287,8 +1339,10 @@ target_include_directories(test_when_control_stack_bridge PRIVATE
 )
 target_compile_features(test_when_control_stack_bridge PRIVATE cxx_std_20)
 target_compile_definitions(test_when_control_stack_bridge PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_control_stack_bridge PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_control_stack_bridge PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1311,8 +1365,10 @@ target_include_directories(test_lifted_primitives PRIVATE
 )
 target_compile_features(test_lifted_primitives PRIVATE cxx_std_20)
 target_compile_definitions(test_lifted_primitives PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_lifted_primitives PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_lifted_primitives PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1336,8 +1392,10 @@ target_include_directories(test_phi_theta_backend PRIVATE
 )
 target_compile_features(test_phi_theta_backend PRIVATE cxx_std_20)
 target_compile_definitions(test_phi_theta_backend PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_phi_theta_backend PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_phi_theta_backend PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1369,8 +1427,10 @@ target_include_directories(test_bitproxy_when_promotion PRIVATE
 )
 target_compile_features(test_bitproxy_when_promotion PRIVATE cxx_std_20)
 target_compile_definitions(test_bitproxy_when_promotion PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_bitproxy_when_promotion PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_bitproxy_when_promotion PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1396,8 +1456,10 @@ target_include_directories(test_m8_template_dsl PRIVATE
 )
 target_compile_features(test_m8_template_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_m8_template_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_m8_template_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_m8_template_dsl PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1423,8 +1485,10 @@ target_include_directories(test_when_shift_promotion PRIVATE
 )
 target_compile_features(test_when_shift_promotion PRIVATE cxx_std_20)
 target_compile_definitions(test_when_shift_promotion PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_shift_promotion PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_shift_promotion PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1445,8 +1509,10 @@ target_include_directories(test_copy_register_quantum_only PRIVATE
 )
 target_compile_features(test_copy_register_quantum_only PRIVATE cxx_std_20)
 target_compile_definitions(test_copy_register_quantum_only PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_copy_register_quantum_only PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_copy_register_quantum_only PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1467,8 +1533,10 @@ target_include_directories(test_acceptance_prd PRIVATE
 )
 target_compile_features(test_acceptance_prd PRIVATE cxx_std_20)
 target_compile_definitions(test_acceptance_prd PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_acceptance_prd PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_acceptance_prd PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1489,8 +1557,10 @@ target_include_directories(test_free_bitwise_neg1_qubits PRIVATE
 )
 target_compile_features(test_free_bitwise_neg1_qubits PRIVATE cxx_std_20)
 target_compile_definitions(test_free_bitwise_neg1_qubits PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_free_bitwise_neg1_qubits PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_free_bitwise_neg1_qubits PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1513,8 +1583,10 @@ target_include_directories(test_free_arith_mixed_fastpath PRIVATE
 )
 target_compile_features(test_free_arith_mixed_fastpath PRIVATE cxx_std_20)
 target_compile_definitions(test_free_arith_mixed_fastpath PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_free_arith_mixed_fastpath PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_free_arith_mixed_fastpath PRIVATE orkan_headers)
 add_test(NAME test_free_arith_mixed_fastpath COMMAND test_free_arith_mixed_fastpath)
@@ -1530,8 +1602,10 @@ target_include_directories(test_compound_arith_mixed_fastpath PRIVATE
 )
 target_compile_features(test_compound_arith_mixed_fastpath PRIVATE cxx_std_20)
 target_compile_definitions(test_compound_arith_mixed_fastpath PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_compound_arith_mixed_fastpath PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_compound_arith_mixed_fastpath PRIVATE orkan_headers)
 add_test(NAME test_compound_arith_mixed_fastpath COMMAND test_compound_arith_mixed_fastpath)
@@ -1547,8 +1621,10 @@ target_include_directories(test_compound_bitwise_mixed_fastpath PRIVATE
 )
 target_compile_features(test_compound_bitwise_mixed_fastpath PRIVATE cxx_std_20)
 target_compile_definitions(test_compound_bitwise_mixed_fastpath PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_compound_bitwise_mixed_fastpath PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_compound_bitwise_mixed_fastpath PRIVATE orkan_headers)
 add_test(NAME test_compound_bitwise_mixed_fastpath COMMAND test_compound_bitwise_mixed_fastpath)
@@ -1573,8 +1649,10 @@ target_include_directories(test_mixed_quantum_classical PRIVATE
 )
 target_compile_features(test_mixed_quantum_classical PRIVATE cxx_std_20)
 target_compile_definitions(test_mixed_quantum_classical PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mixed_quantum_classical PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mixed_quantum_classical PRIVATE orkan_headers)
 add_test(NAME test_mixed_quantum_classical COMMAND test_mixed_quantum_classical)
@@ -1593,8 +1671,10 @@ target_include_directories(test_when_bool_expr PRIVATE
 )
 target_compile_features(test_when_bool_expr PRIVATE cxx_std_20)
 target_compile_definitions(test_when_bool_expr PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_bool_expr PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_bool_expr PRIVATE orkan_headers)
 add_test(NAME test_when_bool_expr COMMAND test_when_bool_expr)
@@ -1619,8 +1699,10 @@ target_include_directories(test_when_lossy_gate_equiv PRIVATE
 )
 target_compile_features(test_when_lossy_gate_equiv PRIVATE cxx_std_20)
 target_compile_definitions(test_when_lossy_gate_equiv PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_lossy_gate_equiv PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_lossy_gate_equiv PRIVATE orkan_headers)
 set_source_files_properties(
@@ -1643,8 +1725,10 @@ target_include_directories(test_when_lossy_reversibility PRIVATE
 )
 target_compile_features(test_when_lossy_reversibility PRIVATE cxx_std_20)
 target_compile_definitions(test_when_lossy_reversibility PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_lossy_reversibility PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_lossy_reversibility PRIVATE orkan_headers)
 add_test(NAME test_when_lossy_reversibility COMMAND test_when_lossy_reversibility)
@@ -1662,8 +1746,10 @@ target_include_directories(test_when_lossy_gate_equiv_full PRIVATE
 )
 target_compile_features(test_when_lossy_gate_equiv_full PRIVATE cxx_std_20)
 target_compile_definitions(test_when_lossy_gate_equiv_full PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_when_lossy_gate_equiv_full PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_when_lossy_gate_equiv_full PRIVATE orkan_headers)
 add_test(NAME test_when_lossy_gate_equiv_full COMMAND test_when_lossy_gate_equiv_full)

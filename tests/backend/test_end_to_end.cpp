@@ -31,7 +31,11 @@
 // Harness: plain assert + main (no gtest), matching the project pattern.
 
 #define STURM_BACKEND_ENABLED 1
-#define STURM_ANCILLA_CAPACITY 256
+// STURM_ANCILLA_CAPACITY is supplied by the build system (see
+// tests/backend/CMakeLists.txt -- the per-target -U/-D pair pins it
+// at 256 here, matching the pre-sturm-8n73 default).  Defining it at
+// source level would clash with the project-wide -D set by the root
+// CMakeLists.txt and trip -Wmacro-redefined (sturm-cgg5).
 
 #include "sturm/core/core.h"
 #include "sturm/core/context.hpp"

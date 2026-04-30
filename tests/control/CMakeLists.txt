@@ -25,9 +25,10 @@ set(STURM_CONTROL_BACKEND_SOURCES
 #
 # pow_mod at n=8 peaks at 4·W² + 2W + 8 = 280 transient ancillas above
 # the 4·W=32 input qubits (see tests/lib/test_pow_mod_dsl_ancilla.cpp
-# for the structural breakdown).  STURM_ANCILLA_CAPACITY=512 lets us
-# allocate the worst-case footprint without bumping the project-wide
-# default 256 cap.
+# for the structural breakdown).  STURM_ANCILLA_CAPACITY=512 matches
+# the post-sturm-8n73 project-wide default; we keep the explicit -U/-D
+# override so the per-target intent ("worst-case fits at 512") is
+# pinned even if the project default ever moves again.
 add_executable(test_baseline_gate_counts
     test_baseline_gate_counts.cpp
     ${STURM_CONTROL_BACKEND_SOURCES}
@@ -39,11 +40,12 @@ target_compile_features(test_baseline_gate_counts PRIVATE cxx_std_20)
 target_compile_definitions(test_baseline_gate_counts PRIVATE
     STURM_BACKEND_ENABLED=1
 )
-# Override the project-wide STURM_ANCILLA_CAPACITY=256 set at the root
-# CMakeLists.txt with 512 (pow_mod n=8 peaks at 280 transient ancillas
-# above the input registers).  The -U/-D dance silences the compiler's
-# -Wmacro-redefined warning we'd hit if both definitions reached the
-# preprocessor.
+# Pin per-target STURM_ANCILLA_CAPACITY=512 (matches the project-wide
+# default since sturm-8n73, but keep the explicit pin so the worst-case
+# pow_mod n=8 budget of 280 transient ancillas stays documented at the
+# target).  The -U/-D dance silences the compiler's -Wmacro-redefined
+# warning we'd hit if both definitions reached the preprocessor
+# (sturm-cgg5).
 target_compile_options(test_baseline_gate_counts PRIVATE
     -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=512
 )
@@ -82,8 +84,10 @@ target_compile_definitions(test_add_mod_when_lift PRIVATE
     STURM_BACKEND_ENABLED=1
 )
 # Inherit the same STURM_ANCILLA_CAPACITY override pattern used by
-# test_baseline_gate_counts (project default 256 is fine for W=2 here, but
-# we reuse the silenced -U/-D dance for consistency).
+# test_baseline_gate_counts.  W=2 here easily fits in any reasonable
+# pool, but we pin the historical 256 cap explicitly via -U/-D for
+# consistency (and to silence -Wmacro-redefined under the post-
+# sturm-8n73 project default of 512 -- see sturm-cgg5).
 target_compile_options(test_add_mod_when_lift PRIVATE
     -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )

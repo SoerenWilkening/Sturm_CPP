@@ -30,8 +30,10 @@ target_include_directories(test_or_dsl_adjoint PRIVATE
 )
 target_compile_features(test_or_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_or_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_or_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_or_dsl_adjoint PRIVATE orkan_headers)
 set_source_files_properties(
@@ -53,8 +55,10 @@ target_include_directories(test_c_and_dsl_adjoint PRIVATE
 )
 target_compile_features(test_c_and_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_c_and_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_c_and_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_c_and_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_c_and_dsl_adjoint COMMAND test_c_and_dsl_adjoint)
@@ -71,8 +75,10 @@ target_include_directories(test_div_mod_dsl_adjoint PRIVATE
 )
 target_compile_features(test_div_mod_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_div_mod_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_div_mod_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_div_mod_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_div_mod_dsl_adjoint COMMAND test_div_mod_dsl_adjoint)
@@ -89,8 +95,10 @@ target_include_directories(test_mul_dsl_adjoint PRIVATE
 )
 target_compile_features(test_mul_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_mul_dsl_adjoint COMMAND test_mul_dsl_adjoint)
@@ -115,8 +123,10 @@ target_include_directories(test_add_mod_dsl PRIVATE
 )
 target_compile_features(test_add_mod_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_dsl PRIVATE orkan_headers)
 add_test(NAME test_add_mod_dsl COMMAND test_add_mod_dsl)
@@ -133,8 +143,10 @@ target_include_directories(test_add_mod_dsl_adjoint PRIVATE
 )
 target_compile_features(test_add_mod_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_add_mod_dsl_adjoint COMMAND test_add_mod_dsl_adjoint)
@@ -153,8 +165,10 @@ target_include_directories(test_add_mod_dsl_ancilla PRIVATE
 )
 target_compile_features(test_add_mod_dsl_ancilla PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_dsl_ancilla PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_dsl_ancilla PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_dsl_ancilla PRIVATE orkan_headers)
 add_test(NAME test_add_mod_dsl_ancilla COMMAND test_add_mod_dsl_ancilla)
@@ -175,8 +189,10 @@ target_include_directories(test_add_mod_dsl_pool_drain PRIVATE
 )
 target_compile_features(test_add_mod_dsl_pool_drain PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_dsl_pool_drain PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_dsl_pool_drain PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_dsl_pool_drain PRIVATE orkan_headers)
 add_test(NAME test_add_mod_dsl_pool_drain COMMAND test_add_mod_dsl_pool_drain)
@@ -200,8 +216,10 @@ target_include_directories(test_double_mod_dsl PRIVATE
 )
 target_compile_features(test_double_mod_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_double_mod_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_double_mod_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_double_mod_dsl PRIVATE orkan_headers)
 add_test(NAME test_double_mod_dsl COMMAND test_double_mod_dsl)
@@ -221,8 +239,10 @@ target_include_directories(test_double_mod_dsl_adjoint PRIVATE
 )
 target_compile_features(test_double_mod_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_double_mod_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_double_mod_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_double_mod_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_double_mod_dsl_adjoint COMMAND test_double_mod_dsl_adjoint)
@@ -242,8 +262,10 @@ target_include_directories(test_double_mod_dsl_ancilla PRIVATE
 )
 target_compile_features(test_double_mod_dsl_ancilla PRIVATE cxx_std_20)
 target_compile_definitions(test_double_mod_dsl_ancilla PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_double_mod_dsl_ancilla PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_double_mod_dsl_ancilla PRIVATE orkan_headers)
 add_test(NAME test_double_mod_dsl_ancilla COMMAND test_double_mod_dsl_ancilla)
@@ -262,8 +284,10 @@ target_include_directories(test_double_mod_dsl_pool_drain PRIVATE
 )
 target_compile_features(test_double_mod_dsl_pool_drain PRIVATE cxx_std_20)
 target_compile_definitions(test_double_mod_dsl_pool_drain PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_double_mod_dsl_pool_drain PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_double_mod_dsl_pool_drain PRIVATE orkan_headers)
 add_test(NAME test_double_mod_dsl_pool_drain COMMAND test_double_mod_dsl_pool_drain)
@@ -287,8 +311,10 @@ target_include_directories(test_add_mod_inplace_dsl PRIVATE
 )
 target_compile_features(test_add_mod_inplace_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_inplace_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_inplace_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_inplace_dsl PRIVATE orkan_headers)
 add_test(NAME test_add_mod_inplace_dsl COMMAND test_add_mod_inplace_dsl)
@@ -308,8 +334,10 @@ target_include_directories(test_add_mod_inplace_dsl_adjoint PRIVATE
 )
 target_compile_features(test_add_mod_inplace_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_inplace_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_inplace_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_inplace_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_add_mod_inplace_dsl_adjoint COMMAND test_add_mod_inplace_dsl_adjoint)
@@ -331,8 +359,10 @@ target_include_directories(test_add_mod_inplace_dsl_ancilla PRIVATE
 )
 target_compile_features(test_add_mod_inplace_dsl_ancilla PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_inplace_dsl_ancilla PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_inplace_dsl_ancilla PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_inplace_dsl_ancilla PRIVATE orkan_headers)
 add_test(NAME test_add_mod_inplace_dsl_ancilla COMMAND test_add_mod_inplace_dsl_ancilla)
@@ -352,8 +382,10 @@ target_include_directories(test_add_mod_inplace_dsl_pool_drain PRIVATE
 )
 target_compile_features(test_add_mod_inplace_dsl_pool_drain PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_inplace_dsl_pool_drain PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_add_mod_inplace_dsl_pool_drain PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_inplace_dsl_pool_drain PRIVATE orkan_headers)
 add_test(NAME test_add_mod_inplace_dsl_pool_drain COMMAND test_add_mod_inplace_dsl_pool_drain)
@@ -377,8 +409,10 @@ target_include_directories(test_mul_mod_dsl PRIVATE
 )
 target_compile_features(test_mul_mod_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl COMMAND test_mul_mod_dsl)
@@ -404,8 +438,10 @@ target_include_directories(test_mul_mod_dsl_adjoint PRIVATE
 )
 target_compile_features(test_mul_mod_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl_adjoint COMMAND test_mul_mod_dsl_adjoint)
@@ -430,8 +466,10 @@ target_include_directories(test_mul_mod_dsl_ancilla PRIVATE
 )
 target_compile_features(test_mul_mod_dsl_ancilla PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl_ancilla PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl_ancilla PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_ancilla PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl_ancilla COMMAND test_mul_mod_dsl_ancilla)
@@ -457,8 +495,10 @@ target_include_directories(test_mul_mod_dsl_pool_drain PRIVATE
 )
 target_compile_features(test_mul_mod_dsl_pool_drain PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl_pool_drain PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl_pool_drain PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_pool_drain PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl_pool_drain COMMAND test_mul_mod_dsl_pool_drain)
@@ -479,8 +519,10 @@ target_include_directories(test_mul_mod_dsl_oneshot PRIVATE
 )
 target_compile_features(test_mul_mod_dsl_oneshot PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl_oneshot PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl_oneshot PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_oneshot PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl_oneshot COMMAND test_mul_mod_dsl_oneshot)
@@ -496,8 +538,10 @@ target_include_directories(test_mul_mod_dsl_oneshot_adjoint PRIVATE
 )
 target_compile_features(test_mul_mod_dsl_oneshot_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl_oneshot_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl_oneshot_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_oneshot_adjoint PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl_oneshot_adjoint COMMAND test_mul_mod_dsl_oneshot_adjoint)
@@ -513,8 +557,10 @@ target_include_directories(test_mul_mod_dsl_oneshot_ancilla PRIVATE
 )
 target_compile_features(test_mul_mod_dsl_oneshot_ancilla PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_dsl_oneshot_ancilla PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_dsl_oneshot_ancilla PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_oneshot_ancilla PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_dsl_oneshot_ancilla COMMAND test_mul_mod_dsl_oneshot_ancilla)
@@ -531,8 +577,10 @@ target_include_directories(test_pow_mod_dsl PRIVATE
 )
 target_compile_features(test_pow_mod_dsl PRIVATE cxx_std_20)
 target_compile_definitions(test_pow_mod_dsl PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_pow_mod_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_mod_dsl PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_dsl COMMAND test_pow_mod_dsl)
@@ -555,8 +603,10 @@ target_include_directories(test_pow_mod_dsl_adjoint PRIVATE
 )
 target_compile_features(test_pow_mod_dsl_adjoint PRIVATE cxx_std_20)
 target_compile_definitions(test_pow_mod_dsl_adjoint PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_pow_mod_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_mod_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_dsl_adjoint COMMAND test_pow_mod_dsl_adjoint)
@@ -582,8 +632,10 @@ target_include_directories(test_pow_mod_dsl_ancilla PRIVATE
 )
 target_compile_features(test_pow_mod_dsl_ancilla PRIVATE cxx_std_20)
 target_compile_definitions(test_pow_mod_dsl_ancilla PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_pow_mod_dsl_ancilla PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_mod_dsl_ancilla PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_dsl_ancilla COMMAND test_pow_mod_dsl_ancilla)
@@ -610,8 +662,10 @@ target_include_directories(test_pow_mod_dsl_pool_drain PRIVATE
 )
 target_compile_features(test_pow_mod_dsl_pool_drain PRIVATE cxx_std_20)
 target_compile_definitions(test_pow_mod_dsl_pool_drain PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_pow_mod_dsl_pool_drain PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_mod_dsl_pool_drain PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_dsl_pool_drain COMMAND test_pow_mod_dsl_pool_drain)
@@ -628,8 +682,10 @@ target_include_directories(test_qint_modular PRIVATE
 )
 target_compile_features(test_qint_modular PRIVATE cxx_std_20)
 target_compile_definitions(test_qint_modular PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qint_modular PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_qint_modular PRIVATE orkan_headers)
 add_test(NAME test_qint_modular COMMAND test_qint_modular)
@@ -653,8 +709,10 @@ target_include_directories(test_pow_mod_xval PRIVATE
 )
 target_compile_features(test_pow_mod_xval PRIVATE cxx_std_20)
 target_compile_definitions(test_pow_mod_xval PRIVATE
-    STURM_ANCILLA_CAPACITY=256
     STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_pow_mod_xval PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_mod_xval PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_xval COMMAND test_pow_mod_xval)
