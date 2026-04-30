@@ -567,6 +567,34 @@ add_test(NAME test_mul_mod_dsl_oneshot_ancilla COMMAND test_mul_mod_dsl_oneshot_
 set_tests_properties(test_mul_mod_dsl_oneshot_ancilla
     PROPERTIES LABELS "lib;modular-arith")
 
+# sturm-3sfl.2 Beat D-B -- lib_square_mod_dsl forward + adjoint + ancilla.
+# In-place modular squaring built on lib_mul_mod_dsl_oneshot (Beat C) plus
+# the alias-allowed a==b multiplication and a swap+XOR-uncopy idiom.  Single
+# combined test target covers: n==0 no-op, W=2 simulator witness, W=2
+# exhaustive sweep including the (n+1)/2 case, W=3 random sweep including
+# even n, x=0 / x=n-1 edge cases, adjoint round-trip, ancilla budget
+# (~4W+7), pool live-count round-trip, and the x_copy_out_bits XOR-into
+# threading round-trip (the squaring's non-injectivity witness, mirroring
+# Beat B's lt_flag_out semantic).
+add_executable(test_square_mod_dsl
+    test_square_mod_dsl.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_square_mod_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_square_mod_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_square_mod_dsl PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_square_mod_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_square_mod_dsl PRIVATE orkan_headers)
+add_test(NAME test_square_mod_dsl COMMAND test_square_mod_dsl)
+set_tests_properties(test_square_mod_dsl
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
+
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
     test_pow_mod_dsl.cpp
