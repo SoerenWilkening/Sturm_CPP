@@ -10,9 +10,19 @@
 // on exit.  This file exercises the forward direction; the adjoint
 // round-trip lives in `test_double_mod_dsl_adjoint.cpp`.
 //
-// The test sweeps below stay restricted to odd `n` (matching the original
-// sturm-wdas coverage); the sturm-4oot.2 issue extends them to even `n`.
-// This issue is the API rewrite only.
+// As of sturm-4oot.2, the W=2 / W=3 sweeps are extended to cover even
+// `n` (now legal post sturm-4oot.1).  W=2 even-n exhaustive covers
+// n=2 only — n=4 doesn't fit in a 2-bit modulus register and is hoisted
+// to W=3 (this mirrors the convention used in the sturm-4oot.4 test
+// extension).  W=3 even-n exhaustive covers n in {2, 4, 6} — n=8
+// doesn't fit in a 3-bit modulus register.  W=4 and W=5 even-n random
+// spot checks at n in {10, 12, 14} land too far above the orkan
+// 30-qubit ceiling for the simulator harness, so they use a classical-
+// trace replay harness (APPEND-mode IR + bit-vector replay) modelled on
+// `test_mul_mod_dsl_oneshot.cpp` (sturm-4oot.4).  The (n+1)/2 odd-only
+// counterexample (n=3, x=2) was previously the sole adjoint-undefined
+// case; under sturm-4oot.1 the round-trip is now defined for it and is
+// already covered by the W=2 sweep + the explicit design-note-3 call.
 //
 // Each call asserts:
 //   - x_bits[0..W-1] == (2 · x_orig) mod n_value,
@@ -37,6 +47,8 @@
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
+#include "sturm/backend/ir.hpp"
+#include "sturm/core/gate_kind.h"
 
 #include <array>
 #include <cassert>
@@ -45,6 +57,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <random>
+#include <vector>
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
@@ -183,8 +196,9 @@ static void run_n_zero_case(uint32_t x_val, uint32_t n_val) {
 //   - lt_flag_out == (2x_orig < n_value)  (XOR-into a |0> entry → clean
 //     write of the comparison bit per the new contract),
 //   - QubitPool::in_use() returns to its pre-call value.
-// Pre: x_val < n_val.  No parity restriction (sturm-4oot.1 lifted it),
-// but the W=2/W=3 sweeps below stay odd-only until sturm-4oot.2.
+// Pre: x_val < n_val.  No parity restriction (sturm-4oot.1 lifted it;
+// the W=2/W=3 sweeps below now exercise both parities under
+// sturm-4oot.2).
 static void run_classical_case(uint32_t x_val, uint32_t n_val) {
     assert(x_val < n_val && "test precondition: x < n");
     sturm::QubitPool::instance().reset_for_testing();
@@ -347,6 +361,122 @@ static void run_classical_case_w3(uint32_t x_val, uint32_t n_val) {
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
+// ── classical-trace harness (APPEND mode + bit-vector replay) ────────────────
+// sturm-4oot.2: even-n random sweeps for W=4, W=5 land too far above the
+// orkan 30-qubit ceiling for the simulator harness, so we drive the
+// primitive in APPEND mode and replay the resulting IR bit-vector to
+// verify the classical post-conditions.  This mirrors the trace harness
+// in test_mul_mod_dsl_oneshot.cpp (sturm-4oot.4).  `lib_double_mod_dsl`
+// emits only X / CX / CCX gates (it composes lib_add_dsl primitives,
+// CNOT-based bit moves, and emit_CCX_lifted MAJ/UMA bodies), so the
+// switch is exhaustive over the gate kinds the algorithm produces.
+static void apply_gate_classical(std::vector<uint8_t>& bits,
+                                 const sturm::GateRecord& rec) {
+    switch (rec.kind) {
+    case STURM_GATE_X:
+        bits[rec.qubits[0]] ^= 1u; break;
+    case STURM_GATE_CX:
+        if (bits[rec.qubits[0]]) bits[rec.qubits[1]] ^= 1u; break;
+    case STURM_GATE_CCX:
+        if (bits[rec.qubits[0]] && bits[rec.qubits[1]])
+            bits[rec.qubits[2]] ^= 1u;
+        break;
+    default:
+        std::fprintf(stderr, "trace: unsupported gate kind %d\n",
+                     static_cast<int>(rec.kind));
+        std::abort();
+    }
+}
+
+static uint32_t read_reg_classical(const std::vector<uint8_t>& bits,
+                                   const int* qi, std::size_t n) {
+    uint32_t v = 0u;
+    for (std::size_t k = 0; k < n; ++k)
+        if (qi[k] >= 0 && bits[static_cast<std::size_t>(qi[k])])
+            v |= (1u << k);
+    return v;
+}
+
+// Run lib_double_mod_dsl<Wn> for one (x, n) input via the trace harness.
+// Asserts x_bits == (2x) mod n, x_bits[Wn]==0, n preserved, lt_flag_out ==
+// (2x_orig < n_value), pool live-count restored, and every transient
+// ancilla returns to |0>.
+template <std::size_t Wn>
+static void run_double_mod_trace_case(uint32_t x_val, uint32_t n_val) {
+    assert(x_val < n_val && n_val < (1u << Wn));
+    sturm::QubitPool::instance().reset_for_testing();
+
+    constexpr uint32_t n_reg_x  = static_cast<uint32_t>(Wn) + 1u;
+    constexpr uint32_t n_reg_n  = static_cast<uint32_t>(Wn);
+    constexpr uint32_t n_reg_lt = 1u;
+    constexpr uint32_t n_reg    = n_reg_x + n_reg_n + n_reg_lt;
+    int qi_x[Wn + 1u], qi_n[Wn], qi_lt;
+    for (std::size_t i = 0; i < Wn + 1u; ++i)
+        qi_x[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < Wn; ++i)
+        qi_n[i] = sturm::QubitPool::instance().allocate();
+    qi_lt = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+    assert(pre_in_use == static_cast<int>(n_reg));
+
+    sturm::qbool x_own[Wn + 1u], n_own[Wn], lt_own;
+    sturm::BitProxy x_bits[Wn + 1u], n_bits[Wn], lt_bit;
+    for (std::size_t i = 0; i < Wn + 1u; ++i) {
+        x_own[i]  = sturm::qbool::make_non_owning(qi_x[i]);
+        x_bits[i] = sturm::BitProxy(x_own[i]);
+    }
+    for (std::size_t i = 0; i < Wn; ++i) {
+        n_own[i]  = sturm::qbool::make_non_owning(qi_n[i]);
+        n_bits[i] = sturm::BitProxy(n_own[i]);
+    }
+    lt_own = sturm::qbool::make_non_owning(qi_lt);
+    lt_bit = sturm::BitProxy(lt_own);
+
+    sturm_backend_context_t* ctx =
+        sturm_backend_create(STURM_MODE_APPEND, 64u);
+    assert(ctx);
+    sturm_backend_context_t* prev = sturm_get_thread_context();
+    sturm_set_thread_context(ctx);
+
+    sturm::lib_double_mod_dsl<sturm::BitProxy>(x_bits, n_bits, Wn, lt_bit);
+
+    const int high_water = sturm::QubitPool::instance().high_water();
+
+    std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
+    for (std::size_t i = 0; i < Wn; ++i) {
+        if ((x_val >> i) & 1u) bits[static_cast<std::size_t>(qi_x[i])] = 1u;
+        if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])] = 1u;
+    }
+    // x_bits[Wn] (overflow slot), lt_bit start |0> (already zero).
+    for (std::size_t i = 0; i < ctx->ir.size(); ++i)
+        apply_gate_classical(bits, ctx->ir.at(i));
+
+    const uint32_t expect_x  = (2u * x_val) % n_val;
+    const uint32_t expect_lt = (2u * x_val < n_val) ? 1u : 0u;
+    assert(read_reg_classical(bits, qi_x, Wn) == expect_x
+           && "trace: x_bits[0..Wn-1] == (2x) mod n");
+    assert(bits[static_cast<std::size_t>(qi_x[Wn])] == 0u
+           && "trace: x_bits[Wn] (overflow slot) returned to |0>");
+    assert(read_reg_classical(bits, qi_n, Wn) == n_val
+           && "trace: n_bits unchanged");
+    assert(bits[static_cast<std::size_t>(qi_lt)] == expect_lt
+           && "trace: lt_flag_out == (2x_orig < n_value)");
+    for (std::size_t q = static_cast<std::size_t>(n_reg);
+         q < bits.size(); ++q) {
+        assert(bits[q] == 0u && "trace: ancilla not cleaned");
+    }
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "trace: pool live-count restored");
+
+    sturm_set_thread_context(prev);
+    sturm_backend_destroy(ctx);
+    sturm::QubitPool::instance().release(qi_lt);
+    for (std::size_t i = Wn; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_n[i]);
+    for (std::size_t i = Wn + 1u; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_x[i]);
+}
+
 int main() {
     std::printf("sturm-wdas.1 double-mod-dsl: n==0 no-op tests:\n");
     run_n_zero_case(/*x=*/1u, /*n=*/3u);
@@ -376,20 +506,38 @@ int main() {
     run_xor_into_case(/*x=*/2u, /*n=*/3u);
     std::puts("  PASS: lt_flag_out_pre=1 XORs cleanly with (2·2 < 3)=0 → 1");
 
-    std::printf("sturm-wdas.3 double-mod-dsl: W=2 exhaustive sweep "
-                "(odd n in [1, 4): n in {1, 3}, all x in [0, n)):\n");
+    std::printf("sturm-wdas.3/sturm-4oot.2 double-mod-dsl: W=2 exhaustive "
+                "sweep (n in {1, 2, 3}, all x in [0, n); n=4 doesn't fit "
+                "in a 2-bit modulus register and is hoisted to W=3 below):\n");
     std::size_t cases_run = 0u;
-    for (uint32_t n_val = 1u; n_val < (1u << W); n_val += 2u) {  // odd-only
+    for (uint32_t n_val = 1u; n_val < (1u << W); ++n_val) {
         for (uint32_t x_val = 0u; x_val < n_val; ++x_val) {
             run_classical_case(x_val, n_val);
             ++cases_run;
         }
     }
-    // odd n in [1, 4): n=1 → 1 case (x=0); n=3 → 3 cases.  Total = 4.
-    assert(cases_run == 4u && "W=2 odd-n sweep covered every (x, n) "
-                              "with x < n and n odd");
+    // n in [1, 4): n=1 → 1 case (x=0); n=2 → 2; n=3 → 3.  Total = 6.
+    assert(cases_run == 6u && "W=2 sweep covered every (x, n) "
+                              "with x < n and n in {1, 2, 3}");
     std::printf("  PASS: %zu W=2 cases covering every (x, n) with x < n, "
-                "n in {1, 3}\n", cases_run);
+                "n in {1, 2, 3}\n", cases_run);
+
+    // sturm-4oot.2 — W=3 even-n exhaustive sweep (n in {2, 4, 6}; n=8
+    // doesn't fit in a 3-bit modulus register and is exercised at W=4
+    // via the trace harness below).
+    std::printf("sturm-4oot.2 double-mod-dsl: W=3 even-n exhaustive sweep "
+                "(n in {2, 4, 6}, all x in [0, n)):\n");
+    std::size_t cases_w3_even = 0u;
+    for (uint32_t n_val : {2u, 4u, 6u}) {
+        for (uint32_t x_val = 0u; x_val < n_val; ++x_val) {
+            run_classical_case_w3(x_val, n_val);
+            ++cases_w3_even;
+        }
+    }
+    // n=2 → 2; n=4 → 4; n=6 → 6.  Total = 12.
+    assert(cases_w3_even == 12u
+           && "W=3 even-n sweep covered every (x, n) with x < n and n even");
+    std::printf("  PASS: %zu W=3 even-n cases\n", cases_w3_even);
 
     // sturm-wdas.4 — W=3 random sweep (50 cases, fixed seed=42).
     constexpr uint32_t    kW3Seed  = 42u;  // plan §12 risk mitigation
@@ -410,7 +558,63 @@ int main() {
     std::printf("  PASS: %zu W=3 random cases (2 · x) mod n + lt_flag_out "
                 "match classical reference\n", kW3Cases);
 
-    std::printf("All sturm-wdas/sturm-4oot.1 double-mod-dsl forward tests "
-                "passed.\n");
+    // sturm-4oot.2 — W=4 exhaustive trace at n=8 (the third entry in the
+    // issue's "W=3 n=2,4,6,8" list, hoisted to W=4 since it doesn't fit
+    // in a 3-bit modulus register; mirrors the convention used in the
+    // sturm-4oot.4 oneshot test extension).  Uses the classical-trace
+    // harness because W=4 with a (W+1)-bit x register + W-bit n register +
+    // 1-bit lt + ~4 transients lands close to the orkan ceiling and
+    // makes the simulator a poor fit for sweep-style testing.
+    constexpr std::size_t W4 = 4u;
+    constexpr std::size_t W5 = 5u;
+    std::array<uint32_t, 3> even_ns_4_5 = {10u, 12u, 14u};
+
+    std::printf("sturm-4oot.2 double-mod-dsl: W=4 exhaustive trace sweep "
+                "(even n=8):\n");
+    {
+        constexpr uint32_t n_val = 8u;
+        std::size_t cases_w4_n8 = 0u;
+        for (uint32_t x_val = 0u; x_val < n_val; ++x_val) {
+            run_double_mod_trace_case<W4>(x_val, n_val);
+            ++cases_w4_n8;
+        }
+        assert(cases_w4_n8 == 8u);
+        std::printf("  PASS: %zu W=4 trace cases at n=8\n", cases_w4_n8);
+    }
+
+    std::printf("sturm-4oot.2 double-mod-dsl: W=4 random trace spot checks "
+                "(20 cases, seed=4204, even n in {10, 12, 14}):\n");
+    {
+        constexpr uint32_t kSeed = 4204u;
+        constexpr std::size_t kCases = 20u;
+        std::mt19937 rng4(kSeed);
+        std::uniform_int_distribution<uint32_t> n_idx(0u, 2u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = even_ns_4_5[n_idx(rng4)];
+            std::uniform_int_distribution<uint32_t> x_dist(0u, n_val - 1u);
+            uint32_t x_val = x_dist(rng4);
+            run_double_mod_trace_case<W4>(x_val, n_val);
+        }
+        std::printf("  PASS: %zu W=4 even-n trace spot checks\n", kCases);
+    }
+
+    std::printf("sturm-4oot.2 double-mod-dsl: W=5 random trace spot checks "
+                "(20 cases, seed=4205, even n in {10, 12, 14}):\n");
+    {
+        constexpr uint32_t kSeed = 4205u;
+        constexpr std::size_t kCases = 20u;
+        std::mt19937 rng5(kSeed);
+        std::uniform_int_distribution<uint32_t> n_idx(0u, 2u);
+        for (std::size_t i = 0; i < kCases; ++i) {
+            uint32_t n_val = even_ns_4_5[n_idx(rng5)];
+            std::uniform_int_distribution<uint32_t> x_dist(0u, n_val - 1u);
+            uint32_t x_val = x_dist(rng5);
+            run_double_mod_trace_case<W5>(x_val, n_val);
+        }
+        std::printf("  PASS: %zu W=5 even-n trace spot checks\n", kCases);
+    }
+
+    std::printf("All sturm-wdas/sturm-4oot.1/sturm-4oot.2 double-mod-dsl "
+                "forward tests passed.\n");
     return 0;
 }
