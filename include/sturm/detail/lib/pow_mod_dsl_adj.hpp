@@ -123,8 +123,11 @@ inline void __lib_pow_mod_dsl_adj(Bit* base_bits, Bit* exp_bits,
                                   Bit* r_bits) {
     if (n == 0u) return;
 
-    // Mirrors the forward's internal W cap (Beat D-D will lift it).
-    static constexpr std::size_t kMaxN = 8u;
+    // Mirrors the forward's internal W cap (Beat D-D, sturm-3sfl.4 lift to
+    // kMaxN = 64 — matching the underlying mul_mod_inplace / square_mod
+    // primitives' caps from sturm-8n73).  See pow_mod_dsl.hpp for the
+    // stack-budget rationale.
+    static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "__lib_pow_mod_dsl_adj: register too wide");
 
     sturm_backend_context_t* raw = sturm_get_thread_context();

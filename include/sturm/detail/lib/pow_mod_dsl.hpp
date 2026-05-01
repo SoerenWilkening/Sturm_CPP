@@ -163,12 +163,26 @@ inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
     if (n == 0u) return;
 
     // Internal W cap.  Beat D-A / Beat D-B were both lifted to kMaxN = 64
-    // under sturm-8n73 for circuit-generation use cases; the formal lift of
-    // pow_mod's cap (with the corresponding stack-budget audit for the
-    // per-iteration witness arrays — kMaxN² qbool slots) is split out as
-    // Beat D-D (sturm-3sfl.4).  Beat D-C therefore retains the prior
-    // cap of 8 to keep the rewrite diff scoped to the algorithm shape.
-    static constexpr std::size_t kMaxN = 8u;
+    // under sturm-8n73 for circuit-generation use cases; Beat D-D
+    // (sturm-3sfl.4) lifts pow_mod's cap to match.  The cap is governed by
+    // stack budget — pow_mod's per-iteration witness arrays scale as
+    // kMaxN² qbool/BitProxy slots — and by the underlying primitives'
+    // own kMaxN.  At kMaxN = 64 the worst-case stack frame is:
+    //   • acc/sq registers       :   2·64 · (sizeof(int) + sizeof(qbool)
+    //                                        + sizeof(BitProxy))
+    //   • mul/sq witness matrices : 2·64·64 · (sizeof(int) + sizeof(qbool)
+    //                                          + sizeof(BitProxy))
+    // ≈ 500 KiB, well under the default 8 MiB thread stack.
+    //
+    // Note on simulator runnability: pow_mod's peak ancilla is
+    // 2W² + 4W + 11 above the 4W input registers (see
+    // tests/lib/test_pow_mod_dsl_ancilla.cpp), which exceeds the orkan
+    // simulator's 17-qubit budget at every W ≥ 1.  Public-wrapper
+    // (`sturm::pow_mod`) tests and the lib_pow_mod_dsl test suite use
+    // APPEND-mode capture + classical replay rather than statevector
+    // simulation, so the cap-lift is bounded only by stack budget and the
+    // underlying primitives' caps, not by simulator capacity.
+    static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "lib_pow_mod_dsl: register too wide");
 
     sturm_backend_context_t* raw = sturm_get_thread_context();

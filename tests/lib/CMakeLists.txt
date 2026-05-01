@@ -701,6 +701,39 @@ add_test(NAME test_pow_mod_dsl_ancilla COMMAND test_pow_mod_dsl_ancilla)
 set_tests_properties(test_pow_mod_dsl_ancilla
     PROPERTIES LABELS "lib;modular-arith")
 
+# sturm-3sfl.4 Beat D-D -- lib_pow_mod_dsl cap-lift validation.
+# Beat D-D lifts pow_mod's internal kMaxN from 8 to 64 (matching its
+# Beat D-A / Beat D-B dependencies after sturm-8n73).  This target exercises
+# the new top of the supported range (W=9, 12, 16) end-to-end via APPEND-mode
+# capture + classical bit-vector replay.  Built with
+# STURM_ANCILLA_CAPACITY=1024 so the W=16 ancilla peak
+# (2W²+4W+11 = 587 above 4W=64 inputs) fits comfortably; statevector
+# simulation is infeasible for pow_mod at any W ≥ 1 (peak exceeds the
+# 17-qubit orkan budget), so trace mode is the only option.
+add_executable(test_pow_mod_dsl_cap_lift
+    test_pow_mod_dsl_cap_lift.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_pow_mod_dsl_cap_lift PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_pow_mod_dsl_cap_lift PRIVATE cxx_std_20)
+# Project-level CMakeLists.txt does add_compile_definitions(
+# STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}) which would otherwise
+# override our target-level setting (last `-D` wins on the command line).
+# Force-undefine first via -U, then redefine via -D.
+target_compile_options(test_pow_mod_dsl_cap_lift PRIVATE
+    -USTURM_ANCILLA_CAPACITY
+    -DSTURM_ANCILLA_CAPACITY=1024
+)
+target_compile_definitions(test_pow_mod_dsl_cap_lift PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_pow_mod_dsl_cap_lift PRIVATE orkan_headers)
+add_test(NAME test_pow_mod_dsl_cap_lift COMMAND test_pow_mod_dsl_cap_lift)
+set_tests_properties(test_pow_mod_dsl_cap_lift
+    PROPERTIES LABELS "lib;modular-arith")
+
 # sturm-a5te.8 P3.8 -- lib_pow_mod_dsl pool live-count round-trip / LIFO
 # release.  Dedicated drain test mirroring beats 1.7
 # (test_add_mod_dsl_pool_drain.cpp) and 2.7 (test_mul_mod_dsl_pool_drain.cpp)
