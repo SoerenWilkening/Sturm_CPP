@@ -595,6 +595,37 @@ add_test(NAME test_square_mod_dsl COMMAND test_square_mod_dsl)
 set_tests_properties(test_square_mod_dsl
     PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
 
+# sturm-3sfl.1 Beat D-A -- lib_mul_mod_inplace_dsl forward + adjoint +
+# ancilla.  In-place modular multiplication built on
+# lib_mul_mod_dsl_oneshot (Beat C) plus a swap+XOR-uncopy idiom and a
+# caller-owned dest_copy_out_bits witness register (mirrors Beat D-B's
+# x_copy_out_bits semantics — the witness is required because the
+# forward map dest -> a*dest mod n is non-injective for non-coprime
+# (a, n)).  Single combined test target covers: n==0 no-op, W=2
+# simulator witness, W=2 exhaustive sweep over (a, dest, n) with
+# a != dest (squaring-aliasing case forbidden — handled by
+# lib_square_mod_dsl), W=3 random sweep including even n, adjoint
+# round-trip, ancilla budget (~4W+7), pool live-count round-trip, and
+# the dest_copy_out_bits XOR-into threading round-trip.
+add_executable(test_mul_mod_inplace_dsl
+    test_mul_mod_inplace_dsl.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_mul_mod_inplace_dsl PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_mul_mod_inplace_dsl PRIVATE cxx_std_20)
+target_compile_definitions(test_mul_mod_inplace_dsl PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_mul_mod_inplace_dsl PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_mul_mod_inplace_dsl PRIVATE orkan_headers)
+add_test(NAME test_mul_mod_inplace_dsl COMMAND test_mul_mod_inplace_dsl)
+set_tests_properties(test_mul_mod_inplace_dsl
+    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility")
+
 # sturm-r5pn P3 -- lib_pow_mod_dsl scaffold (will be filled by Phase 3 beats).
 add_executable(test_pow_mod_dsl
     test_pow_mod_dsl.cpp
