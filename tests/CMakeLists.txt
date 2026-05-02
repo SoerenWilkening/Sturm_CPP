@@ -141,6 +141,13 @@ add_subdirectory(backend)
 # ── Qtypes test subdirectory (sturm-lo LO-1e and later) ───────────────────────
 add_subdirectory(qtypes)
 
+# ── Qram test subdirectory (sturm-u9ge / QRAM-subscript epic) ────────────────
+# Holds runtime-stub tests for `sturm::QRAM_read` (sturm-u9ge.13 / Beat D1)
+# and any sibling QRAM primitives. The directory is added before the
+# transpiler subdirectory so the runtime stub is observable to upstream
+# beats (D2 emitter / E1 OOS diagnostics) without a configure round-trip.
+add_subdirectory(qram)
+
 # ── Lib test subdirectory (sturm-lo LO-1d and siblings) ───────────────────────
 # DSL-level adjoint roundtrip tests for include/sturm/lib/*_dsl.hpp primitives.
 add_subdirectory(lib)

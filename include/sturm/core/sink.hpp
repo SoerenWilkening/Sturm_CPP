@@ -91,6 +91,17 @@ struct Sink {
     virtual void theta_add(int qubit, double delta, int control) = 0;
     virtual void phi_add  (int qubit, double delta, int control) = 0;
     virtual void prepare  (int qubit, double p) = 0;
+
+    // ── QRAM (sturm-u9ge.13 / Beat D1) ────────────────────────────────────
+    // Counter-mode hook for `sturm::QRAM_read` (PRD §11.2.7). The body in
+    // `src/qram/qram_read.cpp` calls `current_sink()->qram_read()` once
+    // per dispatched read; in counter mode CounterSink overrides this to
+    // bump a `qram_read` counter (default sink). The base method is a
+    // non-pure-virtual no-op so existing Sink subclasses (RecordingSink,
+    // any user implementation) keep compiling without modification —
+    // adding a pure virtual would be a hard ABI break. Per-path
+    // (`qrom_read` / `qreg_read`) counters land with gate emission.
+    virtual void qram_read() {}
 };
 
 // ── Thread-local sink registry ────────────────────────────────────────────────

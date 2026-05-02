@@ -46,6 +46,12 @@ public:
     void phi_add  (int, double, int) override { bump("phi_add");   }
     void prepare  (int, double)      override { bump("prepare");   }
 
+    // ── QRAM (sturm-u9ge.13 / Beat D1) ────────────────────────────────────
+    // Counter-mode hook for `sturm::QRAM_read` — bumps a single
+    // `qram_read` counter per dispatched read (PRD §11.2.7 D1 stub —
+    // both QROM and qreg helpers route to the same counter for D1).
+    void qram_read() override { bump("qram_read"); }
+
     // ── Query ─────────────────────────────────────────────────────────────
     size_t count(std::string_view op) const {
         auto it = counts_.find(std::string(op));
