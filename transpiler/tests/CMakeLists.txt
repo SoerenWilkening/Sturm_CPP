@@ -2541,3 +2541,62 @@ endif()
 add_test(NAME test_width_inference COMMAND test_width_inference)
 set_tests_properties(test_width_inference PROPERTIES
     LABELS "transpiler;qram")
+
+# ── Unit test: matcher_qram_subscript (sturm-u9ge.12 / Beat C1) ───────────────
+# Plan §6 / C1; PRD §7 / M3. The matcher under test recognises exactly the
+# v1 shape `qint b = a[i];` for the three container shapes (std::array,
+# C-array, pointer). Linkage mirrors test_width_inference: the production
+# TUs (matcher_qram_subscript.cpp + width_inference.cpp for B1's
+# `infer_width()` plumbing) are the only `transpiler/src/*` sources
+# compiled in. Fixture inputs are threaded via
+# STURM_QRAM_SUBSCRIPT_FIXTURES_DIR so the three positive golden cases
+# load from the source tree.
+add_executable(test_matcher_qram_subscript
+    test_matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_matcher_qram_subscript PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_qram_subscript PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_qram_subscript PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_SUBSCRIPT NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_qram_subscript PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_SUBSCRIPT}
+    STURM_QRAM_SUBSCRIPT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_qram_subscript PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_qram_subscript PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_SUBSCRIPT support)
+    target_link_libraries(test_matcher_qram_subscript PRIVATE
+        ${LLVM_LIBS_QRAM_SUBSCRIPT})
+endif()
+add_test(NAME test_matcher_qram_subscript
+         COMMAND test_matcher_qram_subscript)
+set_tests_properties(test_matcher_qram_subscript PROPERTIES
+    LABELS "transpiler;qram")
