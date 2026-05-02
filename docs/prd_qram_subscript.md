@@ -210,6 +210,7 @@ control-stack invariant. Concrete plan deferred to runtime-design issue
    versus quantum register of qubits — fundamentally different gate
    budgets. The matcher contract in §7 admits both syntactically; the
    semantic distinction must be settled before the runtime is implemented.
+   **Resolved by D0b (`sturm-u9ge.2`); see §11.2 below.**
 3. **Width inference precedence rules** (§6). **Resolved by D0c
    (`sturm-u9ge.3`); see §11.3 below.**
 4. **Adjoint registration** for QRAM read (§10.2). **Resolved by D0d
@@ -217,6 +218,332 @@ control-stack invariant. Concrete plan deferred to runtime-design issue
 5. **Container support beyond v1.** `std::vector<qint>`? Custom user
    containers? Today's contract restricts to the three forms in §7;
    extension is a v2 question.
+
+### §11.2 Decision: D0b — QROM vs quantum-register dispatch
+
+**Status.** Resolved (2026-05-02, bd `sturm-u9ge.2`).
+**Resolves.** PRD §11 item 2.
+**Gates.** Beat D1 (`sturm-u9ge.13`, the `QRAM_read` runtime stub),
+which now knows how to route the two execution paths from a single
+syntactic shape. Also informs Beat D2 (`sturm-u9ge.15`), which uses
+the resolution to plant a single `QRAM_read(...)` call site rather
+than a per-semantic split at emit time.
+
+#### §11.2.1 Two paths sharing one syntactic shape
+
+The PRD §7 source spelling `qint b = a[i];` admits two semantic
+interpretations of the container `a`:
+
+- **QROM path.** Every element of `a` is fully classical at the call
+  site (each `qint_t<W>::super_mask == 0`). The lookup is a
+  multiplexed XOR-fanout indexed by `i`'s qubits — `O(N · W)`
+  Toffolis, no element-side ancilla, the index is read but
+  unmeasured.
+- **Quantum-register path.** At least one element of `a` carries a
+  superposed bit (some `super_mask != 0`). The lookup is a SWAP-style
+  fanout (or its uncompute-paired cousin) controlled on `i`,
+  substantially more gates and ancillas per read; the index is still
+  read but unmeasured.
+
+Both paths share the same source spelling and the same generated
+call site `QRAM_read(a, i, b)`. The runtime — *not* the source, *not*
+the matcher, *not* the emitter — decides which one fires.
+
+#### §11.2.2 Decision
+
+**Resolution.** Option (d) — **runtime classicality dispatch on the
+container's element `super_mask`s at the `QRAM_read` entry point, in
+the same shape as the existing all-classical-vs-mixed-vs-quantum
+dispatch at `dispatch_gate.hpp:67`.** A single `QRAM_read` overload
+per container shape (the three pinned by D0a:
+`std::array<qint_t<W>, N>`, `qint_t<W>[N]`, `qint_t<W>*`) inspects
+the OR-reduction of `super_mask` across the container's elements
+on entry and selects the QROM or quantum-register code path
+accordingly.
+
+Concretely, the runtime body is sketched as:
+
+```cpp
+template <typename Idx, std::size_t W, std::size_t N>
+void QRAM_read(const std::array<qint_t<W>, N>& a,
+               const Idx& i,
+               qint_t<W>& b) {
+    uint64_t any_super = 0;
+    for (const auto& elem : a) any_super |= elem.super_mask;
+    if (any_super == 0) {
+        // QROM path: classical-data multiplexed XOR fanout on i.
+        QRAM_read_qrom(a, i, b);   // counter-mode: bumps qrom_read.
+    } else {
+        // Quantum-register path: SWAP-style fanout controlled on i.
+        QRAM_read_qreg(a, i, b);   // counter-mode: bumps qreg_read.
+    }
+}
+```
+
+The two helper bodies (`QRAM_read_qrom`, `QRAM_read_qreg`) are
+private to the qram_read TU and not exposed to user code; the
+public surface is exactly the three-overload family D0a settles.
+The counter-mode sink that D1 stands up bumps two distinct counters
+(`qrom_read`, `qreg_read`) so the test in `tests/qram/test_qram_read_stub.cpp`
+can assert the dispatch fired the right path.
+
+#### §11.2.3 Why runtime classicality (option d) and not a type tag, annotation, or split overload
+
+**Why not (a) container type tag / template trait.** The natural type
+tag would be a wrapper like `std::array<QROM<qint_t<W>>, N>` vs.
+`std::array<qint_t<W>, N>`. PRD §2 already pins "no new container
+type required from users (no `qarray`)" as a v1 goal; introducing a
+QROM tag wrapper would re-open exactly that goal. Worse, the user
+would have to *commit* to QROM-vs-register at declaration site,
+before knowing whether the data flow keeps the elements classical.
+A user who initialises `qint_t<W> a[N]` from constants and then
+populates one slot from a quantum source on a hot path would have
+to either rewrite the declaration or accept the wrong codegen — a
+papercut the runtime-dispatch model avoids entirely.
+
+**Why not (b) annotation on `a` at declaration.** Same shape as (a),
+just sugared. A `[[sturm::qrom]] qint_t<W> a[N];` annotation forces
+a per-declaration commitment that the runtime mask state already
+provides for free. P2 ("the quantum/classical boundary is a type
+boundary; superposition is an invisible runtime property of
+individual bits") is the principle this options most directly
+violates: forcing the user to *declare* whether their bits are
+superposed contradicts "the user does not see or declare which".
+The classicality is monotone (P8) and tracked per-bit by `super_mask`;
+the runtime can read it without a syntactic crutch.
+
+**Why not (c) two distinct `QRAM_read` overloads at the surface.**
+The natural shape is `QRAM_read_qrom(a, i, b)` and
+`QRAM_read_qreg(a, i, b)` exposed publicly, with the D2 emitter
+choosing which to plant. But D2 has no general way to *prove*
+classicality of `a` from the AST: a `qint_t<W>[N]` populated from
+classical literals at one statement and from `b ^= ...;` at another
+becomes superposed during the emitted function's execution.
+Static analysis to the precision required (must be classical at
+*every* dynamic call site) is exactly the per-call mask analysis
+the runtime already does for free, and the emitter would be
+duplicating B3 ("Dispatch-time specialization") at the wrong
+layer. Worse, a forced choice at the emitter would route
+data-dependent QROM/register decisions through the matcher, which
+is precisely what runtime classicality dispatch is designed to
+avoid.
+
+**Why option (d) is the right shape.** It is exactly the existing
+codebase pattern at `include/sturm/dispatch/dispatch_gate.hpp:67`
+("all operands are classical (super_mask == 0 for all)") generalised
+to a containerful of operands. It honours P8 (classicality is
+monotone and tracked at runtime, not declared at compile time).
+It honours B3 ("Dispatch-time specialization … the optimization
+happens where the mask information is live — at dispatch — not in
+a later pass"). It honours B1 ("Runtime dispatch, no stored
+sequences"). And it has direct precedent: `lib_mul_mod_dsl`
+formerly carried a `is_classical_odd_n_hint()` runtime predicate
+in the same shape; sturm-4oot.5 retired *that particular*
+dispatcher because the underlying algorithm became parity-agnostic,
+not because runtime classicality dispatch is itself the wrong
+pattern. Here the two paths are genuinely different unitaries with
+genuinely different gate counts, so the runtime dispatch cannot be
+collapsed to a single algorithm.
+
+#### §11.2.4 Interaction with the C1 matcher's `Hit.kind`
+
+The C1 matcher (`sturm-u9ge.12`) already records a
+`QramContainerKind` per hit with three values: `StdArray`, `CArray`,
+`Pointer`. This is the **syntactic** discriminator (which AST node
+class fired). QROM-vs-quantum-register is the **semantic**
+discriminator (what the data looks like at the call site).
+
+**The two are orthogonal, not fused.** Each `(kind, semantic)` pair
+is meaningful — a `std::array` may hold either classical constants
+or genuine qubits; a C-array may hold either; a pointer may hold
+either. Concretely:
+
+| `Hit.kind` | QROM (all elements classical) | Quantum register (any element superposed) |
+|------------|-------------------------------|-------------------------------------------|
+| `StdArray` | dispatch to `QRAM_read_qrom` for `std::array` overload | dispatch to `QRAM_read_qreg` for `std::array` overload |
+| `CArray`   | dispatch to `QRAM_read_qrom` for C-array overload | dispatch to `QRAM_read_qreg` for C-array overload |
+| `Pointer`  | dispatch to `QRAM_read_qrom` for pointer overload | dispatch to `QRAM_read_qreg` for pointer overload |
+
+`Hit.kind` selects the **outer overload** (which the D2 emitter
+plants verbatim — one of the three D0a-pinned signatures). The
+inner QROM/qreg branch is selected by the **runtime mask check** at
+`QRAM_read`'s entry. The matcher records nothing semantic and the
+emitter plants nothing semantic; both layers see exactly one shape
+per source-level subscript.
+
+The note already in `transpiler/src/matcher_qram_subscript.hpp:50`
+("D0b note: PRD §11.2 is still OPEN at the time of this beat. The
+matcher therefore records only the container's *kind* … and lets
+downstream code (D2 emitter) dispatch on the resolved D0b decision")
+remains correct in spirit but is now superseded: the dispatch
+happens **inside** the runtime, not in the emitter. D2's
+responsibility is to plant one `QRAM_read(...)` call per hit,
+indexed by `Hit.kind` to pick the overload. No D2-side branch on
+QROM-vs-register is needed; no matcher-side branch is needed.
+
+#### §11.2.5 Emitter contract for D2 (sturm-u9ge.15)
+
+For each `QramSubscriptHit` C1 publishes, D2 plants exactly:
+
+```cpp
+qint_t<W> b;
+::sturm::QRAM_read(a, i, b);   // overload resolved by Hit.kind via ADL
+```
+
+at the original subscript-init site. D2 chooses the overload
+*name-by-name* (no QROM/qreg suffix) — overload resolution falls out
+of the container argument's type, not from any extra emitter logic.
+The runtime entry-point body handles QROM-vs-register at call time.
+
+D2 does **not** need to:
+- Inspect element types beyond what D0a / B1 already pinned for the
+  width.
+- Track classicality of the container across the surrounding scope.
+- Plant different call shapes for QROM vs register.
+
+D2 **does** need to (this is unchanged from the prior plan):
+- Plant the matching uncompute call at the enclosing reversible
+  scope's exit, using `__QRAM_read_adj` per D0d (§11.4). The adjoint
+  body itself dispatches by the same runtime mask check; one
+  registered adjoint covers both semantic branches.
+
+#### §11.2.6 Adjoint consistency with D0d
+
+D0d (§11.4) pins the adjoint as `__QRAM_read_adj`, one-for-one with
+the forward overload set, registered via `STURM_REGISTER_ADJOINT`.
+D0b's runtime classicality dispatch is **internal** to each forward
+overload's body and to its sibling adjoint's body; the public adjoint
+surface is unchanged. Concretely: the adjoint body mirrors the
+forward —
+
+```cpp
+template <typename Idx, std::size_t W, std::size_t N>
+void __QRAM_read_adj(const std::array<qint_t<W>, N>& a,
+                     const Idx& i,
+                     qint_t<W>& b) {
+    uint64_t any_super = 0;
+    for (const auto& elem : a) any_super |= elem.super_mask;
+    if (any_super == 0) {
+        QRAM_read_qrom_adj(a, i, b);
+    } else {
+        QRAM_read_qreg_adj(a, i, b);
+    }
+}
+```
+
+— and the runtime mask check fires on the same operands the forward
+saw. P9 ("invertible by synthesised adjoint") is satisfied: the
+adjoint is a separate named function (P9c), it un-writes `b` to
+|0> for whichever path the forward took, and `b`'s output mask is
+unchanged from the forward (so the dispatch picks the same branch
+on both sides of the round trip). P8 ("superposition is monotone")
+is preserved: a forward call that took the QROM path widens no
+masks and the adjoint stays on the QROM path; a forward call that
+took the qreg path may widen `b`'s mask, and the adjoint sees that
+widened state and stays on the qreg path.
+
+A mid-routine mutation of `a` between the forward and adjoint that
+would flip the dispatch decision is a P4 ("control expression is
+live across the whole scope") violation already — `a` is an input
+to the QRAM read, and modifying its classicality between forward
+and uncompute is the same UB as mutating any free variable of a
+control expression between scope entry and exit. No new audit is
+needed.
+
+#### §11.2.7 Counter-mode telemetry for D1
+
+D1 (`sturm-u9ge.13`, the runtime stub) lands two counters on the
+counter-mode sink:
+
+- `qrom_read` — bumped once per QROM-path dispatch.
+- `qreg_read` — bumped once per quantum-register-path dispatch.
+
+The `tests/qram/test_qram_read_stub.cpp` test verifies, per
+container shape:
+
+1. A fully-classical container (every element constructed via the
+   `qint_t<W>(int64_t)` ctor) routes through the QROM path
+   (`qrom_read` increments by exactly 1, `qreg_read` stays at 0).
+2. A container whose elements have at least one superposed bit
+   (constructed via `qbool(p)` preparation in some slot) routes
+   through the qreg path (`qreg_read` increments by exactly 1,
+   `qrom_read` stays at 0).
+3. The index `i` is not measured in either case (its `super_mask`
+   is unchanged across the call).
+
+Two counters (rather than one shared `qram_read` counter)
+disambiguate the two execution paths in test output without forcing
+the test to inspect the gate-stream — the gate-stream is empty in
+counter mode by B1a's contract. A future direct-mode
+implementation (out of scope for D1) will add the actual gate
+emission while keeping the same counter-mode shape for tests that
+do not care which gates fired.
+
+#### §11.2.8 Out of scope (deferred to later beats / v2)
+
+- **Mixed containers.** A container with *some* fully-classical
+  elements and *some* superposed elements routes through the qreg
+  path under §11.2.2's OR-reduction rule. A specialised "hybrid"
+  path that reads the classical slots through the cheap QROM circuit
+  and the superposed slots through the expensive qreg circuit is a
+  v2 micro-optimization; the v1 dispatch is binary.
+- **`std::vector<qint_t<W>>`.** Container-support v2 question (PRD
+  §11 item 5). When it lands, the same OR-reduction over `super_mask`
+  applies — the pointer-overload code path already handles
+  `qint_t<W>*` and a vector decays to that.
+- **Compile-time hint for known-QROM containers.** A user-visible
+  `[[sturm::qrom_hint]]` attribute that lets the runtime skip the
+  OR-reduction for read-only containers known to never be written
+  is a possible v2 optimization. Skipping the reduction saves
+  `O(N)` integer ops at every call; on hot-path lookups against
+  large `N` this could be measurable. Filed as a v2 follow-up;
+  not a v1 gate.
+- **Promotion of QROM to qreg mid-routine.** If a forward `QRAM_read`
+  takes the QROM path and a later operation in the same routine
+  superposes one of `a`'s elements, the next `QRAM_read` will route
+  through the qreg path automatically (P8 monotonicity). No new
+  machinery is needed; documented here for clarity.
+
+#### §11.2.9 Cross-references
+
+- `docs/01_principles.md` — P2 (classicality is a runtime property
+  of individual bits, not a declared type), P8 (superposition is
+  monotone; mask only widens), B1 (runtime dispatch, no stored
+  sequences), B3 (dispatch-time specialization on classicality
+  masks), B1a (counter-mode sink as the v1 observability layer).
+- `include/sturm/dispatch/dispatch_gate.hpp:67` — closest existing
+  precedent: all-classical vs. mixed vs. all-quantum dispatch on
+  `super_mask`. D0b's container-OR-reduction is the same pattern,
+  generalised from a fixed-arity gate to a containerful of operands.
+- `include/sturm/detail/lib/mul_mod_dsl_oneshot.hpp:83` — the
+  retired `is_classical_odd_n_hint()` predicate. Cited as
+  precedent that runtime classicality dispatch is in the codebase's
+  vocabulary; the `is_classical_odd_n_hint` retirement (sturm-4oot.5)
+  collapsed two algorithms into one parity-agnostic helper, which
+  is *not* available here (QROM and qreg are genuinely different
+  unitaries with genuinely different gate counts), so the dispatch
+  itself stays.
+- `include/sturm/qtypes/qint_core.hpp:64` — `super_mask` is the
+  per-`qint_t<W>` field this dispatch reads; OR-reducing across a
+  container is the natural extension.
+- `transpiler/src/matcher_qram_subscript.hpp:50` — the C1 matcher's
+  D0b placeholder note. Now superseded by this decision: the
+  matcher's `Hit.kind` is *orthogonal* to QROM-vs-register, not a
+  precursor to it.
+- `docs/prd_qram_subscript.md` §7 — the three container shapes; D0b
+  fixes a single overload per shape (D0a's instantiation table) with
+  the QROM/qreg branch internal to each.
+- `docs/prd_qram_subscript.md` §11.4 (D0d) — adjoint registration;
+  unchanged in surface, the adjoint body mirrors the forward's
+  runtime dispatch.
+- bd `sturm-u9ge.1` (D0a, still open) — pins the per-container
+  template head; D0b's runtime body lives inside whatever D0a
+  settles. D0b does not pre-commit any of D0a's choices.
+- bd `sturm-u9ge.13` (D1, blocked) — implements the runtime stub
+  per this decision: two counters (`qrom_read`, `qreg_read`),
+  binary OR-reduction at entry, two private helper bodies.
+- bd `sturm-u9ge.15` (D2, blocked) — emitter; plants exactly one
+  `QRAM_read(...)` call per hit, no QROM/qreg branch at emit time.
 
 ### §11.3 Decision: D0c — width-inference precedence rules
 
