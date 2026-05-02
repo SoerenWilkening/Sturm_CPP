@@ -1,18 +1,37 @@
 // test_pow_mod_dsl_ancilla.cpp -- sturm-a5te.7 P3.7 pow-mod-dsl 3.7
-//                                  ancilla-budget assertion.
+//                                  ancilla-budget assertion (Beat D-C era,
+//                                  documented O(W^2) peak per sturm-vf2c).
 //
 // Plan §5.3 row 3.7 wording: "Peak ancilla `≤ c·W` for small `c`."  PRD §6
 // bullet 4: O(W) for pow_mod.
 //
-// Both targets were drafted under the assumption that pow_mod could be
-// implemented with a single in-place `acc` register and a single `sq`
+// sturm-vf2c documented bound (see docs/01_principles.md "pow_mod ancilla
+// bound" and the preamble in include/sturm/detail/lib/pow_mod_dsl.hpp):
+// the "Beat D = O(W) modular exponentiation" headline refers to the
+// REGISTER TOPOLOGY (single acc_reg + single sq_reg).  PEAK TRANSIENT
+// ANCILLA is O(W^2), specifically `2W^2 + 4W + 11` above the 4·W input
+// registers, due to the caller-owned witness floor required by Beat D-A
+// and Beat D-B's non-injectivity contracts (each in-place call's W-bit
+// witness must stay live until its paired adjoint consumes it back to
+// |0>, and the forward loop runs to completion before the reverse loop
+// begins).  The plan §5.3 / PRD §6 `O(W)` target is not met by the current
+// implementation; reaching it would require either witness-less D-A/D-B
+// variants or Bennett-style pebbling, both deferred (see
+// docs/01_principles.md).  This file pins the achieved O(W^2) bound as a
+// regression guard.
+//
+// Both targets above were drafted under the assumption that pow_mod could
+// be implemented with a single in-place `acc` register and a single `sq`
 // register, with `acc := mul_mod(acc, sq, n)` and `sq := mul_mod(sq, sq, n)`.
-// The shipping `lib_pow_mod_dsl` (sturm-a5te.{2..6}) uses chain-style
+// The shipping `lib_pow_mod_dsl` (sturm-a5te.{2..6}) used chain-style
 // repeated squaring on top of the chain-style `lib_mul_mod_dsl` because the
 // in-place updates are blocked by `lib_add_dsl`'s distinct-operand
 // precondition (the same reason mul_mod itself is chain-style — see
 // `tests/lib/test_mul_mod_dsl_ancilla.cpp` for the W²-scaling pattern at
-// one chain layer below).
+// one chain layer below).  Beat D-C (sturm-3sfl.3) replaced the chain
+// topology with single in-place acc/sq registers using the new in-place
+// primitives, dropping the chain ancilla but leaving the per-iteration
+// witness floor intact (hence the residual W^2 peak).
 //
 // pow_mod's chain layer adds an extra outer dimension: the algorithm
 // allocates
@@ -89,7 +108,14 @@
 #include <cstddef>
 
 // Achieved peak ancilla footprint of `lib_pow_mod_dsl<W>`, in qubits above
-// the 4·W input registers.  Two bounds are pinned in this file:
+// the 4·W input registers.  Both bounds below are O(W^2) -- this is the
+// documented bound for the current Beat D-C / sturm-vf2c implementation
+// (see docs/01_principles.md "pow_mod ancilla bound" and the preamble of
+// include/sturm/detail/lib/pow_mod_dsl.hpp).  The O(W) figure from the
+// Beat D headline refers to the *register topology* (single acc_reg +
+// single sq_reg), not to peak transient ancilla.
+//
+// Two bounds are pinned in this file:
 //
 //   (A) `kPowModAncillaSlack(W) = 4W² + 2W + 8` -- the legacy chain-style
 //       upper bound, kept as the "ceiling" regression guard so a future
@@ -97,7 +123,8 @@
 //       Beat D-C rewrite (sturm-3sfl.3) lives strictly under this bound.
 //
 //   (B) `kPowModAncillaTight(W) = 2W² + 4W + 11` -- the tight regression
-//       pin for the Beat D-C rewrite.  Derived from:
+//       pin for the Beat D-C rewrite (sturm-vf2c documented bound).
+//       Derived from:
 //
 //         acc_reg                       :     W
 //         sq_reg                        :     W
@@ -117,7 +144,9 @@
 //         • W = 2:  26 qubits  (under 2W² + 4W + 10 = 26 -> matches)
 //         • W = 3:  41 qubits  (under 2W² + 4W + 10 = 40 + 1 slack)
 //       The deviation from the issue brief's qualitative ~5W + O(1) target
-//       is tracked in pow_mod_dsl.hpp's preamble ("Witness accounting").
+//       is tracked in pow_mod_dsl.hpp's preamble ("Witness accounting") and
+//       in docs/01_principles.md ("pow_mod ancilla bound") -- it is now the
+//       documented O(W^2) peak (sturm-vf2c), not a defect.
 //
 // Both bounds are simultaneously enforced: the loose chain-bound (A) acts as
 // the legacy ceiling, while the tight Beat D-C bound (B) prevents silent

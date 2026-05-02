@@ -86,3 +86,45 @@ No entanglement graphs, no global state analysis, no per-call caching.
 ## Modular arithmetic contract
 
 Modular arithmetic primitives on `qint_t` (`add_mod`, `mul_mod`, `pow_mod`, and the transpiler-folded forms `(a + b) % n`, `(a * b) % n`, `pow(a, x) % n`) require that all operands satisfy the precondition `a, b ∈ [0, n)` (and for `pow_mod`, the base `a ∈ [0, n)`; the exponent `x` may be any non-negative integer up to the register width). The library does not check this precondition at runtime; supplying out-of-range operands is undefined behavior, in the same trust model as classical C/C++ modular reduction.
+
+### `pow_mod` ancilla bound (sturm-vf2c)
+
+`lib_pow_mod_dsl` (Beat D-C, sturm-3sfl.3) collapsed the **register topology**
+of modular exponentiation from `O(W²)` (the legacy chain-style `sq_chain[W][W]`
++ `acc_chain[W+1][W]`) down to **`O(W)`**: a single `acc_reg[W]` and a single
+`sq_reg[W]`. That is the bound advertised by "Beat D = O(W) modular
+exponentiation" and by `docs/design_even_n_double_mod.md`'s "O(W) oneshot
+helper" framing — it refers to the *register topology*, i.e. the count of
+named live data registers in the algorithm.
+
+Peak **transient ancilla** is a separate quantity and is **`O(W²)`** for
+`lib_pow_mod_dsl`, specifically `2W² + 4W + 11` qubits above the 4·W input
+registers (pinned at W = 2, 3 in `tests/lib/test_pow_mod_dsl_ancilla.cpp`).
+This residual `W²` term comes from the witness registers required by the Beat
+D-A (`lib_mul_mod_inplace_dsl`) and Beat D-B (`lib_square_mod_dsl`)
+primitives' non-injectivity contracts: each forward call allocates a W-bit
+witness that must stay live until its paired adjoint consumes it back to
+|0⟩, and because Beat D-C runs the full forward loop to completion before the
+reverse loop begins, every per-iteration witness across W mul-inplace + (W−1)
+square calls must be simultaneously live at the loop boundary — `W² + (W² −
+W) = 2W² − W` caller-owned witness qubits at peak.
+
+This is **the documented bound** for the current implementation, not a
+defect. Reducing it to `O(W)` peak ancilla would require either
+(i) witness-less variants of `lib_mul_mod_inplace_dsl` /
+`lib_square_mod_dsl` (which need either a `gcd(a, n) = 1` precondition plus
+an `a⁻¹` round-trip, or a fundamentally different non-injectivity treatment),
+or (ii) Bennett-style pebbling that interleaves forward/adjoint phases
+inside the square-and-multiply loop at ≈ 2× more gates. Both are out of scope
+for sturm-3sfl / sturm-vf2c. The investigation under sturm-vf2c also
+considered batching the per-call `lt_flags` at the pow_mod layer (option
+(ii) deferred in sturm-3sfl.3); the savings (`W · (W−1)` qubits) are small
+relative to the `2W² − W` caller-owned witness floor and would not change the
+asymptotic peak, so option (i) — keep `lt_flags` per-call — remains in
+force.
+
+Operational consequence: `lib_pow_mod_dsl` exceeds the orkan simulator's
+17-qubit budget at every `W ≥ 1`, so `pow_mod` tests use APPEND-mode capture
++ classical replay rather than statevector simulation. The `kMaxN = 64` cap
+in `include/sturm/detail/lib/pow_mod_dsl.hpp` (sturm-3sfl.4) is governed by
+stack budget, not simulator-qubit budget.

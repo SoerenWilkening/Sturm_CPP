@@ -17,6 +17,22 @@
 // leaving only per-step witness registers required by the in-place
 // primitives' non-injectivity contracts.
 //
+// Two complexities -- "Beat D O(W)" vs measured peak (sturm-vf2c):
+//   The headline "Beat D = O(W) modular exponentiation" refers strictly to
+//   the REGISTER TOPOLOGY: a single live `acc_reg[W]` plus a single live
+//   `sq_reg[W]`, replacing the chain-style `O(W^2)` topology.  PEAK
+//   TRANSIENT ANCILLA, however, is `O(W^2)` -- specifically `2W^2 + 4W + 11`
+//   above the 4·W input registers, pinned in
+//   `tests/lib/test_pow_mod_dsl_ancilla.cpp`.  The residual `W^2` term comes
+//   from the per-iteration witness registers required by Beat D-A
+//   (`dest_copy_out_bits`) and Beat D-B (`x_copy_out_bits`): each forward
+//   call needs a W-bit witness that must stay live until its paired adjoint
+//   runs, and the forward loop runs to completion (W mul-inplace +
+//   (W-1) square) before the reverse loop begins, so all per-iteration
+//   witnesses are simultaneously live at the loop boundary.  This is the
+//   documented bound, not a defect: see sturm-vf2c's investigation note in
+//   `docs/01_principles.md` and the "Witness accounting" comment below.
+//
 // Algorithm — square-and-multiply on top of in-place primitives:
 //   precond: base ∈ [0, n_value), n_value ≥ 1 (PRD §5).  output: r_bits =
 //   (base ^ exp) mod n.  Convention 0^0 = 1 (matches lib_pow_dsl).
@@ -50,16 +66,21 @@
 // body is fully gated off, leaving acc_reg = 1 (its initial value) which
 // step 4 XOR-copies into r_bits.
 //
-// lt_flags batching decision (per the issue brief, option (i) chosen for V1):
+// lt_flags batching decision (per the issue brief, option (i) chosen for V1;
+// re-confirmed under sturm-vf2c):
 //   Beat D-A and Beat D-B each emit per-call (W-1)-bit `lt_flags` registers
 //   from the inner `lib_mul_mod_dsl_oneshot` cascade; those registers are
 //   entirely managed inside each primitive (each forward+adjoint pair clears
 //   its own).  Beat D-C does NOT batch them at this layer — the (W * (W-1))
 //   savings of option (ii) are modest compared to the live witness chain
-//   discussed below, and option (i) keeps each per-iteration call entirely
-//   self-contained.  Reconsider only if (i) blows the simulator-qubit budget.
+//   discussed below (the W^2 caller-owned witness floor dominates the W *
+//   (W-1) lt_flags term and the asymptotic peak stays O(W^2) either way),
+//   and option (i) keeps each per-iteration call entirely self-contained.
+//   sturm-vf2c re-considered this and concluded option (i) is still the
+//   right call: the simulator-qubit budget overshoot is dictated by the
+//   2W^2 - W caller-owned witness floor, not by the lt_flags term.
 //
-// Witness accounting / peak ancilla:
+// Witness accounting / peak ancilla (sturm-vf2c documented bound):
 //   The issue brief's qualitative target was "~5W + O(1)" peak, derived
 //   under the assumption that Beat D-A / Beat D-B were witness-less.  Both
 //   primitives in fact require a caller-owned W-bit witness (D-A's
@@ -71,12 +92,20 @@
 //   Adding acc_reg (W) + sq_reg (W) + the active D-A or D-B internal
 //   (~3W + O(1)) gives a peak of O(W²) above the 4W input registers — not
 //   the ~5W of the brief, but still strictly less than the chain-style
-//   implementation's `4·W² + 2W + 8` peak.  Reaching ~5W would require
-//   either witness-less D-A/D-B variants (restrict to gcd(a, n) = 1 or
-//   require an a^-1 round-trip — see the Beat D-A header preamble) or
-//   Bennett-style pebbling that interleaves forward/adjoint phases (~2×
-//   more gates).  Both are out of scope for Beat D-C; the regression test
-//   in test_pow_mod_dsl_ancilla.cpp pins the actual achieved bound.
+//   implementation's `4·W² + 2W + 8` peak.
+//
+//   This O(W^2) peak ancilla is the DOCUMENTED BOUND for the current
+//   implementation (sturm-vf2c).  It coexists with the O(W) register-
+//   topology claim from the Beat D headline: data registers are O(W); peak
+//   transient ancilla is O(W^2).  Reaching ~5W peak would require either
+//   witness-less D-A/D-B variants (restrict to gcd(a, n) = 1 or require an
+//   a^-1 round-trip — see the Beat D-A header preamble) or Bennett-style
+//   pebbling that interleaves forward/adjoint phases inside the
+//   square-and-multiply loop (~2× more gates).  Both are out of scope for
+//   Beat D-C / sturm-vf2c.  The regression test in
+//   test_pow_mod_dsl_ancilla.cpp pins the actual achieved bound
+//   (`2W^2 + 4W + 11`); see also the "pow_mod ancilla bound" section in
+//   docs/01_principles.md.
 //
 // Sibling adjoint header is auto-included at the bottom.
 //
@@ -174,14 +203,22 @@ inline void lib_pow_mod_dsl(Bit* base_bits, Bit* exp_bits,
     //                                          + sizeof(BitProxy))
     // ≈ 500 KiB, well under the default 8 MiB thread stack.
     //
-    // Note on simulator runnability: pow_mod's peak ancilla is
-    // 2W² + 4W + 11 above the 4W input registers (see
-    // tests/lib/test_pow_mod_dsl_ancilla.cpp), which exceeds the orkan
-    // simulator's 17-qubit budget at every W ≥ 1.  Public-wrapper
-    // (`sturm::pow_mod`) tests and the lib_pow_mod_dsl test suite use
-    // APPEND-mode capture + classical replay rather than statevector
-    // simulation, so the cap-lift is bounded only by stack budget and the
-    // underlying primitives' caps, not by simulator capacity.
+    // Note on simulator runnability and the O(W^2) peak (sturm-vf2c):
+    // pow_mod's peak ancilla is 2W^2 + 4W + 11 above the 4W input registers
+    // (see tests/lib/test_pow_mod_dsl_ancilla.cpp).  This is O(W^2) in
+    // peak transient ancilla, even though the *register topology* is O(W)
+    // (single acc_reg + single sq_reg) — the W^2 term is the caller-owned
+    // witness floor required by the Beat D-A / Beat D-B in-place primitives'
+    // non-injectivity contracts, held live across the full forward loop
+    // until the reverse pass consumes them.  This is the documented bound
+    // (sturm-vf2c) -- see the "Witness accounting" comment in the header
+    // preamble and the "pow_mod ancilla bound" section in
+    // docs/01_principles.md.  The peak exceeds the orkan simulator's
+    // 17-qubit budget at every W >= 1.  Public-wrapper (`sturm::pow_mod`)
+    // tests and the lib_pow_mod_dsl test suite use APPEND-mode capture +
+    // classical replay rather than statevector simulation, so the cap-lift
+    // is bounded only by stack budget and the underlying primitives' caps,
+    // not by simulator capacity.
     static constexpr std::size_t kMaxN = 64u;
     assert(n <= kMaxN && "lib_pow_mod_dsl: register too wide");
 
