@@ -2487,3 +2487,57 @@ endif()
 add_test(NAME test_matcher_qram_oos COMMAND test_matcher_qram_oos)
 set_tests_properties(test_matcher_qram_oos PROPERTIES
     LABELS "transpiler;qram")
+
+# ── Unit test: width_inference (sturm-u9ge.11 / Beat B1) ──────────────────────
+# Plan §5 / B1; PRD §6 + §11.3 (D0c). The module under test decides the
+# backend `qint_t<W>` width for a frontend `qint` VarDecl via three
+# rules in strict order (annotation reserved → RHS-driven → default 32).
+# Linkage mirrors test_matcher_qram_oos: the production TU is the only
+# `transpiler/src/*` source compiled in — it depends only on Clang's AST
+# + DiagnosticsEngine, no DiagContext, no routine registry, no QUnit.
+add_executable(test_width_inference
+    test_width_inference.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_width_inference PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_width_inference PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_width_inference PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_WIDTH_INF NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_width_inference PRIVATE
+    ${LLVM_DEFS_LIST_WIDTH_INF}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_width_inference PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_width_inference PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_WIDTH_INF support)
+    target_link_libraries(test_width_inference PRIVATE
+        ${LLVM_LIBS_WIDTH_INF})
+endif()
+add_test(NAME test_width_inference COMMAND test_width_inference)
+set_tests_properties(test_width_inference PROPERTIES
+    LABELS "transpiler;qram")
