@@ -211,10 +211,237 @@ control-stack invariant. Concrete plan deferred to runtime-design issue
    budgets. The matcher contract in §7 admits both syntactically; the
    semantic distinction must be settled before the runtime is implemented.
 3. **Width inference precedence rules** (§6).
-4. **Adjoint registration** for QRAM read (§10.2).
+4. **Adjoint registration** for QRAM read (§10.2). **Resolved by D0d
+   (`sturm-u9ge.4`); see §11.4 below.**
 5. **Container support beyond v1.** `std::vector<qint>`? Custom user
    containers? Today's contract restricts to the three forms in §7;
    extension is a v2 question.
+
+### §11.4 Decision: D0d — `QRAM_read` adjoint registration
+
+**Status.** Resolved (2026-05-02, bd `sturm-u9ge.4`).
+**Resolves.** PRD §11 item 4 / §10.2.
+**Gates.** Beat D2 (`sturm-u9ge.15`, the rewrite emitter), which now
+knows what token to plant at uncompute sites.
+
+#### D0d.1 Naming
+
+The adjoint sibling for `QRAM_read` is named **`__QRAM_read_adj`**. Both
+the user-facing forward and its adjoint live at the global
+`::sturm::` namespace.
+
+This follows P9c verbatim: "the transpiler always emits a distinct
+`__fn_adj` companion … and registers it via
+`STURM_REGISTER_ADJOINT(fn, __fn_adj)`". The `__<name>_adj` underscore
+prefix is the established convention across the codebase
+(`__lib_mod_dsl_adj`, `__lib_or_dsl_adj`, `__lib_div_dsl_adj`,
+`__marked_adj`, etc.); audit tooling already name-matches `__*_adj`
+tokens at uncompute sites (per P9c rationale), so adopting the same
+shape for `QRAM_read` keeps the placement audit working without
+extension.
+
+The earlier "by analogy with `+= / uncompute_add_qint`" suggestion in
+§10.2 is **rejected** for the registered name. Rationale:
+
+- `uncompute_add_qint` is a *thin user-facing convenience wrapper*
+  (`include/sturm/uncompute/uncompute_api.hpp:137`) layered on top of
+  the underlying `-=` operator, not the registered adjoint identity.
+  The actual P9c-style binding for the addition family is the
+  per-width `add_qint_t<W>` ↔ `__add_qint_t<W>_adj` pairing emitted by
+  the transpiler.
+- Spelling the registered adjoint `uncompute_QRAM_read` would diverge
+  from P9c and break the `__*_adj` audit tooling.
+- A user-facing `uncompute_QRAM_read(a, i, b)` convenience wrapper MAY
+  later be added in a separate sibling header (mirroring how
+  `uncompute_or` and `uncompute_add_qint` sit alongside the registered
+  `__lib_or_dsl_adj` / `add_qint_t<W>`-family adjoints). It is NOT
+  required for v1 and is explicitly out of scope for this decision.
+
+#### D0d.2 Signature
+
+The adjoint signature mirrors the forward one-for-one (P9b: out-param
+shape; P9: same parameter list, reverse direction). The exact
+template parameter list and per-container overload set are pinned by
+D0a (`sturm-u9ge.1`), which is still open at the time of this
+decision; this note fixes the *shape* and the *naming/registration
+contract*, leaving the per-container template instantiation list to
+D0a.
+
+For each `QRAM_read` overload that D0a settles on, the adjoint sibling
+has the identical parameter list and storage class. Concretely, given
+the three forward overloads anticipated by Plan §7 D1
+(`include/sturm/qram/qram_read.hpp`):
+
+```cpp
+namespace sturm {
+
+// Forward (D0a will pin the exact template heads; the parameter list
+// and the (a, i, b) order are fixed).
+
+template <typename Idx, std::size_t W, std::size_t N>
+void QRAM_read(const std::array<qint_t<W>, N>& a,
+               const Idx& i,
+               qint_t<W>& b);
+
+template <typename Idx, std::size_t W, std::size_t N>
+void QRAM_read(const qint_t<W> (&a)[N],
+               const Idx& i,
+               qint_t<W>& b);
+
+template <typename Idx, std::size_t W>
+void QRAM_read(const qint_t<W>* a,
+               std::size_t n,
+               const Idx& i,
+               qint_t<W>& b);
+
+// Adjoint sibling — one-for-one with the forward.
+
+template <typename Idx, std::size_t W, std::size_t N>
+void __QRAM_read_adj(const std::array<qint_t<W>, N>& a,
+                     const Idx& i,
+                     qint_t<W>& b);
+
+template <typename Idx, std::size_t W, std::size_t N>
+void __QRAM_read_adj(const qint_t<W> (&a)[N],
+                     const Idx& i,
+                     qint_t<W>& b);
+
+template <typename Idx, std::size_t W>
+void __QRAM_read_adj(const qint_t<W>* a,
+                     std::size_t n,
+                     const Idx& i,
+                     qint_t<W>& b);
+
+}  // namespace sturm
+```
+
+`Idx` here stands for whatever D0a chooses for the index parameter
+type (`qint_t<W_idx>`, `qint`, or a constraint-templated alias);
+the *adjoint contract* is independent of that choice. `a` is `const`
+in both the forward and the adjoint (P9b: read-only inputs); `b` is
+the out-param that the forward wrote into and the adjoint un-writes
+back to |0⟩, exactly mirroring the `c = a | b` ↔
+`uncompute_or(c, a, b)` pattern in `uncompute_api.hpp:68` and the
+modular family's `__lib_*_adj` pattern. If D0a chooses a different
+container-decay form (e.g. drops the explicit pointer-plus-length
+overload in favour of `std::span`), the adjoint overload set
+contracts identically.
+
+#### D0d.3 Registration
+
+Each forward overload that D0a pins is registered with a sibling
+`STURM_REGISTER_ADJOINT(...)` line at namespace scope in
+`include/sturm/qram/qram_read.hpp` (the runtime header that D1
+introduces). Following the existing per-instantiation convention in
+`include/sturm/detail/qtypes/lossy_oop.hpp` lines 426–460 and the
+gated form in `include/sturm/detail/lib/mod_dsl_adj.hpp` lines 83–86,
+each concrete `(W, N)` (and, where applicable, `Idx`) instantiation
+that the v1 emitter can produce is enrolled explicitly. Sketch (final
+instantiation list — concrete widths and N — is pinned by D0a /
+D2; the macro shape is fixed by P9c and is final here):
+
+```cpp
+// In include/sturm/qram/qram_read.hpp, after the forward and adjoint
+// definitions, gated on backend visibility the same way mod_dsl_adj.hpp
+// gates lib_mod_dsl<sturm::BitProxy>:
+
+#ifdef STURM_BACKEND_ENABLED
+// std::array overload — one registration per (W, N, Idx) the emitter
+// can produce. D0a's instantiation list determines the concrete rows.
+STURM_REGISTER_ADJOINT(
+    sturm::QRAM_read<sturm::qint, 32u, 4u>,
+    sturm::__QRAM_read_adj<sturm::qint, 32u, 4u>)
+// ... one row per concrete (Idx, W, N) instantiation D0a / D2 emits ...
+
+// C-array overload — same shape, different forward template head.
+STURM_REGISTER_ADJOINT(
+    sturm::QRAM_read<sturm::qint, 32u, 4u>,   // overload resolved by ADL
+    sturm::__QRAM_read_adj<sturm::qint, 32u, 4u>)
+// ...
+
+// Pointer overload — no N template parameter.
+STURM_REGISTER_ADJOINT(
+    sturm::QRAM_read<sturm::qint, 32u>,
+    sturm::__QRAM_read_adj<sturm::qint, 32u>)
+// ...
+#endif
+```
+
+The gate `#ifdef STURM_BACKEND_ENABLED` mirrors the existing pattern
+in `mod_dsl_adj.hpp` and keeps the registration out of the
+counter-only / circuit-only build configurations where the backend
+type is not introduced.
+
+If, after D0a, the three overloads collapse into a single template
+(e.g. all three container shapes route through one
+`std::span`-style entry point), the registration list collapses
+analogously — the macro shape `STURM_REGISTER_ADJOINT(QRAM_read<...>,
+__QRAM_read_adj<...>)` is unchanged.
+
+#### D0d.4 P9c consistency
+
+This resolution is consistent with principle P9c on three counts:
+
+1. **Distinct sibling.** The adjoint is a separately named function
+   (`__QRAM_read_adj`), not a self-registration of `QRAM_read`. P9c
+   forbids collapsing self-inverse routines to `STURM_REGISTER_ADJOINT(fn, fn)`
+   at synthesis time precisely so the `__*_adj` token survives at
+   every uncompute site for the placement audit. `QRAM_read` is not
+   self-inverse anyway (the forward writes into a presumed-zero `b`;
+   the adjoint un-writes), so the distinction is doubly motivated
+   here.
+2. **Standard macro.** Registration goes through
+   `STURM_REGISTER_ADJOINT(fn, __fn_adj)` exactly as P9c specifies
+   and as the macro is defined in
+   `include/sturm/routines/invert.hpp:148`. There is no bespoke
+   registration path.
+3. **Audit-friendly token.** The literal `__QRAM_read_adj` token
+   appears verbatim at every uncompute site the D2 emitter plants
+   (via `sturm::invert<&QRAM_read<...>>()(a, i, b)`, which resolves
+   to `__QRAM_read_adj<...>` by trait lookup). Audit tooling
+   name-matching `__*_adj` will see it without modification.
+
+#### D0d.5 Emitter contract for D2
+
+For each `QRAM_read` call site D2 emits inside a reversible scope,
+the matching uncompute call planted at scope exit is:
+
+```cpp
+sturm::invert<&::sturm::QRAM_read<...>>()(a, i, b);
+```
+
+i.e. the same shape `adjoint_emitter.cpp` already uses for every
+other registered library forward (cf. the `mul_oop` example in
+`include/sturm/detail/qtypes/lossy_oop.hpp:10` and the modular family
+in `include/sturm/detail/lib/pow_mod_dsl_adj.hpp:44`). D2 does NOT
+need a QRAM-specific code path; it reuses the existing
+`invert<&fn>()` planting machinery.
+
+#### D0d.6 Cross-references
+
+- `docs/01_principles.md` — P9 (adjoint by synthesised companion),
+  P9b (input immutability via const), P9c (distinct `__fn_adj`
+  companion + `STURM_REGISTER_ADJOINT` is mandatory).
+- `include/sturm/routines/invert.hpp` — `STURM_REGISTER_ADJOINT` macro
+  definition (NTTP-keyed trait specialisation).
+- `include/sturm/detail/lib/mod_dsl_adj.hpp` — closest existing
+  template-adjoint analogue (`__lib_mod_dsl_adj` +
+  `STURM_REGISTER_ADJOINT(... <sturm::BitProxy>, ... <sturm::BitProxy>)`
+  inside an `#ifdef STURM_BACKEND_ENABLED` block).
+- `include/sturm/detail/qtypes/lossy_oop.hpp:420-460` — closest
+  existing per-instantiation registration block (per-`W` rows for
+  `and_oop`, `mul_oop`, `or_oop`, `divide_oop`).
+- `include/sturm/uncompute/uncompute_api.hpp:68,137` — pattern for
+  optional user-facing `uncompute_*` convenience wrapper that may be
+  added later, sibling to (not in lieu of) the registered adjoint.
+- bd `sturm-u9ge.1` (D0a, still open) — pins the per-container
+  template head and concrete `(W, N, Idx)` instantiation list;
+  D0d's registration table consumes whatever D0a settles on.
+- bd `sturm-u9ge.13` (D1, blocked) — declares `QRAM_read` and
+  `__QRAM_read_adj` per this decision and plants the
+  `STURM_REGISTER_ADJOINT` rows.
+- bd `sturm-u9ge.15` (D2, blocked) — emitter; planted uncompute call
+  is `sturm::invert<&QRAM_read<...>>()(a, i, b)` per §D0d.5.
 
 ## §12 Milestones
 
