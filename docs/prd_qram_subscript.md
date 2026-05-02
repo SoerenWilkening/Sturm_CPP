@@ -206,6 +206,7 @@ control-stack invariant. Concrete plan deferred to runtime-design issue
 
 1. **Runtime entry point.** Exact signature of `QRAM_read`. Templated on
    container type and element width? Single overload or family?
+   **Resolved by D0a (`sturm-u9ge.1`); see §11.1 below.**
 2. **What is `a`?** Classical lookup table (QROM) of pre-known constants
    versus quantum register of qubits — fundamentally different gate
    budgets. The matcher contract in §7 admits both syntactically; the
@@ -218,6 +219,337 @@ control-stack invariant. Concrete plan deferred to runtime-design issue
 5. **Container support beyond v1.** `std::vector<qint>`? Custom user
    containers? Today's contract restricts to the three forms in §7;
    extension is a v2 question.
+
+### §11.1 Decision: D0a — `QRAM_read` runtime entry-point signature
+
+**Status.** Resolved (2026-05-02, bd `sturm-u9ge.1`).
+**Resolves.** PRD §11 item 1 / §8.
+**Gates.** Beat D1 (`sturm-u9ge.13`, the `QRAM_read` runtime stub) and
+Beat D2 (`sturm-u9ge.15`, the rewrite emitter). D1 now has a frozen
+template head per container shape it needs to declare and define; D2
+now knows the exact one-line call shape to plant per `QramSubscriptHit`.
+
+#### §11.1.1 Decision summary
+
+`QRAM_read` is declared as a **family of three free-function template
+overloads** in the `::sturm::` namespace, one per container shape from
+§7. Each overload is the **single internal entry point** for its
+shape: D0b's runtime mask-OR dispatch (§11.2) lives *inside* the body
+of each overload (calling private `QRAM_read_qrom_impl` /
+`QRAM_read_qreg_impl` helpers in the same TU), not as separate public
+entry points. Adjoint siblings `__QRAM_read_adj` mirror the forward
+overload set one-for-one (D0d / §11.4).
+
+Concretely, in `include/sturm/qram/qram_read.hpp`:
+
+```cpp
+namespace sturm {
+
+// Overload 1 — std::array<qint_t<W>, N>.  Surfaces matcher-kind StdArray.
+template <std::size_t W, std::size_t N>
+void QRAM_read(const std::array<qint_t<W>, N>& a,
+               const qint_t<W>& i,
+               qint_t<W>& b) noexcept;
+
+// Overload 2 — built-in C-array qint_t<W>[N].  Surfaces matcher-kind CArray.
+// The reference-to-array parameter form preserves N at the call site —
+// without it the array would decay to qint_t<W>* and merge with overload 3.
+template <std::size_t W, std::size_t N>
+void QRAM_read(const qint_t<W> (&a)[N],
+               const qint_t<W>& i,
+               qint_t<W>& b) noexcept;
+
+// Overload 3 — qint_t<W>* (decayed pointer; std::vector<qint_t<W>>::data()
+// in v2).  Surfaces matcher-kind Pointer.  N is passed explicitly because
+// a bare pointer carries no length.
+template <std::size_t W>
+void QRAM_read(const qint_t<W>* a,
+               std::size_t n,
+               const qint_t<W>& i,
+               qint_t<W>& b) noexcept;
+
+}  // namespace sturm
+```
+
+The adjoint set in §11.4 (D0d) mirrors these one-for-one with the
+exact same parameter list and storage class, prefixed `__QRAM_read_adj`.
+
+#### §11.1.2 Per-overload parameter contract
+
+The argument order is fixed at **`(a, i, b)` — container, index, output**
+— for all three overloads (matching the §8 rewrite spelling
+`QRAM_read(a, i, b)` and the §11.2.5 emitter contract). The pointer
+overload inserts a length `n` between `a` and `i`; D2 plants the
+length verbatim from the matcher's recorded container expression
+(§11.1.5).
+
+| Param | Type (overloads 1, 2)            | Type (overload 3)              | Pass-by | Const | Why                                                                                                         |
+|-------|----------------------------------|--------------------------------|---------|-------|-------------------------------------------------------------------------------------------------------------|
+| `a`   | `std::array<qint_t<W>, N>` / `qint_t<W>[N]` | `qint_t<W>*`                  | `const&` (1, 2); raw pointer-to-`const` (3) | yes (P9b: read-only input — the QRAM unitary reads `a` into `b` but does not mutate `a`) | Read-only across the unitary. The OR-reduction at entry (§11.2.2) reads each element's `super_mask`; that is `const`-safe.   |
+| `n`   | —                                | `std::size_t`                  | by value | n/a (PoD scalar) | Length argument for overload 3 only. Required because a bare pointer carries no compile-time length. The matcher's C-array hit also has access to N, but the emitter routes C-array hits through overload 2 where N is encoded in the parameter type — so `n` only ever appears for the pointer arm. |
+| `i`   | `qint_t<W>`                      | `qint_t<W>`                    | `const&` | yes (P9b: read-only quantum input — the read does not measure `i`; D0b's contract is "the index is read but unmeasured" §11.2.1) | The index width matches the container element width by construction in v1 (B1 / D0c rule 2 derives `W` for `b` from the container's element width; the matcher's UDC discriminator on `i` requires `i` to be a frontend `qint`, which substitutes to the same `qint_t<W>` post-transpile under the same default rule). v2 may decouple `W_idx` from `W` by adding an `Idx` template parameter; v1 freezes them together to keep the overload set small. |
+| `b`   | `qint_t<W>`                      | `qint_t<W>`                    | non-const reference (out-param) | no — `b` is the out-param the forward writes into and the adjoint un-writes back to |0⟩ | P9a: the QRAM read is treated as the out-param shape (the matcher rewrites `qint b = a[i];` → `qint_t<W> b; QRAM_read(a, i, b);` per §8). Pre-condition: `b` enters in |0⟩ (consistent with the freshly-declared `qint_t<W>` produced by D2). Post: `b` holds `a[i]` under the runtime-dispatched semantics of §11.2. |
+
+`noexcept` is fixed on every overload: B1 ("runtime dispatch, no
+stored sequences") guarantees the runtime body is a fixed, finite
+emission of primitives plus a counter bump (D1 stub), with no
+allocation that could throw and no integer overflow that the
+underlying primitives are not already required to handle. The
+matching `__QRAM_read_adj` overloads are also `noexcept` for the
+same reason. No ref-qualifiers (`&`, `&&`) are needed — the function
+is a free function template, not a member, so the only relevant
+qualification is on `this`-equivalent state (none here).
+
+#### §11.1.3 Why three overloads, not one variadic primary
+
+This decision rejects two alternatives the issue brief listed:
+
+**Why not one variadic primary + per-shape specializations.** A
+single primary template parameterised by container type
+(`template <typename Container, std::size_t W> void QRAM_read(const
+Container&, const qint_t<W>&, qint_t<W>&)`) is the most compact
+declaration. It loses the structural distinction between the three
+shapes: the C-array decays to a pointer at the call site (PRD §7's
+"distinguished from the pointer arm by the base expression type" —
+that signal is consumed at *match* time but not at *dispatch* time),
+and the `std::array` is a class type whose interface is heavier than
+either built-in. Forcing a single primary to handle all three would
+require either (a) `if constexpr` branching inside the body on
+`std::is_array_v` / `std::is_pointer_v` / class detection, or (b)
+internal `tag dispatch` to per-shape helpers. Option (a) buries the
+container-shape distinction inside an opaque function body, hurting
+readability for what is a 3-row dispatch; option (b) re-introduces
+the per-shape helper layer this overload set already exposes. The
+template-overload form makes the per-shape contract explicit at the
+declaration boundary — which is also where D2 reads it, so the
+emitter's plant table maps cleanly one-to-one.
+
+The §11.4 / D0d sketch already pins three-overload shape with an
+`Idx` template parameter; this decision drops the `Idx` parameter for
+v1 (the index width matches the container element width by
+construction — see the `i` row above) and freezes the overload set at
+exactly three.
+
+**Why not three free-function overloads with no template.** Pinning
+each overload to a single concrete `(W, N)` would require explicit
+instantiation per width × length pair the user code uses. The
+modular family (`lib_mod_dsl`, `lib_mul_mod_inplace_dsl`,
+`lib_pow_mod_dsl`) is templated on `Bit` and explicitly instantiated
+once per backend type via `STURM_REGISTER_ADJOINT(...)` — that
+pattern keeps the user-side header lean. We mirror it: D1's
+`include/sturm/qram/qram_read.hpp` carries the templated declarations
+and `include/sturm/qram/qram_read_adj.hpp` (sibling, see D0d)
+registers the adjoints per-instantiation. Keeping each overload
+templated is the only choice consistent with the existing primitive
+style, and the `template <std::size_t W, std::size_t N>` head is
+exactly two integers — well below any concrete-instantiation
+threshold where a non-templated form would be cheaper.
+
+**Why not an overload set inside a struct or namespace.** The
+existing primitive convention is free functions in `::sturm::`
+(`lib_pow_mod_dsl`, `lib_add_mod_inplace_dsl`, etc.; see
+`grep -rn "namespace sturm" include/sturm/detail/lib/`). Wrapping
+`QRAM_read` in `struct QRAM { static void read(...); }` or
+`namespace sturm::qram { void read(...); }` would diverge from the
+established convention with no added capability — overload
+resolution and `STURM_REGISTER_ADJOINT` keying both work the same
+way on free functions in `::sturm::`. We follow precedent.
+
+#### §11.1.4 How D0a mates with D0b (§11.2)
+
+D0b pins **runtime classicality dispatch** at the `QRAM_read` entry
+point: the body OR-reduces `super_mask` across the container's
+elements and routes to a private QROM helper (all elements
+classical) or a private quantum-register helper (any element
+superposed). D0a fixes the **public surface** that D0b's body sits
+behind:
+
+- **Single public entry per shape.** Each of the three overloads is
+  the sole public surface for its container shape. There is **no**
+  public `QRAM_read_qrom` / `QRAM_read_qreg` overload set at the
+  user-facing surface — the QROM/qreg helpers are TU-private to
+  `src/qram/qram_read.cpp` (D1). The matcher / emitter never see
+  them, and user code cannot instantiate them by name.
+- **OR-reduction inside the overload body.** Each overload's body is
+  exactly the §11.2.2 sketch: walk `a`, OR every `elem.super_mask`
+  into a local `any_super`, branch to `QRAM_read_qrom_impl(a, i, b)`
+  if `any_super == 0` else `QRAM_read_qreg_impl(a, i, b)`. The
+  pointer overload's walk runs `0..n-1`; the array / std::array
+  overloads infer the bound from their type parameter `N`.
+- **Counter-mode telemetry.** §11.2.7 pins two counters
+  (`qrom_read`, `qreg_read`); both bumps live inside the private
+  helpers, not at the public surface. D1 implements the bumps; D0a
+  only commits to the public-surface shape that lets the runtime
+  layer choose which to fire.
+
+So D0a's signature is a **single internal entry per shape**, with
+the QROM/qreg branch happening *inside* the body. D2 plants exactly
+one of the three public overloads per `Hit.kind`, and the runtime
+takes it from there.
+
+#### §11.1.5 How D2 plants the call from a `QramSubscriptHit`
+
+For each `QramSubscriptHit`, D2 emits exactly one of the following
+one-liners (plus the preceding `qint_t<W> b;` declaration; both lines
+replace the original `qint b = a[i];` per §8):
+
+| `Hit.kind` | Emitted call (one line)                                          | Notes                                                                                                                                                                                                                          |
+|------------|------------------------------------------------------------------|--------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------|
+| `StdArray` | `::sturm::QRAM_read(<container>, <index>, b);`                   | Overload 1. The `<container>` and `<index>` source ranges come from `Hit.container_expr` and `Hit.index_expr` verbatim (preserving member-access spellings like `obj.tbl[i]`). The matcher already strips the UDC ICE on the index per `matcher_qram_subscript.cpp:149`, so `<index>` renders as a bare `qint` expression (no `static_cast<size_t>` ceremony). |
+| `CArray`   | `::sturm::QRAM_read(<container>, <index>, b);`                   | Overload 2. Identical surface to `StdArray`; overload resolution disambiguates by C-array reference vs `std::array<…, N>&`. The `N` template arg is *deduced* from the container — D2 does not need to compute it.            |
+| `Pointer`  | `::sturm::QRAM_read(<container>, <length>, <index>, b);`         | Overload 3. `<length>` is the user's container-length expression; the matcher does **not** carry a length field today, so D2 reads it from the container declaration's type or — for a bare pointer with no nearby length — emits a diagnostic `qram-pointer-length-missing` and falls back. Concrete length-source rules are deferred to D2's beat (§7 / D2); the *signature* is fixed here at `n` between `a` and `i`. |
+
+D2 always qualifies the call as `::sturm::QRAM_read` (fully
+qualified). Following the §11.2.5 spelling, ADL would also resolve
+the call given `qint_t<W>` arguments (which live in `::sturm::`),
+but the explicit qualification is unambiguous and matches the
+adjoint planting at uncompute sites
+(`sturm::invert<&::sturm::QRAM_read<...>>()(a, i, b)` per §D0d.5).
+
+The matcher's `Hit.kind` selects the row; the emitter has zero
+QROM/qreg branching at emit time (D0b's runtime classicality
+dispatch handles it). One row per hit, deterministic mapping, no
+emitter-side classification logic.
+
+#### §11.1.6 Pointer overload's `n` length parameter — open follow-up
+
+The pointer overload adds a `std::size_t n` parameter that the
+`std::array` and C-array overloads do not need (their lengths come
+from the type). D2 must obtain `n` from somewhere:
+
+- **From a sibling field on `QramSubscriptHit`** (preferred). D2
+  cannot reliably re-derive a length from a bare pointer's AST — the
+  user's source might allocate via `new qint[n]`, take a function
+  parameter `qint *a, std::size_t n`, or call a C API. The cleanest
+  contract is to extend the matcher (D2 / sturm-u9ge.15) to record a
+  per-hit `length_expr` field that the emitter renders verbatim;
+  this matches how the modular family carries its modulus argument.
+  The matcher header today (`matcher_qram_subscript.hpp:103-136`)
+  has no such field, so adding one is a D2-beat concern, not a
+  D0a concern. **Filed as the only D2-side gating change required
+  by this decision; tracked under sturm-u9ge.15's description.**
+- **By a length-walking heuristic.** Out of scope; D2's diagnostic
+  `qram-pointer-length-missing` (filed in the same beat) is the
+  fallback for pointer hits without a recoverable length.
+
+D0a does not pre-commit a length-resolution rule; the *signature*
+freezes `n` between `a` and `i`, and D2 fills it. v1 may legitimately
+ship with `Pointer` as a deferred / diagnosed shape if the length-
+recovery rule turns out to be too brittle (PRD §7's three shapes
+include pointer for completeness; nothing in the matcher today
+*requires* the pointer arm to land in v1 if D2's length-resolution
+rule is not in scope).
+
+#### §11.1.7 Style consistency with existing primitives
+
+Cross-check against the project's existing primitive headers (per
+the issue brief's "must follow that style" directive):
+
+- **Free function in `::sturm::`.** Matches `lib_pow_mod_dsl`,
+  `lib_mul_mod_inplace_dsl`, `lib_square_mod_dsl`,
+  `lib_add_mod_inplace_dsl`, `lib_mod_dsl`, etc. — every primitive
+  defined under `include/sturm/detail/lib/*.hpp` lives at namespace
+  `sturm::`.
+- **Templated head, body uses the template parameters.** Matches
+  every modular primitive's `template <typename Bit>` head; we
+  parametrise on `(W, N)` (or `W` alone for the pointer arm) instead
+  of `Bit` because the QRAM input/output is the user-facing
+  `qint_t<W>` (not a per-bit `BitProxy`). The downstream gate
+  emission inside the QROM/qreg helpers will still use `BitProxy`
+  on the per-qubit operations the way the modular family does —
+  that's a D1 implementation detail, not a public-surface concern.
+- **`STURM_REGISTER_ADJOINT(...)` per concrete instantiation.**
+  D0d (§11.4) covers the registration shape, gated on
+  `STURM_BACKEND_ENABLED` exactly as `mod_dsl_adj.hpp:83-86`,
+  `mul_mod_inplace_dsl_adj.hpp:228-231`, etc.
+- **`noexcept` on the public surface.** Most modular primitives do
+  not carry `noexcept` on their public form; this is a *gap* in the
+  existing conventions rather than an explicit choice (see e.g.
+  `lib_pow_mod_dsl`'s declaration at `pow_mod_dsl.hpp:189`, no
+  `noexcept`). For `QRAM_read` we *do* mark `noexcept` because the
+  out-param shape and runtime-dispatch body have no exceptional
+  paths; the existing primitives can be retrofitted in a separate
+  cleanup pass if desired.
+- **Header file location.** `include/sturm/qram/qram_read.hpp`
+  matches the per-area subdirectory convention (`detail/lib/...`,
+  `qtypes/...`, `dispatch/...`, `ops/...`). The new `qram/`
+  directory is fine; D1 lands it.
+
+The signature is therefore fully consistent with existing patterns
+modulo the deliberate `noexcept` addition.
+
+#### §11.1.8 Out of scope (deferred to later beats / v2)
+
+- **`std::span<const qint_t<W>>` collapse.** A `std::span` overload
+  could subsume both the C-array and pointer arms (and pick up
+  `std::vector` for free in v2), but C++20-`std::span` is not yet a
+  project-wide dependency, the orkan simulator pins to C++17 in
+  some configurations, and the matcher already discriminates the
+  three shapes by AST class — collapsing them at the runtime
+  surface would force the matcher to widen its hit kinds back into a
+  single tag. v2 question.
+- **Decoupled `Idx` template parameter** (`qint_t<W_idx>` where
+  `W_idx != W`). v1 freezes the index and element width together
+  per the `i` row in §11.1.2. Future work that needs e.g. a 6-bit
+  index into a 32-bit value table will reopen this; the §11.4 D0d
+  sketch already anticipates the `Idx` parameter slot, so v2's
+  change is a one-line head extension on each overload, not a
+  re-design.
+- **Sink-aware overloads.** Counter-mode and circuit-mode bodies
+  share the same public surface in this decision (D1 stub bumps a
+  counter; future direct-mode lands the gate emission in the same
+  TU-private `_qrom_impl` / `_qreg_impl` helpers without changing
+  the public template head). Not a v1 question.
+- **Concrete `(W, N)` instantiation list.** The full registration
+  table that D0d sketched in §11.4.3 (the macro rows enumerating
+  every `(W, N)` D2 emits) materialises in D1, gated by what the
+  test fixtures actually instantiate. D0a freezes the *template
+  head*; D1 freezes the *enrollment list*.
+
+#### §11.1.9 Cross-references
+
+- `docs/01_principles.md` — P2 (the index is read but unmeasured —
+  the public surface takes `const qint_t<W>&`, never `int64_t` or
+  `size_t`); P9 (out-param shape; adjoint one-for-one); P9b (input
+  immutability via const); B1 (runtime dispatch — the body is a
+  per-call OR-reduction, not a pre-built sequence); B7 (qubit-index
+  ownership — `b` enters in |0⟩, the runtime owns any internal
+  ancillas).
+- `docs/prd_qram_subscript.md` §7 — the three container shapes that
+  drive the three overloads.
+- `docs/prd_qram_subscript.md` §8 — the rewrite spelling
+  `QRAM_read(a, i, b)` whose argument order this decision pins.
+- `docs/prd_qram_subscript.md` §11.2 (D0b) — runtime classicality
+  dispatch lives *inside* each D0a overload's body.
+- `docs/prd_qram_subscript.md` §11.3 (D0c) — width-inference
+  precedence; rule 2 (RHS-driven) populates the `W` template
+  parameter on the emitted call.
+- `docs/prd_qram_subscript.md` §11.4 (D0d) — adjoint sibling set
+  mirrors this overload set one-for-one.
+- `include/sturm/detail/lib/pow_mod_dsl.hpp:189` —
+  `lib_pow_mod_dsl` template head (closest existing analogue for a
+  primitive with multiple register parameters).
+- `include/sturm/detail/lib/mul_mod_inplace_dsl.hpp:209` —
+  `lib_mul_mod_inplace_dsl` template head; same `template <typename
+  Bit>` shape D0a's overload set adapts to `template <std::size_t W,
+  std::size_t N>`.
+- `include/sturm/detail/lib/mod_dsl_adj.hpp:83-86` — the
+  `STURM_REGISTER_ADJOINT` block guarded by `STURM_BACKEND_ENABLED`;
+  D1's qram_read header carries the same shape.
+- `include/sturm/qtypes/qint_alias.hpp:105-162` — the frontend
+  `qint` whose `operator size_t()` D0a's index parameter type
+  (`qint_t<W>`) replaces in the post-transpile call site.
+- `transpiler/src/matcher_qram_subscript.hpp:103-136` — the
+  `QramSubscriptHit` struct whose fields D2 reads to plant a D0a
+  call. Note the open follow-up in §11.1.6: a per-hit `length_expr`
+  field is required for the pointer arm and lands in D2's beat.
+- bd `sturm-u9ge.13` (D1, blocked) — implements the three
+  overloads' bodies per this decision; lands the `qrom_impl` /
+  `qreg_impl` helpers and the two counters.
+- bd `sturm-u9ge.15` (D2, blocked) — emitter; uses the row table in
+  §11.1.5 to plant exactly one overload call per hit, plus the
+  per-hit `length_expr` extension to the matcher for the pointer
+  arm (§11.1.6).
 
 ### §11.2 Decision: D0b — QROM vs quantum-register dispatch
 
