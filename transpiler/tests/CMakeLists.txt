@@ -2430,3 +2430,60 @@ target_compile_definitions(test_transpile_driver PRIVATE
 add_dependencies(test_transpile_driver sturm-transpile)
 add_test(NAME test_transpile_driver COMMAND test_transpile_driver)
 set_tests_properties(test_transpile_driver PROPERTIES LABELS "transpiler")
+
+# ── Unit test: matcher_qram_oos (sturm-u9ge.16 / Beat E1) ─────────────────────
+# Plan §8 / E1; PRD §9 / M5. The matcher under test recognises the four
+# out-of-scope-shape PRD §9 spellings and fires a distinct Error-severity
+# diagnostic per shape. Linkage mirrors test_transpile_diag_context: the
+# matcher TU is the only `transpiler/src/*` source compiled in (it depends
+# only on Clang's MatchFinder + DiagnosticsEngine — no DiagContext, no
+# routine registry, no QUnit). Fixture inputs are threaded via
+# STURM_QRAM_OOS_FIXTURES_DIR so the four golden cases load from the source
+# tree.
+add_executable(test_matcher_qram_oos
+    test_matcher_qram_oos.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_oos.cpp
+)
+target_include_directories(test_matcher_qram_oos PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_qram_oos PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_qram_oos PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_OOS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_qram_oos PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_OOS}
+    STURM_QRAM_OOS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_qram_oos PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_qram_oos PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_OOS support)
+    target_link_libraries(test_matcher_qram_oos PRIVATE
+        ${LLVM_LIBS_QRAM_OOS})
+endif()
+add_test(NAME test_matcher_qram_oos COMMAND test_matcher_qram_oos)
+set_tests_properties(test_matcher_qram_oos PROPERTIES
+    LABELS "transpiler;qram")
