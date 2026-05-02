@@ -162,3 +162,24 @@ target_compile_definitions(test_when_swap_qint PRIVATE
 target_link_libraries(test_when_swap_qint PRIVATE orkan_headers)
 add_test(NAME test_when_swap_qint COMMAND test_when_swap_qint)
 set_tests_properties(test_when_swap_qint PROPERTIES LABELS "qtypes;lossy-reversibility")
+
+# sturm-u9ge.5 (Beat A1) — qint_alias.hpp: frontend non-templated `qint`
+# class with the load-bearing implicit `operator size_t()`. Pre-transpile
+# safety-net header for the QRAM-subscript epic (PRD §4.1).
+#
+# This target deliberately does NOT pull the M19 backend sources nor
+# define STURM_BACKEND_ENABLED — the A1 surface is header-only / pre-
+# transpile, and the frontend `qint` does not interact with the gate-
+# emission backend. We still need the qint.hpp include path (for the
+# negative-SFINAE static_asserts on `qint_t<W>`), which transitively
+# pulls qbool / qint_arith etc.; those are header-only too in the
+# non-backend build profile.
+add_executable(test_qint_alias
+    test_qint_alias.cpp
+)
+target_include_directories(test_qint_alias PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_alias PRIVATE cxx_std_20)
+add_test(NAME test_qint_alias COMMAND test_qint_alias)
+set_tests_properties(test_qint_alias PROPERTIES LABELS "qtypes;qram-subscript")
