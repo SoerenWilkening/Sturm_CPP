@@ -183,3 +183,23 @@ target_include_directories(test_qint_alias PRIVATE
 target_compile_features(test_qint_alias PRIVATE cxx_std_20)
 add_test(NAME test_qint_alias COMMAND test_qint_alias)
 set_tests_properties(test_qint_alias PROPERTIES LABELS "qtypes;qram-subscript")
+
+# sturm-u9ge.10 (Beat A2) — qint_alias_ops.hpp: arithmetic / compare /
+# bitwise / compound-assign operator stubs for the frontend `qint` alias.
+# Pre-transpile measure-then-classical body; post-transpile the C1 matcher
+# rewrites the matched subscript shape so the stub bodies are unreachable
+# (PRD §4.1 step 2 / plan §4 / A2).
+#
+# Same target shape as test_qint_alias above: header-only / pre-transpile,
+# no backend sources, no STURM_BACKEND_ENABLED. The static-assertion
+# harness in the test transitively includes qint.hpp for `qint_t<W>`,
+# which is header-only in the non-backend build profile.
+add_executable(test_qint_alias_ops
+    test_qint_alias_ops.cpp
+)
+target_include_directories(test_qint_alias_ops PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_alias_ops PRIVATE cxx_std_20)
+add_test(NAME test_qint_alias_ops COMMAND test_qint_alias_ops)
+set_tests_properties(test_qint_alias_ops PROPERTIES LABELS "qtypes;qram-subscript")
