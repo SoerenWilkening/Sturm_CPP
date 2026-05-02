@@ -210,12 +210,171 @@ control-stack invariant. Concrete plan deferred to runtime-design issue
    versus quantum register of qubits — fundamentally different gate
    budgets. The matcher contract in §7 admits both syntactically; the
    semantic distinction must be settled before the runtime is implemented.
-3. **Width inference precedence rules** (§6).
+3. **Width inference precedence rules** (§6). **Resolved by D0c
+   (`sturm-u9ge.3`); see §11.3 below.**
 4. **Adjoint registration** for QRAM read (§10.2). **Resolved by D0d
    (`sturm-u9ge.4`); see §11.4 below.**
 5. **Container support beyond v1.** `std::vector<qint>`? Custom user
    containers? Today's contract restricts to the three forms in §7;
    extension is a v2 question.
+
+### §11.3 Decision: D0c — width-inference precedence rules
+
+**Status.** Resolved (2026-05-02, bd `sturm-u9ge.3`).
+**Resolves.** PRD §11 item 3 / §6.
+**Gates.** Beat B1 (`sturm-u9ge.11`, the `width_inference.{hpp,cpp}`
+module), which now knows the rule order and the ambiguity diagnostic.
+
+§6 lists three candidate width sources — (a) global default,
+(b) RHS-driven inference from the container element type, and
+(c) a future-reserved `qint<W>` annotation — but defers the
+*precedence* and the *ambiguity diagnostic* to this decision. This
+note pins both.
+
+#### D0c.1 Rule table (precedence order, top wins)
+
+The following rules are evaluated in **strict order** by
+`infer_width(VarDecl, InferContext)`. The first rule whose precondition
+holds returns its width and short-circuits the rest. The rule list is
+the *only* width-decision surface in the transpiler — no rule may be
+re-ordered, skipped, or overridden by a later pass.
+
+| # | Rule                                       | Precondition                                                                                                  | Width returned                       | Diagnostic                       |
+|---|--------------------------------------------|---------------------------------------------------------------------------------------------------------------|--------------------------------------|----------------------------------|
+| 1 | **Annotation (reserved)**                  | `VarDecl` written as `qint<W> b = …;`                                                                         | `W` (parsed literal)                 | `qram-width-annotation-reserved` (Error in v1; rule short-circuits to rule 3 fallback after diag) |
+| 2 | **RHS-driven** (option (b) in §6)          | initializer is a subscript `a[i]` and the matched container's element type is `qint_t<W_e>` for a single `W_e` | `W_e`                                | none on success                  |
+| 3 | **Global default** (option (a) in §6)      | no other rule fired                                                                                           | `kDefaultWidth` (= **32** in v1)     | none                             |
+
+The rule order is: annotation first (so a user-written `qint<W>` is
+honoured if v2 unlocks it without re-numbering rules), RHS-driven
+second (so a subscript on `std::array<qint_t<8>, N>` produces a
+`qint_t<8>` target, not a `qint_t<32>` that would silently widen the
+QRAM-read), default last (so any non-subscript declaration of a
+frontend `qint` falls through to a single configured width).
+
+**Why RHS-driven (b) wins over global default (a).** A subscript on a
+container of `qint_t<W_e>` carries a *witnessed* element width: the
+container type at the call site fixes it. Choosing the global default
+when a witnessed width is available would force the runtime
+`QRAM_read` overload to either widen `b` (extra ancillas, extra
+gates) or refuse the assignment (compile error in the emitted file
+under PRD §5). Both outcomes are strictly worse than honouring the
+witnessed width — the RHS already encodes the user's intent
+unambiguously, so deferring to (a) here would only manufacture
+disagreements with no upside.
+
+**Why global default (a) is still the fallback.** A bare `qint b;` or
+`qint b = 42;` (no subscript on the RHS, no annotation) has no
+witnessed width. Refusing to compile such declarations would force
+every user of the frontend alias to write either an annotation
+(reserved in v1) or a subscript-init at every site, defeating the
+whole point of the non-templated alias. The default exists exactly to
+plug that hole.
+
+`kDefaultWidth = 32` is the v1 choice, fixed in this decision; it is
+named in `width_inference.hpp` as a single `inline constexpr unsigned`
+so a future bump (e.g. to 64) is a one-line change. The choice between
+32 and 64 is a separate trade-off (statevector simulator-qubit budget
+vs. classical-int range parity); 32 wins for v1 because the orkan
+simulator's qubit budget already pushes against multi-`qint`
+algorithms at that width, and 64 would double the per-`qint` ancilla
+footprint for no v1 benefit.
+
+#### D0c.2 Ambiguity diagnostic — `qram-width-mismatch`
+
+The single way ambiguity can arise under rules 1–3 is **rule 2 with
+multiple plausible witnesses**: a subscript whose container element
+type does not collapse to a unique `qint_t<W_e>`. v1 reaches this only
+through compiler-permissive overload sets (e.g. a user-defined
+container whose `operator[]` is overloaded by element width); the
+three §7 container shapes (`std::array<qint_t<W>, N>`, `qint_t<W>[N]`,
+`qint_t<W>*`) each pin a single `W_e` by construction.
+
+When rule 2 finds **two or more distinct candidate `W_e` values** for
+the same `VarDecl`, `infer_width` emits the diagnostic and falls
+through to rule 3 (default). The fall-through is deliberate: it lets
+the rest of the translation unit keep parsing so the user sees *all*
+related diagnostics in one build, instead of stopping at the first
+ambiguity.
+
+| Field         | Value                                                                                                |
+|---------------|------------------------------------------------------------------------------------------------------|
+| Diag id       | **`qram-width-mismatch`**                                                                            |
+| Severity      | Error                                                                                                |
+| Source range  | the `VarDecl` of `b` (the LHS of `qint b = a[i];`)                                                   |
+| Format string | `[qram-width-mismatch]: subscript on '<a>' admits multiple element widths (<W1>, <W2>, …); add an explicit qint<W> annotation to disambiguate. (PRD §11.3)` |
+| Notes         | One `Note`-severity sub-diagnostic per candidate `W_e`, pointing at the candidate's container decl. |
+
+The id is a new entry in the `qram-*` family, following the
+established kebab-case `qram-<area>-<specific>` convention used by the
+four `qram-oos-*` ids in `transpiler/src/matcher_qram_oos.hpp`
+(`qram-oos-existing-target`, `qram-oos-write`, `qram-oos-rmw`,
+`qram-oos-expression-position`). `qram-width-mismatch` slots into the
+same family without overlap. No existing id covers width-inference
+ambiguity, so a new id is required; reusing one of the `qram-oos-*`
+ids would conflate "shape we deliberately don't rewrite" with
+"shape we tried to rewrite but couldn't pick a width", which are
+disjoint failure modes.
+
+**Why not also fire on rule 1 fallback?** Rule 1's
+`qram-width-annotation-reserved` already covers the case where the
+user wrote `qint<W>`; that diag is a separate id because the failure
+mode is "v1 has not implemented the annotation", not "the annotation
+was ambiguous". Collapsing the two would erase the distinction
+between a user-future-syntax error and an actual width clash.
+
+**Why not fire on rule 3 fallback?** Falling through to the default
+when rules 1 and 2 have no signal is the *expected* path for bare
+`qint b;` declarations (see §11.3 rationale above); diagnosing it
+would amount to "you used the alias correctly", which is not a useful
+warning.
+
+#### D0c.3 Interaction with the C1 matcher
+
+Rule 2 consumes the same `UserDefinedConversion`-tagged subscript that
+the C1 matcher (`sturm-u9ge.12`) uses as its discriminator (PRD §7).
+Concretely, B1's `InferContext` carries a callback or lookup that
+resolves the container's element type from the same AST node C1
+inspects. C1 must have run width inference (or share its result via
+the `Hits` carrier) **before** emitting; the per-hit `W` field on
+`QramSubscriptHit` (plan §6 / `sturm-u9ge.12`) is populated by
+`infer_width`, not by an independent C1 pass. Two paths to a width
+decision would be a second source of truth and is explicitly
+forbidden.
+
+#### D0c.4 Out-of-scope (deferred to later beats / v2)
+
+- **Inter-procedural width inference.** `qint b = lookup(i);` where
+  `lookup` returns a frontend `qint` cannot be resolved from the call
+  site alone — the callee's body would need inspection. Rule 2 only
+  fires on a syntactic subscript at the initializer position; any
+  other initializer shape falls to rule 3 (default).
+- **Mixed-width arithmetic.** `qint c = a[i] + d;` is an
+  expression-position read and is rejected by E1's
+  `qram-oos-expression-position` (PRD §9), so the matter never
+  reaches `infer_width`.
+- **Annotation acceptance.** Rule 1's `qint<W>` syntax is parsed but
+  diagnosed and falls through in v1. Lifting that gate is a v2
+  question; the rule slot is reserved here so the v2 change is "drop
+  the diagnostic and return `W`", not "renumber the rule list".
+
+#### D0c.5 Cross-references
+
+- `docs/01_principles.md` — P2 (measurement explicit; the alias's
+  implicit `operator size_t` is only legal because the post-transpile
+  type carries `explicit operator int64_t`); B7 (qubit-index
+  ownership; widths feed directly into the per-`qint_t<W>` index
+  allocation).
+- `docs/prd_qram_subscript.md` §6 — the original three-option list
+  (a/b/c) that this decision arbitrates.
+- `transpiler/src/matcher_qram_oos.hpp:62-75` — the existing
+  `qram-oos-*` id constants whose naming convention
+  `qram-width-mismatch` and `qram-width-annotation-reserved` follow.
+- `transpiler/src/width_inference.{hpp,cpp}` — the B1 module that
+  implements the rule table; landed under bd `sturm-u9ge.11`.
+- bd `sturm-u9ge.11` (B1) — width inference; consumes this decision.
+- bd `sturm-u9ge.12` (C1) — v1 matcher; populates
+  `QramSubscriptHit::W` via `infer_width`.
 
 ### §11.4 Decision: D0d — `QRAM_read` adjoint registration
 
