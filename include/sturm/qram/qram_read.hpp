@@ -39,6 +39,18 @@
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/routines/invert.hpp"
+// sturm-2w6h.4 (Beat B2): wire QROM helper to call the DSL XOR-fanout body.
+// `lib_qram_read_qrom_dsl` is a header-only template — the include is light.
+// Backend-gated: the DSL body's transitive include chain pulls
+// `qbool_ops.hpp`, which redefines `qbool::operator~` etc. that
+// `qbool_logic.hpp` already defines for the no-backend frontend
+// build. Frontend translation units (e.g. `src/sturm/qram/qram_read.cpp`
+// configured without `STURM_BACKEND_ENABLED`) keep the counter-mode
+// stub semantics — gate emission only fires when the backend is
+// compiled in.
+#ifdef STURM_BACKEND_ENABLED
+#  include "sturm/detail/lib/qram_read_dsl.hpp"
+#endif
 
 #include <array>
 #include <cstddef>
@@ -109,8 +121,30 @@ inline std::uint64_t any_super_mask(const qint_t<W>* a, std::size_t n) noexcept 
 // ── B1 template helpers: forward `(a, n, i, b)` ─────────────────────
 // PRD §11.2.1: QROM path runs when every container element is fully
 // classical (super_mask == 0) — multiplexed XOR-fanout indexed by `i`.
-// Counter-mode stub in B1: dispatch_common bumps umbrella + trace.
-// Args are received but unused; gate emission lands in B2.
+//
+// B1 (sturm-2w6h.2): `dispatch_common` bumps the umbrella `qram_read`
+// counter and fires the test-only forwarding-trace hook.
+// B2 (sturm-2w6h.4): after the umbrella bump, the helper calls
+// `lib_qram_read_qrom_dsl` to actually emit the XOR-fanout gate stream
+// per PRD §4. The DSL body uses pure DSL primitives (predicate
+// compute/uncompute + WHEN-lifted CXs) — no raw gate calls. The
+// helper is cast away from `noexcept` only by `lib_qram_read_qrom_dsl`
+// — that template is not declared `noexcept` because its inner
+// `WHEN` macro and `BitProxy` operators are not annotated; the call
+// is conditionally noexcept and any exception escaping it would
+// trigger `std::terminate` per the helper's `noexcept`. In practice
+// the DSL ops are exception-safe (no allocations escape), so this is
+// a documentation point only.
+//
+// `i` is taken by const reference here per the public surface, but
+// the predicate helper inside `lib_qram_read_qrom_dsl` transiently
+// flips bits of `i.qubits` (with paired un-flips). Cast away const
+// inside the helper call site so the inner DSL body can run; the
+// constness contract on the public surface is preserved because the
+// flips are paired and `i.value` / `i.super_mask` / `i.qubits` are
+// unchanged at scope exit. This mirrors the pattern in
+// `tests/lib/test_qram_read_predicate.cpp` which calls the helper on
+// a freshly bound non-const reference.
 template <std::size_t W>
 inline void qram_read_qrom_impl(const qint_t<W>* a,
                                 std::size_t n,
@@ -119,6 +153,15 @@ inline void qram_read_qrom_impl(const qint_t<W>* a,
     dispatch_common(/*QROM*/ 1, static_cast<const void*>(a), n,
                     static_cast<const void*>(&i),
                     static_cast<const void*>(&b));
+#ifdef STURM_BACKEND_ENABLED
+    // sturm-2w6h.4 / Beat B2: emit the QROM XOR-fanout gate stream.
+    // Const-cast is safe: predicate helper pairs every flip on `i`'s
+    // qubits with an un-flip, so net change is zero.
+    qint_t<W>& i_mut = const_cast<qint_t<W>&>(i);
+    lib_qram_read_qrom_dsl<W>(a, n, i_mut, b);
+#else
+    (void)a; (void)n; (void)i; (void)b;
+#endif
 }
 
 // PRD §11.2.1: qreg path runs when any container element carries a

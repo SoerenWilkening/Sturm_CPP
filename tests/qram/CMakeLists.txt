@@ -1,4 +1,5 @@
 cmake_minimum_required(VERSION 3.16)
+enable_language(C)
 
 # ── tests/qram/ — runtime entry-point tests for the QRAM-subscript epic ──
 #
@@ -7,17 +8,42 @@ cmake_minimum_required(VERSION 3.16)
 # `tests/qram/test_qram_read_stub.cpp` against the production header
 # `include/sturm/qram/qram_read.hpp` and the TU-private body
 # `src/sturm/qram/qram_read.cpp`. Counter-mode body bumps a single
-# `qram_read` thread-local counter; no gate emission, no backend
-# context. Kept off the M19 backend source set deliberately.
+# `qram_read` thread-local counter; the test file itself defines
+# `STURM_BACKEND_ENABLED 1` so it can call `invert<&QRAM_read<W>>()`
+# (the `STURM_REGISTER_ADJOINT` enrolment in the header is backend-
+# gated).
+#
+# sturm-2w6h.4 (Beat B2) — wiring `lib_qram_read_qrom_dsl` from
+# `qram_read_qrom_impl` makes the public `QRAM_read` overloads emit a
+# real gate stream when the test TU sets the backend macro. Backend
+# sources (context, control_stack, execute_gate, orkan_bridge,
+# uncompute_api) are linked here to satisfy the new symbol references
+# (`sturm_get_thread_context`, `execute_gate`, etc.).
+set(STURM_QRAM_BACKEND_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
 
 add_executable(test_qram_read_stub
     test_qram_read_stub.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+    ${STURM_QRAM_BACKEND_SOURCES}
 )
 target_include_directories(test_qram_read_stub PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_qram_read_stub PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_stub PRIVATE orkan_headers)
 add_test(NAME test_qram_read_stub COMMAND test_qram_read_stub)
 set_tests_properties(test_qram_read_stub PROPERTIES LABELS "qram;qram-subscript")
 

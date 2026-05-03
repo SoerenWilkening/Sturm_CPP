@@ -2731,6 +2731,21 @@ set_tests_properties(test_qram_emitter PROPERTIES
 # AND the runtime body src/sturm/qram/qram_read.cpp so the in-process
 # QRAM_read calls under both sinks resolve to the production helper
 # pair. Mirrors the linkage shape of `tests/qram/test_qram_read_stub`.
+#
+# sturm-2w6h.4 (Beat B2): the test source defines `STURM_BACKEND_ENABLED 1`,
+# so the public `QRAM_read` overloads now compile in the gate-emission
+# path through `lib_qram_read_qrom_dsl`. The new template instantiation
+# requires the M19 backend symbols (`sturm_get_thread_context`,
+# `execute_gate`, control_stack, exec_simulate, orkan_bridge,
+# uncompute_api). Linking those sources keeps the existing test passing
+# under counter-mode and circuit-mode sinks; the umbrella `qram_read`
+# counter contract from PRD §11.2.7 is preserved at the dispatcher.
+enable_language(C)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
 add_executable(test_qram_e2e
     test_qram_e2e.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
@@ -2738,6 +2753,13 @@ add_executable(test_qram_e2e
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 target_include_directories(test_qram_e2e PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2779,6 +2801,7 @@ else()
     target_link_libraries(test_qram_e2e PRIVATE
         ${LLVM_LIBS_QRAM_E2E})
 endif()
+target_link_libraries(test_qram_e2e PRIVATE orkan_headers)
 add_test(NAME test_qram_e2e
          COMMAND test_qram_e2e)
 set_tests_properties(test_qram_e2e PROPERTIES

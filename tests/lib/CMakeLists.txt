@@ -872,3 +872,58 @@ target_link_libraries(test_qram_read_predicate PRIVATE orkan_headers)
 add_test(NAME test_qram_read_predicate COMMAND test_qram_read_predicate)
 set_tests_properties(test_qram_read_predicate
     PROPERTIES LABELS "lib;qram")
+
+# ── sturm-2w6h.4 (Beat B2) -- lib_qram_read_qrom_dsl recording test.
+# Pins the gate-set discipline and total IR primitive count for the
+# QROM XOR-fanout body (plan §5 Beat B2, goal G2). Walks (N, W) ∈
+# {(2, 2), (4, 4), (8, 4)} with seeded random classical containers and
+# asserts: (a) every IR record is X / CX / CCX (no rotations, no
+# prepares); (b) the active sink sees no Layer-A op records (the DSL
+# emits via the lifted IR primitives, not via sink ops); (c) the
+# total primitive count matches the §4 cheat-sheet formula recomputed
+# from (N, W, popcount(a[k])) — no hardcoded numbers.
+add_executable(test_qram_read_dsl_recording
+    test_qram_read_dsl_recording.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_read_dsl_recording PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_read_dsl_recording PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_read_dsl_recording PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qram_read_dsl_recording PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_qram_read_dsl_recording PRIVATE orkan_headers)
+add_test(NAME test_qram_read_dsl_recording COMMAND test_qram_read_dsl_recording)
+set_tests_properties(test_qram_read_dsl_recording
+    PROPERTIES LABELS "lib;qram")
+
+# ── sturm-2w6h.4 (Beat B2) -- lib_qram_read_qrom_dsl simulate test.
+# Pins the statevector behaviour for (N, W) = (4, 4) with the
+# canonical container a = {0xA, 0x5, 0xF, 0x0} (plan §5 Beat B2, goal
+# G1). T1: every classical i ∈ {0..3} produces P(b == a[i]) ≈ 1.0.
+# T2: i = (|0> + |1>)/sqrt(2) yields P(b = a[0]) ≈ 0.5 and P(b = a[1]) ≈ 0.5.
+# T3: i.super_mask is unchanged across each call. Peak qubit count
+# 11 (W=4 i + W=4 b + 1 eq_k + W-2=2 c_n_AND ancillas), under the
+# orkan 17-qubit cap.
+add_executable(test_qram_read_dsl_simulate
+    test_qram_read_dsl_simulate.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_read_dsl_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_read_dsl_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_read_dsl_simulate PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qram_read_dsl_simulate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_qram_read_dsl_simulate PRIVATE orkan_headers)
+add_test(NAME test_qram_read_dsl_simulate COMMAND test_qram_read_dsl_simulate)
+set_tests_properties(test_qram_read_dsl_simulate
+    PROPERTIES LABELS "lib;qram")
