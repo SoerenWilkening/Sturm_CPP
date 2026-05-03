@@ -84,3 +84,26 @@ target_include_directories(test_qram_read_dispatch PRIVATE
 target_compile_features(test_qram_read_dispatch PRIVATE cxx_std_20)
 add_test(NAME test_qram_read_dispatch COMMAND test_qram_read_dispatch)
 set_tests_properties(test_qram_read_dispatch PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-2w6h.6 (Beat B4) — wire split counters through dispatch ──
+# Pins the wiring of the split `qrom_read` / `qreg_read` telemetry
+# counters (B0 surface, sturm-2w6h.1) through the QROM and qreg
+# dispatch helpers. The QROM helper now bumps `current_sink()->qrom_read()`
+# once per dispatched call; the qreg helper bumps
+# `current_sink()->qreg_read()` once. The umbrella `qram_read()`
+# sink hook continues to fire from the public `QRAM_read` entry-point
+# (so existing telemetry-shaped tests stay green); the thread-local
+# `qram::g_qram_read_count` continues to bump from the dispatch
+# common helper. Plan `docs/plan_qram_backend.md` §5 B4.
+add_executable(test_qram_telemetry_split
+    test_qram_telemetry_split.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+    ${STURM_QRAM_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_telemetry_split PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_telemetry_split PRIVATE cxx_std_20)
+target_link_libraries(test_qram_telemetry_split PRIVATE orkan_headers)
+add_test(NAME test_qram_telemetry_split COMMAND test_qram_telemetry_split)
+set_tests_properties(test_qram_telemetry_split PROPERTIES LABELS "qram;qram-backend")

@@ -19,15 +19,24 @@
 // in the header, taking the same `(const qint_t<W>* a, std::size_t n,
 // const qint_t<W>& i, qint_t<W>& b)` quadruple as the public surface.
 // The shared (non-template) `dispatch_common` helper here:
-//   1. Bumps the umbrella `qram_read` counter (sink hook + thread-
-//      local) — preserves the D1 contract pinned by
+//   1. Bumps the path-specific split counter on the active sink
+//      (`qrom_read()` / `qreg_read()` — surface from B0 / sturm-2w6h.1,
+//      wired here in B4 / sturm-2w6h.6).
+//   2. Bumps the umbrella thread-local `qram::g_qram_read_count` —
+//      preserves the D1 contract pinned by
 //      `tests/qram/test_qram_read_stub.cpp` and
 //      `transpiler/tests/test_qram_e2e.cpp`.
-//   2. Fires the test-only forwarding-trace hook if installed (used
+//   3. Fires the test-only forwarding-trace hook if installed (used
 //      by `tests/qram/test_qram_read_dispatch.cpp` to pin "args are
 //      forwarded, not discarded").
-// Per-path counter split (PRD §11.2.7's `qrom_read` / `qreg_read`)
-// lands in B4 (sturm-2w6h.6).
+//
+// ── B4 (sturm-2w6h.6) wiring ───────────────────────────────────────
+// The umbrella `Sink::qram_read()` hook is no longer fired from this
+// shared helper — it is now bumped at the **public** `QRAM_read` /
+// `__QRAM_read_adj` entry-points in
+// `include/sturm/qram/qram_read.hpp`. Split + umbrella sink hooks
+// fire from non-overlapping sites and cannot be double-counted, even
+// though both bumps land exactly once per dispatched call.
 //
 // LoC budget: <= 200 (plan §1, §5 / B1).
 
@@ -60,29 +69,45 @@ ForwardingTraceFn set_forwarding_trace(ForwardingTraceFn hook) noexcept {
     return prev;
 }
 
-// ── Shared dispatch body — counter bump + trace ─────────────────────
-// PRD §11.2.7 (D1): bumps the umbrella `qram_read` counter via the
-// active sink's `qram_read()` hook AND a process-wide thread-local
-// observability counter (parallel to the alias-class
-// `qint_alias_detail::g_measurement_count` shape) so tests that do
-// not install a custom sink can still observe the increment. Then
-// fires the forwarding-trace hook (test-only) with the path tag
-// (1 = QROM, 2 = QREG) and the type-erased argument quadruple.
+// ── Shared dispatch body — split counter bump + trace ───────────────
+// PRD §11.2.7: bumps the **path-specific split counter** on the active
+// sink (`qrom_read()` for path tag 1, `qreg_read()` for path tag 2;
+// surface lives on `Sink` from B0 / sturm-2w6h.1) AND the process-wide
+// thread-local umbrella counter `qram::g_qram_read_count` (parallel to
+// the alias-class `qint_alias_detail::g_measurement_count` shape) so
+// tests that do not install a custom sink can still observe the
+// dispatched-call increment. Then fires the forwarding-trace hook
+// (test-only) with the path tag (1 = QROM, 2 = QREG) and the type-
+// erased argument quadruple.
 //
-// TODO(backend): split into `qrom_read` / `qreg_read` per §11.2.7
-// once gate emission lands. Add `current_sink()->qrom_read()` /
-// `qreg_read()` calls behind the path-tag switch in B4
-// (sturm-2w6h.6) — the surface is already in place from B0.
+// ── B4 (sturm-2w6h.6) wiring ───────────────────────────────────────
+// Per the issue's call-order spec the umbrella `current_sink()->
+// qram_read()` hook is **no longer** fired from this shared helper —
+// it is now bumped exactly once per dispatched read at the public
+// `QRAM_read` (and `__QRAM_read_adj`) entry-points in
+// `include/sturm/qram/qram_read.hpp`. That keeps the split + umbrella
+// firing from non-overlapping sites, so they cannot be double-counted
+// even though both bumps land per dispatched call.
 //
-// TODO(backend): emit the QROM XOR-fanout primitive stream once
-// `lib_qram_read_qrom_dsl` lands in B2 (sturm-2w6h.4). The qreg
-// path's gate emission is filed for the v2 PRD per plan §6.
+// The thread-local `qram::bump_qram_read_count()` continues to fire
+// here so the D1 contract pinned by `tests/qram/test_qram_read_stub.cpp`
+// (one thread-local bump per dispatched call, regardless of which
+// sink — if any — is installed) stays green.
+//
+// TODO(backend): emit the qreg SWAP-style fanout primitive stream
+// when the v2 PRD opens the qreg path; v1 ships it as a counter-only
+// stub (umbrella + qreg_read split bumps fire, no gates leak).
 void dispatch_common(int path_tag,
                      const void* a0_addr,
                      std::size_t n,
                      const void* i_addr,
                      const void* b_addr) noexcept {
-    if (Sink* s = current_sink()) s->qram_read();
+    // Split counter on the active sink (B0 surface; B4 wires it here).
+    if (Sink* s = current_sink()) {
+        if (path_tag == /*QROM*/ 1)      s->qrom_read();
+        else if (path_tag == /*QREG*/ 2) s->qreg_read();
+    }
+    // Thread-local umbrella — preserves D1 contract.
     qram::bump_qram_read_count();
     if (auto h = g_trace) {
         h(a0_addr, n, i_addr, b_addr, path_tag);

@@ -21,7 +21,17 @@
 // the process-wide `qram_read` counter once. Both QROM (all elements
 // classical) and qreg (any element superposed) helpers route to the
 // same counter for D1 per the issue description; per-path split
-// (`qrom_read` / `qreg_read`, PRD §11.2.7) lands with gate emission.
+// (`qrom_read` / `qreg_read`, PRD §11.2.7) wired in B4 / sturm-2w6h.6.
+//
+// ── B4 (sturm-2w6h.6) telemetry wiring ──────────────────────────────
+// The public `QRAM_read` overloads bump the umbrella
+// `current_sink()->qram_read()` hook once per dispatched call right
+// here at the entry-point. The corresponding split `qrom_read()` /
+// `qreg_read()` sink hooks fire from inside the QROM / qreg helper
+// via `_qram_detail::dispatch_common`. Split + umbrella sink hooks
+// fire from non-overlapping sites; the thread-local
+// `qram::g_qram_read_count` continues to bump from `dispatch_common`
+// once per dispatched call. Mirrored on `__QRAM_read_adj`.
 //
 // ── B1 (sturm-2w6h.2) refactor ──────────────────────────────────────
 // `_qram_detail::qram_read_qrom_impl` / `qram_read_qreg_impl` are now
@@ -39,6 +49,14 @@
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/routines/invert.hpp"
+// sturm-2w6h.6 (Beat B4): the public `QRAM_read` and `__QRAM_read_adj`
+// overloads bump the umbrella `current_sink()->qram_read()` hook once
+// per dispatched call (the split `qrom_read` / `qreg_read` hooks fire
+// from inside the corresponding QROM / qreg helper via
+// `_qram_detail::dispatch_common`). Including `counter_sink.hpp`
+// pulls the `current_sink()` accessor and the `Sink` interface into
+// scope at the public entry-point.
+#include "sturm/core/counter_sink.hpp"
 // sturm-2w6h.4 (Beat B2): wire QROM helper to call the DSL XOR-fanout body.
 // `lib_qram_read_qrom_dsl` is a header-only template — the include is light.
 // Backend-gated: the DSL body's transitive include chain pulls
@@ -80,16 +98,22 @@ inline void bump_qram_read_count() noexcept   { ++g_qram_read_count; }
 // received instead of discarding them. Both helpers route through
 // the shared (non-template) `dispatch_common(path_tag, a0, n, &i, &b)`
 // in `src/qram/qram_read.cpp` which:
-//   1. Bumps the umbrella `qram_read` thread-local counter and the
-//      `Sink::qram_read()` hook on the active sink (preserves the
-//      D1 contract pinned by `tests/qram/test_qram_read_stub.cpp`
-//      and `transpiler/tests/test_qram_e2e.cpp`).
-//   2. Invokes the test-only forwarding-trace if installed
+//   1. Bumps the **path-specific split counter** on the active sink
+//      (`qrom_read()` for path tag 1, `qreg_read()` for path tag 2 —
+//      surface from B0 / sturm-2w6h.1, wired here in B4 /
+//      sturm-2w6h.6).
+//   2. Bumps the umbrella thread-local `qram::g_qram_read_count`
+//      counter (preserves the D1 contract pinned by
+//      `tests/qram/test_qram_read_stub.cpp` and
+//      `transpiler/tests/test_qram_e2e.cpp`).
+//   3. Invokes the test-only forwarding-trace if installed
 //      (path tag 1 = QROM, 2 = QREG; pinned by
 //      `tests/qram/test_qram_read_dispatch.cpp`).
 //
-// Per-path counter split lands in B4 (sturm-2w6h.6); gate emission
-// in B2 (sturm-2w6h.4).
+// The umbrella `Sink::qram_read()` hook is **not** fired from
+// `dispatch_common` — it fires from the public `QRAM_read` /
+// `__QRAM_read_adj` entry-points below so split + umbrella sink
+// hooks land from non-overlapping sites and cannot be double-counted.
 namespace _qram_detail {
 
 // Test-only forwarding-trace hook. Production code never installs.
@@ -208,6 +232,10 @@ template <std::size_t W, std::size_t N>
 inline void QRAM_read(const std::array<qint_t<W>, N>& a,
                       const qint_t<W>& i,
                       qint_t<W>& b) noexcept {
+    // sturm-2w6h.6 (Beat B4): umbrella sink hook fires here at the
+    // public entry-point — split counter fires inside the helper via
+    // `dispatch_common` (non-overlapping sites; cannot double-count).
+    if (Sink* s = current_sink()) s->qram_read();
     const auto any_super = _qram_detail::any_super_mask<W>(a.data(), N);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a.data(), N, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a.data(), N, i, b);
@@ -218,6 +246,7 @@ template <std::size_t W, std::size_t N>
 inline void QRAM_read(const qint_t<W> (&a)[N],
                       const qint_t<W>& i,
                       qint_t<W>& b) noexcept {
+    if (Sink* s = current_sink()) s->qram_read();
     const auto any_super = _qram_detail::any_super_mask<W>(&a[0], N);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(&a[0], N, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(&a[0], N, i, b);
@@ -229,6 +258,7 @@ inline void QRAM_read(const qint_t<W>* a,
                       std::size_t n,
                       const qint_t<W>& i,
                       qint_t<W>& b) noexcept {
+    if (Sink* s = current_sink()) s->qram_read();
     const auto any_super = _qram_detail::any_super_mask<W>(a, n);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a, n, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a, n, i, b);
@@ -246,6 +276,10 @@ template <std::size_t W, std::size_t N>
 inline void __QRAM_read_adj(const std::array<qint_t<W>, N>& a,
                             const qint_t<W>& i,
                             qint_t<W>& b) noexcept {
+    // sturm-2w6h.6 (Beat B4): umbrella sink hook fires at the public
+    // adjoint entry-point too — same non-overlap discipline as the
+    // forward overload (split counter still fires inside the helper).
+    if (Sink* s = current_sink()) s->qram_read();
     const auto any_super = _qram_detail::any_super_mask<W>(a.data(), N);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(a.data(), N, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a.data(), N, i, b);
@@ -255,6 +289,7 @@ template <std::size_t W, std::size_t N>
 inline void __QRAM_read_adj(const qint_t<W> (&a)[N],
                             const qint_t<W>& i,
                             qint_t<W>& b) noexcept {
+    if (Sink* s = current_sink()) s->qram_read();
     const auto any_super = _qram_detail::any_super_mask<W>(&a[0], N);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(&a[0], N, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(&a[0], N, i, b);
@@ -265,6 +300,7 @@ inline void __QRAM_read_adj(const qint_t<W>* a,
                             std::size_t n,
                             const qint_t<W>& i,
                             qint_t<W>& b) noexcept {
+    if (Sink* s = current_sink()) s->qram_read();
     const auto any_super = _qram_detail::any_super_mask<W>(a, n);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(a, n, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a, n, i, b);
