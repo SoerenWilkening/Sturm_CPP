@@ -61,6 +61,7 @@
 
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 
+#include <string>
 #include <vector>
 
 namespace clang {
@@ -133,6 +134,21 @@ struct QramSubscriptHit {
     /// rule 3 (`kDefaultWidth = 32`) per PRD §11.3 / D0c.1. Always
     /// positive — never zero — by B1's contract.
     unsigned W = 0;
+
+    /// Length expression `n` source text for the pointer arm (PRD
+    /// §11.1.6 — D2's gating extension). Populated only when
+    /// `kind == Pointer` and a recoverable length source exists in
+    /// the container's enclosing scope; the heuristic matches the
+    /// container `ParmVarDecl` to a sibling integral-typed
+    /// `ParmVarDecl` immediately following it and records that
+    /// parameter's identifier. Empty for `StdArray` / `CArray`
+    /// (length encoded in the type) and for `Pointer` hits whose
+    /// length the matcher could not recover — the emitter handles
+    /// the latter by emitting a `qram-pointer-length-missing`
+    /// placeholder per §11.1.6. Stored as a string (rather than an
+    /// `Expr*`) so the emitter does not need to keep the matcher's
+    /// ASTContext alive across drains.
+    std::string length_text;
 };
 
 /// Register the v1 QRAM-subscript matcher against `finder`, directing

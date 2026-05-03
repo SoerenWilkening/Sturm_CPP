@@ -2600,3 +2600,65 @@ add_test(NAME test_matcher_qram_subscript
          COMMAND test_matcher_qram_subscript)
 set_tests_properties(test_matcher_qram_subscript PROPERTIES
     LABELS "transpiler;qram")
+
+# ── Unit test: qram_emitter (sturm-u9ge.15 / Beat D2) ────────────────────────
+# Plan §7 / D2; PRD §8 / M4. The emitter under test consumes
+# `QramSubscriptHit`s from C1 and produces a two-line `qint_t<W> b;
+# QRAM_read(a, i, b);` rewrite via Clang's Rewriter, with adjoint
+# placement at the enclosing reversible scope's close brace per D0d.5.
+# Linkage mirrors test_matcher_qram_subscript: the production TUs
+# (qram_emitter.cpp + matcher_qram_subscript.cpp + width_inference.cpp
+# + reversible_attribute.cpp) are the only `transpiler/src/*` sources
+# compiled in. Fixture inputs / expected files live at
+# transpiler/tests/fixtures/ threaded via STURM_QRAM_EMITTER_FIXTURES_DIR.
+add_executable(test_qram_emitter
+    test_qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+)
+target_include_directories(test_qram_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qram_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qram_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_EMITTER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qram_emitter PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_EMITTER}
+    STURM_QRAM_EMITTER_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qram_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qram_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_EMITTER support)
+    target_link_libraries(test_qram_emitter PRIVATE
+        ${LLVM_LIBS_QRAM_EMITTER})
+endif()
+add_test(NAME test_qram_emitter
+         COMMAND test_qram_emitter)
+set_tests_properties(test_qram_emitter PROPERTIES
+    LABELS "transpiler;qram")

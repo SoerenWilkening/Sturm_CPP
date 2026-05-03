@@ -43,7 +43,7 @@ private:
 using qint = sturm::frontend::qint;
 
 void demo(sturm::qint_t<32>* a, unsigned long n, qint i) {
-    qint b = a[i];
+    sturm::qint_t<32> b; ::sturm::QRAM_read(a, n, i, b);
     (void)b;
     (void)n;
 }

@@ -129,6 +129,46 @@ QramContainerKind discriminate_array_subscript(
     return QramContainerKind::Pointer;
 }
 
+// ── Pointer-arm length recovery (PRD §11.1.6 — D2 extension) ───────────────
+//
+// For a pointer subscript `a[i]` where `a` is a function parameter, walk
+// up to the enclosing `FunctionDecl` and look for the parameter sibling
+// that immediately follows `a` in the parameter list. If that sibling is
+// integral-typed (size_t, unsigned long, std::size_t — anything that
+// satisfies `Type::isIntegerType()`), record its name as the rendered
+// length text. Empty otherwise — the emitter then surfaces a
+// `qram-pointer-length-missing` placeholder per §11.1.6.
+//
+// This is the v1 heuristic: minimal but covers the canonical pattern
+// `void demo(qint_t<W>* a, std::size_t n, qint i)`. A future beat may
+// extend to fields-on-objects (`obj.tbl_len` next to `obj.tbl`) or
+// alloca-shaped allocations.
+std::string recover_pointer_length_text(const Expr* container) {
+    if (!container) return {};
+    const Expr* base = container->IgnoreParenImpCasts();
+    const auto* dre = llvm::dyn_cast_or_null<DeclRefExpr>(base);
+    if (!dre) return {};
+    const auto* container_param =
+        llvm::dyn_cast_or_null<ParmVarDecl>(dre->getDecl());
+    if (!container_param) return {};
+    const auto* fd =
+        llvm::dyn_cast_or_null<FunctionDecl>(
+            container_param->getDeclContext());
+    if (!fd) return {};
+    // Find the parameter immediately after the container in the
+    // function's parameter list.
+    const unsigned n = fd->getNumParams();
+    for (unsigned i = 0; i + 1 < n; ++i) {
+        if (fd->getParamDecl(i) != container_param) continue;
+        const ParmVarDecl* next = fd->getParamDecl(i + 1);
+        if (!next) return {};
+        QualType qt = next->getType();
+        if (qt.isNull() || !qt->isIntegerType()) return {};
+        return next->getNameAsString();
+    }
+    return {};
+}
+
 // ── Hit-population helpers ──────────────────────────────────────────────────
 //
 // Both AST shapes share the same VarDecl + UDC + B1-width plumbing;
@@ -155,6 +195,12 @@ void publish_hit(QramContainerKind kind,
     // re-runs B1 elsewhere).
     InferContext ctx{};
     hit.W = infer_width(vd, ctx);
+    // PRD §11.1.6: pointer arm needs an explicit `n` length argument.
+    // For StdArray / CArray the length is encoded in the type and the
+    // emitter does not consume `length_text`.
+    if (kind == QramContainerKind::Pointer) {
+        hit.length_text = recover_pointer_length_text(container);
+    }
     hits->push_back(hit);
 }
 
