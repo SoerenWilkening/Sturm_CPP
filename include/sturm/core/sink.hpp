@@ -102,6 +102,24 @@ struct Sink {
     // adding a pure virtual would be a hard ABI break. Per-path
     // (`qrom_read` / `qreg_read`) counters land with gate emission.
     virtual void qram_read() {}
+
+    // ── QRAM split telemetry (sturm-2w6h.1 / Beat B0) ─────────────────────
+    // Per-path counters for QRAM dispatch (PRD `docs/prd_qram_backend.md`,
+    // plan `docs/plan_qram_backend.md` §5 B0 / §3.2). The QROM helper
+    // (`_qram_detail::qram_read_qrom_impl`) will fire `qrom_read()` and
+    // the qreg helper (`_qram_detail::qram_read_qreg_impl`) will fire
+    // `qreg_read()` in B4 (sturm-2w6h.6) — the umbrella `qram_read()`
+    // hook above continues to fire once per dispatched read so the
+    // existing `tests/qram/test_qram_read_stub.cpp` and
+    // `transpiler/tests/test_qram_e2e.cpp` keep their counter
+    // assertions. This beat lands the surface only; the helpers do
+    // not call these hooks yet.
+    //
+    // Both methods are non-pure-virtual no-ops so any existing Sink
+    // subclass (in-tree or downstream) compiles unchanged — same ABI
+    // discipline as the umbrella hook above.
+    virtual void qrom_read() {}
+    virtual void qreg_read() {}
 };
 
 // ── Thread-local sink registry ────────────────────────────────────────────────

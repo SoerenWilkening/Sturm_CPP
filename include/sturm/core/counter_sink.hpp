@@ -52,6 +52,16 @@ public:
     // both QROM and qreg helpers route to the same counter for D1).
     void qram_read() override { bump("qram_read"); }
 
+    // ── QRAM split telemetry (sturm-2w6h.1 / Beat B0) ─────────────────────
+    // Per-path counters bumped by the QROM helper (`qrom_read`) and the
+    // qreg helper (`qreg_read`) once B4 (sturm-2w6h.6) wires them
+    // through. Querying via the existing `count("qrom_read")` /
+    // `count("qreg_read")` slots — no separate API surface, the bumps
+    // share the unordered_map so callers do not have to know whether
+    // a counter is split-vs-umbrella.
+    void qrom_read() override { bump("qrom_read"); }
+    void qreg_read() override { bump("qreg_read"); }
+
     // ── Query ─────────────────────────────────────────────────────────────
     size_t count(std::string_view op) const {
         auto it = counts_.find(std::string(op));

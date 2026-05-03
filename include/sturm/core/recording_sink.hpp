@@ -79,6 +79,31 @@ public:
         push_compare("quantum_ge", a, b, rq, ctrl);
     }
 
+    // ── QRAM split telemetry (sturm-2w6h.1 / Beat B0) ─────────────────────
+    // Overrides for the new `Sink::qrom_read()` / `qreg_read()` hooks
+    // (PRD `docs/prd_qram_backend.md`, plan
+    // `docs/plan_qram_backend.md` §5 B0). Each appends a single
+    // `Record{op="qrom_read"|"qreg_read"}` with no qubit groups, no
+    // scalars, and `control == -1` — telemetry markers, not gate
+    // primitives. Tests under `tests/qram/` and `tests/lib/` use
+    // these to pin which dispatch path fired alongside the gate
+    // record stream (plan §3.2). The umbrella `qram_read()` hook is
+    // intentionally not overridden here so the existing recording-
+    // sink consumers (which do not expect a record per dispatched
+    // read) keep their current contract.
+    void qrom_read() override {
+        Record r;
+        r.op = "qrom_read";
+        r.control = -1;
+        records_.push_back(std::move(r));
+    }
+    void qreg_read() override {
+        Record r;
+        r.op = "qreg_read";
+        r.control = -1;
+        records_.push_back(std::move(r));
+    }
+
     // ── Rotations / preparation ───────────────────────────────────────────
     void theta_add(int qubit, double delta, int ctrl) override {
         Record r;
