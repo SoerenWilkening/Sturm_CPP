@@ -2832,6 +2832,120 @@ add_test(NAME test_qram_emitter_expr COMMAND test_qram_emitter_expr)
 set_tests_properties(test_qram_emitter_expr PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
 
+# ── Unit test: matcher_qram_subscript_assign (sturm-u9ge.6 / Beat H1) ────────
+# Plan §11 (post-v1 backlog) / Beat H1; PRD §9 row 1. The matcher under
+# test recognises the existing-target QRAM-read shape `b = a[i];` where
+# `b` is a pre-existing frontend `qint` variable. Linkage mirrors
+# test_matcher_qram_subscript: the production TUs
+# (matcher_qram_subscript_assign.cpp + width_inference.cpp for B1's
+# infer_width / element-width helpers) are the only `transpiler/src/*`
+# sources compiled in.
+add_executable(test_matcher_qram_subscript_assign
+    test_matcher_qram_subscript_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_matcher_qram_subscript_assign PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_qram_subscript_assign PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_qram_subscript_assign PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_SUB_ASSIGN NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_qram_subscript_assign PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_SUB_ASSIGN}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_qram_subscript_assign PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_qram_subscript_assign PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_SUB_ASSIGN support)
+    target_link_libraries(test_matcher_qram_subscript_assign PRIVATE
+        ${LLVM_LIBS_QRAM_SUB_ASSIGN})
+endif()
+add_test(NAME test_matcher_qram_subscript_assign
+         COMMAND test_matcher_qram_subscript_assign)
+set_tests_properties(test_matcher_qram_subscript_assign PROPERTIES
+    LABELS "transpiler;qram;qram-subscript")
+
+# ── Unit test: qram_emitter_assign (sturm-u9ge.6 / Beat H1) ──────────────────
+# Plan §11 (post-v1 backlog) / Beat H1; PRD §9 row 1. The emitter under
+# test consumes `QramSubscriptAssignHit`s from the H1 matcher and
+# produces a two-statement rewrite per hit: pre-assign uncompute of
+# old target + forward QRAM_read into target. Linkage mirrors
+# test_qram_emitter_expr (qram_emitter_assign.cpp +
+# matcher_qram_subscript_assign.cpp + width_inference.cpp are the
+# only `transpiler/src/*` sources compiled in).
+add_executable(test_qram_emitter_assign
+    test_qram_emitter_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_qram_emitter_assign PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qram_emitter_assign PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qram_emitter_assign PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_EMIT_ASSIGN NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qram_emitter_assign PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_EMIT_ASSIGN}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qram_emitter_assign PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qram_emitter_assign PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_EMIT_ASSIGN support)
+    target_link_libraries(test_qram_emitter_assign PRIVATE
+        ${LLVM_LIBS_QRAM_EMIT_ASSIGN})
+endif()
+add_test(NAME test_qram_emitter_assign COMMAND test_qram_emitter_assign)
+set_tests_properties(test_qram_emitter_assign PROPERTIES
+    LABELS "transpiler;qram;qram-subscript")
+
 # ── End-to-end gate: test_qram_e2e (sturm-u9ge.17 / Beat G1) ─────────────────
 # Plan §10 / G1; PRD §5 (post-transpile safety net), §8 (M4 emission),
 # §11.1 (D0a — three overloads), §11.2 (D0b — counter-mode/circuit-mode

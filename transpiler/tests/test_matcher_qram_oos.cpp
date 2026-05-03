@@ -151,13 +151,20 @@ RunResult run_matcher_on_fixture(std::string_view name) {
 } // anonymous namespace
 
 // ── Shape positives (inline; fixtures cover them too, see below) ────────────
-static void test_existing_target_basic() {
+// sturm-u9ge.6 (H1): bare `b = a[i];` is H1's; larger-expr `b = a[i] + d;`
+// still fires as expression-position OOS via the inner `+` op-call.
+static void test_existing_target_larger_expr_basic() {
+    const auto r = run_matcher(
+        "void demo(qint a[4], qint i, qint d) { qint b; b = a[i] + d; }\n");
+    CHECK(r.parsed);
+    CHECK_EQ_INT(r.errors, 1);
+    CHECK(contains(r.last_error_text, kQramOosExpressionPositionId));
+}
+static void test_h1_bare_does_not_fire_oos() {
     const auto r = run_matcher(
         "void demo(qint a[4], qint i) { qint b; b = a[i]; }\n");
     CHECK(r.parsed);
-    CHECK_EQ_INT(r.errors, 1);
-    CHECK(contains(r.last_error_text, kQramOosExistingTargetId));
-    CHECK(contains(r.last_error_text, "PRD"));
+    CHECK_EQ_INT(r.errors, 0);
 }
 static void test_write_basic() {
     const auto r = run_matcher(
@@ -240,10 +247,11 @@ static void test_coexistence_oos_then_in_scope() {
 #ifdef STURM_QRAM_OOS_FIXTURES_DIR
 
 static void test_fixture_existing_target() {
+    // sturm-u9ge.6 (H1): the fixture's bare `b = a[i];` is H1's now;
+    // OOS skips. Kept as a regression test against accidental re-firing.
     const auto r = run_matcher_on_fixture("qram_oos_existing_target.cpp");
     CHECK(r.parsed);
-    CHECK_EQ_INT(r.errors, 1);
-    CHECK(contains(r.last_error_text, kQramOosExistingTargetId));
+    CHECK_EQ_INT(r.errors, 0);
 }
 
 static void test_fixture_write() {
@@ -271,7 +279,8 @@ static void test_fixture_expression_position() {
 #endif // STURM_QRAM_OOS_FIXTURES_DIR
 
 int main() {
-    test_existing_target_basic();
+    test_existing_target_larger_expr_basic();
+    test_h1_bare_does_not_fire_oos();
     test_write_basic();
     test_rmw_basic();
     test_expression_position_basic();

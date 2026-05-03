@@ -7,6 +7,9 @@
 //
 // sturm-u9ge.9 (Beat H4): the expression-position callback skips
 // `qint c = a[i] + d;` (now H4 territory); see `is_h4_handled_init_context`.
+//
+// sturm-u9ge.6 (Beat H1): the existing-target callback skips bare
+// `b = a[i];` (now H1 territory); see `expr_type_is_frontend_qint`.
 
 #include "matcher_qram_oos.hpp"
 
@@ -117,6 +120,18 @@ bool is_compound_assign_op(OverloadedOperatorKind k) {
            k == OO_LessLessEqual || k == OO_GreaterGreaterEqual;
 }
 
+// sturm-u9ge.6 (Beat H1): true iff `e` has type frontend `qint`. Used
+// to gate the existing-target callback below: when caller has already
+// confirmed RHS is a bare UDC-subscript and LHS is NOT a subscript,
+// adding this LHS-type check is sufficient to delegate to H1.
+bool expr_type_is_frontend_qint(const Expr* e) {
+    QualType qt = e->getType();
+    if (qt.isNull()) return false;
+    const Type* t = qt.getCanonicalType().getTypePtrOrNull();
+    const CXXRecordDecl* rd = t ? t->getAsCXXRecordDecl() : nullptr;
+    return rd && rd->getNameAsString() == "qint";
+}
+
 // ── Shape (1): existing-target  `b = a[i];` ─────────────────────────────────
 class ExistingTargetCallback : public MatchFinder::MatchCallback {
 public:
@@ -131,6 +146,8 @@ public:
         // shape-(2) write case, handled by WriteCallback).
         if (!expr_is_qint_udc_subscript(op->getArg(1))) return;
         if (expr_is_qint_udc_subscript(op->getArg(0))) return;
+        // sturm-u9ge.6 (Beat H1): bare `b = a[i];` is H1's; skip.
+        if (expr_type_is_frontend_qint(op->getArg(0))) return;
         const unsigned id = get_diag_id(
             *diag_, cached_id_,
             "STURM: out-of-scope QRAM-subscript shape "
