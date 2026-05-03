@@ -9,6 +9,7 @@
 #include <array>
 #include <cstdint>
 #include <cstdio>
+#include <cstdlib>  // std::exit — sturm-ddgo regression hard-pin in [A]
 
 // ─────────────────────────────────────────────────────────────────────────────
 // QRAM (QROM path) demo — sturm-2w6h v1 + sturm-u9ge frontend
@@ -67,14 +68,23 @@ sturm::qint_t<Width> qcl(std::int64_t v) noexcept {
 
 // [A] ── User-facing source: `qint b = a[i];` parses against production ────
 // The line below parses via the converting ctor `qint(const qint_t<W>&)`
-// added in sturm-qjt7. The C1 matcher's job is to REPLACE this line with
+// added in sturm-qjt7. The C1 matcher (matcher_qram_subscript.cpp,
+// sturm-u9ge.12) REPLACES this line with
 // `sturm::qint_t<W> b; ::sturm::QRAM_read(a, i, b);` before codegen, so
 // the converting ctor body is unreachable on the rewrite path. The
-// matcher works against the hermetic fixtures (transpiler/tests/fixtures
-// /qram_read_*.cpp) but does not yet fire against real `std::array`
-// from `<array>` (TODO: see bd issue) — until then, the converting ctor
-// runs at runtime and bumps the per-thread measurement counter, which
-// we report below.
+// matcher fires against both the hermetic fixtures (transpiler/tests
+// /fixtures/qram_read_*.cpp) AND the production headers (real
+// `std::array` from `<array>` + real `frontend::qint` from
+// `qint_alias.hpp` + real `qint_t<W>` from `qint_core.hpp`) once
+// transpile_consumer.cpp registers the matcher pool (sturm-ddgo).
+//
+// Post-rewrite, `i` is still a `frontend::qint` (the matcher rewrites
+// only the `qint b = a[i];` LINE, not the `i` declaration), so the
+// runtime `QRAM_read` overload set in `qram_read.hpp` (also sturm-ddgo)
+// includes a thin frontend::qint-accepting wrapper that forwards to
+// the canonical `qint_t<W>`-indexed overload via the alias's
+// non-measuring `classical_value()` accessor. The combination keeps
+// `measurement_count() == 0` across the call.
 void demo_natural_syntax() {
     using sturm::frontend::qint_alias_detail::measurement_count;
     using sturm::frontend::qint_alias_detail::reset_measurement_count;
@@ -92,8 +102,20 @@ void demo_natural_syntax() {
     const auto m_after = measurement_count();
     std::printf("  measurement_count before = %zu\n", m_before);
     std::printf("  measurement_count after  = %zu  "
-                "(non-zero ⇒ ctor ran; matcher hasn't rewritten the line)\n",
+                "(0 ⇒ matcher rewrote the line — ctor body unreachable)\n",
                 m_after);
+    // Hard-pin: the rewrite contract is `measurement_count == 0`
+    // post-call (sturm-ddgo). Treat any non-zero count as a regression.
+    if (m_after != 0u) {
+        std::fprintf(stderr,
+                     "  FAIL: expected measurement_count == 0 but got %zu — "
+                     "the C1 matcher did not rewrite `qint b = a[i];`. "
+                     "Check transpile_consumer.cpp registers "
+                     "register_qram_subscript_matcher and the QRAM matcher "
+                     "TUs are linked into the production binary.\n",
+                     m_after);
+        std::exit(1);
+    }
     reset_measurement_count();
 }
 

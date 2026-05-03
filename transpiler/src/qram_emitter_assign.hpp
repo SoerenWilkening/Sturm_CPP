@@ -49,12 +49,16 @@
 
 #include "matcher_qram_subscript_assign.hpp"
 
+#include "sturm/transpile/qir.hpp"
+
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace clang {
+class LangOptions;
 class Rewriter;
+class SourceManager;
 } // namespace clang
 
 namespace sturm::transpile {
@@ -116,6 +120,16 @@ QramAssignEmission emit_qram_assign_text(QramContainerKind kind,
 void emit_qram_assign_rewrites(
     clang::Rewriter& rw,
     const std::vector<QramSubscriptAssignHit>& hits);
+
+/// sturm-ddgo: same per-hit logic as `emit_qram_assign_rewrites` but
+/// appends `QReplacement` records to `replacements` instead of
+/// mutating a Rewriter. H1 has no adjoint plant, so no
+/// `UncomputeInsertion` is produced.
+void emit_qram_assign_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QramSubscriptAssignHit>& hits,
+    std::vector<QReplacement>& replacements);
 
 } // namespace sturm::transpile
 

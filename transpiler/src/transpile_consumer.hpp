@@ -69,6 +69,18 @@
 // statement-level VarDecl rewrite lands as a `QReplacement` in
 // `unit_.replacements`.
 #include "matcher_modular_op.hpp"
+// sturm-ddgo: QRAM-via-array-subscript matchers. Three flavours:
+//   - C1 (matcher_qram_subscript) for `qint b = a[i];` (bare init)
+//   - H1 (matcher_qram_subscript_assign) for `b = a[i];` (existing target)
+//   - H4 (matcher_qram_subscript_expr) for `qint c = a[i] + d;` (expr position)
+// The consumer owns the per-flavour hits vectors and drains them via
+// the corresponding `emit_qram_*_replacements` helpers after `matchAST`,
+// folding each rewrite into `unit_.replacements` / `unit_.raw_insertions`
+// alongside the modular / lossy pipelines so the standard `emit()` /
+// `emit_to_string()` path applies them.
+#include "matcher_qram_subscript.hpp"
+#include "matcher_qram_subscript_assign.hpp"
+#include "matcher_qram_subscript_expr.hpp"
 
 #include <string>
 #include <vector>
@@ -211,6 +223,15 @@ private:
     // disjoint from every per-op compound-assign matcher in the pool,
     // so no per-hit Phase C suppression is needed (unlike LO-2a / LO-2e).
     std::vector<ModularOpHit> modular_hits_;
+    // sturm-ddgo: QRAM matcher hit vectors. Drained after `matchAST`
+    // alongside the modular / lossy / nested-lossy drains. The three
+    // matchers anchor on disjoint AST shapes (C1: VarDecl with init
+    // == subscript; H1: assignment op-call; H4: VarDecl with init
+    // containing a subscript at non-immediate position), so no
+    // cross-flavour suppression is needed.
+    std::vector<QramSubscriptHit>       qram_subscript_hits_;
+    std::vector<QramSubscriptAssignHit> qram_assign_hits_;
+    std::vector<QramSubscriptExprHit>   qram_expr_hits_;
     // sturm-v0ur (LO-2 wiring): cleanup records assembled from
     // `lossy_hits_` after `matchAST`. Each `ExternalCleanup` carries
     // a close-brace `SourceLocation` and the pre-formatted cleanup

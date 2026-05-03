@@ -33,6 +33,16 @@
 // `ModularOpHit` into a `QReplacement` over the matched VarDecl
 // statement's source range.
 #include "modular_rewrite_emitter.hpp"
+// sturm-ddgo: QRAM rewrite emitters. The consumer drains
+// `qram_subscript_hits_` / `qram_assign_hits_` / `qram_expr_hits_`
+// after `matchAST`, converting each into `QReplacement` records (and
+// for C1 + H4, `UncomputeInsertion` records for the adjoint plant).
+// The records flow through the standard `unit_.replacements` /
+// `unit_.raw_insertions` pipeline so `emit()` / `emit_to_string()`
+// applies them alongside the modular / lossy rewrites.
+#include "qram_emitter.hpp"
+#include "qram_emitter_assign.hpp"
+#include "qram_emitter_expr.hpp"
 
 #include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
@@ -271,6 +281,21 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // the matcher body with MulMod / PowMod arms — no change to the
     // wiring here.
     sturm::transpile::register_modular_op_matcher(finder_, modular_hits_);
+    // sturm-ddgo: register the three QRAM-via-array-subscript matchers.
+    // Anchor on disjoint AST shapes from every Phase A..I per-op
+    // matcher above (C1 / H4 anchor on VarDecl init shapes; H1 on
+    // assignment op-call shapes — none overlap with the qbool / qint
+    // compound-assign matchers). Drained in `HandleTranslationUnit`
+    // alongside the modular / lossy / nested-lossy drains; produces
+    // `QReplacement` records over the matched VarDecl / op-call
+    // ranges and (for C1 reversible scopes) `UncomputeInsertion`
+    // records anchored at the enclosing close brace.
+    sturm::transpile::register_qram_subscript_matcher(
+        finder_, qram_subscript_hits_);
+    sturm::transpile::register_qram_subscript_assign_matcher(
+        finder_, qram_assign_hits_);
+    sturm::transpile::register_qram_subscript_expr_matcher(
+        finder_, qram_expr_hits_);
     sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
@@ -1072,6 +1097,32 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
             rep.replacement = std::move(body);
             unit_.replacements.push_back(std::move(rep));
         }
+    }
+
+    // sturm-ddgo: drain the three QRAM matcher hit vectors. Each
+    // helper appends `QReplacement` records to `unit_.replacements`
+    // (the source rewrite) and, for C1 + H4, `UncomputeInsertion`
+    // records to `unit_.raw_insertions` (the close-brace adjoint
+    // for C1 / line-local adjoint for H4). H1 has no adjoint plant
+    // — the user / runtime owns the uncompute scheme there.
+    //
+    // The three matchers anchor on disjoint AST shapes (C1: bare
+    // VarDecl init; H1: assignment op-call; H4: VarDecl init with
+    // subscript at non-immediate position), so no cross-flavour
+    // suppression is needed. Drains in matcher-registration order
+    // is irrelevant for correctness — the records flow through
+    // `synthesize()` / `apply_rewrites_and_serialize()` independently.
+    {
+        const clang::SourceManager& sm = ctx.getSourceManager();
+        const clang::LangOptions& lang = ctx.getLangOpts();
+        sturm::transpile::emit_qram_replacements(
+            sm, lang, qram_subscript_hits_,
+            unit_.replacements, unit_.raw_insertions);
+        sturm::transpile::emit_qram_assign_replacements(
+            sm, lang, qram_assign_hits_, unit_.replacements);
+        sturm::transpile::emit_qram_expr_replacements(
+            sm, lang, qram_expr_hits_,
+            unit_.replacements, unit_.raw_insertions);
     }
 
     // Phase T T-1 (sturm-xrob.2): drive the reversible-adjoint

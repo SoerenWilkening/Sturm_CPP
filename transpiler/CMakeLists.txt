@@ -169,6 +169,21 @@ add_executable(sturm-transpile
     src/matcher_modular_compound_collapse.cpp
     src/matcher_modular_pow_mod.cpp
     src/modular_rewrite_emitter.cpp
+    # sturm-ddgo: QRAM-via-array-subscript matcher + emitter pipeline.
+    # Three matchers (C1 bare-init, H1 existing-target, H4 expression-
+    # position) and three companion emitters; the consumer's drain
+    # block converts each matched hit into `QReplacement` /
+    # `UncomputeInsertion` records that flow through the standard
+    # `synthesize()` / `emit()` path. `width_inference.cpp` is the
+    # shared B1 width-inference helper consulted by all three matchers
+    # (PRD §11.3 / D0c.3 single source of truth).
+    src/matcher_qram_subscript.cpp
+    src/matcher_qram_subscript_assign.cpp
+    src/matcher_qram_subscript_expr.cpp
+    src/qram_emitter.cpp
+    src/qram_emitter_assign.cpp
+    src/qram_emitter_expr.cpp
+    src/width_inference.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -454,6 +469,17 @@ add_library(sturm-transpile-plugin SHARED
     src/matcher_modular_compound_collapse.cpp
     src/matcher_modular_pow_mod.cpp
     src/modular_rewrite_emitter.cpp
+    # sturm-ddgo: mirror the main binary — the plugin build needs the
+    # QRAM matchers + emitters resolved at dlopen so the
+    # plugin-path consumer (same `TranspileConsumer`) registers and
+    # drains them identically.
+    src/matcher_qram_subscript.cpp
+    src/matcher_qram_subscript_assign.cpp
+    src/matcher_qram_subscript_expr.cpp
+    src/qram_emitter.cpp
+    src/qram_emitter_assign.cpp
+    src/qram_emitter_expr.cpp
+    src/width_inference.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for

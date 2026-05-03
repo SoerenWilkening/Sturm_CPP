@@ -190,9 +190,76 @@ struct SubscriptTriple {
     QramContainerKind kind     = QramContainerKind::StdArray;
 };
 
+// Peel the implicit-conversion chain that may wrap a `qint_t<W>` rvalue
+// when the production frontend `qint` lacks a direct
+// `qint& operator=(const qint_t<W>&)` overload (sturm-ddgo). In that
+// shape, `b = a[i];` parses as
+//
+//     CXXOperatorCallExpr '='
+//       arg(0): DeclRefExpr 'b'
+//       arg(1): MaterializeTemporaryExpr
+//                 ImplicitCastExpr <ConstructorConversion>
+//                   CXXConstructExpr (qint(const qint_t<W>&))
+//                     [ImplicitCastExpr <NoOp>]
+//                       [CXXBindTemporaryExpr]
+//                         <CXXOperatorCallExpr '[]' or ArraySubscriptExpr>
+//
+// vs the hermetic-fixture shape where the qint class declares the
+// overload directly and the RHS is the bare subscript after
+// `IgnoreParenImpCasts()`. We accept both: peel through any combination
+// of MaterializeTemporaryExpr / ExprWithCleanups / CXXBindTemporaryExpr
+// / CXXConstructExpr (whose constructed type is the frontend qint AND
+// whose first ctor argument is the qint_t<W>) until we hit the bare
+// subscript.
+const Expr* peel_to_subscript(const Expr* e) {
+    if (!e) return nullptr;
+    for (int guard = 0; guard < 16; ++guard) {
+        if (!e) return nullptr;
+        const Expr* before = e;
+        e = e->IgnoreParenImpCasts();
+        if (!e) return nullptr;
+        if (const auto* mte = llvm::dyn_cast<MaterializeTemporaryExpr>(e)) {
+            e = mte->getSubExpr();
+            continue;
+        }
+        if (const auto* ewc = llvm::dyn_cast<ExprWithCleanups>(e)) {
+            e = ewc->getSubExpr();
+            continue;
+        }
+        if (const auto* btx = llvm::dyn_cast<CXXBindTemporaryExpr>(e)) {
+            e = btx->getSubExpr();
+            continue;
+        }
+        if (const auto* cxe = llvm::dyn_cast<CXXConstructExpr>(e)) {
+            // Only peel through the converting ctor that wraps a
+            // qint_t<W> rvalue into a frontend qint — i.e. the
+            // CXXConstructExpr's constructed type is the frontend qint
+            // class and it has at least one argument (the source
+            // qint_t<W>). Without this guard a subscript-of-record-of-
+            // record-of-record initializer chain might be peeled in
+            // ways that are not what we want.
+            if (cxe->getNumArgs() == 0) return nullptr;
+            // Type guard: the constructed type must be (canonically) a
+            // CXXRecordDecl named "qint" — mirrors the LHS-type gate
+            // above.
+            QualType ct = cxe->getType();
+            if (ct.isNull()) return nullptr;
+            const CXXRecordDecl* rd =
+                ct.getCanonicalType()->getAsCXXRecordDecl();
+            if (!rd || rd->getNameAsString() != "qint") return nullptr;
+            e = cxe->getArg(0);
+            continue;
+        }
+        // No more peel layers we recognise; stop. If we hit the same
+        // node twice the loop guard prevents infinite progress.
+        if (e == before) break;
+    }
+    return e;
+}
+
 std::optional<SubscriptTriple> subscript_triple_from_rhs(const Expr* rhs) {
     if (!rhs) return std::nullopt;
-    const Expr* peeled = rhs->IgnoreParenImpCasts();
+    const Expr* peeled = peel_to_subscript(rhs);
     if (!peeled) return std::nullopt;
     if (const auto* ase = llvm::dyn_cast<ArraySubscriptExpr>(peeled)) {
         if (!index_has_qint_udc(ase->getIdx())) return std::nullopt;

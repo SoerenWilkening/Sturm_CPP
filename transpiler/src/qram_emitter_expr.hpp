@@ -63,12 +63,17 @@
 
 #include "matcher_qram_subscript_expr.hpp"
 
+#include "sturm/transpile/qir.hpp"
+#include "sturm/transpile/uncompute_pass.hpp"
+
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace clang {
+class LangOptions;
 class Rewriter;
+class SourceManager;
 } // namespace clang
 
 namespace sturm::transpile {
@@ -136,6 +141,23 @@ QramExprEmission emit_qram_expr_text(QramContainerKind kind,
 /// is empty.
 void emit_qram_expr_rewrites(clang::Rewriter& rw,
                              const std::vector<QramSubscriptExprHit>& hits);
+
+/// sturm-ddgo: produce QReplacement / UncomputeInsertion records
+/// without touching a Rewriter. Mirrors `emit_qram_expr_rewrites`'s
+/// per-hit logic but flows the edits through the consumer pipeline.
+///
+///   - Pre-call extract: appended to `insertions` as
+///     `UncomputeInsertion{insert_before = decl_begin, code = ...}`.
+///   - Subscript replacement + LHS type rewrite: appended to
+///     `replacements` as `QReplacement` records.
+///   - Post-call adjoint: appended to `insertions` as
+///     `UncomputeInsertion{insert_before = <after-semi loc>, code = ...}`.
+void emit_qram_expr_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QramSubscriptExprHit>& hits,
+    std::vector<QReplacement>& replacements,
+    std::vector<UncomputeInsertion>& insertions);
 
 } // namespace sturm::transpile
 

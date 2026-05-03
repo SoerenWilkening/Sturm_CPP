@@ -63,12 +63,17 @@
 
 #include "matcher_qram_subscript.hpp"
 
+#include "sturm/transpile/qir.hpp"
+#include "sturm/transpile/uncompute_pass.hpp"
+
 #include <string>
 #include <string_view>
 #include <vector>
 
 namespace clang {
+class LangOptions;
 class Rewriter;
+class SourceManager;
 } // namespace clang
 
 namespace sturm::transpile {
@@ -126,6 +131,29 @@ QramEmission emit_qram_forward_text(QramContainerKind kind,
 /// is empty.
 void emit_qram_rewrites(clang::Rewriter& rw,
                         const std::vector<QramSubscriptHit>& hits);
+
+/// sturm-ddgo: same per-hit logic as `emit_qram_rewrites`, but instead
+/// of mutating a `Rewriter` directly the function appends:
+///   - one `QReplacement` per hit to `replacements` (the VarDecl
+///     source-range rewrite), and
+///   - one `UncomputeInsertion` per reversible-enclosing-function hit
+///     to `insertions` (the close-brace adjoint plant).
+///
+/// This is the integration shape the production transpile_consumer
+/// uses to fold QRAM rewrites into the existing `QUnit::replacements`
+/// + `QUnit::raw_insertions` pipeline alongside modular / lossy
+/// rewrites. The `sm` and `lang` references must stay live across the
+/// call (used to resolve source-text and trailing `;` locations).
+///
+/// No-op when `hits` is empty, when a hit has any null pointer, or
+/// when source-range resolution fails (defensive parity with
+/// `emit_qram_rewrites`).
+void emit_qram_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QramSubscriptHit>& hits,
+    std::vector<QReplacement>& replacements,
+    std::vector<UncomputeInsertion>& insertions);
 
 } // namespace sturm::transpile
 

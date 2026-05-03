@@ -288,4 +288,122 @@ void emit_qram_expr_rewrites(Rewriter& rw,
     }
 }
 
+// sturm-ddgo: produce QReplacement / UncomputeInsertion records
+// without touching a Rewriter. Mirrors `emit_qram_expr_rewrites`'s
+// per-hit logic exactly. Three records per hit:
+//   - One `UncomputeInsertion` at decl_begin carrying the extract.
+//   - One `QReplacement` for the subscript replacement.
+//   - One `UncomputeInsertion` at the location AFTER the semi (via
+//     `Lexer::getLocForEndOfToken(semi, ...)`) carrying the adjoint.
+// The LHS type rewrite, when needed, is one extra `QReplacement` per
+// VarDecl (deduped by pointer).
+void emit_qram_expr_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QramSubscriptExprHit>& hits,
+    std::vector<QReplacement>& replacements,
+    std::vector<UncomputeInsertion>& insertions) {
+    if (hits.empty()) return;
+
+    std::size_t ancilla_counter = 0;
+    std::set<const VarDecl*> lhs_done;
+
+    // Pending adjoints: identical reasoning to the Rewriter path —
+    // queue per hit, plant in REVERSE matcher order so a multi-
+    // subscript line uncomputes LIFO.
+    struct PendingAdjoint {
+        SourceLocation after_semi;
+        std::string text;
+    };
+    std::vector<PendingAdjoint> pending_adjoints;
+
+    for (const auto& hit : hits) {
+        if (hit.target_var == nullptr ||
+            hit.subscript_expr == nullptr ||
+            hit.container_expr == nullptr ||
+            hit.index_expr == nullptr) {
+            continue;
+        }
+
+        const std::string container_text =
+            expr_source_text(hit.container_expr, sm, lang);
+        const std::string index_text =
+            expr_source_text(hit.index_expr, sm, lang);
+        if (container_text.empty() || index_text.empty()) continue;
+
+        std::ostringstream name_os;
+        name_os << "__qram_h4_" << ancilla_counter++;
+        const std::string ancilla_name = name_os.str();
+
+        QramExprEmission em = emit_qram_expr_text(
+            hit.kind, ancilla_name, container_text, index_text,
+            hit.length_text, hit.W);
+        if (em.extract_text.empty()) continue;
+
+        const SourceLocation decl_begin = hit.target_var->getBeginLoc();
+        const SourceLocation semi =
+            find_var_decl_semi(hit.target_var, sm, lang);
+        if (decl_begin.isInvalid() || semi.isInvalid()) continue;
+
+        // Pre-call extract.
+        {
+            UncomputeInsertion ins;
+            ins.insert_before = decl_begin;
+            ins.code = em.extract_text + "\n    ";
+            insertions.push_back(std::move(ins));
+        }
+
+        // Subscript replacement.
+        {
+            const SourceRange sub_range =
+                hit.subscript_expr->getSourceRange();
+            if (sub_range.isValid()) {
+                QReplacement rep;
+                rep.range = sub_range;
+                rep.replacement = em.replace_text;
+                replacements.push_back(std::move(rep));
+            }
+        }
+
+        // LHS type rewrite (once per VarDecl).
+        if (lhs_done.insert(hit.target_var).second) {
+            const std::string new_type = render_qint_typename(hit.W);
+            const unsigned tok_len = Lexer::MeasureTokenLength(
+                decl_begin, sm, lang);
+            if (tok_len > 0) {
+                QReplacement rep;
+                rep.range = SourceRange(
+                    decl_begin, decl_begin.getLocWithOffset(tok_len - 1));
+                rep.replacement = new_type;
+                replacements.push_back(std::move(rep));
+            }
+        }
+
+        // Defer the post-call adjoint to after the loop.
+        std::string adjoint_text = "\n    ";
+        adjoint_text += em.adjoint_text;
+        pending_adjoints.push_back({semi, std::move(adjoint_text)});
+    }
+
+    // Plant adjoints. We want each adjoint to land AFTER the
+    // semicolon byte. `getLocForEndOfToken(L, 0, sm, lang)` returns
+    // the location one byte past the end of the token at L; for a
+    // single-character `;` token this is exactly the byte right after
+    // it. We push in REVERSE matcher order so the M9 emitter's reverse
+    // iteration over `insertions` (`emitter.cpp`'s LIFO loop) plants
+    // them in matcher-forward order at the same location, preserving
+    // the original `InsertTextAfterToken` ordering. (See "Why reverse
+    // iteration?" in `emitter.cpp`.)
+    for (auto it = pending_adjoints.begin(); it != pending_adjoints.end();
+         ++it) {
+        const SourceLocation after =
+            Lexer::getLocForEndOfToken(it->after_semi, 0, sm, lang);
+        if (after.isInvalid()) continue;
+        UncomputeInsertion ins;
+        ins.insert_before = after;
+        ins.code = std::move(it->text);
+        insertions.push_back(std::move(ins));
+    }
+}
+
 } // namespace sturm::transpile

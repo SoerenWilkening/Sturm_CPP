@@ -3034,3 +3034,76 @@ add_test(NAME test_qram_e2e
          COMMAND test_qram_e2e)
 set_tests_properties(test_qram_e2e PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
+
+# ── End-to-end gate vs. PRODUCTION headers: test_qram_e2e_real ────────────
+# sturm-ddgo: companion to test_qram_e2e — the latter exercises the C1 /
+# H1 / H4 + emitter pipelines against a hermetic stub; this binary
+# transpiles the same shapes against the production headers
+# (real `<array>` + real `qint_alias.hpp` + real `qint_core.hpp`).
+# The gap between the stub's `template <int W>` qint_t and the
+# production `template <std::size_t W>` qint_t — plus the extra
+# `MaterializeTemporaryExpr` / `CXXBindTemporaryExpr` /
+# `CXXConstructExpr` layers Clang emits when the production qint lacks
+# a direct `qint& operator=(const qint_t<W>&)` overload — was the
+# AST-shape gap sturm-ddgo closes. The `STURM_INCLUDE_DIR` /
+# `STURM_VENDOR_DIR` defines steer LibTooling at the production
+# headers in the same way `add_quantum_executable` does for the
+# example targets.
+add_executable(test_qram_e2e_real
+    test_qram_e2e_real.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+)
+target_include_directories(test_qram_e2e_real PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_SOURCE_DIR}/include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qram_e2e_real PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qram_e2e_real PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_E2E_REAL NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qram_e2e_real PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_E2E_REAL}
+    STURM_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
+    STURM_VENDOR_DIR="${CMAKE_SOURCE_DIR}/vendor"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qram_e2e_real PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qram_e2e_real PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_E2E_REAL support)
+    target_link_libraries(test_qram_e2e_real PRIVATE
+        ${LLVM_LIBS_QRAM_E2E_REAL})
+endif()
+add_test(NAME test_qram_e2e_real
+         COMMAND test_qram_e2e_real)
+set_tests_properties(test_qram_e2e_real PROPERTIES
+    LABELS "transpiler;qram;qram-subscript")

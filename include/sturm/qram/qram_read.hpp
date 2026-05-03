@@ -48,6 +48,16 @@
 
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/qtypes/qint.hpp"
+// sturm-ddgo: the C1 / H1 / H4 matchers rewrite user-facing source
+// shapes like `qint b = a[i];` (where `i` is a `frontend::qint`) into
+// `::sturm::QRAM_read(a, i, b);`. Because `i` retains its original
+// declaration type, the runtime must accept a `frontend::qint` index
+// alongside the canonical `qint_t<W>` form. Pulling the alias header
+// in here lets us declare the wrapper overloads below; the ones that
+// take `frontend::qint` simply forward to the corresponding
+// `qint_t<W>` overload after a non-measuring `qint_t<W>(int64_t)`
+// construction off the alias's `classical_value()`.
+#include "sturm/qtypes/qint_alias.hpp"
 #include "sturm/routines/invert.hpp"
 // sturm-2w6h.6 (Beat B4): the public `QRAM_read` and `__QRAM_read_adj`
 // overloads bump the umbrella `current_sink()->qram_read()` hook once
@@ -304,6 +314,77 @@ inline void __QRAM_read_adj(const qint_t<W>* a,
     const auto any_super = _qram_detail::any_super_mask<W>(a, n);
     if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(a, n, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a, n, i, b);
+}
+
+// ── (sturm-ddgo) frontend::qint index overloads ─────────────────────
+// The user-facing source shape `qint b = a[i];` declares `i` as a
+// `sturm::frontend::qint` (PRD §4.1 alias class). The C1 matcher
+// rewrites the line to `sturm::qint_t<W> b; ::sturm::QRAM_read(a, i, b);`
+// — leaving `i`'s original declaration type unchanged. To keep the
+// rewritten file compiling without forcing the user to also rewrite
+// the declaration of `i`, expose a thin overload per container shape
+// that takes `const sturm::frontend::qint&` for the index argument.
+//
+// Body posture: build a non-measuring `qint_t<W>` from the alias's
+// `classical_value()` (the underlying int64_t) and forward to the
+// canonical overload. `classical_value()` does NOT bump
+// `qint_alias_detail::g_measurement_count` (unlike `operator size_t()`
+// and the converting ctor), so the example's `measurement_count() == 0`
+// post-call assertion (sturm-ddgo) holds. Mirrored on
+// `__QRAM_read_adj` so the matcher's planted adjoint resolves too.
+//
+// Template-head trick: the leading `bool _FrontendIdx = true` parameter
+// gives every wrapper a distinct template head from the canonical
+// `<std::size_t W[, std::size_t N]>` overloads. That keeps the
+// `STURM_REGISTER_ADJOINT(sturm::QRAM_read<8u>, ...)` macro at the
+// bottom of this file unambiguous: `QRAM_read<8u>` resolves only to
+// the canonical pointer overload (template head `<W>`), never to the
+// wrapper (template head `<bool, W>`). The default value lets users
+// continue to call `QRAM_read(a, i, b)` without spelling the bool
+// out — argument-type deduction picks the right overload.
+
+template <bool _FrontendIdx = true, std::size_t W, std::size_t N>
+inline void QRAM_read(const std::array<qint_t<W>, N>& a,
+                      const sturm::frontend::qint& i,
+                      qint_t<W>& b) noexcept {
+    QRAM_read(a, qint_t<W>(i.classical_value()), b);
+}
+
+template <bool _FrontendIdx = true, std::size_t W, std::size_t N>
+inline void QRAM_read(const qint_t<W> (&a)[N],
+                      const sturm::frontend::qint& i,
+                      qint_t<W>& b) noexcept {
+    QRAM_read(a, qint_t<W>(i.classical_value()), b);
+}
+
+template <bool _FrontendIdx = true, std::size_t W>
+inline void QRAM_read(const qint_t<W>* a,
+                      std::size_t n,
+                      const sturm::frontend::qint& i,
+                      qint_t<W>& b) noexcept {
+    QRAM_read(a, n, qint_t<W>(i.classical_value()), b);
+}
+
+template <bool _FrontendIdx = true, std::size_t W, std::size_t N>
+inline void __QRAM_read_adj(const std::array<qint_t<W>, N>& a,
+                            const sturm::frontend::qint& i,
+                            qint_t<W>& b) noexcept {
+    __QRAM_read_adj(a, qint_t<W>(i.classical_value()), b);
+}
+
+template <bool _FrontendIdx = true, std::size_t W, std::size_t N>
+inline void __QRAM_read_adj(const qint_t<W> (&a)[N],
+                            const sturm::frontend::qint& i,
+                            qint_t<W>& b) noexcept {
+    __QRAM_read_adj(a, qint_t<W>(i.classical_value()), b);
+}
+
+template <bool _FrontendIdx = true, std::size_t W>
+inline void __QRAM_read_adj(const qint_t<W>* a,
+                            std::size_t n,
+                            const sturm::frontend::qint& i,
+                            qint_t<W>& b) noexcept {
+    __QRAM_read_adj(a, n, qint_t<W>(i.classical_value()), b);
 }
 
 }  // namespace sturm

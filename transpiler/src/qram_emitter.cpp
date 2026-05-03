@@ -283,4 +283,73 @@ void emit_qram_rewrites(Rewriter& rw,
     }
 }
 
+// sturm-ddgo: produce QReplacement / UncomputeInsertion records
+// without touching a Rewriter. Mirrors `emit_qram_rewrites` but
+// flows through the consumer's `QUnit::replacements` /
+// `QUnit::raw_insertions` channels so the production
+// `transpile_consumer.cpp` can integrate the QRAM rewrite alongside
+// the modular / lossy / per-op-uncompute pipelines.
+void emit_qram_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QramSubscriptHit>& hits,
+    std::vector<QReplacement>& replacements,
+    std::vector<UncomputeInsertion>& insertions) {
+    if (hits.empty()) return;
+    for (const auto& hit : hits) {
+        if (hit.target_var == nullptr ||
+            hit.container_expr == nullptr ||
+            hit.index_expr == nullptr) {
+            continue;
+        }
+
+        const std::string container_text =
+            expr_source_text(hit.container_expr, sm, lang);
+        const std::string index_text =
+            expr_source_text(hit.index_expr, sm, lang);
+        const std::string target_name = hit.target_var->getNameAsString();
+        if (container_text.empty() || index_text.empty() ||
+            target_name.empty()) {
+            continue;
+        }
+
+        QramEmission em = emit_qram_forward_text(
+            hit.kind, target_name, container_text, index_text,
+            hit.length_text, hit.W);
+        if (em.text.empty()) continue;
+
+        const SourceLocation decl_begin = hit.target_var->getBeginLoc();
+        const SourceLocation decl_end =
+            find_var_decl_semi(hit.target_var, sm, lang);
+        if (decl_begin.isInvalid() || decl_end.isInvalid()) continue;
+
+        QReplacement rep;
+        rep.range = SourceRange(decl_begin, decl_end);
+        rep.replacement = em.text;
+        replacements.push_back(std::move(rep));
+
+        const FunctionDecl* enclosing =
+            enclosing_function_of(hit.target_var);
+        if (enclosing == nullptr) continue;
+        if (!is_reversible(enclosing)) continue;
+        const clang::Stmt* body = enclosing->getBody();
+        if (body == nullptr) continue;
+        const auto* compound = llvm::dyn_cast<clang::CompoundStmt>(body);
+        if (compound == nullptr) continue;
+        const SourceLocation rbrace = compound->getRBracLoc();
+        if (rbrace.isInvalid()) continue;
+
+        std::string adjoint_text = "    ";
+        adjoint_text += render_qram_adjoint(hit.kind, container_text,
+                                            index_text, hit.length_text,
+                                            target_name);
+        adjoint_text += ";\n";
+
+        UncomputeInsertion ins;
+        ins.insert_before = rbrace;
+        ins.code = std::move(adjoint_text);
+        insertions.push_back(std::move(ins));
+    }
+}
+
 } // namespace sturm::transpile

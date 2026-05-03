@@ -164,4 +164,47 @@ void emit_qram_assign_rewrites(
     }
 }
 
+// sturm-ddgo: produce QReplacement records without touching a
+// Rewriter. The H1 emitter does not plant an adjoint (the user / runtime
+// owns the uncompute scheme; this matcher only injects the pre-call
+// `__QRAM_target_uncompute` and the forward QRAM_read), so no
+// `UncomputeInsertion` is produced.
+void emit_qram_assign_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QramSubscriptAssignHit>& hits,
+    std::vector<QReplacement>& replacements) {
+    if (hits.empty()) return;
+    for (const auto& hit : hits) {
+        if (hit.assign_expr   == nullptr ||
+            hit.target_expr   == nullptr ||
+            hit.container_expr == nullptr ||
+            hit.index_expr     == nullptr) {
+            continue;
+        }
+        const std::string target_text =
+            expr_source_text(hit.target_expr, sm, lang);
+        const std::string container_text =
+            expr_source_text(hit.container_expr, sm, lang);
+        const std::string index_text =
+            expr_source_text(hit.index_expr, sm, lang);
+        if (target_text.empty() || container_text.empty() ||
+            index_text.empty()) continue;
+
+        QramAssignEmission em = emit_qram_assign_text(
+            hit.kind, target_text, container_text, index_text,
+            hit.length_text, hit.W);
+        if (em.text.empty()) continue;
+
+        const SourceRange assign_range =
+            hit.assign_expr->getSourceRange();
+        if (assign_range.isInvalid()) continue;
+
+        QReplacement rep;
+        rep.range = assign_range;
+        rep.replacement = em.text;
+        replacements.push_back(std::move(rep));
+    }
+}
+
 } // namespace sturm::transpile
