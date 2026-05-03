@@ -471,6 +471,37 @@ target_sources(example_mul_demo PRIVATE
 )
 target_link_libraries(example_mul_demo PRIVATE orkan_headers)
 
+# ── Example: QRAM (QROM path) backend demo (sturm-2w6h v1) ─────────────────
+# Calls the runtime `sturm::QRAM_read` entry-point directly against a
+# fully-classical `std::array<qint_t<4>, 4>` container and prints what
+# is observable without a live simulator: the umbrella + split telemetry
+# counters and the high-level RecordingSink op stream. The user-facing
+# transpiler-rewrite shapes (`qint b = a[i];` etc.) are documented in
+# the file's top-of-file comment block; their gate-budget pin lives in
+# `tests/qram/test_qram_read_qrom_gates.cpp` (the B5 e2e test) which
+# wires up a real qubit pool + Orkan simulator. Same helper / bypass
+# pattern as example_in_memory_transpile; the QRAM runtime body
+# `src/sturm/qram/qram_read.cpp` is appended as an extra runtime source
+# alongside the standard backend sources, plus `core/control_stack.cpp`
+# for the WHEN-lifted CXs the QROM body emits (PRD §4 paragraph 4).
+# Companion doc: docs/qram_user_intro.md.
+add_quantum_executable(example_qram_demo
+    qram_demo.cpp
+)
+target_sources(example_qram_demo PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_link_libraries(example_qram_demo PRIVATE orkan_headers)
+
 # ── PM4-7: demo plugin exercising the PM4-1 / PM4-2 extension surface ───────
 # Builds `sturm-pm4-demo-plugin` as a MODULE shared library. The plugin is
 # dlopen-only — it is not wired into any `add_quantum_executable` target.
