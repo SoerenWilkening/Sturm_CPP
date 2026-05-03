@@ -2662,3 +2662,69 @@ add_test(NAME test_qram_emitter
          COMMAND test_qram_emitter)
 set_tests_properties(test_qram_emitter PROPERTIES
     LABELS "transpiler;qram")
+
+# ── End-to-end gate: test_qram_e2e (sturm-u9ge.17 / Beat G1) ─────────────────
+# Plan §10 / G1; PRD §5 (post-transpile safety net), §8 (M4 emission),
+# §11.1 (D0a — three overloads), §11.2 (D0b — counter-mode/circuit-mode
+# dispatch), §11.4 (D0d — adjoint registration). Closes the QRAM-via-
+# array-subscript epic by exercising matcher (C1) + emitter (D2) +
+# runtime stub (D1) across all three PRD §7 container shapes (StdArray
+# / CArray / Pointer) under both counter-mode and circuit-mode sinks.
+#
+# Compiles in: the same transpiler/src/* TUs as test_qram_emitter (C1
+# matcher + D2 emitter + B1 width inference + reversible-attr probe)
+# AND the runtime body src/sturm/qram/qram_read.cpp so the in-process
+# QRAM_read calls under both sinks resolve to the production helper
+# pair. Mirrors the linkage shape of `tests/qram/test_qram_read_stub`.
+add_executable(test_qram_e2e
+    test_qram_e2e.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_include_directories(test_qram_e2e PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${CMAKE_SOURCE_DIR}/include
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qram_e2e PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qram_e2e PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_E2E NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qram_e2e PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_E2E}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qram_e2e PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qram_e2e PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_E2E support)
+    target_link_libraries(test_qram_e2e PRIVATE
+        ${LLVM_LIBS_QRAM_E2E})
+endif()
+add_test(NAME test_qram_e2e
+         COMMAND test_qram_e2e)
+set_tests_properties(test_qram_e2e PROPERTIES
+    LABELS "transpiler;qram;qram-subscript")
