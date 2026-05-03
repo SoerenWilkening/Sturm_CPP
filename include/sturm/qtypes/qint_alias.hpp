@@ -126,6 +126,23 @@ public:
     qint& operator=(qint&&)      noexcept = default;
     ~qint()                      noexcept = default;
 
+    // ── Implicit converting constructor from backend `qint_t<W>` ─────────
+    // Lets the user-facing source line `qint b = a[i];` PARSE when `a`
+    // is `std::array<qint_t<W>, N>` / `qint_t<W>[N]` / `qint_t<W>*` —
+    // a[i] returns `qint_t<W>&`, this ctor accepts it.
+    //
+    // Post-transpile the C1 matcher REPLACES the VarDecl initializer
+    // with the explicit `sturm::qint_t<W> b; ::sturm::QRAM_read(a, i, b);`
+    // pair (PRD §8 / archive/prd_qram_subscript.md §9 row 3), so this
+    // body is unreachable on the rewrite path. If the matcher ever
+    // misses the site, the body bumps the same measurement counter as
+    // `operator size_t()` so the regression is observable to the G1
+    // e2e check (`measurement_count() == 0` post-transpile).
+    //
+    // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
+    template <std::size_t W>
+    qint(const ::sturm::qint_t<W>& src) noexcept;
+
     // ── Implicit operator size_t (the load-bearing piece) ────────────────
     // PRD §4.1: "Implicit `operator size_t() const noexcept;`. This is
     // what makes `a[qint_idx]` parse uniformly across `std::array<qint,
@@ -175,6 +192,16 @@ private:
 inline qint::operator std::size_t() const noexcept {
     qint_alias_detail::bump_measurement_count();
     return static_cast<std::size_t>(value_);
+}
+
+// ── Out-of-line converting constructor from backend qint_t<W> ────────────
+// Body never accesses `src` (we don't pull qint_core.hpp here — keeps the
+// frontend header decoupled from the backend layout). Bumps the
+// measurement counter on the same rationale as `operator size_t()`: a
+// missed C1 rewrite shows up immediately in the G1 e2e assertion.
+template <std::size_t W>
+inline qint::qint(const ::sturm::qint_t<W>& /*src*/) noexcept : value_(0) {
+    qint_alias_detail::bump_measurement_count();
 }
 
 // ── Sanity: the implicit conversion really IS implicit ───────────────────

@@ -184,6 +184,21 @@ target_compile_features(test_qint_alias PRIVATE cxx_std_20)
 add_test(NAME test_qint_alias COMMAND test_qint_alias)
 set_tests_properties(test_qint_alias PROPERTIES LABELS "qtypes;qram-subscript")
 
+# sturm-qjt7 — converting constructor `frontend::qint(const qint_t<W>&)`
+# pins that `qint b = a[i];` parses against the production header for all
+# three PRD §7 container shapes (std::array, C-array, pointer). Same
+# header-only profile as test_qint_alias above.
+add_executable(test_qint_alias_qint_t_init
+    test_qint_alias_qint_t_init.cpp
+)
+target_include_directories(test_qint_alias_qint_t_init PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_alias_qint_t_init PRIVATE cxx_std_20)
+add_test(NAME test_qint_alias_qint_t_init COMMAND test_qint_alias_qint_t_init)
+set_tests_properties(test_qint_alias_qint_t_init PROPERTIES
+    LABELS "qtypes;qram-subscript")
+
 # sturm-u9ge.10 (Beat A2) — qint_alias_ops.hpp: arithmetic / compare /
 # bitwise / compound-assign operator stubs for the frontend `qint` alias.
 # Pre-transpile measure-then-classical body; post-transpile the C1 matcher
