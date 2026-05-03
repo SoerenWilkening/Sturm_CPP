@@ -1,6 +1,6 @@
 # PRD — QRAM backend gate emission (QROM path, v1)
 
-**Status.** Draft, 2026-05-03.
+**Status.** Implemented, 2026-05-03.
 **Predecessors.** `docs/archive/prd_qram_subscript.md` (frontend epic
 `sturm-u9ge`, closed) and `docs/archive/plan_qram_subscript.md` (its
 beat plan, closed). Those documents pin the user-visible shape

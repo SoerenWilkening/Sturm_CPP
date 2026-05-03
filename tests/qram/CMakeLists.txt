@@ -107,3 +107,30 @@ target_compile_features(test_qram_telemetry_split PRIVATE cxx_std_20)
 target_link_libraries(test_qram_telemetry_split PRIVATE orkan_headers)
 add_test(NAME test_qram_telemetry_split COMMAND test_qram_telemetry_split)
 set_tests_properties(test_qram_telemetry_split PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-2w6h.7 (Beat B5) — end-to-end gate-stream + statevector test ──
+# Closes v1 of the QRAM backend gate-emission epic. Pins the public
+# `QRAM_read(a, i, b)` entry-point end-to-end across every layer
+# (overload dispatch → mask-OR routing → QROM helper → DSL body →
+# adjoint sibling → split telemetry counter). Exercises:
+#   * G5 forward record pin: exact CX / CCX counts vs. per-k budget,
+#     qrom_read sink record fires once, qreg_read never, umbrella
+#     `qram::qram_read_count()` == 1, `i.super_mask` immutable.
+#   * G3 round-trip pin: forward + adjoint zeros `b` on the statevector,
+#     gate stream is balanced (every (kind, qubits) triple appears an
+#     even number of times).
+#   * G1 superposed-index pin: H on i.bit(1) → P(b=a[0]) + P(b=a[2]) ≈ 1.0
+#     with each half ≈ 0.5; `i.super_mask` unchanged.
+# Plan `docs/plan_qram_backend.md` §5 Beat B5 / PRD §10.
+add_executable(test_qram_read_qrom_gates
+    test_qram_read_qrom_gates.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+    ${STURM_QRAM_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_read_qrom_gates PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_read_qrom_gates PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_qrom_gates PRIVATE orkan_headers)
+add_test(NAME test_qram_read_qrom_gates COMMAND test_qram_read_qrom_gates)
+set_tests_properties(test_qram_read_qrom_gates PROPERTIES LABELS "qram;qram-backend")
