@@ -177,6 +177,30 @@ inline void qram_read_qreg_impl(const qint_t<W>* a,
                     static_cast<const void*>(&b));
 }
 
+// ── B3 adjoint helper: routes through __lib_qram_read_qrom_dsl_adj ──
+// Counter contract matches the forward (umbrella + trace fire once).
+// The QROM body is self-adjoint (PRD §4 paragraph 4), but routing
+// through the named adjoint symbol exercises the
+// STURM_REGISTER_ADJOINT enrolment end-to-end via the public
+// __QRAM_read_adj surface (P9c placement-audit spirit). qreg adjoint
+// stays on `qram_read_qreg_impl` — the v1 qreg helper is a
+// counter-only stub, so the same body runs in both directions.
+template <std::size_t W>
+inline void qram_read_qrom_impl_adj(const qint_t<W>* a,
+                                    std::size_t n,
+                                    const qint_t<W>& i,
+                                    qint_t<W>& b) noexcept {
+    dispatch_common(/*QROM*/ 1, static_cast<const void*>(a), n,
+                    static_cast<const void*>(&i),
+                    static_cast<const void*>(&b));
+#ifdef STURM_BACKEND_ENABLED
+    qint_t<W>& i_mut = const_cast<qint_t<W>&>(i);
+    __lib_qram_read_qrom_dsl_adj<W>(a, n, i_mut, b);
+#else
+    (void)a; (void)n; (void)i; (void)b;
+#endif
+}
+
 }  // namespace _qram_detail
 
 // ── (1) std::array<qint_t<W>, N> arm — D0a §11.1.1 overload 1 ───────
@@ -214,14 +238,16 @@ inline void QRAM_read(const qint_t<W>* a,
 // One-for-one with the forward overload set (P9b: same parameter
 // list, `b` non-const out-param). Counter-mode body bumps the same
 // `qram_read` counter via the shared template helpers; gate-level
-// inversion lands in B3 (sturm-2w6h.5).
+// inversion lands in B3 (sturm-2w6h.5) by routing through the
+// `qram_read_qrom_impl_adj` helper which calls the registered
+// `__lib_qram_read_qrom_dsl_adj` for the QROM path.
 
 template <std::size_t W, std::size_t N>
 inline void __QRAM_read_adj(const std::array<qint_t<W>, N>& a,
                             const qint_t<W>& i,
                             qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(a.data(), N);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a.data(), N, i, b);
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(a.data(), N, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a.data(), N, i, b);
 }
 
@@ -230,7 +256,7 @@ inline void __QRAM_read_adj(const qint_t<W> (&a)[N],
                             const qint_t<W>& i,
                             qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(&a[0], N);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(&a[0], N, i, b);
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(&a[0], N, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(&a[0], N, i, b);
 }
 
@@ -240,7 +266,7 @@ inline void __QRAM_read_adj(const qint_t<W>* a,
                             const qint_t<W>& i,
                             qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(a, n);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a, n, i, b);
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl_adj<W>(a, n, i, b);
     else                 _qram_detail::qram_read_qreg_impl<W>(a, n, i, b);
 }
 

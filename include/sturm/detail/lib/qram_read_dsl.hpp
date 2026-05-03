@@ -193,3 +193,10 @@ inline void lib_qram_read_qrom_dsl(const qint_t<W>* a, std::size_t n,
 }
 
 }  // namespace sturm
+
+// Sibling header carries __lib_qram_read_qrom_dsl_adj +
+// STURM_REGISTER_ADJOINT (sturm-2w6h.5 / Beat B3). Auto-included so
+// callers of `lib_qram_read_qrom_dsl` pick up the adjoint-pair
+// registration without an extra `#include`. Matches the
+// `c_and_dsl.hpp` ↔ `c_and_dsl_adj.hpp` pattern from sturm-eum8.
+#include "sturm/detail/lib/qram_read_dsl_adj.hpp"

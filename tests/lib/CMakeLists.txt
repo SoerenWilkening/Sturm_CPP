@@ -927,3 +927,34 @@ target_link_libraries(test_qram_read_dsl_simulate PRIVATE orkan_headers)
 add_test(NAME test_qram_read_dsl_simulate COMMAND test_qram_read_dsl_simulate)
 set_tests_properties(test_qram_read_dsl_simulate
     PROPERTIES LABELS "lib;qram")
+
+# ── sturm-2w6h.5 (Beat B3) -- __lib_qram_read_qrom_dsl_adj round-trip test.
+# Pins the adjoint sibling header + STURM_REGISTER_ADJOINT enrolment
+# from include/sturm/detail/lib/qram_read_dsl_adj.hpp (plan §5 Beat
+# B3, goal G3). T1 (recording-sink, (N, W) ∈ {(2,2), (4,4)}): forward
+# + adjoint emits a balanced multiset of (kind, qubits, arity) IR
+# triples — every triple appears an even number of times across the
+# round trip. T2 (statevector, (N, W) = (4, 4)): for every classical
+# i ∈ {0..3}, forward + adjoint zeros b (P(b == 0) ≈ 1.0). T3
+# (statevector, (N, W) = (4, 4)): with i.bit(0) in superposition,
+# round trip zeros b and i.super_mask is unchanged. T4 (compile-time):
+# invert<&lib_qram_read_qrom_dsl<W>>() resolves to
+# __lib_qram_read_qrom_dsl_adj<W>.
+add_executable(test_qram_read_dsl_adjoint
+    test_qram_read_dsl_adjoint.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_read_dsl_adjoint PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_read_dsl_adjoint PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_read_dsl_adjoint PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qram_read_dsl_adjoint PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_qram_read_dsl_adjoint PRIVATE orkan_headers)
+add_test(NAME test_qram_read_dsl_adjoint COMMAND test_qram_read_dsl_adjoint)
+set_tests_properties(test_qram_read_dsl_adjoint
+    PROPERTIES LABELS "lib;qram;lossy-reversibility")
