@@ -114,6 +114,30 @@ external_consumer: r=4
 This is the classical value of `(a + b) mod n` with `a=6, b=5, n=7`,
 gated by a `qbool` guard known to be `true` at compile time.
 
+## ⚠️ Measurement footgun: `qint → integer` is destructive
+
+Any conversion of a `qint` to a classical integer is a **destructive
+quantum measurement** that collapses superposition. The `static_cast<int64_t>(a)`
+calls in the example above are explicit measurements (and are intentional —
+that is how you read out a result).
+
+The footgun is the *implicit* version. The frontend `qint` alias carries an
+implicit `operator size_t()` so that `qint b = a[i];` is a valid C++
+expression the transpiler can recognise and rewrite to `QRAM_read(a, i, b)`
+without measuring `i`. The same implicit conversion fires in any other
+integral context — `int x = q;`, `std::vector<int> v(q);`,
+`for (size_t i = 0; i < q; ++i)` — and **silently measures** the `qint`
+at runtime, producing classical output that *looks* correct but has
+collapsed the quantum state.
+
+**Rules.** Use `static_cast<int64_t>(q)` deliberately when you mean to
+measure. For QRAM access write the exact shape `qint b = a[i];` (a fresh
+declaration on the LHS, no surrounding expression). Other shapes — `b = a[i];`
+with existing `b`, `a[i] = b;`, `a[i] += b;`, `c = a[i] + d;` — are
+diagnosed by the transpiler as out-of-scope (PRD §9, plan H1–H4) rather
+than silently measured. Full background and the open follow-ups live in
+[`docs/prd_qram_subscript.md`](prd_qram_subscript.md) §10.1.
+
 ## Next steps
 
 - Read [`docs/public_api.md`](public_api.md) for the authoritative list

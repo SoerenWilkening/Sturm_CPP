@@ -1,9 +1,14 @@
 # PRD: QRAM via Array Subscript with Quantum Index
 
-**Status:** Draft (2026-05-02).
+**Status:** Implemented (2026-05-03). v1 closed at `sturm-u9ge`.
+**Plan:** [`docs/plan_qram_subscript.md`](plan_qram_subscript.md).
 **Scope tag:** sturm-u9ge (epic id; children sturm-u9ge.1 .. sturm-u9ge.17).
 **Related:** `docs/01_principles.md` (P2, P4a, P9, B5/B5a, B7);
 `include/sturm/qtypes/qint_core.hpp`.
+
+Post-v1 follow-ups remain open as filed backlog: `sturm-u9ge.6` (H1),
+`sturm-u9ge.7` (H2), `sturm-u9ge.8` (H3), `sturm-u9ge.9` (H4) per §9 / §12.6,
+plus `sturm-rqlf` (full user-facing QRAM intro doc) per §10.1.
 
 ---
 
