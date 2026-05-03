@@ -1,34 +1,21 @@
 // matcher_qram_oos.cpp — sturm-u9ge.16 (Beat E1) implementation.
-//
 // Plan §8 / Beat E1; PRD §9 / M5. See `matcher_qram_oos.hpp` for the
-// four shapes, the diagnostic ids, and the rationale.
+// four shapes, the diagnostic ids, and the rationale. The four shapes
+// are structurally disjoint by operator-kind and arg-position; the C1
+// shape `qint b = a[i];` anchors on a VarDecl init (not on a
+// CXXOperatorCallExpr), so coexistence is deterministic.
 //
-// Implementation strategy
-// -----------------------
-// All four shapes share a discriminator: a subscript expression whose
-// index contains an `ImplicitCastExpr` with `CK_UserDefinedConversion`
-// targeting `sturm::frontend::qint::operator <integral>`.
-//
-// Per-shape AST anchor (all CXXOperatorCallExpr):
-//   (1) existing-target  `b = a[i];`         arg(1) is UDC subscript
-//   (2) write            `a[i] = b;`         arg(0) is UDC subscript
-//   (3) RMW              `a[i] += b;` etc.   compound-assign with
-//                                            arg(0) UDC subscript
-//   (4) expression-pos   `c = a[i] + d;`     non-assign op with any
-//                                            arg a UDC subscript
-//
-// The four shapes are structurally disjoint: each callback gates on a
-// distinct combination of operator-kind and arg-position so a single
-// matched op-call hits at most one callback. The C1 shape `qint b =
-// a[i];` anchors on a VarDecl init (NOT on a CXXOperatorCallExpr at
-// all), so coexistence is deterministic — zero double-fires.
+// sturm-u9ge.9 (Beat H4): the expression-position callback skips
+// `qint c = a[i] + d;` (now H4 territory); see `is_h4_handled_init_context`.
 
 #include "matcher_qram_oos.hpp"
 
+#include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
 #include "clang/AST/Expr.h"
 #include "clang/AST/ExprCXX.h"
+#include "clang/AST/ParentMapContext.h"
 #include "clang/AST/RecursiveASTVisitor.h"
 #include "clang/ASTMatchers/ASTMatchFinder.h"
 #include "clang/ASTMatchers/ASTMatchers.h"
@@ -205,6 +192,31 @@ private:
     unsigned cached_id_ = 0;
 };
 
+// sturm-u9ge.9 (Beat H4): true iff the op-call is the immediate init
+// of a frontend `qint` VarDecl (now H4 territory; OOS must skip).
+bool is_h4_handled_init_context(ASTContext& ctx,
+                                const CXXOperatorCallExpr* op) {
+    if (!op) return false;
+    DynTypedNode current = DynTypedNode::create(*op);
+    for (int hops = 0; hops < 8; ++hops) {
+        const auto parents = ctx.getParents(current);
+        if (parents.empty()) return false;
+        const DynTypedNode& p = parents[0];
+        if (p.get<ImplicitCastExpr>() || p.get<ParenExpr>() ||
+            p.get<CXXConstructExpr>() ||
+            p.get<MaterializeTemporaryExpr>()) {
+            current = p; continue;
+        }
+        if (const auto* vd = p.get<VarDecl>()) {
+            const Type* t = vd->getType().getCanonicalType().getTypePtrOrNull();
+            const CXXRecordDecl* rd = t ? t->getAsCXXRecordDecl() : nullptr;
+            return rd && rd->getNameAsString() == "qint";
+        }
+        return false;
+    }
+    return false;
+}
+
 // ── Shape (4): expression-position  `c = a[i] + d;` ─────────────────────────
 class ExpressionPositionCallback : public MatchFinder::MatchCallback {
 public:
@@ -216,9 +228,15 @@ public:
         const OverloadedOperatorKind k = op->getOperator();
         // Reject every assign-shape — those are shapes (1) / (2) / (3).
         if (k == OO_Equal || is_compound_assign_op(k)) return;
-        // Walk every argument; on the first hit, fire once.
+        // Walk every argument; on the first hit, evaluate the H4 gate.
         for (unsigned i = 0; i < op->getNumArgs(); ++i) {
             if (!expr_is_qint_udc_subscript(op->getArg(i))) continue;
+            // sturm-u9ge.9 (Beat H4): skip H4-handled init context.
+            if (r.Context != nullptr &&
+                is_h4_handled_init_context(*const_cast<ASTContext*>(r.Context),
+                                           op)) {
+                return;
+            }
             const unsigned id = get_diag_id(
                 *diag_, cached_id_,
                 "STURM: out-of-scope QRAM-subscript shape "

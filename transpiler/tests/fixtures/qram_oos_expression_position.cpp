@@ -1,19 +1,22 @@
 // qram_oos_expression_position.cpp — sturm-u9ge.16 (Beat E1) input-only
 // fixture for the expression-position out-of-scope shape.
 //
-// PRD §9 row 4: `c = a[i] + d;` (subscript embedded inside a larger
-// expression). v1 handles only the bare `qint b = a[i];` (or its
-// existing-target variant); putting the subscript inside another
-// operator requires materialising an ancilla for the read result and
-// uncomputing it after the outer expression completes — a scope-exit
-// dance the v1 emitter does not synthesise. The OOS matcher
-// (`matcher_qram_oos.cpp`, sturm-u9ge.16) MUST emit exactly one
-// Error-severity diagnostic embedding the `qram-oos-expression-position`
-// token.
+// PRD §9 row 4: subscript embedded inside a larger expression where v1
+// does NOT synthesise the rewrite. As of sturm-u9ge.9 (Beat H4) the
+// VarDecl-init form `qint c = a[i] + d;` is H4 territory (rewritten by
+// `matcher_qram_subscript_expr.{hpp,cpp}` + `qram_emitter_expr.{hpp,cpp}`).
+// The OOS diagnostic now fires only on TRUE non-init expression-position
+// uses — function-call arguments, return-stmt bodies, if-conditions,
+// etc. — where ancilla extraction + uncompute is still not synthesised.
+//
+// This fixture exercises the function-call-argument case: passing
+// `a[i] + d` to a function that takes a `qint` parameter. The OOS
+// matcher MUST emit exactly one Error-severity diagnostic embedding the
+// `qram-oos-expression-position` token here. (The H4 matcher does NOT
+// fire on this shape because `a[i] + d` is not a VarDecl initializer.)
 //
 // Hermetic stub: same shape as the other E1 fixtures, with the binary
-// `operator+` overload that lets the `a[i] + d` line type-check. The
-// matcher fires on the AST shape.
+// `operator+` overload that lets the `a[i] + d` expression type-check.
 
 namespace sturm { namespace frontend {
 class qint {
@@ -38,9 +41,11 @@ inline qint operator+(const qint& a, const qint& b) noexcept {
 
 using qint = sturm::frontend::qint;
 
+void sink(qint x) { (void)x; }
+
 void demo(qint a[4], qint i, qint d) {
-    // Expression-position read: needs ancilla extract + uncompute.
-    // Out of scope for v1.
-    qint c = a[i] + d;
-    (void)c;
+    // True non-init expression-position read: needs ancilla extract +
+    // uncompute, which v1 does not synthesise even after H4 (H4 only
+    // covers the VarDecl-init form).
+    sink(a[i] + d);
 }

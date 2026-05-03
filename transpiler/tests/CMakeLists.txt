@@ -2718,6 +2718,120 @@ add_test(NAME test_qram_emitter
 set_tests_properties(test_qram_emitter PROPERTIES
     LABELS "transpiler;qram")
 
+# ── Unit test: matcher_qram_subscript_expr (sturm-u9ge.9 / Beat H4) ──────────
+# Plan §11 (post-v1 backlog) / Beat H4; PRD §9 row 4. The matcher under
+# test recognises the expression-position QRAM-read shape
+# `qint c = a[i] + d;` (and other binary-op shapes that wrap `a[i]`)
+# at VarDecl-init position. Linkage mirrors test_matcher_qram_subscript:
+# the production TUs (matcher_qram_subscript_expr.cpp + width_inference.cpp
+# for B1's infer_width call) are the only `transpiler/src/*` sources
+# compiled in.
+add_executable(test_matcher_qram_subscript_expr
+    test_matcher_qram_subscript_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_matcher_qram_subscript_expr PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_qram_subscript_expr PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_qram_subscript_expr PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_SUB_EXPR NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_qram_subscript_expr PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_SUB_EXPR}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_qram_subscript_expr PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_qram_subscript_expr PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_SUB_EXPR support)
+    target_link_libraries(test_matcher_qram_subscript_expr PRIVATE
+        ${LLVM_LIBS_QRAM_SUB_EXPR})
+endif()
+add_test(NAME test_matcher_qram_subscript_expr
+         COMMAND test_matcher_qram_subscript_expr)
+set_tests_properties(test_matcher_qram_subscript_expr PROPERTIES
+    LABELS "transpiler;qram;qram-subscript")
+
+# ── Unit test: qram_emitter_expr (sturm-u9ge.9 / Beat H4) ────────────────────
+# Plan §11 (post-v1 backlog) / Beat H4; PRD §9 row 4. The emitter under
+# test consumes `QramSubscriptExprHit`s from the H4 matcher and produces
+# a three-part rewrite: pre-call ancilla extract + in-place subscript
+# replacement + post-call uncompute. Linkage mirrors test_qram_emitter
+# (qram_emitter_expr.cpp + matcher_qram_subscript_expr.cpp +
+# width_inference.cpp are the only `transpiler/src/*` sources compiled
+# in).
+add_executable(test_qram_emitter_expr
+    test_qram_emitter_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_qram_emitter_expr PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qram_emitter_expr PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qram_emitter_expr PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QRAM_EMIT_EXPR NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qram_emitter_expr PRIVATE
+    ${LLVM_DEFS_LIST_QRAM_EMIT_EXPR}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qram_emitter_expr PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qram_emitter_expr PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_EMIT_EXPR support)
+    target_link_libraries(test_qram_emitter_expr PRIVATE
+        ${LLVM_LIBS_QRAM_EMIT_EXPR})
+endif()
+add_test(NAME test_qram_emitter_expr COMMAND test_qram_emitter_expr)
+set_tests_properties(test_qram_emitter_expr PROPERTIES
+    LABELS "transpiler;qram;qram-subscript")
+
 # ── End-to-end gate: test_qram_e2e (sturm-u9ge.17 / Beat G1) ─────────────────
 # Plan §10 / G1; PRD §5 (post-transpile safety net), §8 (M4 emission),
 # §11.1 (D0a — three overloads), §11.2 (D0b — counter-mode/circuit-mode

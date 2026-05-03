@@ -20,27 +20,15 @@
 
 using namespace sturm::transpile;
 
-static int tests_run  = 0;
-static int tests_pass = 0;
-
-#define CHECK(cond) do {                                              \
-    ++tests_run;                                                      \
-    if (cond) { ++tests_pass; }                                       \
-    else {                                                            \
-        std::fprintf(stderr, "FAIL  %s:%d  %s\n",                     \
-                     __FILE__, __LINE__, #cond);                      \
-    }                                                                 \
-} while (0)
-
-#define CHECK_EQ_INT(got, want) do {                                  \
-    ++tests_run;                                                      \
+static int tests_run = 0, tests_pass = 0;
+#define CHECK(cond) do { ++tests_run; if (cond) { ++tests_pass; }     \
+    else { std::fprintf(stderr, "FAIL  %s:%d  %s\n",                  \
+                        __FILE__, __LINE__, #cond); } } while (0)
+#define CHECK_EQ_INT(got, want) do { ++tests_run;                     \
     const long long g = static_cast<long long>(got);                  \
     const long long w = static_cast<long long>(want);                 \
-    if (g == w) { ++tests_pass; }                                     \
-    else {                                                            \
-        std::fprintf(stderr, "FAIL  %s:%d  got=%lld want=%lld\n",     \
-                     __FILE__, __LINE__, g, w);                       \
-    }                                                                 \
+    if (g == w) { ++tests_pass; } else { std::fprintf(stderr,         \
+        "FAIL  %s:%d  got=%lld want=%lld\n", __FILE__, __LINE__, g, w); } \
 } while (0)
 
 namespace {
@@ -188,12 +176,24 @@ static void test_rmw_basic() {
     CHECK(contains(r.last_error_text, "PRD"));
 }
 static void test_expression_position_basic() {
+    // sturm-u9ge.9 (H4): VarDecl-init is now H4 territory; the OOS
+    // diagnostic only fires for non-init expression-position uses
+    // (function-call arg here).
     const auto r = run_matcher(
-        "void demo(qint a[4], qint i, qint d) { qint c=a[i]+d; (void)c; }\n");
+        "void sink(qint x) { (void)x; }\n"
+        "void demo(qint a[4], qint i, qint d) { sink(a[i] + d); }\n");
     CHECK(r.parsed);
     CHECK_EQ_INT(r.errors, 1);
     CHECK(contains(r.last_error_text, kQramOosExpressionPositionId));
     CHECK(contains(r.last_error_text, "PRD"));
+}
+// sturm-u9ge.9 (H4): VarDecl-init must NOT fire OOS — H4's territory.
+static void test_h4_init_does_not_fire_oos() {
+    const auto r = run_matcher(
+        "void demo(qint a[4], qint i, qint d) {\n"
+        "    qint c = a[i] + d; (void)c;\n}\n");
+    CHECK(r.parsed);
+    CHECK_EQ_INT(r.errors, 0);
 }
 
 // ── Negatives ────────────────────────────────────────────────────────────────
@@ -226,12 +226,11 @@ static void test_coexistence_in_scope_then_oos() {
     CHECK(contains(r.last_error_text, kQramOosWriteId));
 }
 static void test_coexistence_oos_then_in_scope() {
+    // sturm-u9ge.9 (H4): non-init expression-position remains E1's job.
     const auto r = run_matcher(
+        "void sink(qint x) { (void)x; }\n"
         "void demo(qint a[4], qint i, qint d) {\n"
-        "    qint c = a[i] + d;   // OOS expression-position\n"
-        "    qint b1 = a[i];      // in-scope read\n"
-        "    (void)c; (void)b1;\n"
-        "}\n");
+        "    sink(a[i] + d); qint b1 = a[i]; (void)b1;\n}\n");
     CHECK(r.parsed);
     CHECK_EQ_INT(r.errors, 1);
     CHECK(contains(r.last_error_text, kQramOosExpressionPositionId));
@@ -276,6 +275,7 @@ int main() {
     test_write_basic();
     test_rmw_basic();
     test_expression_position_basic();
+    test_h4_init_does_not_fire_oos();
     test_in_scope_read_does_not_fire();
     test_classical_index_does_not_fire();
     test_coexistence_in_scope_then_oos();
