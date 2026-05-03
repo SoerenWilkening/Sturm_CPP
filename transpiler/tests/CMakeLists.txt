@@ -1843,6 +1843,23 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
+    # sturm-mm04 (sturm-ddgo regression fix): TranspileConsumer registers
+    # the three QRAM-via-array-subscript matchers (C1 bare-init,
+    # H1 existing-target, H4 expression-position) at construction
+    # (transpile_consumer.cpp:293-297) and drains their hit vectors
+    # through `emit_qram_*_replacements` in `HandleTranslationUnit`
+    # (transpile_consumer.cpp:1118-1123). Link the six matcher /
+    # emitter TUs plus the shared B1 width-inference helper so the
+    # consumer test binary resolves the QRAM symbols at link time.
+    # Mirrors the parallel block in `transpiler/CMakeLists.txt` for
+    # `sturm-transpile` and `sturm-transpile-plugin`.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so
     # the Registry method bodies (register_op, find_render_fn,
