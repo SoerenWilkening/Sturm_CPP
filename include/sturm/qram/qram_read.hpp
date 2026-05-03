@@ -1,6 +1,7 @@
 #pragma once
 // qram_read.hpp -- Runtime entry-point for QRAM-read across the three
-// container shapes from PRD §7 (sturm-u9ge.13 / Beat D1).
+// container shapes from PRD §7 (sturm-u9ge.13 / Beat D1; refactored
+// in sturm-2w6h.2 / Beat B1 of the QRAM backend gate-emission epic).
 //
 // Pins per `docs/prd_qram_subscript.md` §11.1 (D0a — three free-function
 // template overloads) / §11.2 (D0b — runtime mask-OR dispatch into two
@@ -22,7 +23,18 @@
 // same counter for D1 per the issue description; per-path split
 // (`qrom_read` / `qreg_read`, PRD §11.2.7) lands with gate emission.
 //
-// LoC budget: <= 200 (plan §1, §7 / D1).
+// ── B1 (sturm-2w6h.2) refactor ──────────────────────────────────────
+// `_qram_detail::qram_read_qrom_impl` / `qram_read_qreg_impl` are now
+// **template functions** parameterised on `(W)` taking
+// `(const qint_t<W>* a, std::size_t n, const qint_t<W>& i,
+// qint_t<W>& b)`. The three public `QRAM_read` overloads and the
+// three `__QRAM_read_adj` overloads forward `(a, i, b)` (and `n`,
+// inferred from `N` for the std::array / C-array shapes) to the
+// helper instead of discarding them. Bodies remain counter-mode
+// bumps in this beat — arguments are forwarded but unused, so
+// observable behaviour is unchanged. Gate-emission lands in B2.
+//
+// LoC budget: <= 250 (plan §1, §5 / B1).
 
 #include "sturm/qtypes/qint_fwd.hpp"
 #include "sturm/qtypes/qint.hpp"
@@ -50,19 +62,42 @@ inline void bump_qram_read_count() noexcept   { ++g_qram_read_count; }
 }  // namespace qram
 
 // ── TU-private dispatch helpers (D0b §11.2.2) ────────────────────────
-// Declared in the header so the inline forward / adjoint bodies below
-// can call them; defined in `src/qram/qram_read.cpp`. The runtime
-// mask-OR dispatch lives in each public overload's body — a single
-// call site covers both QROM and qreg execution paths. Both helpers
-// bump the same counter in D1; gate-level QROM/qreg distinction is
-// out of scope here.
+// B1 (sturm-2w6h.2): the QROM/qreg helpers are now `inline template
+// <W>` taking `(const qint_t<W>* a, std::size_t n, const qint_t<W>& i,
+// qint_t<W>& b)` — every public overload forwards the args it
+// received instead of discarding them. Both helpers route through
+// the shared (non-template) `dispatch_common(path_tag, a0, n, &i, &b)`
+// in `src/qram/qram_read.cpp` which:
+//   1. Bumps the umbrella `qram_read` thread-local counter and the
+//      `Sink::qram_read()` hook on the active sink (preserves the
+//      D1 contract pinned by `tests/qram/test_qram_read_stub.cpp`
+//      and `transpiler/tests/test_qram_e2e.cpp`).
+//   2. Invokes the test-only forwarding-trace if installed
+//      (path tag 1 = QROM, 2 = QREG; pinned by
+//      `tests/qram/test_qram_read_dispatch.cpp`).
 //
-// TODO(backend): split into `qrom_read` / `qreg_read` per §11.2.7
-// once gate emission lands.
+// Per-path counter split lands in B4 (sturm-2w6h.6); gate emission
+// in B2 (sturm-2w6h.4).
 namespace _qram_detail {
 
-void qram_read_qrom_impl() noexcept;
-void qram_read_qreg_impl() noexcept;
+// Test-only forwarding-trace hook. Production code never installs.
+// Args: (a0, n, &i, &b, path_tag) where path_tag is 1=QROM, 2=QREG.
+using ForwardingTraceFn = void(*)(const void* a0_addr,
+                                  std::size_t n,
+                                  const void* i_addr,
+                                  const void* b_addr,
+                                  int path_tag);
+
+// Install / uninstall trace hook. Pass nullptr to clear. Returns
+// the previous hook for nested-scope stashing. Definition in .cpp.
+ForwardingTraceFn set_forwarding_trace(ForwardingTraceFn hook) noexcept;
+
+// Shared body — bumps umbrella counter + sink hook, fires trace.
+void dispatch_common(int path_tag,
+                     const void* a0_addr,
+                     std::size_t n,
+                     const void* i_addr,
+                     const void* b_addr) noexcept;
 
 template <std::size_t W>
 inline std::uint64_t any_super_mask(const qint_t<W>* a, std::size_t n) noexcept {
@@ -71,70 +106,99 @@ inline std::uint64_t any_super_mask(const qint_t<W>* a, std::size_t n) noexcept 
     return any_super;
 }
 
+// ── B1 template helpers: forward `(a, n, i, b)` ─────────────────────
+// PRD §11.2.1: QROM path runs when every container element is fully
+// classical (super_mask == 0) — multiplexed XOR-fanout indexed by `i`.
+// Counter-mode stub in B1: dispatch_common bumps umbrella + trace.
+// Args are received but unused; gate emission lands in B2.
+template <std::size_t W>
+inline void qram_read_qrom_impl(const qint_t<W>* a,
+                                std::size_t n,
+                                const qint_t<W>& i,
+                                qint_t<W>& b) noexcept {
+    dispatch_common(/*QROM*/ 1, static_cast<const void*>(a), n,
+                    static_cast<const void*>(&i),
+                    static_cast<const void*>(&b));
+}
+
+// PRD §11.2.1: qreg path runs when any container element carries a
+// superposed bit — SWAP-style fanout controlled on `i`. Counter-mode
+// stub in B1: same umbrella bump as QROM; split counter lands B4.
+template <std::size_t W>
+inline void qram_read_qreg_impl(const qint_t<W>* a,
+                                std::size_t n,
+                                const qint_t<W>& i,
+                                qint_t<W>& b) noexcept {
+    dispatch_common(/*QREG*/ 2, static_cast<const void*>(a), n,
+                    static_cast<const void*>(&i),
+                    static_cast<const void*>(&b));
+}
+
 }  // namespace _qram_detail
 
 // ── (1) std::array<qint_t<W>, N> arm — D0a §11.1.1 overload 1 ───────
 template <std::size_t W, std::size_t N>
 inline void QRAM_read(const std::array<qint_t<W>, N>& a,
-                      const qint_t<W>& /*i*/,
-                      qint_t<W>& /*b*/) noexcept {
+                      const qint_t<W>& i,
+                      qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(a.data(), N);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl();
-    else                 _qram_detail::qram_read_qreg_impl();
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a.data(), N, i, b);
+    else                 _qram_detail::qram_read_qreg_impl<W>(a.data(), N, i, b);
 }
 
 // ── (2) Reference-to-C-array qint_t<W>[N] arm — D0a §11.1.1 overload 2 ─
 template <std::size_t W, std::size_t N>
 inline void QRAM_read(const qint_t<W> (&a)[N],
-                      const qint_t<W>& /*i*/,
-                      qint_t<W>& /*b*/) noexcept {
+                      const qint_t<W>& i,
+                      qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(&a[0], N);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl();
-    else                 _qram_detail::qram_read_qreg_impl();
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(&a[0], N, i, b);
+    else                 _qram_detail::qram_read_qreg_impl<W>(&a[0], N, i, b);
 }
 
 // ── (3) Pointer arm qint_t<W>* + length — D0a §11.1.1 overload 3 ────
 template <std::size_t W>
 inline void QRAM_read(const qint_t<W>* a,
                       std::size_t n,
-                      const qint_t<W>& /*i*/,
-                      qint_t<W>& /*b*/) noexcept {
+                      const qint_t<W>& i,
+                      qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(a, n);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl();
-    else                 _qram_detail::qram_read_qreg_impl();
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a, n, i, b);
+    else                 _qram_detail::qram_read_qreg_impl<W>(a, n, i, b);
 }
 
 // ── Adjoint companions per D0d §11.4.2 ───────────────────────────────
 // One-for-one with the forward overload set (P9b: same parameter
 // list, `b` non-const out-param). Counter-mode body bumps the same
-// `qram_read` counter; gate-level inversion lands later.
+// `qram_read` counter via the shared template helpers; gate-level
+// inversion lands in B3 (sturm-2w6h.5).
 
 template <std::size_t W, std::size_t N>
 inline void __QRAM_read_adj(const std::array<qint_t<W>, N>& a,
-                            const qint_t<W>& /*i*/,
-                            qint_t<W>& /*b*/) noexcept {
+                            const qint_t<W>& i,
+                            qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(a.data(), N);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl();
-    else                 _qram_detail::qram_read_qreg_impl();
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a.data(), N, i, b);
+    else                 _qram_detail::qram_read_qreg_impl<W>(a.data(), N, i, b);
 }
 
 template <std::size_t W, std::size_t N>
 inline void __QRAM_read_adj(const qint_t<W> (&a)[N],
-                            const qint_t<W>& /*i*/,
-                            qint_t<W>& /*b*/) noexcept {
+                            const qint_t<W>& i,
+                            qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(&a[0], N);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl();
-    else                 _qram_detail::qram_read_qreg_impl();
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(&a[0], N, i, b);
+    else                 _qram_detail::qram_read_qreg_impl<W>(&a[0], N, i, b);
 }
 
 template <std::size_t W>
 inline void __QRAM_read_adj(const qint_t<W>* a,
                             std::size_t n,
-                            const qint_t<W>& /*i*/,
-                            qint_t<W>& /*b*/) noexcept {
+                            const qint_t<W>& i,
+                            qint_t<W>& b) noexcept {
     const auto any_super = _qram_detail::any_super_mask<W>(a, n);
-    if (any_super == 0u) _qram_detail::qram_read_qrom_impl();
-    else                 _qram_detail::qram_read_qreg_impl();
+    if (any_super == 0u) _qram_detail::qram_read_qrom_impl<W>(a, n, i, b);
+    else                 _qram_detail::qram_read_qreg_impl<W>(a, n, i, b);
 }
 
 }  // namespace sturm

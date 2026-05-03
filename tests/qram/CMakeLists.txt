@@ -37,3 +37,24 @@ target_include_directories(test_qram_split_counters PRIVATE
 target_compile_features(test_qram_split_counters PRIVATE cxx_std_20)
 add_test(NAME test_qram_split_counters COMMAND test_qram_split_counters)
 set_tests_properties(test_qram_split_counters PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-2w6h.2 (Beat B1) — refactor impls to receive (a, n, i, b) ──
+# Pins the refactor of `_qram_detail::qram_read_qrom_impl` and
+# `qram_read_qreg_impl` from no-arg shims into templates parameterised
+# on `(W)` taking `(const qint_t<W>* a, std::size_t n,
+# const qint_t<W>& i, qint_t<W>& b)`. The three public `QRAM_read`
+# overloads and the three `__QRAM_read_adj` overloads forward
+# `(a, i, b)` (and `n`, inferred from `N` for array shapes) to the
+# helper. Bodies remain counter-mode bumps in this beat — observable
+# behaviour (umbrella `qram_read_count` + mask-OR dispatch) is
+# unchanged. Plan `docs/plan_qram_backend.md` §5 B1.
+add_executable(test_qram_read_dispatch
+    test_qram_read_dispatch.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_include_directories(test_qram_read_dispatch PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_read_dispatch PRIVATE cxx_std_20)
+add_test(NAME test_qram_read_dispatch COMMAND test_qram_read_dispatch)
+set_tests_properties(test_qram_read_dispatch PROPERTIES LABELS "qram;qram-backend")
