@@ -135,13 +135,21 @@ measure. For QRAM access write the exact shape `qint b = a[i];` (a fresh
 declaration on the LHS, no surrounding expression). Other shapes — `b = a[i];`
 with existing `b`, `a[i] = b;`, `a[i] += b;`, `c = a[i] + d;` — are
 diagnosed by the transpiler as out-of-scope (PRD §9, plan H1–H4) rather
-than silently measured. Full background and the open follow-ups live in
-[`docs/prd_qram_subscript.md`](prd_qram_subscript.md) §10.1.
+than silently measured. The full version of this warning, the supported /
+unsupported QRAM shape table, and the post-transpile safety-net argument
+live in [`docs/qram_user_intro.md`](qram_user_intro.md). Background and
+the open follow-ups live in
+[`docs/archive/prd_qram_subscript.md`](archive/prd_qram_subscript.md)
+§10.1.
 
 ## Next steps
 
 - Read [`docs/public_api.md`](public_api.md) for the authoritative list
   of public symbols (`qint`, `qbool`, `WHEN`, the modular arithmetic
   functions, `invert<>`, `STURM_REGISTER_ADJOINT`, the version macros).
+- Read [`docs/qram_user_intro.md`](qram_user_intro.md) for the full
+  user-facing introduction to QRAM: the `qint b = a[i];` shape, the
+  supported / unsupported container shapes, and the full version of the
+  measurement-footgun explanation.
 - Anything not on that list — including everything reachable only via
   `<sturm/detail/...>` — is internal and may change without notice.
