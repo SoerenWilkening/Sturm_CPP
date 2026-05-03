@@ -2488,6 +2488,61 @@ add_test(NAME test_matcher_qram_oos COMMAND test_matcher_qram_oos)
 set_tests_properties(test_matcher_qram_oos PROPERTIES
     LABELS "transpiler;qram")
 
+# ── Unit test: qint_implicit_warn (sturm-u9ge.14 / Beat F1) ──────────────────
+# Plan §9 / F1; PRD §10.1 / M7. The matcher under test fires a
+# `Warning`-severity diagnostic per non-subscript-context UDC site for
+# `frontend::qint -> integer`. The warning is suppressed by default
+# (placeholder static bool gate; eventual `-Wsturm-qint-implicit-measure`
+# flag). Linkage mirrors test_matcher_qram_oos: the production TU is the
+# only `transpiler/src/*` source compiled in — it depends only on Clang's
+# MatchFinder + DiagnosticsEngine.
+add_executable(test_qint_implicit_warn
+    test_qint_implicit_warn.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_implicit_warn.cpp
+)
+target_include_directories(test_qint_implicit_warn PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qint_implicit_warn PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qint_implicit_warn PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QINT_WARN NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qint_implicit_warn PRIVATE
+    ${LLVM_DEFS_LIST_QINT_WARN}
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qint_implicit_warn PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qint_implicit_warn PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QINT_WARN support)
+    target_link_libraries(test_qint_implicit_warn PRIVATE
+        ${LLVM_LIBS_QINT_WARN})
+endif()
+add_test(NAME test_qint_implicit_warn COMMAND test_qint_implicit_warn)
+set_tests_properties(test_qint_implicit_warn PROPERTIES
+    LABELS "transpiler;qram")
+
 # ── Unit test: width_inference (sturm-u9ge.11 / Beat B1) ──────────────────────
 # Plan §5 / B1; PRD §6 + §11.3 (D0c). The module under test decides the
 # backend `qint_t<W>` width for a frontend `qint` VarDecl via three
