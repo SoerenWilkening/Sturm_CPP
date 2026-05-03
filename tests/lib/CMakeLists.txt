@@ -843,3 +843,32 @@ add_test(NAME test_modular_arith_highw_trace
          COMMAND test_modular_arith_highw_trace)
 set_tests_properties(test_modular_arith_highw_trace
     PROPERTIES LABELS "lib;modular-arith")
+
+# ── sturm-2w6h.3 (Beat B2a) -- lib_qram_eq_k_compute / _uncompute helper.
+# Predicate compute/uncompute that the QROM body of the QRAM backend
+# gate-emission epic factors out (plan §5 Beat B2a). T1 sweeps every
+# classical (i, k) pair for K = 1..4 and pins the value-side semantics.
+# T2 (recording-sink) pins that the gate-set restricted to
+# {quantum_xor, quantum_and} for K = 2 (direct CCX) and K = 3 (Nielsen-
+# Chuang sandwich w/ ancilla CCX). T3 (statevector) prepares i in a
+# uniform superposition over 4 basis states and witnesses
+# P(eq_k = 1) ≈ 0.25 after compute, P(eq_k = 0) ≈ 1.0 after uncompute
+# (peak qubits: 4, well under the orkan 17-qubit budget).
+add_executable(test_qram_read_predicate
+    test_qram_read_predicate.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_read_predicate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_read_predicate PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_read_predicate PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_qram_read_predicate PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_qram_read_predicate PRIVATE orkan_headers)
+add_test(NAME test_qram_read_predicate COMMAND test_qram_read_predicate)
+set_tests_properties(test_qram_read_predicate
+    PROPERTIES LABELS "lib;qram")
