@@ -8,7 +8,15 @@
 #include <cassert>
 #include <cstdint>
 
-using sturm::qint;
+// sturm-pl7o (D0 re-spell miss): bare `qint` here used to alias
+// sturm::qint_t<64> (pre-B1). Post-B1 (sturm-65rs.6) sturm::qint resolves
+// to sturm::frontend::qint, which lacks the backend surface this file
+// exercises (super_mask, qubits[], value, compound-assigns +=, -=, *=,
+// /=, %=). PRD §6 R1 mechanical migration recipe: introduce a local
+// type-alias `using qint = sturm::qint_t<64>;` so every site below keeps
+// its backend semantics with a one-line diff. Drift back to bare
+// sturm::qint is pinned by tests/regressions/test_qint_callsite_respelling.cpp.
+using qint = sturm::qint_t<64>;
 using sturm::qint_t;
 using sturm::RecordingSink;
 using sturm::ScopedSink;

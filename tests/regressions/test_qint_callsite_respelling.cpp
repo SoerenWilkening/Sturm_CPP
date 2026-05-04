@@ -11,11 +11,12 @@
 // `q.theta()` was well-formed. B1 repointed `sturm::qint` to the
 // frontend class `sturm::frontend::qint` (no `super_mask`, no `qubits`,
 // no `phi()`/`theta()`), so any callsite that needs the BACKEND surface
-// MUST be spelled `sturm::qint_t<64>`. D0 re-spelled five callsites,
-// pinned below by source-line. If a future refactor flips any of them
-// back to bare `sturm::qint`, the corresponding `decltype` resolves to
-// `sturm::frontend::qint` and the static_assert fires loudly with a
-// message naming the original test:line.
+// MUST be spelled `sturm::qint_t<64>`. D0 re-spelled five callsites
+// (anchors 1-5); sturm-pl7o caught a missed sixth file
+// (tests/test_qint_classical.cpp) and added anchors 6-9 below. If a future
+// refactor flips any of them back to bare `sturm::qint`, the corresponding
+// `decltype` resolves to `sturm::frontend::qint` and the static_assert
+// fires loudly with a message naming the original test:line.
 //
 // The PRD §6 R1 audit also names tests/packaging/test_umbrella_only.cpp:34,
 // but the D0 commit (4f5f122) shows that file already used qint_t<W>
@@ -113,6 +114,58 @@ namespace anchor_when_bridge_383 {
 
 }  // namespace anchor_when_bridge_383
 
+// ── sturm-pl7o (D0 re-spell miss) extension ─────────────────────────────────
+// tests/test_qint_classical.cpp was missed by the original D0 audit. Anchors
+// 6-9 below pin its backend-only surfaces (super_mask, qubits[], value, and
+// compound-assigns +=/-=/*=//=/%= grouped per issue's LoC exception). Each
+// static_assert names the original test:line so drift back to bare
+// `sturm::qint` produces a compile-time failure citing the affected site.
+
+// Anchor 6 — tests/test_qint_classical.cpp:27 reads q.super_mask.
+namespace anchor_qint_classical_super_mask_27 {
+[[maybe_unused]] static void pin_decltype() {
+    sturm::qint_t<64> q(0);
+    static_assert(std::is_same_v<decltype(q), sturm::qint_t<64>>,
+        "tests/test_qint_classical.cpp:27 must remain sturm::qint_t<64> "
+        "— check_classical reads q.super_mask (backend-only).");
+}
+}  // namespace anchor_qint_classical_super_mask_27
+
+// Anchor 7 — tests/test_qint_classical.cpp:29 reads q.qubits[i].
+namespace anchor_qint_classical_qubits_29 {
+[[maybe_unused]] static void pin_decltype() {
+    sturm::qint_t<64> q(0);
+    static_assert(std::is_same_v<decltype(q), sturm::qint_t<64>>,
+        "tests/test_qint_classical.cpp:29 must remain sturm::qint_t<64> "
+        "— check_classical reads q.qubits[i] (backend-only).");
+}
+}  // namespace anchor_qint_classical_qubits_29
+
+// Anchor 8 — tests/test_qint_classical.cpp:39 reads q.value (frontend has
+// private value_; the public field exists only on the backend).
+namespace anchor_qint_classical_value_39 {
+[[maybe_unused]] static void pin_decltype() {
+    sturm::qint_t<64> q(0);
+    static_assert(std::is_same_v<decltype(q), sturm::qint_t<64>>,
+        "tests/test_qint_classical.cpp:39 must remain sturm::qint_t<64> "
+        "— test_default_ctor reads q.value (backend-only public field).");
+}
+}  // namespace anchor_qint_classical_value_39
+
+// Anchor 9 — tests/test_qint_classical.cpp:{79,101,135,157,179} grouped
+// (compound-assigns +=, -=, *=, /=, %=). Per issue: "one anchor per operator
+// family is fine" when budget is tight; frontend lacks all five overloads.
+namespace anchor_qint_classical_compound_assigns_79_101_135_157_179 {
+[[maybe_unused]] static void pin_decltype() {
+    sturm::qint_t<64> a(0), b(1);
+    a += b; a -= b; a *= b; a /= b; a %= b;
+    static_assert(std::is_same_v<decltype(a), sturm::qint_t<64>>,
+        "tests/test_qint_classical.cpp:{79,101,135,157,179} must remain "
+        "sturm::qint_t<64> — compound assigns +=, -=, *=, /=, %= are "
+        "backend-only (frontend lacks these overloads).");
+}
+}  // namespace anchor_qint_classical_compound_assigns_79_101_135_157_179
+
 // Cross-check 1: pin sturm::frontend::qint != sturm::qint_t<64>. If they
 // ever unify, every anchor-static_assert above degenerates into a
 // tautology and this drift-gate goes silent.
@@ -136,6 +189,6 @@ int main() {
     // All assertions are compile-time. Reaching main() means every
     // re-spelled callsite still names sturm::qint_t<64> and both
     // cross-checks hold.
-    std::puts("test_qint_callsite_respelling: OK (5 anchors pinned)");
+    std::puts("test_qint_callsite_respelling: OK (9 anchors pinned)");
     return 0;
 }
