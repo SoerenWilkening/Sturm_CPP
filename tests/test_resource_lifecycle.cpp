@@ -103,7 +103,7 @@ static void test_qint64_classical_lifecycle() {
 
     for (int i = 0; i < kIterations; ++i) {
         {
-            sturm::qint q(static_cast<int64_t>(i));
+            sturm::qint_t<64> q(static_cast<int64_t>(i));
             // Classical qint: no qubits should be allocated.
             CHECK(QubitPool::instance().in_use() == 0);
         }

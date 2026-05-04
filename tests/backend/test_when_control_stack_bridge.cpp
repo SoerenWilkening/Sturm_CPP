@@ -263,7 +263,7 @@ static void test_simulate_phi_uncontrolled() {
     sc.reset();
 
     // Allocate qubit index 0 from the pool.
-    sturm::qint q(0);
+    sturm::qint_t<64> q(0);
     q.super_mask = 0x1u;
     q.qubits[0] = sturm::QubitPool::instance().allocate();  // qubit 0
     uint32_t tgt = static_cast<uint32_t>(q.qubits[0]);
@@ -294,7 +294,7 @@ static void test_simulate_theta_uncontrolled() {
     ScopedSimCtx sc;
     sc.reset();
 
-    sturm::qint q(0);
+    sturm::qint_t<64> q(0);
     q.super_mask = 0x1u;
     q.qubits[0] = sturm::QubitPool::instance().allocate();  // qubit 0
     uint32_t tgt = static_cast<uint32_t>(q.qubits[0]);
@@ -334,7 +334,7 @@ static void test_simulate_phi_controlled_via_when() {
     uint32_t ctrl_q = static_cast<uint32_t>(ctrl_flag.qubits[0]);  // 0
 
     // tgt → qubit 1 (next allocation after ctrl qubit 0).
-    sturm::qint q(0);
+    sturm::qint_t<64> q(0);
     q.super_mask = 0x1u;
     q.qubits[0] = sturm::QubitPool::instance().allocate();  // qubit 1
     uint32_t tgt_q = static_cast<uint32_t>(q.qubits[0]);   // 1
@@ -380,7 +380,7 @@ static void test_simulate_theta_controlled_via_when() {
     sturm::qbool ctrl_flag(0.5);
     uint32_t ctrl_q = static_cast<uint32_t>(ctrl_flag.qubits[0]);  // 0
 
-    sturm::qint q(0);
+    sturm::qint_t<64> q(0);
     q.super_mask = 0x1u;
     q.qubits[0] = sturm::QubitPool::instance().allocate();  // qubit 1
     uint32_t tgt_q = static_cast<uint32_t>(q.qubits[0]);   // 1
