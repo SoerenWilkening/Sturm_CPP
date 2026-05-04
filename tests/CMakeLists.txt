@@ -165,6 +165,14 @@ add_subdirectory(control)
 # added via the top-level add_subdirectory(transpiler).
 add_subdirectory(transpiler)
 
+# ── Regressions test subdirectory (sturm-65rs.12 / sturm-qac.12 / D1) ────────
+# Drift-gate regression tests that pin invariants other beats rely on. The
+# first inhabitant pins D0's re-spelling of callsites that need the backend
+# `sturm::qint_t<64>` surface (super_mask, qubits, phi(), theta()) so a
+# future refactor cannot silently drop them back to bare `sturm::qint`
+# (which post-B1 resolves to the frontend alias).
+add_subdirectory(regressions)
+
 # ── sturm-vr0v.2: packaging acceptance tests (sturmc CLI driver) ─────────────
 # Lives in `tests/packaging/`; the suite installs into a temp prefix and
 # exercises the installed sturmc binary end-to-end. Gated on the
