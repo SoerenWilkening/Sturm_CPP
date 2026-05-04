@@ -257,7 +257,60 @@ that already uses `static_cast<int64_t>` deliberately.
 
 ---
 
-## 4. Where to read more
+## 4. Migration note — bare `qint` is now the frontend alias
+
+> **Tracks** [`prd_qint_alias_completion.md`](prd_qint_alias_completion.md)
+> §6 R3, beat F1 / `sturm-65rs.14`.
+
+Before the `sturm-qac` epic, the bare spelling `sturm::qint` was an
+alias for the **backend** template `sturm::qint_t<64>`, declared
+in `qint_fwd.hpp`. After beat B1 (`sturm-65rs.6`), `sturm::qint`
+resolves to the **frontend** alias class
+(`sturm::frontend::qint`). The umbrella `<sturm/sturm.hpp>` and the
+`<sturm/prelude.hpp>` shortcut both pick up the new resolution
+automatically; no source changes are required if you only use the
+public surface (constructors, arithmetic / bitwise / comparison
+operators, and the implicit `operator size_t()` that drives
+`a[i]`-style QRAM access).
+
+**What changes.** The frontend alias class is intentionally narrower
+than `qint_t<64>`. It does **not** carry:
+
+- bit-level access on a backend qubit register
+  (`qubits[k]`, `q.super_mask`, the non-`const` `BitProxy` overload),
+- the `phi()` / `theta()` proxies,
+- any public template-width parameter — the alias is width-agnostic.
+
+If your pre-existing code relied on `sturm::qint` for any of those —
+for example `q.super_mask = 0xff;` or `q.qubits[i].phase += 3;` — the
+post-rewrite compile will fail with an `explicit conversion` or "no
+member named …" error. The fix is mechanical: re-spell the affected
+declaration as `sturm::qint_t<64>` (the previous semantics) at the
+call site. The alias and the backend template can co-exist in the
+same TU; they only differ in how `q` is spelled.
+
+**Rule of thumb.** Reach for `sturm::qint_t<W>` directly when you
+need to talk about a specific width or a backend-only operation;
+use the bare `sturm::qint` (or `qint` after `using sturm::qint;` /
+`<sturm/prelude.hpp>`) for ordinary value-level code,
+QRAM subscripts, and the user-facing operator surface PRD §4.1
+mirrors. The five existing call-sites that needed re-spelling are
+audited in PRD §6 R1 + plan beat D0 (`sturm-65rs.11`); see
+`tests/regressions/test_qint_callsite_respelling.cpp` for the
+pinned regression.
+
+**Default width caveat.** When the transpiler substitutes a bare
+`qint x;` declaration with `qint_t<W>`, the inferred width comes from
+the rule order in `width_inference.hpp` (`kDefaultWidth = 32` when
+no RHS-driven inference applies — PRD §6 R3). Code that previously
+read `qint q;` and assumed 64 bits will silently widen to 32 after
+the transpile. Re-spell as `sturm::qint_t<64>` if you depend on the
+wider value range; the `kDefaultWidth` knob is a one-line bump if a
+future epic moves the default back to 64 (sturm-65rs.18).
+
+---
+
+## 5. Where to read more
 
 - [`prd_qram_backend.md`](prd_qram_backend.md) — the v1 backend gate
   emission contract. §2 (goals), §3 (non-goals), §4 (algorithm), §5
