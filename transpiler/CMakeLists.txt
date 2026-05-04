@@ -192,6 +192,13 @@ add_executable(sturm-transpile
     # is link-resolved here so the existing test binaries (test_transpile_
     # consumer + plugin) keep linking once C3 wires it into the consumer.
     src/matcher_qint_alias_subst.cpp
+    # sturm-65rs.9 (Beat C2): qint alias substitution emitter. Consumes
+    # the C1 matcher's `QintAliasSubstMatch` vector and rewrites every
+    # captured `TypeLoc` to `sturm::qint_t<W>` (W via `infer_width()`
+    # for VarDecls; `kDefaultWidth = 32` for the four other anchors per
+    # PRD §3 non-goal). Linked here so the C3 consumer (sturm-65rs.10)
+    # wiring resolves cleanly.
+    src/qint_alias_subst_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -493,6 +500,10 @@ add_library(sturm-transpile-plugin SHARED
     # symbols at dlopen — see the header note above the main binary's
     # source-list entry for details.
     src/matcher_qint_alias_subst.cpp
+    # sturm-65rs.9 (Beat C2): qint alias substitution emitter. Mirror
+    # the main binary so the plugin-path consumer (same TranspileConsumer)
+    # links the same emitter symbols at dlopen.
+    src/qint_alias_subst_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for

@@ -2744,6 +2744,71 @@ add_test(NAME test_matcher_qint_alias_subst
 set_tests_properties(test_matcher_qint_alias_subst PROPERTIES
     LABELS "transpiler;qac")
 
+# ── Unit test: qint_alias_subst_emitter (sturm-65rs.9 / Beat C2) ────────────
+# Plan §10 / C2; PRD §4.3 rewrite shape. The emitter under test consumes
+# `QintAliasSubstMatch`es from C1 and rewrites every
+# `sturm::frontend::qint` type spelling to `sturm::qint_t<W>`. Width
+# routes through the existing `infer_width(VarDecl, InferContext)` for
+# VarDecls; ParmVarDecl / FieldDecl / FunctionDecl-return /
+# FunctionalCast all use `kDefaultWidth = 32` per PRD §3 non-goal.
+#
+# Linkage mirrors test_qram_emitter: the production TUs
+# (qint_alias_subst_emitter.cpp + matcher_qint_alias_subst.cpp +
+# width_inference.cpp) are the only `transpiler/src/*` sources compiled
+# in. Fixture inputs / expected files live at transpiler/tests/fixtures/
+# threaded via STURM_QINT_ALIAS_SUBST_EMITTER_FIXTURES_DIR.
+add_executable(test_qint_alias_subst_emitter
+    test_qint_alias_subst_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(test_qint_alias_subst_emitter PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_qint_alias_subst_emitter PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_qint_alias_subst_emitter PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QINT_ALIAS_SUBST_EM NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_qint_alias_subst_emitter PRIVATE
+    ${LLVM_DEFS_LIST_QINT_ALIAS_SUBST_EM}
+    STURM_QINT_ALIAS_SUBST_EMITTER_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_qint_alias_subst_emitter PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_qint_alias_subst_emitter PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QINT_ALIAS_SUBST_EM support)
+    target_link_libraries(test_qint_alias_subst_emitter PRIVATE
+        ${LLVM_LIBS_QINT_ALIAS_SUBST_EM})
+endif()
+add_test(NAME test_qint_alias_subst_emitter
+         COMMAND test_qint_alias_subst_emitter)
+set_tests_properties(test_qint_alias_subst_emitter PROPERTIES
+    LABELS "transpiler;qac")
+
 # ── Unit test: qram_emitter (sturm-u9ge.15 / Beat D2) ────────────────────────
 # Plan §7 / D2; PRD §8 / M4. The emitter under test consumes
 # `QramSubscriptHit`s from C1 and produces a two-line `qint_t<W> b;
