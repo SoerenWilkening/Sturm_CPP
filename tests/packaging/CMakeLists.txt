@@ -139,6 +139,17 @@ add_test(NAME test_umbrella_only COMMAND test_umbrella_only)
 set_tests_properties(test_umbrella_only PROPERTIES
     LABELS "packaging")
 
+# ── sturm-65rs.6 / B1 — qint resolution acceptance test ────────────────────
+# Pins the post-B1 type identity of `sturm::qint`: it IS sturm::frontend::qint
+# (PRD §4.2), and a LOCAL `using qint = sturm::qint_t<W>;` still resolves to
+# qint_t<W> so the 50+ existing transpiler fixtures keep compiling (PRD A6).
+add_executable(test_qint_resolution test_qint_resolution.cpp)
+target_link_libraries(test_qint_resolution PRIVATE sturm)
+target_compile_features(test_qint_resolution PRIVATE cxx_std_20)
+add_test(NAME test_qint_resolution COMMAND test_qint_resolution)
+set_tests_properties(test_qint_resolution PROPERTIES
+    LABELS "packaging;qac")
+
 # ── sturm-zmfk.2 / E3.M2 — prelude header acceptance test ───────────────────
 # Pins the opt-in `<sturm/prelude.hpp>` contract (PRD §3.4 / D7): a TU
 # that includes ONLY the prelude must reach `qint` and `qbool` without
