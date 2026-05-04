@@ -32,6 +32,29 @@ class qint_t;
 #include "sturm/qtypes/qint_alias.hpp"
 
 // (4) Re-export the frontend alias under the bare `sturm::qint` spelling.
+//
+// The forward declaration of `sturm::frontend::qint` immediately below is
+// load-bearing for the include-order case where qint_alias.hpp is the
+// FIRST sturm header included (e.g. tests/qtypes/test_qint_alias.cpp:22 —
+// fix for sturm-jysu, P1 bug). In that case the include cycle is:
+//
+//   qint_alias.hpp  (first include)
+//     -> #pragma once stamps qint_alias.hpp
+//     -> #include qint_fwd.hpp  (line 44 of qint_alias.hpp)
+//          -> qint_t<W> forward decl above
+//          -> #include qint_alias.hpp  (no-op via pragma once)
+//          -> falls through to (4) here
+//
+// At this point class `sturm::frontend::qint` has NOT been parsed yet
+// (qint_alias.hpp's class definition is still suspended in its first-pass
+// include of qint_fwd.hpp). A bare `using qint = ::sturm::frontend::qint;`
+// would therefore fail with "'frontend' in namespace 'sturm' does not
+// name a type". The forward declaration is sufficient because a using-
+// declaration that introduces a *type alias* only requires a type
+// declaration in scope, not the full class definition. After the include
+// graph unwinds, the full class definition lands and `sturm::qint` ends
+// up as a complete type at every use site.
 namespace sturm {
+namespace frontend { class qint; }   // forward decl — sufficient for using-decl
 using qint = ::sturm::frontend::qint;
 } // namespace sturm

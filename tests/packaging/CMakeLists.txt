@@ -150,6 +150,20 @@ add_test(NAME test_qint_resolution COMMAND test_qint_resolution)
 set_tests_properties(test_qint_resolution PROPERTIES
     LABELS "packaging;qac")
 
+# ── sturm-jysu — qint_alias.hpp-first include-order regression test ────────
+# Pins the include-order invariant the original B0 audit missed: a TU that
+# #include "sturm/qtypes/qint_alias.hpp" as its FIRST sturm header must
+# still compile (the cycle through qint_fwd.hpp must not leave the
+# using-decl on line 36 referring to a not-yet-declared type). Before the
+# fix, this target failed with "'frontend' in namespace 'sturm' does not
+# name a type" at qint_fwd.hpp:36.
+add_executable(test_qint_alias_first_include test_qint_alias_first_include.cpp)
+target_link_libraries(test_qint_alias_first_include PRIVATE sturm)
+target_compile_features(test_qint_alias_first_include PRIVATE cxx_std_20)
+add_test(NAME test_qint_alias_first_include COMMAND test_qint_alias_first_include)
+set_tests_properties(test_qint_alias_first_include PROPERTIES
+    LABELS "packaging;qac")
+
 # ── sturm-zmfk.2 / E3.M2 — prelude header acceptance test ───────────────────
 # Pins the opt-in `<sturm/prelude.hpp>` contract (PRD §3.4 / D7): a TU
 # that includes ONLY the prelude must reach `qint` and `qbool` without
