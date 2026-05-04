@@ -94,6 +94,16 @@ bool is_match_well_formed(const QintAliasSubstMatch& m) {
     return false;
 }
 
+// sturm-65rs.10 (Beat C3) overlap guard: returns true when the C3
+// consumer's claimed-decls set already covers this match's VarDecl,
+// so the alias-subst rewrite must be skipped.
+bool is_claimed_by_qram(const QintAliasSubstMatch& m,
+                        const QintAliasSubstClaimedDecls& claimed) {
+    if (m.kind != QintAliasSubstKind::VarDecl) return false;
+    if (m.vd == nullptr) return false;
+    return claimed.qram_var_decls.count(m.vd) > 0;
+}
+
 } // anonymous namespace
 
 // ── Public surface: pure-string emission ───────────────────────────────────
@@ -111,10 +121,19 @@ std::string emit_qint_alias_subst_text(unsigned W) {
 void emit_qint_alias_subst_rewrites(
     Rewriter& rw,
     const std::vector<QintAliasSubstMatch>& matches) {
+    static const QintAliasSubstClaimedDecls kEmpty{};
+    emit_qint_alias_subst_rewrites(rw, matches, kEmpty);
+}
+
+void emit_qint_alias_subst_rewrites(
+    Rewriter& rw,
+    const std::vector<QintAliasSubstMatch>& matches,
+    const QintAliasSubstClaimedDecls& claimed) {
     if (matches.empty()) return;
 
     for (const auto& m : matches) {
         if (!is_match_well_formed(m)) continue;
+        if (is_claimed_by_qram(m, claimed)) continue;
         const unsigned W = width_for_match(m);
         const std::string text = emit_qint_alias_subst_text(W);
         if (text.empty()) continue;
@@ -132,14 +151,26 @@ void emit_qint_alias_subst_rewrites(
 // ── Public surface: replacement-record emission (sturm-ddgo path) ─────────
 
 void emit_qint_alias_subst_replacements(
+    const clang::SourceManager& sm,
+    const clang::LangOptions& lang,
+    const std::vector<QintAliasSubstMatch>& matches,
+    std::vector<QReplacement>& replacements) {
+    static const QintAliasSubstClaimedDecls kEmpty{};
+    emit_qint_alias_subst_replacements(sm, lang, matches, kEmpty,
+                                       replacements);
+}
+
+void emit_qint_alias_subst_replacements(
     const clang::SourceManager& /*sm*/,
     const clang::LangOptions& /*lang*/,
     const std::vector<QintAliasSubstMatch>& matches,
+    const QintAliasSubstClaimedDecls& claimed,
     std::vector<QReplacement>& replacements) {
     if (matches.empty()) return;
 
     for (const auto& m : matches) {
         if (!is_match_well_formed(m)) continue;
+        if (is_claimed_by_qram(m, claimed)) continue;
         const unsigned W = width_for_match(m);
         const std::string text = emit_qint_alias_subst_text(W);
         if (text.empty()) continue;

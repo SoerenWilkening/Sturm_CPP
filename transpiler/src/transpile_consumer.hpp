@@ -81,6 +81,10 @@
 #include "matcher_qram_subscript.hpp"
 #include "matcher_qram_subscript_assign.hpp"
 #include "matcher_qram_subscript_expr.hpp"
+// sturm-65rs.10 (Beat C3): qint alias substitution matcher. Drained
+// AFTER the QRAM emitter so the QRAM-claimed VarDecls override the
+// alias-subst VarDecl arm (PRD R2 / single-VarDecl-single-rewrite).
+#include "matcher_qint_alias_subst.hpp"
 
 #include <string>
 #include <vector>
@@ -232,6 +236,11 @@ private:
     std::vector<QramSubscriptHit>       qram_subscript_hits_;
     std::vector<QramSubscriptAssignHit> qram_assign_hits_;
     std::vector<QramSubscriptExprHit>   qram_expr_hits_;
+    // sturm-65rs.10 (Beat C3): alias-subst matches collected during
+    // `matchAST`, drained AFTER `emit_qram_replacements` so the C3
+    // overlap guard (a `QintAliasSubstClaimedDecls` set populated from
+    // the QRAM hits) gates the alias-subst VarDecl arm.
+    std::vector<QintAliasSubstMatch>    qint_alias_subst_matches_;
     // sturm-v0ur (LO-2 wiring): cleanup records assembled from
     // `lossy_hits_` after `matchAST`. Each `ExternalCleanup` carries
     // a close-brace `SourceLocation` and the pre-formatted cleanup

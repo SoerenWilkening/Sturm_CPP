@@ -43,6 +43,14 @@
 #include "qram_emitter.hpp"
 #include "qram_emitter_assign.hpp"
 #include "qram_emitter_expr.hpp"
+// sturm-65rs.10 (Beat C3): qint alias substitution matcher + emitter.
+// The matcher anchors on every site that spells `sturm::frontend::qint`
+// (VarDecl, ParmVarDecl, FieldDecl, function return, FunctionalCast).
+// Drained AFTER `emit_qram_replacements` so the QRAM emitter's claimed
+// VarDecls (collected into a `QintAliasSubstClaimedDecls` set) gate
+// the alias-subst rewrite — single-VarDecl-single-rewrite per PRD R2.
+#include "matcher_qint_alias_subst.hpp"
+#include "qint_alias_subst_emitter.hpp"
 
 #include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
@@ -296,6 +304,15 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
         finder_, qram_assign_hits_);
     sturm::transpile::register_qram_subscript_expr_matcher(
         finder_, qram_expr_hits_);
+    // sturm-65rs.10 (Beat C3): register the qint alias substitution
+    // matcher. Anchors on every site that spells
+    // `sturm::frontend::qint` (VarDecl, ParmVarDecl, FieldDecl,
+    // function return type, CXXFunctionalCastExpr). Drained in
+    // `HandleTranslationUnit` AFTER `emit_qram_replacements` so the
+    // QRAM-claimed VarDecls override the alias-subst VarDecl arm
+    // (PRD R2 single-VarDecl-single-rewrite invariant).
+    sturm::transpile::register_qint_alias_subst_matcher(
+        finder_, qint_alias_subst_matches_);
     sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
@@ -1123,6 +1140,31 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
         sturm::transpile::emit_qram_expr_replacements(
             sm, lang, qram_expr_hits_,
             unit_.replacements, unit_.raw_insertions);
+        // sturm-65rs.10 (Beat C3): drain the alias-subst matches AFTER
+        // the QRAM emitters above so the QRAM-claimed VarDecls override
+        // the alias-subst VarDecl arm (PRD R2). Build a
+        // `QintAliasSubstClaimedDecls` set from the C1 / H4 hit
+        // vectors — both anchor on a `target_var` VarDecl* and the
+        // QRAM emitters above already rewrote the entire VarDecl
+        // declaration source range, so a second alias-subst rewrite
+        // of just the type-spelling would corrupt the QRAM rewrite.
+        // H1 (`emit_qram_assign_replacements`) anchors on an
+        // assignment expression rather than a VarDecl, so its hits
+        // never alias an alias-subst VarDecl match by construction.
+        sturm::transpile::QintAliasSubstClaimedDecls claimed;
+        for (const auto& hit : qram_subscript_hits_) {
+            if (hit.target_var != nullptr) {
+                claimed.qram_var_decls.insert(hit.target_var);
+            }
+        }
+        for (const auto& hit : qram_expr_hits_) {
+            if (hit.target_var != nullptr) {
+                claimed.qram_var_decls.insert(hit.target_var);
+            }
+        }
+        sturm::transpile::emit_qint_alias_subst_replacements(
+            sm, lang, qint_alias_subst_matches_, claimed,
+            unit_.replacements);
     }
 
     // Phase T T-1 (sturm-xrob.2): drive the reversible-adjoint

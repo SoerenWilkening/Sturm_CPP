@@ -1875,6 +1875,15 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    # sturm-65rs.10 (Beat C3): TranspileConsumer registers the qint
+    # alias substitution matcher in the ctor body and drains its
+    # `qint_alias_subst_matches_` vector via
+    # `emit_qint_alias_subst_replacements` AFTER the QRAM emitters
+    # populate the `QintAliasSubstClaimedDecls` overlap-guard set.
+    # Link the matcher + emitter TUs so the consumer test binary
+    # resolves the new symbols at link time.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so
     # the Registry method bodies (register_op, find_render_fn,
@@ -2807,6 +2816,76 @@ endif()
 add_test(NAME test_qint_alias_subst_emitter
          COMMAND test_qint_alias_subst_emitter)
 set_tests_properties(test_qint_alias_subst_emitter PROPERTIES
+    LABELS "transpiler;qac")
+
+# ── Unit test: consumer_qint_alias_subst (sturm-65rs.10 / Beat C3) ──────────
+# Plan §11 / C3; PRD §4.3 co-existence with the QRAM-subscript C1
+# matcher / R2 single-VarDecl-single-rewrite invariant. Pins the C3
+# consumer's claimed-decls overlap guard via a fixture containing both
+# `qint b = a[i];` (QRAM C1) and `sturm::frontend::qint x;`
+# (alias-subst). After the consumer drains both pipelines, `b` is
+# rewritten ONLY by the QRAM emitter and `x` is rewritten ONLY by the
+# alias-subst emitter — neither double-rewritten.
+#
+# Linkage compiles in the production TUs both pipelines need:
+# qint_alias_subst_emitter.cpp + matcher_qint_alias_subst.cpp +
+# qram_emitter.cpp + matcher_qram_subscript.cpp + width_inference.cpp +
+# reversible_attribute.cpp. Fixture inputs/expected files live at
+# transpiler/tests/fixtures/ threaded via
+# STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR.
+add_executable(test_consumer_qint_alias_subst
+    test_consumer_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+)
+target_include_directories(test_consumer_qint_alias_subst PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_consumer_qint_alias_subst PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_consumer_qint_alias_subst PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_CONSUMER_QAS NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_consumer_qint_alias_subst PRIVATE
+    ${LLVM_DEFS_LIST_CONSUMER_QAS}
+    STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_consumer_qint_alias_subst PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_consumer_qint_alias_subst PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_CONSUMER_QAS support)
+    target_link_libraries(test_consumer_qint_alias_subst PRIVATE
+        ${LLVM_LIBS_CONSUMER_QAS})
+endif()
+add_test(NAME test_consumer_qint_alias_subst
+         COMMAND test_consumer_qint_alias_subst)
+set_tests_properties(test_consumer_qint_alias_subst PROPERTIES
     LABELS "transpiler;qac")
 
 # ── Unit test: qram_emitter (sturm-u9ge.15 / Beat D2) ────────────────────────
