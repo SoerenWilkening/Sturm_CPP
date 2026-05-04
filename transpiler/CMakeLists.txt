@@ -184,6 +184,14 @@ add_executable(sturm-transpile
     src/qram_emitter_assign.cpp
     src/qram_emitter_expr.cpp
     src/width_inference.cpp
+    # sturm-65rs.8 (Beat C1): qint alias substitution matcher. Anchored
+    # on every source site that spells `sturm::frontend::qint` (VarDecl,
+    # ParmVarDecl, FieldDecl, function return type, CXXFunctionalCastExpr).
+    # The C2 emitter (sturm-65rs.9) consumes the typed Match struct;
+    # consumer wiring happens in C3 (sturm-65rs.10). At this beat the TU
+    # is link-resolved here so the existing test binaries (test_transpile_
+    # consumer + plugin) keep linking once C3 wires it into the consumer.
+    src/matcher_qint_alias_subst.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -480,6 +488,11 @@ add_library(sturm-transpile-plugin SHARED
     src/qram_emitter_assign.cpp
     src/qram_emitter_expr.cpp
     src/width_inference.cpp
+    # sturm-65rs.8 (Beat C1): qint alias substitution matcher. Mirror
+    # the main binary so the plugin-path consumer resolves the same
+    # symbols at dlopen — see the header note above the main binary's
+    # source-list entry for details.
+    src/matcher_qint_alias_subst.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for

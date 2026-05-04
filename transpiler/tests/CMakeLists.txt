@@ -2688,6 +2688,62 @@ add_test(NAME test_matcher_qram_subscript
 set_tests_properties(test_matcher_qram_subscript PROPERTIES
     LABELS "transpiler;qram")
 
+# ── Unit test: matcher_qint_alias_subst (sturm-65rs.8 / Beat C1) ─────────────
+# Plan §9 / C1; PRD §4.3 match anchors. The matcher under test recognises
+# every site at which a `sturm::frontend::qint` is spelled in source —
+# VarDecl, ParmVarDecl, FieldDecl, function return type, and
+# CXXFunctionalCastExpr. Linkage mirrors test_matcher_qram_subscript:
+# the only `transpiler/src/*` source compiled in is
+# `matcher_qint_alias_subst.cpp` (the matcher has no width-inference
+# dependency at this beat — width is the C2 emitter's concern).
+add_executable(test_matcher_qint_alias_subst
+    test_matcher_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+)
+target_include_directories(test_matcher_qint_alias_subst PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_qint_alias_subst PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_qint_alias_subst PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_QINT_ALIAS_SUBST NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_qint_alias_subst PRIVATE
+    ${LLVM_DEFS_LIST_QINT_ALIAS_SUBST})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_qint_alias_subst PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_qint_alias_subst PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_QINT_ALIAS_SUBST support)
+    target_link_libraries(test_matcher_qint_alias_subst PRIVATE
+        ${LLVM_LIBS_QINT_ALIAS_SUBST})
+endif()
+add_test(NAME test_matcher_qint_alias_subst
+         COMMAND test_matcher_qint_alias_subst)
+set_tests_properties(test_matcher_qint_alias_subst PROPERTIES
+    LABELS "transpiler;qac")
+
 # ── Unit test: qram_emitter (sturm-u9ge.15 / Beat D2) ────────────────────────
 # Plan §7 / D2; PRD §8 / M4. The emitter under test consumes
 # `QramSubscriptHit`s from C1 and produces a two-line `qint_t<W> b;
