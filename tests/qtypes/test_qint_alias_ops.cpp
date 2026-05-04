@@ -77,7 +77,37 @@ static void test_arithmetic_measure() {
     // qint_arith.hpp, so the alias must too — see the disambiguation
     // note in qint_alias_ops.hpp).
     STURM_MEASURED(a + std::int64_t{5}, 1u);
-    STURM_MEASURED(std::int64_t{5} + a, 1u);
+    STURM_MEASURED(std::int64_t{5} + a, 1u);   // reverse-+ (the only reverse the alias carries)
+    reset_measurement_count();
+}
+
+// ── 1a-mixed. Mixed-type qint OP <integral> for the 7 new ops ───────────
+// sturm-65rs.3 / Beat A2: forward `qint OP int` for `- * / % & | ^`. Each
+// measures the qint operand exactly once and bumps the counter exactly
+// once (the int operand is classical). PRD §3: reverse `<integral> OP
+// qint` NOT added for non-`+`; backend does not carry these either.
+// Also exercises `/` and `%` zero-divisor guard (mirrors qint × qint at
+// qint_alias_ops.hpp:104-114).
+static void test_mixed_arith_ops() {
+    {  qint a(12); STURM_MEASURED(a - std::int64_t{5},  1u); }
+    {  qint a(12); STURM_MEASURED(a * std::int64_t{3},  1u); }
+    {  qint a(12); STURM_MEASURED(a / std::int64_t{4},  1u); }
+    {  qint a(12); STURM_MEASURED(a % std::int64_t{5},  1u); }
+    {  qint a(12); STURM_MEASURED(a & std::int64_t{6},  1u); }
+    {  qint a(12); STURM_MEASURED(a | std::int64_t{1},  1u); }
+    {  qint a(12); STURM_MEASURED(a ^ std::int64_t{15}, 1u); }
+    reset_measurement_count();
+    // Value semantics. Result starts with a fresh classical_value().
+    {  qint a(12); assert((a - std::int64_t{5}).classical_value() == 7); }
+    {  qint a(12); assert((a * std::int64_t{3}).classical_value() == 36); }
+    {  qint a(12); assert((a / std::int64_t{4}).classical_value() == 3); }
+    {  qint a(12); assert((a % std::int64_t{5}).classical_value() == 2); }
+    {  qint a(0b1100); assert((a & std::int64_t{0b1010}).classical_value() == 0b1000); }
+    {  qint a(0b1100); assert((a | std::int64_t{0b1010}).classical_value() == 0b1110); }
+    {  qint a(0b1100); assert((a ^ std::int64_t{0b1010}).classical_value() == 0b0110); }
+    // Zero-divisor guard for `/` and `%` mirrors qint × qint policy.
+    {  qint a(12); assert((a / std::int64_t{0}).classical_value() == 0); }
+    {  qint a(12); assert((a % std::int64_t{0}).classical_value() == 0); }
     reset_measurement_count();
 }
 
@@ -203,6 +233,38 @@ STURM_HAS_BIN(has_assign_i64, std::declval<T&>() = std::declval<std::int64_t>())
 STURM_HAS_BIN(has_subscript,  std::declval<const T&>()[std::declval<std::size_t>()]);
 STURM_HAS_BIN(has_explicit_i64, static_cast<std::int64_t>(std::declval<const T&>()));
 
+// sturm-65rs.3 / Beat A2 — mixed-type free ops. Per op three traits:
+// `_qi` (`T OP int64_t`), `_iq` (`int64_t OP T`), `_qb` (`T OP bool`).
+// Assertions below: `_qi` for all 8, `_iq` only for `+`, `_qb` for none.
+#define STURM_MIX_FWD(n,o)                                                     \
+    template <class, class = void> struct n : std::false_type {};              \
+    template <class T> struct n<T, std::void_t<                                \
+        decltype(std::declval<T>() o std::declval<std::int64_t>())>>           \
+        : std::true_type {}
+#define STURM_MIX_REV(n,o)                                                     \
+    template <class, class = void> struct n : std::false_type {};              \
+    template <class T> struct n<T, std::void_t<                                \
+        decltype(std::declval<std::int64_t>() o std::declval<T>())>>           \
+        : std::true_type {}
+#define STURM_MIX_BOOL(n,o)                                                    \
+    template <class, class = void> struct n : std::false_type {};              \
+    template <class T> struct n<T, std::void_t<                                \
+        decltype(std::declval<T>() o std::declval<bool>())>>                   \
+        : std::true_type {}
+#define STURM_MIX_TRIPLE(o, qi, iq, qb)                                        \
+    STURM_MIX_FWD(qi, o); STURM_MIX_REV(iq, o); STURM_MIX_BOOL(qb, o)
+STURM_MIX_TRIPLE(+, has_add_qi,  has_add_iq,  has_add_qb);
+STURM_MIX_TRIPLE(-, has_sub_qi,  has_sub_iq,  has_sub_qb);
+STURM_MIX_TRIPLE(*, has_mul_qi,  has_mul_iq,  has_mul_qb);
+STURM_MIX_TRIPLE(/, has_div_qi,  has_div_iq,  has_div_qb);
+STURM_MIX_TRIPLE(%, has_mod_qi,  has_mod_iq,  has_mod_qb);
+STURM_MIX_TRIPLE(&, has_band_qi, has_band_iq, has_band_qb);
+STURM_MIX_TRIPLE(|, has_bor_qi,  has_bor_iq,  has_bor_qb);
+STURM_MIX_TRIPLE(^, has_bxor_qi, has_bxor_iq, has_bxor_qb);
+#undef STURM_MIX_TRIPLE
+#undef STURM_MIX_BOOL
+#undef STURM_MIX_REV
+#undef STURM_MIX_FWD
 #undef STURM_HAS_BIN
 
 #define STURM_ALIAS_OP_PARITY(trait, msg)                                      \
@@ -251,6 +313,41 @@ STURM_ALIAS_OP_PARITY(has_assign_i64,   "operator=(int64_t)");
 STURM_ALIAS_OP_PARITY(has_subscript,    "operator[](size_t) const");
 STURM_ALIAS_OP_PARITY(has_explicit_i64, "explicit operator int64_t() const");
 
+// sturm-65rs.3 / Beat A2 — mixed-type free ops on `frontend::qint`.
+// Positive forward (`qint OP int64_t`) for all 8 ops; positive reverse
+// only for `+`; negative reverse for the 7 non-`+` ops (PRD §3 — backend
+// lacks reverse non-+); negative `qint OP bool` for all 8 (`bool` is
+// excluded from `IntOp<T>` SFINAE — narrowing/promotion guard).
+namespace fa = ::sturm::frontend;
+#define STURM_M_FWD(t,m) static_assert( harness::t<fa::qint>::value, m)
+#define STURM_M_NEG(t,m) static_assert(!harness::t<fa::qint>::value, m)
+STURM_M_FWD(has_add_qi,  "missing op+(qint,int64_t)");
+STURM_M_FWD(has_sub_qi,  "missing op-(qint,int64_t)");
+STURM_M_FWD(has_mul_qi,  "missing op*(qint,int64_t)");
+STURM_M_FWD(has_div_qi,  "missing op/(qint,int64_t)");
+STURM_M_FWD(has_mod_qi,  "missing op%(qint,int64_t)");
+STURM_M_FWD(has_band_qi, "missing op&(qint,int64_t)");
+STURM_M_FWD(has_bor_qi,  "missing op|(qint,int64_t)");
+STURM_M_FWD(has_bxor_qi, "missing op^(qint,int64_t)");
+STURM_M_FWD(has_add_iq,  "missing op+(int64_t,qint) reverse");
+STURM_M_NEG(has_sub_iq,  "must not have op-(int64_t,qint)");
+STURM_M_NEG(has_mul_iq,  "must not have op*(int64_t,qint)");
+STURM_M_NEG(has_div_iq,  "must not have op/(int64_t,qint)");
+STURM_M_NEG(has_mod_iq,  "must not have op%(int64_t,qint)");
+STURM_M_NEG(has_band_iq, "must not have op&(int64_t,qint)");
+STURM_M_NEG(has_bor_iq,  "must not have op|(int64_t,qint)");
+STURM_M_NEG(has_bxor_iq, "must not have op^(int64_t,qint)");
+STURM_M_NEG(has_add_qb,  "must not have op+(qint,bool)");
+STURM_M_NEG(has_sub_qb,  "must not have op-(qint,bool)");
+STURM_M_NEG(has_mul_qb,  "must not have op*(qint,bool)");
+STURM_M_NEG(has_div_qb,  "must not have op/(qint,bool)");
+STURM_M_NEG(has_mod_qb,  "must not have op%(qint,bool)");
+STURM_M_NEG(has_band_qb, "must not have op&(qint,bool)");
+STURM_M_NEG(has_bor_qb,  "must not have op|(qint,bool)");
+STURM_M_NEG(has_bxor_qb, "must not have op^(qint,bool)");
+#undef STURM_M_FWD
+#undef STURM_M_NEG
+
 // ── (3) Post-transpile unreachability fixture: [[skip-until-C1]] ─────────
 // The C1 matcher (sturm-u9ge.12) lands fixture pairs under
 // `transpiler/tests/fixtures/qram_read_*.{cpp,expected.cpp}`. The
@@ -269,6 +366,7 @@ static void test_post_transpile_unreachability() {
 // ── main / runner ────────────────────────────────────────────────────────
 int main() {
     test_arithmetic_measure();
+    test_mixed_arith_ops();
     test_compare_measure();
     test_compare_values();
     test_bitwise_measure();

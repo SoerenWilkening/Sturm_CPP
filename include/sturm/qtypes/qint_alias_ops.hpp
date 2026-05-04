@@ -78,10 +78,21 @@ inline std::int64_t measure_to_int(const qint& q) noexcept {
 }
 
 // SFINAE alias: any integral type other than `bool` and `qint`. Used in
-// the mixed-type overloads (arithmetic `+`, all six compares).
+// the mixed-type overloads (arithmetic `+ - * / % & | ^`, all six compares).
 template <class T>
 using IntOp = std::enable_if_t<std::is_integral_v<T>
                                && !std::is_same_v<T, bool>>;
+
+// sturm-65rs.3 / Beat A2 — single helper for the seven mixed-type
+// arithmetic/bitwise free ops (`-`, `*`, `/`, `%`, `&`, `|`, `^`). The
+// helper measures the qint operand exactly once (via `measure_to_int`)
+// and forwards to a classical callable `op(int64_t, int64_t) -> int64_t`.
+// `/` and `%` pass a divisor-guarding callable, mirroring the
+// `qint × qint` policy (`y != 0 ? x OP y : 0`) at lines 104-114 above.
+template <class Int, class F>
+inline qint mixed_arith(const qint& a, Int c, F op) noexcept {
+    return qint(op(measure_to_int(a), static_cast<std::int64_t>(c)));
+}
 
 } // namespace qint_alias_detail
 
@@ -124,6 +135,46 @@ inline qint operator+(const qint& a, Int c) noexcept {
 template <class Int, class = qint_alias_detail::IntOp<Int>>
 inline qint operator+(Int c, const qint& a) noexcept {
     return a + c;
+}
+
+// ── Mixed-type `qint OP <integral>` for the 7 non-+ ops ─────────────────
+// sturm-65rs.3 / Beat A2. Forward direction only (PRD §3 — backend
+// lacks reverse non-+; the alias stays symmetric). Routed through the
+// inline helper `mixed_arith` to keep marginal LoC small (PRD R4).
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator-(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return x - y; });
+}
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator*(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return x * y; });
+}
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator/(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return y != 0 ? x / y : 0; });
+}
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator%(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return y != 0 ? x % y : 0; });
+}
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator&(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return x & y; });
+}
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator|(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return x | y; });
+}
+template <class Int, class = qint_alias_detail::IntOp<Int>>
+inline qint operator^(const qint& a, Int c) noexcept {
+    return qint_alias_detail::mixed_arith(a, c,
+        [](std::int64_t x, std::int64_t y) noexcept { return x ^ y; });
 }
 
 // ── Arithmetic: unary - ───────────────────────────────────────────────
