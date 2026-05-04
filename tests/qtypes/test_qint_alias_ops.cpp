@@ -196,6 +196,13 @@ STURM_HAS_BIN(has_xoreq, std::declval<T&>() ^=  std::declval<T>());
 STURM_HAS_BIN(has_shleq, std::declval<T&>() <<= 1);
 STURM_HAS_BIN(has_shreq, std::declval<T&>() >>= 1);
 
+// sturm-65rs.2 / Beat A1 — member ops added by the qint alias completion
+// epic. The harness rule "qint_t<W> has it ⇒ alias has it" is identical
+// for these three; macro reuse keeps the assertion shape uniform.
+STURM_HAS_BIN(has_assign_i64, std::declval<T&>() = std::declval<std::int64_t>());
+STURM_HAS_BIN(has_subscript,  std::declval<const T&>()[std::declval<std::size_t>()]);
+STURM_HAS_BIN(has_explicit_i64, static_cast<std::int64_t>(std::declval<const T&>()));
+
 #undef STURM_HAS_BIN
 
 #define STURM_ALIAS_OP_PARITY(trait, msg)                                      \
@@ -236,6 +243,13 @@ STURM_ALIAS_OP_PARITY(has_oreq,  "operator|=");
 STURM_ALIAS_OP_PARITY(has_xoreq, "operator^=");
 STURM_ALIAS_OP_PARITY(has_shleq, "operator<<=");
 STURM_ALIAS_OP_PARITY(has_shreq, "operator>>=");
+
+// sturm-65rs.2 / Beat A1 — member ops added by the qint alias
+// completion epic. The drift-gate rule "qint_t<W> has it ⇒ alias has
+// it" is the same shape; just three more lines.
+STURM_ALIAS_OP_PARITY(has_assign_i64,   "operator=(int64_t)");
+STURM_ALIAS_OP_PARITY(has_subscript,    "operator[](size_t) const");
+STURM_ALIAS_OP_PARITY(has_explicit_i64, "explicit operator int64_t() const");
 
 // ── (3) Post-transpile unreachability fixture: [[skip-until-C1]] ─────────
 // The C1 matcher (sturm-u9ge.12) lands fixture pairs under

@@ -162,6 +162,49 @@ public:
     // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
     operator std::size_t() const noexcept;
 
+    // ── Member ops added by sturm-65rs.2 (Beat A1 / sturm-qac.2) ─────────
+    // PRD §4.1 member-ops bullet, plan §4 / A1. Three member ops mirror
+    // shapes carried by `qint_t<W>` so user code that compiles against
+    // either spelling stays compiling against the alias.
+
+    // operator=(int64_t v) — classical-int copy-assign on an existing
+    // `qint`. P4a: classical-to-quantum is FREE — no measurement-counter
+    // bump. (Counterpart: qint_core.hpp:181, where the backend bumps no
+    // counter either; the qubit-pool releases it does are bookkeeping
+    // not measurement.)
+    qint& operator=(int64_t v) noexcept {
+        value_ = v;
+        return *this;
+    }
+
+    // operator[](size_t k) const — bit read. Lossy by design, like the
+    // alias-level compares: each call goes through the measurement
+    // counter (+1) and returns the classical bit. Out-of-range reads
+    // (k >= 64) return false but ALSO bump the counter — the alias is
+    // width-agnostic and uniform-cost on every call site, so the cost
+    // model is independent of operand value. (Backend qint_t<W>'s
+    // `operator[]` returns a qbool view; the alias returns classical
+    // bool because per PRD §3 wiring qbool through the alias would
+    // force a backend-width commitment.)
+    bool operator[](std::size_t k) const noexcept {
+        qint_alias_detail::bump_measurement_count();
+        if (k >= 64) {
+            return false;
+        }
+        return ((static_cast<std::uint64_t>(value_) >> k) & 1u) != 0u;
+    }
+
+    // explicit operator int64_t() — converting cast. `explicit` so any
+    // *implicit* int64_t use is a compile error; the load-bearing
+    // implicit conversion site on the alias is `operator size_t()`
+    // alone. Each invocation bumps the counter +1 (backend qint_t<W>'s
+    // counterpart is at qint_core.hpp:97; the alias bumps the same
+    // observability counter the rest of the alias uses).
+    explicit operator int64_t() const noexcept {
+        qint_alias_detail::bump_measurement_count();
+        return value_;
+    }
+
     // ── Test / introspection accessor ────────────────────────────────────
     // Direct access to the underlying classical value. NOT a public API
     // for user code (use the implicit conversion); exposed because the

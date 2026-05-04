@@ -218,3 +218,18 @@ target_include_directories(test_qint_alias_ops PRIVATE
 target_compile_features(test_qint_alias_ops PRIVATE cxx_std_20)
 add_test(NAME test_qint_alias_ops COMMAND test_qint_alias_ops)
 set_tests_properties(test_qint_alias_ops PROPERTIES LABELS "qtypes;qram-subscript")
+
+# sturm-65rs.2 (Beat A1 / sturm-qac.2) — member ops on `frontend::qint`:
+# `operator=(int64_t)`, `operator[](size_t) const`, and
+# `explicit operator int64_t() const`. Plan §4 / A1, PRD §4.1 member-ops
+# bullet. Same header-only / pre-transpile profile as test_qint_alias.
+add_executable(test_qint_alias_member_ops
+    test_qint_alias_member_ops.cpp
+)
+target_include_directories(test_qint_alias_member_ops PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qint_alias_member_ops PRIVATE cxx_std_20)
+add_test(NAME test_qint_alias_member_ops COMMAND test_qint_alias_member_ops)
+set_tests_properties(test_qint_alias_member_ops PROPERTIES
+    LABELS "qtypes;qram-subscript")
