@@ -3339,3 +3339,57 @@ add_test(NAME test_qram_e2e_real
          COMMAND test_qram_e2e_real)
 set_tests_properties(test_qram_e2e_real PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
+
+# ── End-to-end alias erasure: test_qint_alias_subst_e2e (sturm-65rs.13 / E1) ─
+# Plan §14, PRD A5. Closes the qint-alias-completion epic by transpiling a
+# fix-up'd copy of `examples/qram_demo.cpp`, asserting zero
+# `sturm::frontend::qint` substrings post-transpile, and compile+running the
+# generated file with all runtime sources `example_qram_demo` carries.
+# The test invokes `sturm-transpile` and the host clang++ via popen — the
+# CMake macros below thread the binaries / source paths so the test does
+# not guess. Depends only on `sturm-transpile` so it runs even when
+# `example_qram_demo` (the example target proper) is not buildable
+# pre-F1 (sturm-65rs.14).
+add_executable(test_qint_alias_subst_e2e
+    test_qint_alias_subst_e2e.cpp
+)
+target_compile_features(test_qint_alias_subst_e2e PRIVATE cxx_std_20)
+# Render the runtime-source list once so the test can splice it into a
+# host-clang++ command line at run time. Mirrors the `target_sources`
+# block on `example_qram_demo` in `examples/CMakeLists.txt:491-501`.
+set(_e1_runtime_sources
+    "${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c"
+    "${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp"
+    "${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp"
+)
+string(JOIN " " _e1_runtime_sources_joined ${_e1_runtime_sources})
+# Resolve the orkan-header include path the example links via
+# `orkan_headers`. ORKAN_USE_STUB ⇒ vendor/orkan/; otherwise the
+# fetched orkan_SOURCE_DIR. Use a single path on the command line so
+# the test stays simple (no list quoting headaches in popen).
+if(ORKAN_USE_STUB)
+    set(_e1_orkan_include "${CMAKE_SOURCE_DIR}/vendor")
+else()
+    set(_e1_orkan_include "${orkan_SOURCE_DIR}/include")
+endif()
+target_compile_definitions(test_qint_alias_subst_e2e PRIVATE
+    STURM_TRANSPILE_BIN="$<TARGET_FILE:sturm-transpile>"
+    STURM_E1_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
+    STURM_E1_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
+    STURM_E1_CXX="${CMAKE_CXX_COMPILER}"
+    STURM_E1_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}
+    STURM_E1_RUNTIME_SOURCES="${_e1_runtime_sources_joined}"
+    STURM_E1_ORKAN_INCLUDE_DIR="${_e1_orkan_include}"
+)
+add_dependencies(test_qint_alias_subst_e2e sturm-transpile)
+add_test(NAME test_qint_alias_subst_e2e
+         COMMAND test_qint_alias_subst_e2e)
+set_tests_properties(test_qint_alias_subst_e2e PROPERTIES
+    LABELS "transpiler;qac")
