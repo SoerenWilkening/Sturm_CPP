@@ -44,6 +44,7 @@
 #include "lossy_rewrite_emitter.hpp"
 
 #include "fresh_names.hpp"
+#include "render_qint_typename.hpp"
 
 #include <cstddef>
 #include <sstream>
@@ -94,16 +95,15 @@ const char* oop_name(LossyOpKind k) {
     return "";
 }
 
-// sturm-czfi: render the ancilla declaration's typename. `lhs_width > 0`
-// means the matcher resolved the LHS qint_t<W> off the AST and we splice the
-// W into a concrete `sturm::qint_t<W>` so the emitted text compiles in TUs
-// without a `using qint = ...;` typedef (the real example target). `0` keeps
-// the legacy bare `qint` shape the hermetic-stub fixtures depend on.
-std::string render_qint_typename(int lhs_width) {
-    if (lhs_width <= 0) return "qint";
-    std::ostringstream os;
-    os << "sturm::qint_t<" << lhs_width << ">";
-    return os.str();
+// sturm-czfi: render the ancilla declaration's typename. The actual
+// rendering body lives in the shared `render_qint_typename.hpp`
+// header (sturm-65rs.7 / Beat C0); this thin local adapter clamps the
+// signed `int lhs_width` down to the shared helper's `unsigned W`
+// shape (negatives map to 0 ⇒ legacy bare `qint`, matching the prior
+// `<= 0` arm).
+std::string render_lossy_typename(int lhs_width) {
+    const unsigned w = (lhs_width > 0) ? static_cast<unsigned>(lhs_width) : 0u;
+    return render_qint_typename(w);
 }
 
 // Single-ancilla forward emission. Shared body for *=, &=, |= — the
@@ -122,7 +122,7 @@ LossyEmission emit_single_ancilla(LossyOpKind k,
     // aux_tmp_name stays empty — single-ancilla shape.
 
     std::ostringstream os;
-    os << render_qint_typename(lhs_width) << ' ' << tmp << ";\n"
+    os << render_lossy_typename(lhs_width) << ' ' << tmp << ";\n"
        << oop_name(k) << '(' << lhs << ", " << rhs << ", " << tmp << ");\n"
        << "swap(" << lhs << ", " << tmp << ");\n";
     em.text = os.str();
@@ -154,7 +154,7 @@ LossyEmission emit_divide_kernel(LossyOpKind k,
     }
 
     std::ostringstream os;
-    os << render_qint_typename(lhs_width) << ' '
+    os << render_lossy_typename(lhs_width) << ' '
        << tmp_q << ", " << tmp_r << ";\n"
        << "divide_oop(" << lhs << ", " << rhs << ", "
        << tmp_q << ", " << tmp_r << ");\n"

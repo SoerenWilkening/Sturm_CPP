@@ -41,6 +41,7 @@
 #include "modular_rewrite_emitter.hpp"
 
 #include "fresh_names.hpp"
+#include "render_qint_typename.hpp"
 
 #include <sstream>
 #include <string>
@@ -50,16 +51,15 @@ namespace sturm::transpile {
 
 namespace {
 
-// Mirrors `lossy_rewrite_emitter::render_qint_typename`. `W > 0` means
-// the matcher resolved the result VarDecl's `qint_t<W>` width off the
-// AST and we splice the W into a concrete `sturm::qint_t<W>`. `0`
-// keeps the legacy bare `qint` shape the hermetic-stub fixtures
-// depend on. Same sturm-czfi posture used by the lossy emitter.
-std::string render_qint_typename(int result_width) {
-    if (result_width <= 0) return "qint";
-    std::ostringstream os;
-    os << "sturm::qint_t<" << result_width << ">";
-    return os.str();
+// The actual rendering body lives in the shared
+// `render_qint_typename.hpp` header (sturm-65rs.7 / Beat C0); this
+// thin local adapter clamps the signed `int result_width` down to
+// the shared helper's `unsigned W` shape (negatives map to 0 ⇒
+// legacy bare `qint`, matching the prior `<= 0` arm).
+std::string render_modular_typename(int result_width) {
+    const unsigned w = (result_width > 0) ? static_cast<unsigned>(result_width)
+                                          : 0u;
+    return render_qint_typename(w);
 }
 
 // Forward emission for the binary-operand modular rewrites (AddMod /
@@ -74,7 +74,7 @@ std::string render_binary_mod(std::string_view fn_name,
                               std::string_view a, std::string_view b,
                               std::string_view n, int result_width) {
     std::ostringstream os;
-    os << render_qint_typename(result_width) << ' ' << result
+    os << render_modular_typename(result_width) << ' ' << result
        << " = ::sturm::" << fn_name << '(' << a << ", " << b << ", " << n
        << ");\n";
     return os.str();

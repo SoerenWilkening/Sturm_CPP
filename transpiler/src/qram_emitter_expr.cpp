@@ -22,6 +22,8 @@
 
 #include "qram_emitter_expr.hpp"
 
+#include "render_qint_typename.hpp"
+
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/Expr.h"
@@ -70,12 +72,8 @@ std::string expr_source_text(const clang::Expr* e,
 }
 
 // ── Pure-string helpers ─────────────────────────────────────────────────────
-std::string render_qint_typename(unsigned W) {
-    if (W == 0) return "qint";
-    std::ostringstream os;
-    os << "sturm::qint_t<" << W << ">";
-    return os.str();
-}
+// `render_qint_typename` lives in the shared `render_qint_typename.hpp`
+// header (sturm-65rs.7 / Beat C0).
 
 std::string render_call(std::string_view fn,
                         QramContainerKind kind,

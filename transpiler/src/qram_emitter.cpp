@@ -27,6 +27,7 @@
 
 #include "qram_emitter.hpp"
 
+#include "render_qint_typename.hpp"
 #include "reversible_attribute.hpp"
 
 #include "clang/AST/ASTContext.h"
@@ -101,18 +102,9 @@ const FunctionDecl* enclosing_function_of(const clang::Decl* d) {
     return nullptr;
 }
 
-// ── Pure-string emission shape (mirrors `lossy_rewrite_emitter::render_qint_typename`) ──
-//
-// `W > 0` ⇒ `sturm::qint_t<W>` so the emitted text compiles in TUs
-// without a `using qint = ...;` typedef. `W == 0` falls back to the
-// legacy unqualified `qint` typename for hermetic-stub fixtures —
-// matches the sturm-czfi posture every other emitter takes.
-std::string render_qint_typename(unsigned W) {
-    if (W == 0) return "qint";
-    std::ostringstream os;
-    os << "sturm::qint_t<" << W << ">";
-    return os.str();
-}
+// Pure-string emission shape (`render_qint_typename`) lives in the
+// shared `render_qint_typename.hpp` header (sturm-65rs.7 / Beat C0).
+// One definition site for every emitter family.
 
 // Render the runtime-call argument list for the rewrite. Pointer
 // arm gets `(a, n, i, b)`; the other two arms get `(a, i, b)`. PRD

@@ -40,6 +40,21 @@ target_compile_features(test_transpile_fresh_names PRIVATE cxx_std_20)
 add_test(NAME test_transpile_fresh_names COMMAND test_transpile_fresh_names)
 set_tests_properties(test_transpile_fresh_names PROPERTIES LABELS "transpiler")
 
+# ── Unit test: render_qint_typename (sturm-65rs.7 / Beat C0) ────────────────
+# The shared `render_qint_typename` helper is a header-only inline free
+# function (transpiler/src/render_qint_typename.hpp) with no LibTooling or
+# Clang dependency — just <sstream>/<string> — so the test compiles and
+# links in under a second with no extra include paths.
+add_executable(test_render_qint_typename
+    test_render_qint_typename.cpp
+)
+target_include_directories(test_render_qint_typename PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+)
+target_compile_features(test_render_qint_typename PRIVATE cxx_std_20)
+add_test(NAME test_render_qint_typename COMMAND test_render_qint_typename)
+set_tests_properties(test_render_qint_typename PROPERTIES LABELS "transpiler")
+
 # ── Unit test: Quantum IR (M6) ────────────────────────────────────────────────
 # The IR depends only on clang::SourceLocation / SourceRange, which are
 # header-inline, so the test compiles against the LLVM/Clang include dirs
