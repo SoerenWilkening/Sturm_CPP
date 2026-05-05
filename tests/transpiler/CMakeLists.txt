@@ -26,7 +26,14 @@ add_subdirectory(test_cmake_glue)
 # for each path in the PLUGINS list. The fixture references the PM4-7
 # demo plugin target `sturm-pm4-demo-plugin` via $<TARGET_FILE:...> so
 # the genex resolves to a real on-disk shared library at generate time.
-add_subdirectory(test_cmake_plugins)
+#
+# Plugin-mode-only: the PLUGINS keyword is a plugin-mode feature (it
+# threads `-plugin-arg-sturm-transpile load=<path>` through the cc1
+# command line). Under `STURM_TRANSPILE_MODE=dump` the helper rejects
+# PLUGINS at configure time, so we skip the whole sub-project there.
+if(STURM_TRANSPILE_MODE STREQUAL "plugin")
+    add_subdirectory(test_cmake_plugins)
+endif()
 
 # ── M11: snapshot fixture (sturm-transpile or_single.cpp) ───────────────────
 # The test requires the sturm-transpile binary, which is built as part of
