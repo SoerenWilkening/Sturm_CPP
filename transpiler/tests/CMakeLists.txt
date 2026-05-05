@@ -3471,3 +3471,21 @@ add_test(NAME test_sturm_gen_clean
          COMMAND test_sturm_gen_clean)
 set_tests_properties(test_sturm_gen_clean PROPERTIES
     LABELS "transpiler;qac")
+
+# ── Unit-level coverage of the scan logic (sturm-8a2q) ─────────────────────
+# Drives `test_sturm_gen_clean_scan.hpp` with hand-crafted in-memory
+# fixtures: positive-control regression (`qint a[4];` carrier-imported
+# via `using sturm::qint;`) MUST trip; negative-controls (qualified
+# `qint_t<W>`, comments referencing bare `qint`, the benign import
+# line, `#include "sturm/qtypes/qint.hpp"`, `uncompute_*_qint` suffix)
+# MUST stay clean. No filesystem walk, no transpile dependency — runs
+# in milliseconds and acts as the canary that catches detector bugs
+# before they hide a real residue regression.
+add_executable(test_sturm_gen_clean_unit
+    test_sturm_gen_clean_unit.cpp
+)
+target_compile_features(test_sturm_gen_clean_unit PRIVATE cxx_std_20)
+add_test(NAME test_sturm_gen_clean_unit
+         COMMAND test_sturm_gen_clean_unit)
+set_tests_properties(test_sturm_gen_clean_unit PROPERTIES
+    LABELS "transpiler;qac")
