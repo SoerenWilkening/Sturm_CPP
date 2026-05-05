@@ -15,7 +15,8 @@
 // /=, %=). PRD §6 R1 mechanical migration recipe: introduce a local
 // type-alias `using qint = sturm::qint_t<64>;` so every site below keeps
 // its backend semantics with a one-line diff. Drift back to bare
-// sturm::qint is pinned by tests/regressions/test_qint_callsite_respelling.cpp.
+// sturm::qint is pinned by tests/regressions/test_qint_callsite_respelling_*.cpp
+// (per-surface split — sturm-1os7).
 using qint = sturm::qint_t<64>;
 using sturm::qint_t;
 using sturm::RecordingSink;

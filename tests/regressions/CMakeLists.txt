@@ -7,31 +7,55 @@ cmake_minimum_required(VERSION 3.16)
 # COMPILES vs DOES-NOT-COMPILE — runtime behaviour is incidental, the
 # load-bearing checks are `static_assert`s.
 #
-# The first inhabitant (sturm-65rs.12 / D1 / sturm-qac.12) pins the D0
-# (sturm-65rs.11) re-spelling of internal callsites that need the
-# backend `sturm::qint_t<64>` surface (super_mask, qubits[], phi(),
-# theta()). If a future refactor flips any of those callsites back to
-# bare `sturm::qint` (which post-B1 resolves to the frontend alias),
-# the corresponding `static_assert(std::is_same_v<decltype(q),
+# The first inhabitant (sturm-65rs.12 / D1 / sturm-qac.12) pinned the D0
+# (sturm-65rs.11) re-spelling of internal callsites that need the backend
+# `sturm::qint_t<64>` surface (super_mask, qubits[], phi(), theta()). If
+# a future refactor flips any of those callsites back to bare
+# `sturm::qint` (which post-B1 resolves to the frontend alias), the
+# corresponding `static_assert(std::is_same_v<decltype(q),
 # sturm::qint_t<64>>)` fires and the regression goes loud-red.
-
-# sturm-65rs.12 (Beat D1 / sturm-qac.12) — drift-gate regression test
-# pinning D0's re-spelled callsites to sturm::qint_t<64>. Plan §13 / PRD
-# R1 audit.
 #
-# This target is header-only / pre-transpile in spirit (the TU only
-# needs the `sturm/qtypes/qint.hpp` umbrella for `sturm::qint_t<W>` and
-# the post-B1 `sturm::qint` alias). No backend sources, no
+# sturm-1os7 (D1 split): the original single-file gate hit the 200-LoC
+# budget cap (plan §1 / PRD §R4 budget targets). Rather than renegotiate
+# a higher budget, the gate is split per backend-surface family — each
+# file holds anchors for one surface (super_mask/qubits[], phi()/theta(),
+# compound-assigns, .value, lifecycle) plus a single shared cross-checks
+# file. New D0-miss extensions add anchors to the matching per-surface
+# file without renegotiating budget. Per the issue's "scales linearly
+# without budget renegotiation" guidance.
+
+# Common helper: register a regression-test executable that needs only
+# the qtypes/qint.hpp umbrella (header-only, no backend sources, no
 # STURM_BACKEND_ENABLED — the static_asserts work entirely on the
-# header-only frontend type surface.
-add_executable(test_qint_callsite_respelling
-    test_qint_callsite_respelling.cpp
-)
-target_include_directories(test_qint_callsite_respelling PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(test_qint_callsite_respelling PRIVATE cxx_std_20)
-add_test(NAME test_qint_callsite_respelling
-    COMMAND test_qint_callsite_respelling)
-set_tests_properties(test_qint_callsite_respelling PROPERTIES
-    LABELS "regressions;qram-subscript;qint-alias")
+# header-only frontend type surface).
+function(_sturm_add_drift_gate name source)
+    add_executable(${name} ${source})
+    target_include_directories(${name} PRIVATE
+        ${CMAKE_SOURCE_DIR}/include
+    )
+    target_compile_features(${name} PRIVATE cxx_std_20)
+    add_test(NAME ${name} COMMAND ${name})
+    set_tests_properties(${name} PROPERTIES
+        LABELS "regressions;qram-subscript;qint-alias")
+endfunction()
+
+# Per-surface drift-gate files (sturm-1os7 split). Each file pins anchors
+# for one backend-surface family. Adding a new D0-miss anchor: drop it
+# into the matching per-surface file and rebuild that target.
+_sturm_add_drift_gate(test_qint_callsite_respelling_super_mask
+    test_qint_callsite_respelling_super_mask.cpp)
+_sturm_add_drift_gate(test_qint_callsite_respelling_phi_theta
+    test_qint_callsite_respelling_phi_theta.cpp)
+_sturm_add_drift_gate(test_qint_callsite_respelling_compound_assign
+    test_qint_callsite_respelling_compound_assign.cpp)
+_sturm_add_drift_gate(test_qint_callsite_respelling_value
+    test_qint_callsite_respelling_value.cpp)
+_sturm_add_drift_gate(test_qint_callsite_respelling_lifecycle
+    test_qint_callsite_respelling_lifecycle.cpp)
+
+# Shared cross-checks: sturm::frontend::qint != sturm::qint_t<64> AND
+# sturm::qint resolves to sturm::frontend::qint. Both invariants are
+# load-bearing — if either fails, every per-surface anchor degenerates
+# into a tautology.
+_sturm_add_drift_gate(test_qint_callsite_respelling_xchecks
+    test_qint_callsite_respelling_xchecks.cpp)

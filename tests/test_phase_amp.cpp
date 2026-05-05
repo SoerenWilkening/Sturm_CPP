@@ -29,7 +29,8 @@
 // migration recipe: introduce a local type-alias `using qint =
 // sturm::qint_t<64>;` so every site below keeps its backend semantics with
 // a one-line diff. Drift back to bare sturm::qint is pinned by
-// tests/regressions/test_qint_callsite_respelling.cpp.
+// tests/regressions/test_qint_callsite_respelling_phi_theta.cpp
+// (sturm-1os7 split the original drift-gate per backend-surface family).
 using qint = sturm::qint_t<64>;
 using sturm::qbool;
 using sturm::RecordingSink;
