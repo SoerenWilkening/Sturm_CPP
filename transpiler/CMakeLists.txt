@@ -609,6 +609,62 @@ endif()
 # expression (`$<TARGET_FILE:sturm-transpile-plugin>`) resolves to the
 # right thing on every platform without bespoke PREFIX massaging.
 
+# ── Precompiled headers (sturm-cxrn) ──────────────────────────────────────────
+# Build acceleration: each transpiler TU otherwise re-parses the same heavy
+# clang/llvm umbrella headers from scratch. Source-survey hit counts across
+# transpiler/src + transpiler/include (51 TUs total): clang/AST/{Expr,Decl,
+# ASTContext}.h = 49/51, ASTMatchers/ASTMatchFinder.h = 48, Basic/Source
+# Location.h = 44, AST/Stmt.h = 41, Basic/SourceManager.h = 37, AST/ExprCXX.h
+# = 36, ASTMatchers/ASTMatchers.h = 34, Lex/Lexer.h = 23, AST/{Type,DeclCXX}.h
+# = 20 each, Basic/OperatorKinds.h = 18, AST/{RecursiveASTVisitor,ParentMap
+# Context}.h = 16 each, Basic/LangOptions.h = 14, Rewrite/Core/Rewriter.h = 7.
+# A PCH built from this set is reused by the overwhelming majority of TUs,
+# parsed once per build instead of ~50×.
+#
+# The plugin target REUSE_FROM the driver's PCH so the cost is paid exactly
+# once per build (CMake enforces matching compile options between reuser
+# and source target — both targets share -fno-rtti, C++20, and the same
+# LLVM_DEFINITIONS / STURM_CLANG_RESOURCE_DIR / STURM_LLVM_VERSION_MAJOR_STR
+# defines, so the constraint holds). STURM_MODULAR_POW is driver-only but
+# only affects matcher-pattern selection at the .cpp level; the PCH itself
+# does not see the macro and the constraint still holds.
+#
+# Disable with -DSTURM_USE_PCH=OFF if PCH ever fights a compiler upgrade.
+option(STURM_USE_PCH
+    "Enable precompiled headers on the transpiler driver and plugin (\
+sturm-cxrn). Default ON cuts whole-build time substantially by parsing \
+the clang/llvm umbrella once per build instead of ~50× per TU. Set OFF \
+if a compiler/Clang upgrade rejects the PCH (rare)."
+    ON)
+if(STURM_USE_PCH)
+    # Angle-bracket form: CMake passes these through to the compiler as
+    # `#include <...>`, resolved via LLVM_INCLUDE_DIRS / CLANG_INCLUDE_DIRS
+    # on the target's `-I` line (set above by target_include_directories).
+    # Quoted form ("clang/AST/...") would be interpreted as paths relative
+    # to ${CMAKE_CURRENT_SOURCE_DIR} and fail to resolve.
+    target_precompile_headers(sturm-transpile PRIVATE
+        <clang/AST/ASTContext.h>
+        <clang/AST/Decl.h>
+        <clang/AST/DeclCXX.h>
+        <clang/AST/Expr.h>
+        <clang/AST/ExprCXX.h>
+        <clang/AST/Stmt.h>
+        <clang/AST/Type.h>
+        <clang/AST/RecursiveASTVisitor.h>
+        <clang/AST/ParentMapContext.h>
+        <clang/ASTMatchers/ASTMatchers.h>
+        <clang/ASTMatchers/ASTMatchFinder.h>
+        <clang/Basic/SourceLocation.h>
+        <clang/Basic/SourceManager.h>
+        <clang/Basic/OperatorKinds.h>
+        <clang/Basic/LangOptions.h>
+        <clang/Lex/Lexer.h>
+        <clang/Rewrite/Core/Rewriter.h>
+        <llvm/Support/Casting.h>
+        <llvm/ADT/StringRef.h>)
+    target_precompile_headers(sturm-transpile-plugin REUSE_FROM sturm-transpile)
+endif()
+
 # ── Namespaced aliases (sturm-vr0v.1 / E5.M1) ─────────────────────────────────
 # Expose the two transpiler targets under their `sturm::` namespace so
 # `cmake/SturmTranspile.cmake` can reference them via
