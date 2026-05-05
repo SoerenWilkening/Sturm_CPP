@@ -63,6 +63,15 @@ endif()
 message(STATUS "sturm-transpile: using LLVM ${LLVM_PACKAGE_VERSION} "
                "from ${LLVM_INSTALL_PREFIX}")
 
+# Promote LLVM_INSTALL_PREFIX to a cache var so cmake/SturmTranspile.cmake
+# (included from the root, outside this subdirectory's variable scope) can
+# reach it. Needed for the dump-mode `-cxx-isystem` plumbing (sturm-r1c1):
+# libTooling parses must use llvm@17's bundled libc++ headers, not the
+# host SDK's, when the SDK is newer than the parser supports.
+set(STURM_LLVM_INSTALL_PREFIX "${LLVM_INSTALL_PREFIX}" CACHE INTERNAL
+    "Resolved LLVM install prefix (set by find_package(LLVM)). \
+Forwarded to SturmTranspile.cmake for dump-mode --extra-arg plumbing.")
+
 # ── sturm-transpile binary ────────────────────────────────────────────────────
 add_executable(sturm-transpile
     src/main.cpp

@@ -536,6 +536,33 @@ function(_sturm_add_quantum_executable_dump target)
             "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
             "--extra-arg=-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
 
+        # sturm-r1c1: force the libTooling parse to use llvm@17's bundled
+        # libc++ headers instead of whatever the host SDK ships. Apple's
+        # MacOSX26.sdk libc++ uses Clang >=19 builtins (__builtin_clzg,
+        # __builtin_ctzg, _LIBCPP_NO_SPECIALIZATIONS, the
+        # `__is_nothrow_convertible` builtin), but the standalone
+        # sturm-transpile binary is linked against libclang-17 / libLLVM-17.
+        # Parsing SDK 26 headers under that older parser yields a wall of
+        # 'use of undeclared identifier' / 'does not refer to a value'
+        # errors before any matcher fires. Routing the parse through
+        # `${LLVM_INSTALL_PREFIX}/include/c++/v1` (which DOES match the
+        # parser version) bypasses the SDK headers entirely.
+        #
+        # Plugin mode does not need this: that path uses the host's
+        # CMAKE_CXX_COMPILER (typically Apple Clang on macOS) which speaks
+        # its own SDK's libc++.
+        #
+        # Guarded behind `EXISTS` so an LLVM distribution without bundled
+        # libc++ headers (e.g. a stripped Linux install) degrades to the
+        # previous behavior — under those distributions the system libc++
+        # is what the parser was built against, so no override is needed.
+        if(STURM_LLVM_INSTALL_PREFIX
+           AND EXISTS "${STURM_LLVM_INSTALL_PREFIX}/include/c++/v1")
+            list(APPEND _xa_args
+                "--extra-arg=-nostdinc++"
+                "--extra-arg=-cxx-isystem${STURM_LLVM_INSTALL_PREFIX}/include/c++/v1")
+        endif()
+
         # `add_custom_command(DEPENDS ...)` rejects ALIAS targets but
         # accepts the underlying real target name; for IMPORTED targets
         # there is no buildable dependency to express. Resolve once and
