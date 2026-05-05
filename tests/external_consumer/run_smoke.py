@@ -94,12 +94,25 @@ class ExternalConsumerSmokeTest(unittest.TestCase):
             # Step 2 — configure the standalone consumer against the
             # installed prefix. CMAKE_PREFIX_PATH is the documented entry
             # point for `find_package` resolution.
+            #
+            # `-DSTURM_EXTERNAL_CONSUMER_SMOKE_TEST=ON` (sturm-nfmu) arms
+            # the consumer's stale-install shadow precheck. AppleClang's
+            # default include-search order on macOS places /usr/local/
+            # include BEFORE -isystem flags, so a months-old `cmake
+            # --install` (or a Homebrew install of sturm-transpile) at
+            # /usr/local/include/sturm/ would silently shadow this temp
+            # prefix and break the build with a misleading "missing
+            # add_mod / WHEN" error. The sentinel-gated precheck in
+            # tests/external_consumer/CMakeLists.txt fails configure
+            # with an actionable diagnostic instead. Genuine downstream
+            # consumers (no sentinel) are not affected.
             cr = subprocess.run(
                 [cmake_bin,
                  "-S", str(SOURCE_DIR),
                  "-B", str(consumer_build),
                  f"-DCMAKE_PREFIX_PATH={prefix}",
-                 f"-DCMAKE_CXX_COMPILER={cxx}"],
+                 f"-DCMAKE_CXX_COMPILER={cxx}",
+                 "-DSTURM_EXTERNAL_CONSUMER_SMOKE_TEST=ON"],
                 capture_output=True, text=True,
             )
             self.assertEqual(

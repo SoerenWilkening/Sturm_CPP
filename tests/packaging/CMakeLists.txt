@@ -208,3 +208,31 @@ set_tests_properties(external_consumer_smoke PROPERTIES
         "STURMC_BUILD_DIR=${CMAKE_BINARY_DIR};\
 STURMC_CXX=${CMAKE_CXX_COMPILER};\
 STURMC_CMAKE=${CMAKE_COMMAND}")
+
+# ── sturm-nfmu — shadow stale-install precheck acceptance test ──────────────
+# Pins the configure-time precheck added to tests/external_consumer/
+# CMakeLists.txt that detects a stale STURM install at /usr/local/include/
+# sturm or /opt/homebrew/include/sturm shadowing the smoke test's freshly-
+# installed temp prefix. AppleClang's default include-search order on
+# macOS places /usr/local/include BEFORE -isystem flags, so the consumer's
+# `add_quantum_executable` would silently link the wrong headers.
+#
+# Three behaviours are pinned (see test_shadow_detection.py):
+#   1. shadow + sentinel ⇒ FATAL_ERROR with actionable diagnostic.
+#   2. shadow + NO sentinel ⇒ silent (genuine downstream consumers).
+#   3. NO shadow + sentinel ⇒ silent (clean machines under run_smoke.py).
+#
+# Configure-only test (no install needed); STURMC_BUILD_DIR points the
+# consumer at the in-tree build's exported sturmConfig.cmake so
+# find_package(sturm) resolves without a `cmake --install` step.
+add_test(
+    NAME external_consumer_shadow_detection
+    COMMAND "${Python3_EXECUTABLE}"
+            "${CMAKE_SOURCE_DIR}/tests/external_consumer/test_shadow_detection.py")
+set_tests_properties(external_consumer_shadow_detection PROPERTIES
+    LABELS "packaging;external_consumer"
+    FIXTURES_REQUIRED "sturmc_artifacts_built"
+    TIMEOUT 120
+    ENVIRONMENT
+        "STURMC_BUILD_DIR=${CMAKE_BINARY_DIR};\
+STURMC_CMAKE=${CMAKE_COMMAND}")

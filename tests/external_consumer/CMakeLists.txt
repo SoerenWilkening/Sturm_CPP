@@ -22,7 +22,58 @@ cmake_minimum_required(VERSION 3.16)
 # standalone").
 project(sturm_external_consumer LANGUAGES CXX)
 
-# ── 2. Locate the installed STURM package ───────────────────────────────────
+# ── 2a. Stale-install (shadow) precheck ─────────────────────────────────────
+# sturm-nfmu — Detect a STALE STURM install at /usr/local/include/sturm or
+# /opt/homebrew/include/sturm BEFORE find_package(sturm) runs. Background:
+# AppleClang's default include-search order on macOS places /usr/local/
+# include BEFORE -isystem flags, so a months-old `cmake --install` (or a
+# Homebrew install of `sturm-transpile`) at /usr/local/include/sturm/
+# silently shadows the smoke test's freshly-installed temp prefix. The
+# downstream compile failure that results blames missing identifiers
+# (`add_mod`, `WHEN`) instead of "a stale install is shadowing your
+# freshly-installed prefix", which is actively misleading.
+#
+# Sentinel-gated: the precheck only fires under
+# `-DSTURM_EXTERNAL_CONSUMER_SMOKE_TEST=ON`, which run_smoke.py and
+# tests/external_consumer/test_shadow_detection.py both pass. Genuine
+# downstream consumers (no sentinel) are NOT blocked — they may
+# knowingly accept the shadow path.
+#
+# Configurable: STURM_SHADOW_INCLUDE_PATHS lets the acceptance test
+# (tests/external_consumer/test_shadow_detection.py) point the check at
+# a tmp directory instead of polluting real system paths. Default is
+# the two macOS Homebrew prefixes from the bd-nfmu incident.
+option(STURM_EXTERNAL_CONSUMER_SMOKE_TEST
+    "Enable the stale-install shadow precheck (set ON only by the smoke test driver, NOT by genuine downstream consumers)."
+    OFF)
+set(STURM_SHADOW_INCLUDE_PATHS
+    "/usr/local/include/sturm;/opt/homebrew/include/sturm"
+    CACHE STRING
+    "Semicolon-separated list of paths the shadow-install precheck scans when STURM_EXTERNAL_CONSUMER_SMOKE_TEST=ON. Override (e.g. from a test driver) to point the check at controlled tmp paths.")
+
+if(STURM_EXTERNAL_CONSUMER_SMOKE_TEST)
+    foreach(_sturm_shadow_path IN LISTS STURM_SHADOW_INCLUDE_PATHS)
+        if(EXISTS "${_sturm_shadow_path}")
+            message(FATAL_ERROR
+                "STURM stale-install precheck: detected a stale STURM "
+                "install at ${_sturm_shadow_path}.\n"
+                "AppleClang's default include-search order on macOS "
+                "places /usr/local/include BEFORE -isystem flags, so "
+                "the smoke test would silently link against the wrong "
+                "(shadow) headers — manifesting as obscure compile "
+                "errors about missing symbols (add_mod, WHEN, etc.) "
+                "rather than a clear environmental diagnostic.\n"
+                "Remediation:\n"
+                "  * Homebrew install:  brew uninstall sturm-transpile\n"
+                "  * Manual install:    sudo rm -rf "
+                "${_sturm_shadow_path}\n"
+                "Then re-run ctest. (See bd issue sturm-nfmu for the "
+                "incident write-up.)")
+        endif()
+    endforeach()
+endif()
+
+# ── 2b. Locate the installed STURM package ──────────────────────────────────
 # `find_package(sturm REQUIRED)` resolves via `CMAKE_PREFIX_PATH` (set by
 # the test driver to a temp install prefix). It pulls in:
 #   * `sturm` / `sturm::sturm` — the header-only INTERFACE target
