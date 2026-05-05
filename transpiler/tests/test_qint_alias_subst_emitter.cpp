@@ -250,6 +250,38 @@ void test_fixture_functional_cast() {
                 "qint_alias_subst_cast.expected.cpp");
 }
 
+// ── Wave-2 carrier round-trips (sturm-7t85.3 / G2) ─────────────────────────
+//
+// Plan §19c, PRD §9.3.2 / A7, A8. The G1 matcher (sturm-7t85.1) walks
+// one level into `ArrayTypeLoc::getElementLoc()` /
+// `PointerTypeLoc::getPointeeLoc()` so VarDecl, ParmVarDecl, and
+// FieldDecl anchors carrying an array or pointer of
+// `sturm::frontend::qint` capture the element / pointee TypeLoc range
+// only. The emitter substitutes whatever range the matcher hands it,
+// so the wave-1 emission path already covers these — these golden
+// pairs pin the round-trip end-to-end (matcher → emitter → byte-equal
+// to `.expected.cpp` after whitespace normalisation).
+//
+// `carray_typedef` pins R5: when the user names the array carrier
+// through a TypeAliasDecl, the matcher's TypeLoc walk lands on a
+// `TypedefTypeLoc` and returns an invalid `SourceRange`; the emitter
+// then drops the match and the file round-trips byte-identical.
+
+void test_fixture_carray() {
+    golden_case("qint_alias_subst_carray.cpp",
+                "qint_alias_subst_carray.expected.cpp");
+}
+
+void test_fixture_ptr() {
+    golden_case("qint_alias_subst_ptr.cpp",
+                "qint_alias_subst_ptr.expected.cpp");
+}
+
+void test_fixture_carray_typedef() {
+    golden_case("qint_alias_subst_carray_typedef.cpp",
+                "qint_alias_subst_carray_typedef.expected.cpp");
+}
+
 } // anonymous namespace
 
 int main() {
@@ -262,6 +294,9 @@ int main() {
     test_fixture_field_decl();
     test_fixture_function_return();
     test_fixture_functional_cast();
+    test_fixture_carray();
+    test_fixture_ptr();
+    test_fixture_carray_typedef();
 
     std::fprintf(stderr,
                  "test_qint_alias_subst_emitter: %d / %d checks passed\n",
