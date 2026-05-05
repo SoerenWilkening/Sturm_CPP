@@ -1,12 +1,21 @@
 # Implementation Plan — `qint` alias completion + transpiler-driven type substitution
 
-**Status.** Draft, 2026-05-04.
-**Tracks.** `docs/prd_qint_alias_completion.md` G1–G4 / A1–A6.
+**Status.**
+- Wave 1 (§§0–18): shipped 2026-05-04 under bd epic `sturm-65rs`
+  (issues `.1`–`.14` closed). The plan documents historical mnemonic
+  `sturm-qac.*` for these beats; the bd ids of record are
+  `sturm-65rs.*`.
+- Wave 2 (§§19–22): drafted 2026-05-05 under bd epic `sturm-qaca`
+  (`sturm-qaca.1` .. `sturm-qaca.5`). Tracks PRD §9 / G5–G6 / A7–A10.
+
+**Tracks.** `docs/prd_qint_alias_completion.md` G1–G6 / A1–A10.
 **Predecessors.** `docs/archive/plan_qram_subscript.md` (alias-class
 introduction, beats A1/A2/B1/C1), `docs/archive/plan_qram_backend.md`
 (QROM emission, `render_qint_typename`).
-**Scope tag.** `sturm-qac` epic; child ids `sturm-qac.1` .. `sturm-qac.18`.
-Beat → bd-id map at §1a.
+**Scope tag (wave 1).** `sturm-qac` epic (mnemonic; bd ids
+`sturm-65rs.1` .. `sturm-65rs.18`). Beat → bd-id map at §1a.
+**Scope tag (wave 2).** `sturm-qaca` epic; child ids
+`sturm-qaca.1` .. `sturm-qaca.5`. Beat → bd-id map at §19a.
 
 ---
 
@@ -648,5 +657,273 @@ Plus plan-level:
 3. Follow-ups `sturm-qac.15`–`sturm-qac.18` filed and labeled
    `out-of-scope`.
 4. `docs/prd_qint_alias_completion.md` and this plan moved to
-   `docs/archive/` per project convention.
+   `docs/archive/` per project convention. *(Deferred until wave 2
+   §22 also closes — the doc pair travels together.)*
 5. `git push` succeeds (project session-completion rule).
+
+---
+
+## §19 Wave 2 — Array & pointer carrier coverage
+
+**Tracks.** PRD §9 (G5, G6, A7–A10).
+**Trigger.** Build target `example_qram_demo` fails post-wave-1
+because the alias-subst matcher's anchor predicates do not traverse
+`ArrayType` / `PointerType` carriers — see PRD §9.1 for the precise
+failure-mode evidence.
+
+### §19a Beat → bd-id map
+
+| Beat | bd id           | What it is                                              |
+|------|-----------------|---------------------------------------------------------|
+| —    | `sturm-qaca`    | epic                                                    |
+| G1   | `sturm-qaca.1`  | matcher: array-element + pointer-pointee traversal      |
+| G2   | `sturm-qaca.2`  | emitter round-trip coverage on G3 fixtures              |
+| G3   | `sturm-qaca.3`  | fixture pairs (carray, ptr, carray_typedef)             |
+| G4   | `sturm-qaca.4`  | CI gate `test_sturm_gen_clean`                          |
+| G5   | `sturm-qaca.5`  | unblock `examples/qram_demo.cpp` end-to-end + ctest run |
+| —    | `sturm-qaca.6`  | follow-up: multi-dim / reference-to-array (out of scope)|
+
+`sturm-qaca.6` is filed but not landed by this wave (PRD §9.5 R6).
+
+### §19b Beat G1 — Matcher extension (`sturm-qaca.1`)
+
+PRD §9.3.1.
+
+#### Red-phase tests (write FIRST)
+Edit `transpiler/tests/test_matcher_qint_alias_subst.cpp` to add:
+
+| Anchor      | Source shape              | Expected match |
+|-------------|---------------------------|----------------|
+| VarDecl     | `qint a[4];`              | 1 hit, range = `qint` token only (NOT `[4]`) |
+| ParmVarDecl | `void f(qint b[]);`       | 1 hit, element span only                     |
+| FieldDecl   | `struct S { qint c[3]; };`| 1 hit, element span only                     |
+| VarDecl     | `qint* p;`                | 1 hit, range = `qint` token only (NOT `*`)   |
+| ParmVarDecl | `void g(qint* q);`        | 1 hit, pointee span only                     |
+| FieldDecl   | `struct T { qint* d; };`  | 1 hit, pointee span only                     |
+| (negative)  | `qint a[N][M];`           | 0 hits (multi-dim — R6, out of scope)        |
+| (negative)  | `qint (&r)[N];`           | 0 hits (reference-to-array — R6)             |
+| (negative)  | `using QArr = qint[4]; QArr a;` | 0 hits (sugared carrier — R5)         |
+
+#### Production code
+Edit `transpiler/src/matcher_qint_alias_subst.cpp`. Replace the
+single-record gate on each declarator anchor with a disjunction
+helper:
+
+```cpp
+auto frontend_qint_carrier() {
+  return anyOf(
+    /* direct: qint x;  */
+    hasCanonicalType(hasDeclaration(frontend_qint_record())),
+    /* array: qint a[N] / qint a[] */
+    hasCanonicalType(arrayType(hasElementType(
+      hasDeclaration(frontend_qint_record())))),
+    /* pointer: qint* p */
+    hasCanonicalType(pointerType(pointee(
+      hasDeclaration(frontend_qint_record())))));
+}
+```
+
+Update `typeloc_range_of(DeclaratorDecl*)` to:
+
+1. Read the DeclaratorDecl's `TypeSourceInfo`.
+2. Walk into `ArrayTypeLoc::getElementLoc()` /
+   `PointerTypeLoc::getPointeeLoc()` once (single-level — multi-level
+   is R6).
+3. If the resulting TypeLoc is a `TypedefTypeLoc`, return an invalid
+   `SourceRange` (R5 — preserve user typedef; matcher's invalid-range
+   gate at line 116 / 134 / 152 then drops the match).
+4. Otherwise return the final TypeLoc's source range.
+
+Cap the helper at ≤ 30 net new LoC; if it grows, factor a small
+recursive `element_typeloc_walk(TypeLoc)`.
+
+#### Constraints
+- File `matcher_qint_alias_subst.cpp` head 277 LoC; budget 23 net new
+  before the file's 300-LoC cap. If the budget is tight, lift the
+  helper into a sibling `qint_alias_carrier_walk.{hpp,cpp}` ≤ 100 LoC.
+- Multi-dim, reference-to-array, member pointers stay out of scope
+  in v1; the negative tests pin that boundary.
+
+#### Acceptance (PRD A7, A8 partial — matcher half)
+- All positive tests fire on the right anchor with the right
+  TypeLoc range.
+- All negative tests do NOT fire.
+- Existing wave-1 matcher tests stay GREEN (no regression).
+
+---
+
+### §19c Beat G2 — Emitter round-trip coverage (`sturm-qaca.2`)
+
+PRD §9.3.2.
+
+#### Red-phase tests
+Extend `transpiler/tests/test_qint_alias_subst_emitter.cpp` to
+round-trip the G3 fixtures (forward reference; bd
+`depends_on: sturm-qaca.3`).
+
+#### Production code
+None expected. The emitter substitutes whatever TypeLoc range the
+matcher hands it; G1 already feeds the element/pointee span. If a
+fixture round-trip fails, escalate via a new G2-prime task; do NOT
+inflate G2.
+
+#### Acceptance (PRD A7, A8)
+- All carrier fixtures round-trip to pinned `.expected.cpp`.
+
+---
+
+### §19d Beat G3 — Fixtures (`sturm-qaca.3`)
+
+#### Edits
+Three new fixture pairs in `transpiler/tests/fixtures/`:
+
+| Fixture                                        | Pins                          |
+|------------------------------------------------|-------------------------------|
+| `qint_alias_subst_carray.{cpp,expected.cpp}`   | VarDecl + ParmVarDecl + FieldDecl with C-array carrier |
+| `qint_alias_subst_ptr.{cpp,expected.cpp}`      | same anchors with pointer carrier                      |
+| `qint_alias_subst_carray_typedef.{cpp,expected.cpp}` | R5 pin: user typedef carrier survives unchanged |
+
+Each fixture mirrors the wave-1 hermetic-stub pattern (matcher unit
+test does not link the full sturm headers). The expected file for
+`carray_typedef` is byte-identical to the input.
+
+#### Acceptance
+- Fixtures compile against the hermetic stub.
+- G2's round-trip test consumes them GREEN.
+
+---
+
+### §19e Beat G4 — Backend-script clean CI gate (`sturm-qaca.4`)
+
+PRD §9.3.3 / G6 / A10.
+
+#### Red-phase test
+`transpiler/tests/test_sturm_gen_clean.cpp` (new, ≤ 200 LoC):
+
+1. Resolve the build's `sturm_gen/` directory via a CMake-generated
+   header `<sturm_gen_path.hpp>` (`configure_file` at configure time).
+2. Walk `**/*.cpp` and `**/*.hpp` under it.
+3. Hard fail on any line matching:
+   - `sturm::frontend::qint`
+   - `using qint = ::sturm::frontend::qint`
+   - `using qint = sturm::frontend::qint`
+4. Print offending file:line on failure for direct nav.
+
+#### Production code
+1. Add `test_sturm_gen_clean` target in
+   `transpiler/tests/CMakeLists.txt`.
+2. `configure_file` `transpiler/src/sturm_gen_path.hpp.in` →
+   `${CMAKE_BINARY_DIR}/include/sturm_gen_path.hpp` recording
+   `kSturmGenDir = "${CMAKE_BINARY_DIR}/sturm_gen"`.
+3. `add_dependencies(test_sturm_gen_clean
+   <every transpile-build target>)` so the test fires only after
+   `sturm_gen/` is materialised.
+
+#### Negative-control verification (manual one-shot during G4)
+Comment out the array-element arm of the matcher; rebuild;
+`test_sturm_gen_clean` goes RED with the offending file:line.
+Restore. Do NOT check in a flake-prone "deliberately break" mode.
+
+#### Constraints
+- Test file ≤ 200 LoC.
+- No dependency on third-party regex; std::regex or hand-rolled
+  substring scan both fine.
+- Exit-code on failure must list ALL offending sites in one run
+  (don't bail on first hit — debugging cycles benefit from full
+  inventory).
+
+#### Acceptance (PRD A10)
+- Test GREEN under wave-2 matcher.
+- Negative-control demonstration passes.
+
+---
+
+### §19f Beat G5 — `qram_demo.cpp` end-to-end (`sturm-qaca.5`)
+
+PRD A9.
+
+#### Red-phase
+Failing build evidence (top of wave-2 commit):
+`cmake --build build_mac --target example_qram_demo --parallel 6` ⇒
+*"no matching function for call to 'QRAM_read'"*. Acceptance flips
+this to GREEN.
+
+#### Production code
+None expected on `examples/qram_demo.cpp` — the file already has
+the wave-2 target shape (`qint a[4]; for(...) { a[i] = i; }
+qint i = 10; qint b = a[i];`). G5 only:
+
+1. Wires a `example_qram_demo_run` ctest target that runs the binary
+   and asserts exit code 0 + the printed circuit diagram is non-empty.
+2. Verifies the wave-1 G3-style invariant
+   (`measurement_count() == 0`) still holds — gated through the
+   wave-1 E1 test (`test_qint_alias_subst_e2e.cpp`) which already
+   covers this assertion shape; if `qram_demo.cpp` is not in its
+   input set, add it.
+
+If the build is still RED after G2 lands, file `sturm-qaca.6`+ with
+the precise gap; do NOT inflate G5.
+
+#### Acceptance (PRD A9)
+- `cmake --build build_mac --target example_qram_demo --parallel 6`
+  GREEN.
+- `ctest -R example_qram_demo_run` GREEN.
+
+---
+
+## §20 Wave 2 dependency graph
+
+```
+       ┌────┐
+       │ G1 │ matcher extension
+       └─┬──┘
+         ▼
+       ┌────┐
+       │ G3 │ fixtures
+       └─┬──┘
+         ▼
+       ┌────┐
+       │ G2 │ emitter round-trip
+       └─┬──┘
+         ▼
+       ┌────┐
+       │ G4 │ CI gate
+       └─┬──┘
+         ▼
+       ┌────┐
+       │ G5 │ qram_demo e2e
+       └────┘
+```
+
+Strict serial; no parallel beats this wave. (G3 could land before
+G1 to give G1 a richer red-phase, but the `frontend_qint_carrier()`
+disjunction can be tested with inline source strings inside
+`test_matcher_qint_alias_subst.cpp` — the on-disk fixtures are only
+consumed by G2.)
+
+---
+
+## §21 Wave 2 risk register (mirrors PRD §9.5)
+
+| ID | Risk                                           | Mitigation in plan                          |
+|----|------------------------------------------------|---------------------------------------------|
+| R5 | Element TypeLoc walks through user typedef     | G1 negative test + G3 carray_typedef pin    |
+| R6 | Multi-dim arrays / reference-to-array slip in  | G1 negative tests pin v1 boundary; bd       |
+|    |                                                | follow-up `sturm-qaca.6` filed              |
+| R7 | Build-system path drift across `build*/` dirs  | G4 `configure_file`-generated path header   |
+
+---
+
+## §22 Wave 2 definition of done (epic `sturm-qaca`)
+
+1. PRD A7–A10 all GREEN.
+2. All beats `sturm-qaca.1`–`sturm-qaca.5` closed in bd.
+3. Multi-dim / reference-to-array follow-up `sturm-qaca.6` filed and
+   labeled `out-of-scope`.
+4. `examples/qram_demo.cpp` builds + runs under
+   `cmake --build build_mac --target example_qram_demo --parallel 6`
+   (project CLAUDE.md hard cap on `--parallel 6`).
+5. After wave-2 closes, both `prd_qint_alias_completion.md` and this
+   plan move to `docs/archive/` per project convention (the move
+   deferred at wave-1 §18 step 4 happens here).
+6. `git push` succeeds (project session-completion rule).

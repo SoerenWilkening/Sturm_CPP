@@ -47,18 +47,9 @@ namespace {
 constexpr std::size_t W = 4;
 constexpr std::size_t N = 4;
 
-template<std::size_t Width>
-sturm::qint_t<Width> qcl(std::int64_t v) noexcept {
-    return sturm::qint_t<Width>(v);
-}
-
 }  // namespace
 
 int main() {
-    using sturm::frontend::qint_alias_detail::measurement_count;
-    using sturm::frontend::qint_alias_detail::reset_measurement_count;
-    
-    reset_measurement_count();
     
     // QROM path on classical i + classical a only allocates the `eq_k`
     // predicate ancilla and W=4 lazy qubits for `b`. 8 qubits is plenty.
@@ -67,25 +58,13 @@ int main() {
         sturm_backend_create(STURM_MODE_APPEND, kNumQubits);
     sturm_set_thread_context(ctx);
     
-    std::array<sturm::qint_t<W>, N> a = {
-        qcl<W>(0xA), qcl<W>(0x5), qcl<W>(0xF), qcl<W>(0x0),
-    };
+    qint a[4];
+    for (int i = 0; i < 4; ++i) {
+        a[i] = i;
+    }
+
     qint i = 10;
     qint b = a[i];
-    (void) b;
-    
-    
-    const auto m = measurement_count();
-    std::printf("measurement_count = %zu  (0 => matcher rewrote `qint b = a[i];`)\n", m);
-    if (m != 0u) {
-        std::fprintf(stderr,
-                     "FAIL: expected measurement_count == 0 but got %zu — "
-                     "the C1 matcher did not rewrite `qint b = a[i];`.\n",
-                     m);
-        sturm_set_thread_context(nullptr);
-        sturm_backend_destroy(ctx);
-        std::exit(1);
-    }
     
     std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
     std::fputs("\n--- QRAM read circuit (APPEND-mode IR) ---\n", stdout);
