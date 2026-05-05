@@ -302,6 +302,50 @@ function(_sturm_add_quantum_executable_plugin target)
         # depend on, the file is shipped pre-built. Skip silently.
     endif()
 
+    # File-level dependency on the plugin dylib (sturm-pluy).
+    # `-fplugin=<dylib>` is consumed by clang at PARSE time, so each
+    # user .cpp.o compile must not begin until the dylib has been
+    # linked. Under the Ninja generator, target-level `add_dependencies`
+    # above only gates the LINK step of `${target}` on the plugin —
+    # it does NOT gate the per-source .o compiles, so without an
+    # explicit file-level edge ninja schedules `or_circuit.cpp.o` in
+    # parallel with the plugin's own .o compiles and clang fails with
+    # `unable to load plugin: dlopen ... no such file`.
+    #
+    # OBJECT_DEPENDS only honors generator expressions in CMake 3.20+
+    # (we floor at 3.16), so use a stamp-file pattern: a custom
+    # command writes a stamp file once the plugin dylib has been
+    # produced, and each user source declares OBJECT_DEPENDS on the
+    # stamp's literal path. The custom command's DEPENDS list takes
+    # the underlying target name directly (no genex needed there),
+    # so ninja can resolve the build edge.
+    #
+    # The stamp file is shared across every consumer of the plugin
+    # in the same CMake run (one per build tree), so guard the
+    # add_custom_command behind a global property to keep configure
+    # idempotent across multiple add_quantum_executable() calls.
+    if(_sturm_aliased)
+        set(_sturm_plugin_stamp
+            "${CMAKE_BINARY_DIR}/sturm_gen/.sturm-transpile-plugin.stamp")
+        get_property(_sturm_plugin_stamp_wired GLOBAL
+            PROPERTY _STURM_PLUGIN_STAMP_WIRED)
+        if(NOT _sturm_plugin_stamp_wired)
+            get_filename_component(_sturm_plugin_stamp_dir
+                "${_sturm_plugin_stamp}" DIRECTORY)
+            file(MAKE_DIRECTORY "${_sturm_plugin_stamp_dir}")
+            add_custom_command(
+                OUTPUT "${_sturm_plugin_stamp}"
+                COMMAND "${CMAKE_COMMAND}" -E touch "${_sturm_plugin_stamp}"
+                DEPENDS ${_sturm_aliased}
+                COMMENT "Stamping sturm-transpile-plugin link"
+                VERBATIM)
+            add_custom_target(_sturm_plugin_stamp_target
+                DEPENDS "${_sturm_plugin_stamp}")
+            set_property(GLOBAL PROPERTY _STURM_PLUGIN_STAMP_WIRED ON)
+        endif()
+        add_dependencies(${target} _sturm_plugin_stamp_target)
+    endif()
+
     # Per-source plumbing: wire a `-Xclang -plugin-arg-sturm-transpile
     # -Xclang dump-to=<path>` pair so the plugin mirrors the rewritten
     # buffer onto disk at the same path layout dump-mode emits. The
@@ -380,17 +424,19 @@ function(_sturm_add_quantum_executable_plugin target)
                 "load=${plugin_path}")
         endforeach()
 
-        # Note on plugin-change invalidation: `add_dependencies` above
-        # gives us a target-level build order (the plugin .so is
-        # rebuilt before any object compile in ${target}), but CMake's
-        # Makefiles generator does NOT let us express a file-level
-        # OBJECT_DEPENDS on a `$<TARGET_FILE:...>` generator
-        # expression. Touching a transpiler matcher therefore does not
-        # force a rebuild of an already-compiled user .o unless the
-        # user source itself changes. For the development loop this is
-        # a manageable limitation — `cmake --build build --clean-first`
-        # or a `touch <src>` gets a fresh compile; production builds
-        # always start from a clean tree and pay the full cost anyway.
+        # Per-source file-level edge on the plugin-link stamp file
+        # (sturm-pluy). The stamp is touched by the custom command
+        # wired above once the plugin dylib has finished linking, so
+        # making each user .o compile OBJECT_DEPENDS on the stamp's
+        # literal path forces ninja to serialize the plugin link
+        # before any -fplugin=... parse begins. This closes the
+        # file-level invalidation gap as well: re-linking the plugin
+        # re-touches the stamp, which re-triggers user .o recompile
+        # without needing `--clean-first`.
+        if(_sturm_aliased)
+            set_property(SOURCE "${abs_src}" APPEND PROPERTY OBJECT_DEPENDS
+                "${_sturm_plugin_stamp}")
+        endif()
     endforeach()
 endfunction()
 
