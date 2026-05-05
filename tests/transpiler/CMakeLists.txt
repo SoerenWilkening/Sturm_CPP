@@ -4836,3 +4836,41 @@ add_test(
 set_tests_properties(plugin_diagnostic_when_freevar_mutation_clean PROPERTIES
     LABELS "transpiler"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-7t85.5 (G5 / PRD A9): example_qram_demo end-to-end run gate ──────
+# Plan §19f, PRD A9. Wire a `example_qram_demo_run` ctest target that
+# (a) builds `example_qram_demo` via a SETUP fixture (so `ctest` alone,
+# without a prior `cmake --build`, still produces the binary) and
+# (b) launches the binary and asserts exit code 0 plus a non-empty
+# printed circuit diagram (per PRD A9: "compiles, links, runs").
+#
+# Why a SETUP fixture and not a plain `add_dependencies`? CTest cannot
+# express target-level build dependencies on tests; the canonical
+# work-around (used by `build_example_or_circuit` upstream in this same
+# file) is a setup-fixture test that shells `cmake --build` for the
+# desired target, then a `FIXTURES_REQUIRED` link from the run check.
+#
+# Wave-1 invariant (`measurement_count() == 0`) is verified by the
+# wave-1 E1 test (`test_qint_alias_subst_e2e` in
+# `transpiler/tests/CMakeLists.txt`), which transpiles + compiles + runs
+# `examples/qram_demo.cpp` and asserts the binary exits 0 (PRD G1: the
+# example exits 1 iff the counter is non-zero). G5 deliberately does NOT
+# duplicate that check here — keeping the run-gate narrowly scoped
+# avoids double-coverage drift if the invariant ever moves.
+add_test(
+    NAME build_example_qram_demo
+    COMMAND "${CMAKE_COMMAND}" --build "${CMAKE_BINARY_DIR}"
+            --target example_qram_demo --parallel 6)
+set_tests_properties(build_example_qram_demo PROPERTIES
+    LABELS "transpiler;qram"
+    FIXTURES_SETUP "example_qram_demo_built")
+
+add_test(
+    NAME example_qram_demo_run
+    COMMAND "${CMAKE_COMMAND}"
+            "-DEXAMPLE_BIN=$<TARGET_FILE:example_qram_demo>"
+            "-P" "${CMAKE_CURRENT_SOURCE_DIR}/check_example_qram_demo_run.cmake")
+set_tests_properties(example_qram_demo_run PROPERTIES
+    LABELS "transpiler;qram;qac"
+    FIXTURES_REQUIRED "example_qram_demo_built"
+    REQUIRED_FILES "$<TARGET_FILE:example_qram_demo>")
