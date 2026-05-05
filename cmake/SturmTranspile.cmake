@@ -252,8 +252,29 @@ function(_sturm_add_quantum_executable_plugin target)
     # Target-wide: load the plugin. The flag is idempotent — Clang
     # ignores duplicate `-fplugin=` entries — so appending here and
     # again per-source would be safe, but target-wide is cleaner.
+    #
+    # CXX-only gate (sturm-8pas): `-fplugin=<path>` is a Clang plugin
+    # flag, but `target_compile_options` propagates to every language
+    # the target compiles. When a user target (or a transitively-pulled
+    # core source like `src/sturm/core/gate_kind.c`) contains a `.c`
+    # file, CMake routes it through the configured C compiler — which
+    # under a default Ubuntu install is `gcc` via `/usr/bin/cc`, not
+    # the `clang++-17` we set as `CMAKE_CXX_COMPILER`. GCC's plugin
+    # loader treats `-fplugin=<path>` as a GCC-plugin request and
+    # demands a `plugin_is_GPL_compatible` symbol the Clang plugin TU
+    # does not (and should not) export — producing the documented
+    # `cc1: fatal error: ... is not licensed under a GPL-compatible
+    # license` failure that cascades through every `build_example_*`
+    # CTest under a clang++-17 build. Wrapping the flag in a
+    # `$<COMPILE_LANGUAGE:CXX>` generator expression keeps it on the
+    # C++ compile lines (where the Clang frontend handles it) and off
+    # the C compile lines (where GCC chokes). The CXX-only restriction
+    # is also semantically correct: the plugin only matches AST shapes
+    # that can only appear in C++ sources (`sturm::qbool`,
+    # `sturm::qint`, etc.), so loading it on a C compile is wasted
+    # work even when the loader is Clang.
     target_compile_options(${target} PRIVATE
-        "-fplugin=$<TARGET_FILE:sturm::transpile-plugin>")
+        "$<$<COMPILE_LANGUAGE:CXX>:-fplugin=$<TARGET_FILE:sturm::transpile-plugin>>")
 
     # STURM_BACKEND_ENABLED has to be visible to the PARENT clang parse
     # (the one that walks the AST and runs the matchers) as well as to
