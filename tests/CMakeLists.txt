@@ -202,23 +202,31 @@ add_subdirectory(packaging)
 # / CMAKE_*_COMPILER are forwarded so the child configure picks up the
 # same toolchain (find_package(LLVM CONFIG) is distro-specific without
 # LLVM_DIR — see transpiler/CMakeLists.txt:34-44).
-add_test(NAME cmake_modular_pow_flag
-    COMMAND "${CMAKE_COMMAND}"
-        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
-        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_flag"
-        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
-        "-DPARENT_CLANG_DIR=${Clang_DIR}"
-        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_flag.cmake"
-)
-set_tests_properties(cmake_modular_pow_flag PROPERTIES
-    LABELS "cmake;modular-arith"
-    # The two child configures run sequentially within the script and
-    # are themselves single-threaded; reserve the whole CTest job slot
-    # for the test so we do not blow past the project's `--parallel 6`
-    # cap when CMake spawns its own internal helpers.
-    PROCESSORS 2)
+#
+# sturm-dp9a: gated behind `STURM_FULL_TEST_SUITE` (default OFF). The two
+# child configures cost ~114 s wall time, which is wasted on the
+# autopilot loop's per-iteration ctest. Re-enable with
+# `-DSTURM_FULL_TEST_SUITE=ON` for CI / pre-release / any change that
+# touches the top-level CMake plumbing or transpiler driver.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME cmake_modular_pow_flag
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_flag"
+            "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+            "-DPARENT_CLANG_DIR=${Clang_DIR}"
+            "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_flag.cmake"
+    )
+    set_tests_properties(cmake_modular_pow_flag PROPERTIES
+        LABELS "cmake;modular-arith"
+        # The two child configures run sequentially within the script and
+        # are themselves single-threaded; reserve the whole CTest job slot
+        # for the test so we do not blow past the project's `--parallel 6`
+        # cap when CMake spawns its own internal helpers.
+        PROCESSORS 2)
+endif()
 
 # ── sturm-vr0v.1 — add_quantum_executable command-line unit test ─────────────
 #
@@ -258,22 +266,31 @@ set_tests_properties(add_quantum_executable_command_line PROPERTIES
 # runs one out-of-tree configure of the STURM source tree, queries
 # `cmake -LH -N` for the option block, and scans README.md. No
 # compilation runs (configure-only), so the test stays fast.
-add_test(NAME cmake_modular_pow_help_text
-    COMMAND "${CMAKE_COMMAND}"
-        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
-        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_help_text"
-        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
-        "-DPARENT_CLANG_DIR=${Clang_DIR}"
-        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_help_text.cmake"
-)
-set_tests_properties(cmake_modular_pow_help_text PROPERTIES
-    LABELS "cmake;modular-arith;docs"
-    # Same reasoning as cmake_modular_pow_flag: the child configure
-    # spawns its own helpers; reserve a job slot to stay under the
-    # project's `--parallel 6` cap.
-    PROCESSORS 2)
+#
+# sturm-dp9a: gated behind `STURM_FULL_TEST_SUITE` (default OFF). The
+# child configure spawns find_package(LLVM CONFIG) and the full
+# transpiler subdir; running it on every autopilot iteration is wasted
+# wall time. Re-enable with `-DSTURM_FULL_TEST_SUITE=ON` for CI /
+# pre-release / any change that touches the README build section or the
+# STURM_MODULAR_POW help string.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME cmake_modular_pow_help_text
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_help_text"
+            "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+            "-DPARENT_CLANG_DIR=${Clang_DIR}"
+            "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_help_text.cmake"
+    )
+    set_tests_properties(cmake_modular_pow_help_text PROPERTIES
+        LABELS "cmake;modular-arith;docs"
+        # Same reasoning as cmake_modular_pow_flag: the child configure
+        # spawns its own helpers; reserve a job slot to stay under the
+        # project's `--parallel 6` cap.
+        PROCESSORS 2)
+endif()
 
 # ── sturm-6ov3.2 — Doxygen on each free function in qint_modular.hpp ─────
 #
@@ -336,19 +353,28 @@ set_tests_properties(check_doxygen_lib_mod_dsl PROPERTIES
 # runs one out-of-tree configure of the STURM source tree, queries
 # `cmake -LH -N` for the option block, and scans the deferrals doc.
 # No compilation runs (configure-only).
-add_test(NAME cmake_modular_pow_help_text_doc
-    COMMAND "${CMAKE_COMMAND}"
-        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
-        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_help_text_doc"
-        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
-        "-DPARENT_CLANG_DIR=${Clang_DIR}"
-        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
-        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
-        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_help_text_doc.cmake"
-)
-set_tests_properties(cmake_modular_pow_help_text_doc PROPERTIES
-    LABELS "cmake;modular-arith;docs"
-    # Same reasoning as cmake_modular_pow_flag / *_help_text: the child
-    # configure spawns its own helpers; reserve a job slot to stay under
-    # the project's `--parallel 6` cap.
-    PROCESSORS 2)
+#
+# sturm-dp9a: gated behind `STURM_FULL_TEST_SUITE` (default OFF). The
+# child configure spawns find_package(LLVM CONFIG) and the full
+# transpiler subdir; running it on every autopilot iteration is wasted
+# wall time. Re-enable with `-DSTURM_FULL_TEST_SUITE=ON` for CI /
+# pre-release / any change that touches the STURM_MODULAR_POW help
+# string or `docs/TODO_reversibility_deferrals.md`.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME cmake_modular_pow_help_text_doc
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_modular_pow_help_text_doc"
+            "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+            "-DPARENT_CLANG_DIR=${Clang_DIR}"
+            "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_modular_pow_help_text_doc.cmake"
+    )
+    set_tests_properties(cmake_modular_pow_help_text_doc PROPERTIES
+        LABELS "cmake;modular-arith;docs"
+        # Same reasoning as cmake_modular_pow_flag / *_help_text: the child
+        # configure spawns its own helpers; reserve a job slot to stay under
+        # the project's `--parallel 6` cap.
+        PROCESSORS 2)
+endif()

@@ -52,6 +52,30 @@ if(STURM_MODULAR_POW)
                    "rewrite `pow(a, x) % n` into `lib_pow_mod_dsl`.")
 endif()
 
+# ── sturm-dp9a — STURM_FULL_TEST_SUITE ctest gating ───────────────────────────
+# Gates a small set of *contract* ctests that each spawn a full STURM child
+# configure (find_package(LLVM CONFIG), the transpiler subdir, etc.). These
+# tests are slow — `cmake_modular_pow_flag` alone records ~114 s for two
+# child configures (PROCESSORS 2), and the three `cmake_modular_pow_*` tests
+# together sum to ~150-200 s of wall time. They cover one CMake option
+# (STURM_MODULAR_POW) and its help-text/docs surface; they do not depend on
+# day-to-day source edits, so registering them on every iteration is wasted
+# cost for the autopilot loop.
+#
+# Default OFF: a normal `ctest --test-dir build` skips the three slow tests.
+# Set `-DSTURM_FULL_TEST_SUITE=ON` to opt in (CI / pre-release / any time
+# you touched `CMakeLists.txt` / `transpiler/CMakeLists.txt` / the README
+# build section / `docs/TODO_reversibility_deferrals.md`). The gated tests
+# are listed in `tests/CMakeLists.txt` — search for `if(STURM_FULL_TEST_SUITE)`.
+option(STURM_FULL_TEST_SUITE
+    "Register the slow contract ctests that each spawn a full STURM child configure (cmake_modular_pow_flag, cmake_modular_pow_help_text, cmake_modular_pow_help_text_doc). Default OFF skips them so the iteration loop stays fast; set ON for CI / pre-release / when touching CMakeLists.txt or the STURM_MODULAR_POW docs surface. See tests/CMakeLists.txt (search for `if(STURM_FULL_TEST_SUITE)`)."
+    OFF)
+if(STURM_FULL_TEST_SUITE)
+    message(STATUS "sturm: STURM_FULL_TEST_SUITE=ON — registering slow "
+                   "child-configure contract ctests "
+                   "(cmake_modular_pow_*).")
+endif()
+
 # ── Interface library (header-only) ───────────────────────────────────────────
 add_library(sturm INTERFACE)
 target_include_directories(sturm INTERFACE
