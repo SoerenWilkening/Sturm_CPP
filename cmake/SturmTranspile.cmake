@@ -199,6 +199,29 @@ function(add_quantum_executable target)
             "skipping target_link_libraries. Consumers should link `sturm` "
             "manually or provide a find_package(sturm) wrapper.")
     endif()
+
+    # sturm-7t85.4 (G4 / PRD A10): record every quantum-executable target
+    # in a global property so the `test_sturm_gen_clean` CI gate can
+    # `add_dependencies` on the union — making the test fire only after
+    # the build's `sturm_gen/` directory has been materialised by every
+    # transpile path. Each entry is the bare CMake target name; the test
+    # CMakeLists reads the property at configure time. Both plugin and
+    # dump modes populate this list because both paths write to
+    # `sturm_gen/`.
+    set_property(GLOBAL APPEND PROPERTY
+        _STURM_QUANTUM_EXECUTABLE_TARGETS ${target})
+
+    # If the gate target was already created (transpiler/tests/ is
+    # processed before examples/ and tests/, both of which call
+    # `add_quantum_executable()`), wire the dependency immediately.
+    # This is necessary because `transpiler/tests/CMakeLists.txt` reads
+    # the GLOBAL property at configure time, BEFORE any
+    # `add_quantum_executable()` call has populated it. Hooking the
+    # dependency edge here keeps the gate's `sturm_gen/` view complete
+    # without needing CMake 3.19+ `cmake_language(DEFER)`.
+    if(TARGET test_sturm_gen_clean)
+        add_dependencies(test_sturm_gen_clean ${target})
+    endif()
 endfunction()
 
 # ── Plugin-mode implementation (default) ──────────────────────────────────

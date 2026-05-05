@@ -734,6 +734,20 @@ else()
         "LLVM-17 is absent).")
 endif()
 
+# ── sturm-7t85.4 (G4 / PRD A10): sturm_gen path header ────────────────────────
+# Generates `${CMAKE_BINARY_DIR}/include/sturm_gen_path.hpp` from
+# `transpiler/src/sturm_gen_path.hpp.in`, baking the actual configured
+# `${CMAKE_BINARY_DIR}/sturm_gen` directory into a `kSturmGenDir`
+# constant. The `test_sturm_gen_clean` ctest (transpiler/tests/) consumes
+# this header so the path can never drift between configure-time and
+# run-time across the various build trees (build/, build_mac/, build_linux/).
+# Risk R7 in the wave-2 PRD: stale path fails at compile, not silently.
+set(STURM_GEN_DIR "${CMAKE_BINARY_DIR}/sturm_gen")
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/sturm_gen_path.hpp.in"
+    "${CMAKE_BINARY_DIR}/include/sturm_gen_path.hpp"
+    @ONLY)
+
 # ── Tests ─────────────────────────────────────────────────────────────────────
 enable_testing()
 add_subdirectory(tests)
