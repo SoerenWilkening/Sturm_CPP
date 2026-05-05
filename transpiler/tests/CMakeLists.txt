@@ -1883,6 +1883,7 @@ add_executable(test_transpile_consumer
     # Link the matcher + emitter TUs so the consumer test binary
     # resolves the new symbols at link time.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
     # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
     # and threads it into `synthesize()`. Link plugin_registry.cpp so
@@ -2709,6 +2710,10 @@ set_tests_properties(test_matcher_qram_subscript PROPERTIES
 add_executable(test_matcher_qint_alias_subst
     test_matcher_qint_alias_subst.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    # sturm-7t85.1 (Beat G1): carrier-walk sibling TU. Required so the
+    # matcher's `typeloc_range_of` resolves `declarator_typeloc_range` at
+    # link time.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
 )
 target_include_directories(test_matcher_qint_alias_subst PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2771,6 +2776,8 @@ add_executable(test_qint_alias_subst_emitter
     test_qint_alias_subst_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    # sturm-7t85.1 (Beat G1): carrier-walk sibling TU.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
 )
 target_include_directories(test_qint_alias_subst_emitter PRIVATE
@@ -2838,6 +2845,8 @@ add_executable(test_consumer_qint_alias_subst
     test_consumer_qint_alias_subst.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    # sturm-7t85.1 (Beat G1): carrier-walk sibling TU.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp

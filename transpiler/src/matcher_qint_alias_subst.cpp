@@ -35,6 +35,8 @@
 
 #include "matcher_qint_alias_subst.hpp"
 
+#include "qint_alias_carrier_walk.hpp"
+
 #include "clang/AST/ASTContext.h"
 #include "clang/AST/Decl.h"
 #include "clang/AST/DeclCXX.h"
@@ -61,13 +63,12 @@ using namespace clang::ast_matchers;
 // For a node with TypeSourceInfo, return the TypeLoc's source range.
 // Returns an invalid SourceRange when the node lacks TypeSourceInfo
 // (defensive — the matcher's gates exclude such nodes from the
-// publish path, so this is mostly a documentation surface).
-
+// publish path, so this is mostly a documentation surface). The
+// declarator walk (single-level array-element / pointer-pointee, with
+// R5 typedef-decline) lives in `qint_alias_carrier_walk.{hpp,cpp}`
+// (plan §19b / PRD §9.3.1) — see that file for the wave-2 rationale.
 SourceRange typeloc_range_of(const DeclaratorDecl* dd) {
-    if (!dd) return {};
-    const TypeSourceInfo* tsi = dd->getTypeSourceInfo();
-    if (!tsi) return {};
-    return tsi->getTypeLoc().getSourceRange();
+    return declarator_typeloc_range(dd);
 }
 
 SourceRange typeloc_range_of_return(const FunctionDecl* fn) {
@@ -215,41 +216,60 @@ auto frontend_qint_record() {
                          hasParent(namespaceDecl(hasName("frontend"))));
 }
 
+// Wave 2 (sturm-7t85.1, plan §19b / PRD §9.3.1): single-level carrier
+// disjunction used by the three declarator anchors (VarDecl,
+// ParmVarDecl, FieldDecl). Direct + array-element + pointer-pointee.
+// Multi-dim arrays / multi-level pointers are out of scope in v1
+// (R6 — `sturm-7t85.6` follow-up).
+auto frontend_qint_carrier() {
+    return qualType(anyOf(
+        // direct: qint x;
+        hasCanonicalType(hasDeclaration(frontend_qint_record())),
+        // array carrier: qint a[N] / qint a[]
+        hasCanonicalType(arrayType(hasElementType(
+            hasDeclaration(frontend_qint_record())))),
+        // pointer carrier: qint* p
+        hasCanonicalType(pointerType(pointee(
+            hasDeclaration(frontend_qint_record()))))));
+}
+
 } // anonymous namespace
 
 void register_qint_alias_subst_matcher(
     clang::ast_matchers::MatchFinder& finder,
     std::vector<QintAliasSubstMatch>& matches) {
 
-    // (vd) VarDecl anchor — `sturm::frontend::qint x;`. We bind on
-    // varDecl() and exclude ParmVarDecl in the callback so the
-    // ParmVarDecl arm is the single source of truth for parameters.
+    // (vd) VarDecl anchor — `sturm::frontend::qint x;` plus the
+    // wave-2 carrier shapes `qint a[N];` and `qint* p;` via the shared
+    // `frontend_qint_carrier()` disjunction. We bind on varDecl() and
+    // exclude ParmVarDecl in the callback so the ParmVarDecl arm is
+    // the single source of truth for parameters.
     {
         auto& pool = callback_pool<VarDeclCallback>();
         pool.push_back(std::make_unique<VarDeclCallback>(&matches));
         finder.addMatcher(
-            varDecl(hasType(hasCanonicalType(hasDeclaration(
-                frontend_qint_record())))).bind("vd"),
+            varDecl(hasType(frontend_qint_carrier())).bind("vd"),
             pool.back().get());
     }
 
-    // (pmd) ParmVarDecl anchor — `void demo(sturm::frontend::qint p)`.
+    // (pmd) ParmVarDecl anchor — `void demo(sturm::frontend::qint p)`,
+    // `void f(qint b[]);`, `void g(qint* q);`.
     {
         auto& pool = callback_pool<ParmVarDeclCallback>();
         pool.push_back(std::make_unique<ParmVarDeclCallback>(&matches));
         finder.addMatcher(
-            parmVarDecl(hasType(hasCanonicalType(hasDeclaration(
-                frontend_qint_record())))).bind("pmd"),
+            parmVarDecl(hasType(frontend_qint_carrier())).bind("pmd"),
             pool.back().get());
     }
 
-    // (fd) FieldDecl anchor — `struct S { sturm::frontend::qint f; };`.
+    // (fd) FieldDecl anchor — `struct S { sturm::frontend::qint f; };`,
+    // plus carrier shapes `struct S { qint c[3]; };` and
+    // `struct T { qint* d; };`.
     {
         auto& pool = callback_pool<FieldDeclCallback>();
         pool.push_back(std::make_unique<FieldDeclCallback>(&matches));
         finder.addMatcher(
-            fieldDecl(hasType(hasCanonicalType(hasDeclaration(
-                frontend_qint_record())))).bind("fd"),
+            fieldDecl(hasType(frontend_qint_carrier())).bind("fd"),
             pool.back().get());
     }
 

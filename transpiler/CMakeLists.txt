@@ -201,6 +201,10 @@ add_executable(sturm-transpile
     # is link-resolved here so the existing test binaries (test_transpile_
     # consumer + plugin) keep linking once C3 wires it into the consumer.
     src/matcher_qint_alias_subst.cpp
+    # sturm-7t85.1 (Beat G1): single-level array-element / pointer-pointee
+    # carrier walk + R5 typedef-decline. Sibling TU split off the matcher
+    # to keep the matcher source ≤ 300 LoC (plan §19b).
+    src/qint_alias_carrier_walk.cpp
     # sturm-65rs.9 (Beat C2): qint alias substitution emitter. Consumes
     # the C1 matcher's `QintAliasSubstMatch` vector and rewrites every
     # captured `TypeLoc` to `sturm::qint_t<W>` (W via `infer_width()`
@@ -509,6 +513,10 @@ add_library(sturm-transpile-plugin SHARED
     # symbols at dlopen — see the header note above the main binary's
     # source-list entry for details.
     src/matcher_qint_alias_subst.cpp
+    # sturm-7t85.1 (Beat G1): carrier walk sibling. Mirror the main
+    # binary so the plugin-path consumer (TranspileConsumer) links the
+    # same `declarator_typeloc_range` symbol at dlopen.
+    src/qint_alias_carrier_walk.cpp
     # sturm-65rs.9 (Beat C2): qint alias substitution emitter. Mirror
     # the main binary so the plugin-path consumer (same TranspileConsumer)
     # links the same emitter symbols at dlopen.
