@@ -478,10 +478,15 @@ function(_sturm_add_quantum_executable_dump target)
         # Propagate the compile context the source actually needs to parse
         # cleanly. sturm-transpile runs Clang via libTooling without a
         # compilation database, so forward the include paths and feature
-        # defines explicitly.
+        # defines explicitly. The build-tree include dir is required because
+        # `<sturm/version.hpp>` is generated at configure time into
+        # `${CMAKE_BINARY_DIR}/include/sturm/` (top-level CMakeLists.txt's
+        # configure_file for include/sturm/version.hpp.in) — without it,
+        # any source that pulls in `<sturm/sturm.hpp>` fails dump-mode parse.
         set(_xa_args
             "--extra-arg=-std=c++20"
             "--extra-arg=-I${CMAKE_SOURCE_DIR}/include"
+            "--extra-arg=-I${CMAKE_BINARY_DIR}/include"
             "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
             "--extra-arg=-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
 
