@@ -2003,7 +2003,8 @@ find_program(STURM_PLUGIN_OBJDUMP_BIN
     NAMES "llvm-objdump-${LLVM_VERSION_MAJOR}" "llvm-objdump"
     HINTS "${LLVM_TOOLS_BINARY_DIR}"
     NO_DEFAULT_PATH)
-if(STURM_PLUGIN_CLANGXX_BIN AND STURM_PLUGIN_OBJDUMP_BIN)
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_PLUGIN_CLANGXX_BIN AND STURM_PLUGIN_OBJDUMP_BIN AND STURM_FULL_TEST_SUITE)
     add_executable(test_plugin_nested
         test_plugin_nested.cpp
     )
@@ -3335,10 +3336,13 @@ else()
     target_link_libraries(test_qram_e2e_real PRIVATE
         ${LLVM_LIBS_QRAM_E2E_REAL})
 endif()
-add_test(NAME test_qram_e2e_real
-         COMMAND test_qram_e2e_real)
-set_tests_properties(test_qram_e2e_real PROPERTIES
-    LABELS "transpiler;qram;qram-subscript")
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME test_qram_e2e_real
+             COMMAND test_qram_e2e_real)
+    set_tests_properties(test_qram_e2e_real PROPERTIES
+        LABELS "transpiler;qram;qram-subscript")
+endif()
 
 # ── End-to-end alias erasure: test_qint_alias_subst_e2e (sturm-65rs.13 / E1) ─
 # Plan §14, PRD A5. Closes the qint-alias-completion epic by transpiling a
@@ -3389,7 +3393,10 @@ target_compile_definitions(test_qint_alias_subst_e2e PRIVATE
     STURM_E1_ORKAN_INCLUDE_DIR="${_e1_orkan_include}"
 )
 add_dependencies(test_qint_alias_subst_e2e sturm-transpile)
-add_test(NAME test_qint_alias_subst_e2e
-         COMMAND test_qint_alias_subst_e2e)
-set_tests_properties(test_qint_alias_subst_e2e PROPERTIES
-    LABELS "transpiler;qac")
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME test_qint_alias_subst_e2e
+             COMMAND test_qint_alias_subst_e2e)
+    set_tests_properties(test_qint_alias_subst_e2e PROPERTIES
+        LABELS "transpiler;qac")
+endif()

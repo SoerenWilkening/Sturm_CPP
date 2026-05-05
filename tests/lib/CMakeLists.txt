@@ -415,10 +415,13 @@ target_compile_options(test_mul_mod_dsl PRIVATE
     -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl PRIVATE orkan_headers)
-add_test(NAME test_mul_mod_dsl COMMAND test_mul_mod_dsl)
-set_tests_properties(test_mul_mod_dsl
-    PROPERTIES LABELS "lib;modular-arith"
-               TIMEOUT 3600)
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME test_mul_mod_dsl COMMAND test_mul_mod_dsl)
+    set_tests_properties(test_mul_mod_dsl
+        PROPERTIES LABELS "lib;modular-arith"
+                   TIMEOUT 3600)
+endif()
 
 # sturm-kubb.5 P2.5 -- lib_mul_mod_dsl adjoint round-trip.
 # Plan §4.3 row 2.5: forward + adjoint must zero r, preserve a/b/n, and
@@ -444,10 +447,13 @@ target_compile_options(test_mul_mod_dsl_adjoint PRIVATE
     -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_mul_mod_dsl_adjoint PRIVATE orkan_headers)
-add_test(NAME test_mul_mod_dsl_adjoint COMMAND test_mul_mod_dsl_adjoint)
-set_tests_properties(test_mul_mod_dsl_adjoint
-    PROPERTIES LABELS "lib;modular-arith;lossy-reversibility"
-               TIMEOUT 3600)
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME test_mul_mod_dsl_adjoint COMMAND test_mul_mod_dsl_adjoint)
+    set_tests_properties(test_mul_mod_dsl_adjoint
+        PROPERTIES LABELS "lib;modular-arith;lossy-reversibility"
+                   TIMEOUT 3600)
+endif()
 
 # sturm-kubb.6 P2.6 -- lib_mul_mod_dsl peak-ancilla budget assertion.
 # Plan §4.3 row 2.6 wording: peak live ancillas <= 2W + 5.  The chain-style
@@ -807,9 +813,12 @@ target_compile_options(test_pow_mod_xval PRIVATE
     -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_pow_mod_xval PRIVATE orkan_headers)
-add_test(NAME test_pow_mod_xval COMMAND test_pow_mod_xval)
-set_tests_properties(test_pow_mod_xval
-    PROPERTIES LABELS "lib;modular-arith")
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME test_pow_mod_xval COMMAND test_pow_mod_xval)
+    set_tests_properties(test_pow_mod_xval
+        PROPERTIES LABELS "lib;modular-arith")
+endif()
 
 # sturm-8n73 -- high-W (W=40, 48, 56, 64) APPEND-mode trace tests for
 # lib_double_mod_dsl, lib_add_mod_inplace_dsl, lib_mul_mod_dsl_oneshot.

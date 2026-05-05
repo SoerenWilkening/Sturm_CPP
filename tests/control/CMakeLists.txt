@@ -92,9 +92,12 @@ target_compile_options(test_add_mod_when_lift PRIVATE
     -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_add_mod_when_lift PRIVATE orkan_headers)
-add_test(NAME test_add_mod_when_lift COMMAND test_add_mod_when_lift)
-set_tests_properties(test_add_mod_when_lift
-    PROPERTIES LABELS "control;modular-arith;lift")
+# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME test_add_mod_when_lift COMMAND test_add_mod_when_lift)
+    set_tests_properties(test_add_mod_when_lift
+        PROPERTIES LABELS "control;modular-arith;lift")
+endif()
 
 # sturm-a3t4.3 P2 -- mul_mod_dsl + pow_mod_dsl depth-1 lift pattern
 # (forward + adjoint).  Pins behavioural correctness of the same lift
