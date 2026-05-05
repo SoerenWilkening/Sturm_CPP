@@ -50,10 +50,32 @@ namespace anchor_conversions_value_pervasive {
 }
 }  // namespace anchor_conversions_value_pervasive
 
+// Anchor V3 — tests/external_consumer/main.cpp:{56,57} reads a.value /
+// b.value / n.value (sturm-7uhu D0 re-spell miss — the sturm-1os7 audit
+// used `using sturm::qint;` as the grep anchor, which missed the
+// external smoke consumer because it gets its `qint` symbol via
+// `<sturm/prelude.hpp>`'s `using sturm::qint;` rather than an in-TU
+// using-decl). Post-B1 (sturm-65rs.6) the prelude-injected unprefixed
+// `qint` is `sturm::frontend::qint`, whose `value_` field is private.
+// Fix shape mirrors sturm-pl7o / sturm-ypit / sturm-ztmf: a function-
+// scoped `using qint = sturm::qint_t<64>;` inside `main()` shadows the
+// prelude-injected name, restoring the backend `.value` public field.
+namespace anchor_external_consumer_main_value_56 {
+[[maybe_unused]] static void pin_decltype() {
+    sturm::qint_t<64> q(0);
+    static_assert(std::is_same_v<decltype(q), sturm::qint_t<64>>,
+        "tests/external_consumer/main.cpp:{56,57} must remain "
+        "sturm::qint_t<64> — the smoke consumer reads a.value / "
+        "b.value / n.value, all backend-only public fields. Drift "
+        "back to bare `sturm::qint` (= sturm::frontend::qint via "
+        "prelude) breaks `external_consumer_smoke` at compile time.");
+}
+}  // namespace anchor_external_consumer_main_value_56
+
 int main() {
     // All assertions are compile-time. Reaching main() means every
     // re-spelled callsite in the .value family still names
     // sturm::qint_t<64>.
-    std::puts("test_qint_callsite_respelling_value: OK (2 anchors pinned)");
+    std::puts("test_qint_callsite_respelling_value: OK (3 anchors pinned)");
     return 0;
 }
