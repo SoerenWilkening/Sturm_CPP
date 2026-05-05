@@ -150,7 +150,12 @@ add_subdirectory(qram)
 
 # ── Lib test subdirectory (sturm-lo LO-1d and siblings) ───────────────────────
 # DSL-level adjoint roundtrip tests for include/sturm/lib/*_dsl.hpp primitives.
-add_subdirectory(lib)
+# sturm-jk3g: tests/lib/ holds DSL-level QC simulation tests (state-vector
+# simulators, 25-qubit witnesses, multi-minute runs). Gate the entire
+# subdirectory behind STURM_FULL_TEST_SUITE so the default ctest run stays fast.
+if(STURM_FULL_TEST_SUITE)
+    add_subdirectory(lib)
+endif()
 
 # ── Control test subdirectory (sturm-a3t4 depth-1 invariant) ─────────────────
 # Tests that pin properties of the depth-1 control stack invariant introduced
