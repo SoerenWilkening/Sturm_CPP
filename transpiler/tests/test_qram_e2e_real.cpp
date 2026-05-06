@@ -162,6 +162,28 @@ private:
 // Run the supplied probe against `body` with the production sturm
 // include path on the cmd line. Returns the rewritten main-file
 // buffer.
+//
+// sturm-fbeb: this test calls `runToolOnCodeWithArgs` directly inside the
+// test binary — it never spawns the `sturm-transpile` driver, so the
+// ArgumentsAdjuster injection performed in `transpiler/src/main.cpp`
+// (the `-resource-dir` + `-nostdinc++ -cxx-isystem<libcxx>` block) does
+// NOT cover this code path. Without those args the libTooling parse
+// here picks up the host SDK's libc++ headers — on macOS Tahoe
+// (MacOSX26.sdk) those headers reach `<stdarg.h>` from
+// `_va_list.h`, and Clang's libTooling driver cannot resolve `stdarg.h`
+// without `-resource-dir` pointing at the LLVM-install's
+// `lib/clang/<N>/include`. Result: every parse fails before any
+// matcher fires and 8/14 checks fail.
+//
+// Mirror the production-code fix here by prepending:
+//   1. `-resource-dir=<STURM_CLANG_RESOURCE_DIR>` so the parser finds
+//      its builtin `stdarg.h` / `stddef.h`.
+//   2. `-nostdinc++` + `-cxx-isystem<STURM_CLANG_LIBCXX_INCLUDE_DIR>`
+//      so the parse picks up the LLVM-install's bundled libc++
+//      (which matches the parser version) instead of the SDK's libc++
+//      (which uses Clang >=19 builtins the LLVM-17 parser cannot see).
+// Both defines are baked in by `transpiler/CMakeLists.txt` and forwarded
+// to this target via `target_compile_definitions(test_qram_e2e_real ...)`.
 std::string transpile_with_real_headers(std::string_view body,
                                         const ProbeFn& probe) {
     clang::Rewriter rw;
@@ -175,6 +197,18 @@ std::string transpile_with_real_headers(std::string_view body,
         std::string("-I") + STURM_INCLUDE_DIR,
         std::string("-I") + STURM_VENDOR_DIR,
     };
+#ifdef STURM_CLANG_RESOURCE_DIR
+    args.push_back(std::string("-resource-dir=") + STURM_CLANG_RESOURCE_DIR);
+#endif
+#ifdef STURM_CLANG_LIBCXX_INCLUDE_DIR
+    // `-nostdinc++` strips Clang's default C++ include search (the host
+    // SDK's libc++ on macOS); `-cxx-isystem<dir>` re-adds the
+    // LLVM-install's bundled libc++ as the FIRST C++ system path. Same
+    // posture the production driver uses (`transpiler/src/main.cpp` ~L440).
+    args.push_back("-nostdinc++");
+    args.push_back(std::string("-cxx-isystem") +
+                   STURM_CLANG_LIBCXX_INCLUDE_DIR);
+#endif
     const bool ok = clang::tooling::runToolOnCodeWithArgs(
         factory.create(), std::string(body), args, "qram_e2e_real_input.cpp");
     if (!ok) std::fprintf(stderr, "FAIL  tool run on real-headers input\n");

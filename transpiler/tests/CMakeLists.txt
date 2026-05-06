@@ -3319,7 +3319,27 @@ target_compile_definitions(test_qram_e2e_real PRIVATE
     ${LLVM_DEFS_LIST_QRAM_E2E_REAL}
     STURM_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
     STURM_VENDOR_DIR="${CMAKE_SOURCE_DIR}/vendor"
+    # sturm-fbeb: the test calls `runToolOnCodeWithArgs` directly — no
+    # `sturm-transpile` shell-out, so the `transpiler/src/main.cpp`
+    # ArgumentsAdjuster (`-resource-dir` + `-nostdinc++ -cxx-isystem`
+    # plumbing) does NOT apply. Forward the same two defines the driver
+    # bakes in (parent `transpiler/CMakeLists.txt`) so the test source
+    # can prepend the same args manually. Without `-resource-dir` the
+    # libTooling parse fails at `<stdarg.h>` against MacOSX26.sdk's
+    # `_va_list.h`; without the libc++ override, parsing the SDK's
+    # libc++ headers (Clang >=19 builtins) under our libclang-17 parser
+    # explodes before any matcher fires.
+    STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
 )
+# `STURM_CLANG_LIBCXX_INCLUDE_DIR` is only meaningful when the LLVM
+# install actually ships bundled libc++ headers. Mirror the parent
+# `EXISTS` gate so a stripped Linux install with no bundled libc++
+# degrades to the previous behaviour (no override needed there because
+# the system libc++ is what the parser was built against).
+if(STURM_CLANG_LIBCXX_INCLUDE_DIR)
+    target_compile_definitions(test_qram_e2e_real PRIVATE
+        STURM_CLANG_LIBCXX_INCLUDE_DIR="${STURM_CLANG_LIBCXX_INCLUDE_DIR}")
+endif()
 if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
     target_link_libraries(test_qram_e2e_real PRIVATE
         ${STURM_LIBCLANG_CPP}
