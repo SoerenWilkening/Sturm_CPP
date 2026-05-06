@@ -390,6 +390,75 @@ int main(int argc, const char** argv) {
         }
     }
 
+    // sturm-yi9l / sturm-fbeb: route the libTooling parse at the
+    // LLVM-install's bundled libc++ headers when they are present, so the
+    // parser does not pick up a host SDK libc++ that is newer than the
+    // version of Clang we are linked against. Concretely, on macOS Tahoe
+    // (MacOSX26.sdk) the system libc++ headers use Clang >=19 builtins
+    // (__builtin_clzg, __builtin_ctzg, _LIBCPP_NO_SPECIALIZATIONS, the
+    // `__is_nothrow_convertible` builtin, …) — but `sturm-transpile` is
+    // linked against libclang-17 / libLLVM-17, so a libTooling parse over
+    // SDK 26 headers fails with a wall of "use of undeclared identifier"
+    // / "does not refer to a value" errors before any matcher fires. This
+    // is the same root cause the dump-mode CMake glue addresses via
+    // `--extra-arg=-nostdinc++ --extra-arg=-cxx-isystem...` (sturm-r1c1
+    // in cmake/SturmTranspile.cmake), but applies the override at the C++
+    // tool level so direct shell-outs to `sturm-transpile` (e.g. the
+    // test_plugin_nested.cpp legacy two-step) get the same fix without
+    // needing the build system to re-thread the args.
+    //
+    // Lookup order mirrors the resource-dir block above:
+    //   1. `<bindir>/../include/c++/v1` next to the running executable
+    //      (relocatable tarball install).
+    //   2. `STURM_CLANG_LIBCXX_INCLUDE_DIR` baked in at CMake-configure
+    //      time when the LLVM install ships bundled libc++ headers
+    //      (Homebrew llvm@17 on macOS, official LLVM tarball).
+    //
+    // The adjuster prepends the args at BEGIN, so a user-supplied
+    // `--extra-arg=-cxx-isystem<other>` that appears later in argv wins.
+    //
+    // The override is gated on the headers actually being present on
+    // disk: a stripped Linux install with no bundled libc++ degrades to
+    // the previous behaviour (the system libc++ is what the parser was
+    // built against, so no override is needed).
+    {
+        std::string libcxx_dir;
+        const std::string exe_path = llvm::sys::fs::getMainExecutable(
+            argv[0], reinterpret_cast<void*>(&main));
+        if (!exe_path.empty()) {
+            llvm::SmallString<256> candidate(exe_path);
+            llvm::sys::path::remove_filename(candidate);                 // strip exe
+            llvm::sys::path::remove_filename(candidate);                 // strip bin/
+            llvm::sys::path::append(candidate, "include", "c++", "v1");
+            if (llvm::sys::fs::is_directory(candidate)) {
+                libcxx_dir = std::string(candidate.str());
+            }
+        }
+#ifdef STURM_CLANG_LIBCXX_INCLUDE_DIR
+        if (libcxx_dir.empty()) libcxx_dir = STURM_CLANG_LIBCXX_INCLUDE_DIR;
+#endif
+        if (!libcxx_dir.empty()) {
+            // `-nostdinc++` strips Clang's default C++ include search
+            // (the host SDK's libc++ on macOS); `-cxx-isystem<dir>`
+            // re-adds the LLVM-install's bundled libc++ as the FIRST
+            // C++ system path. The two args together produce the same
+            // search-path layout the host clang++ uses by default
+            // (Homebrew libc++ first, then SDK C headers), so the
+            // libTooling parse mirrors what `clang++ -c <src>` would
+            // see at the command line.
+            const std::string isystem_arg =
+                std::string("-cxx-isystem") + libcxx_dir;
+            tool.appendArgumentsAdjuster(
+                clang::tooling::getInsertArgumentAdjuster(
+                    isystem_arg.c_str(),
+                    clang::tooling::ArgumentInsertPosition::BEGIN));
+            tool.appendArgumentsAdjuster(
+                clang::tooling::getInsertArgumentAdjuster(
+                    "-nostdinc++",
+                    clang::tooling::ArgumentInsertPosition::BEGIN));
+        }
+    }
+
     TranspileFactory factory(input_path, kOutputDir.getValue(),
                              kDumpTranspiled.getValue());
     int tool_rc = tool.run(&factory);

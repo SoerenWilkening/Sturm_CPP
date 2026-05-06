@@ -293,6 +293,38 @@ target_compile_definitions(sturm-transpile PRIVATE
     STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
     STURM_LLVM_VERSION_MAJOR_STR="${LLVM_VERSION_MAJOR}")
 
+# sturm-yi9l / sturm-fbeb: bake the path to the LLVM-install's bundled
+# libc++ headers into the binary so the libTooling driver can override
+# the host SDK's libc++ when the SDK ships headers newer than the
+# parser supports. Apple's MacOSX26.sdk libc++ uses Clang >=19 builtins
+# (__builtin_clzg / __builtin_ctzg / _LIBCPP_NO_SPECIALIZATIONS) but
+# `sturm-transpile` is linked against libclang-17 / libLLVM-17 — parsing
+# SDK 26 headers under that older parser yields a wall of "use of
+# undeclared identifier" / "does not refer to a value" errors before
+# any matcher fires. Routing the parse through
+# `${LLVM_INSTALL_PREFIX}/include/c++/v1` (which DOES match the parser
+# version) bypasses the SDK headers entirely.
+#
+# Mirrors the plumbing in cmake/SturmTranspile.cmake's dump-mode
+# `--extra-arg=-cxx-isystem...` injection (sturm-r1c1) but applies it at
+# the C++ tool level so EVERY libTooling invocation of `sturm-transpile`
+# benefits — including direct shell-out from tests like
+# test_plugin_nested.cpp where the build-system glue is bypassed.
+#
+# Guarded behind `EXISTS` so an LLVM distribution without bundled libc++
+# headers (e.g. a stripped Linux install) degrades to the previous
+# behaviour — under those distributions the system libc++ is what the
+# parser was built against, so no override is needed.
+set(STURM_CLANG_LIBCXX_INCLUDE_DIR "")
+if(EXISTS "${LLVM_INSTALL_PREFIX}/include/c++/v1")
+    set(STURM_CLANG_LIBCXX_INCLUDE_DIR
+        "${LLVM_INSTALL_PREFIX}/include/c++/v1")
+    message(STATUS "sturm-transpile: bundled libc++ include = "
+                   "${STURM_CLANG_LIBCXX_INCLUDE_DIR}")
+    target_compile_definitions(sturm-transpile PRIVATE
+        STURM_CLANG_LIBCXX_INCLUDE_DIR="${STURM_CLANG_LIBCXX_INCLUDE_DIR}")
+endif()
+
 # ── sturm-r5pn.3: STURM_MODULAR_POW propagation (driver-only) ──────────────
 # Plan §2.2 / PRD §3.4: when the top-level option `STURM_MODULAR_POW`
 # is ON, propagate it as a preprocessor define to the transpiler
