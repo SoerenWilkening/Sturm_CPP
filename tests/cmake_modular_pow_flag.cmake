@@ -186,9 +186,26 @@ function(_cmpf_scan_define build_dir out_driver out_stray)
                 # `-DSTURM_MODULAR_POW` (no value) or
                 # `-DSTURM_MODULAR_POW=...`. Match both.
                 if(_combined MATCHES "-DSTURM_MODULAR_POW(=|\\b| |$)")
-                    # Bucket on file location. `transpiler/src/` =
-                    # driver. Anything else is a stray hit.
-                    if(_file MATCHES "/transpiler/src/")
+                    # Bucket on file location.
+                    #   - `transpiler/src/` = user-authored driver sources.
+                    #   - `transpiler/CMakeFiles/sturm-transpile.dir/` =
+                    #     the driver target's OWN generated build-tree
+                    #     artifacts. CMake's `target_precompile_headers`
+                    #     synthesizes a `cmake_pch.hxx.cxx` PCH-source
+                    #     into this dir and emits a compile_commands.json
+                    #     entry for it; that compile is part of the
+                    #     driver target by construction (`*.dir/` is
+                    #     CMake's per-target output namespace), so it is
+                    #     correctly classified as a driver hit when the
+                    #     `STURM_MODULAR_POW` define propagates here.
+                    #     The plugin REUSE_FROMs this PCH but its own
+                    #     TUs do NOT inherit the driver's
+                    #     `target_compile_definitions` — the plugin's
+                    #     per-TU compile commands are checked against
+                    #     the stray bucket as before.
+                    # Anything else is a stray hit.
+                    if(_file MATCHES "/transpiler/src/" OR
+                       _file MATCHES "/transpiler/CMakeFiles/sturm-transpile\\.dir/")
                         list(APPEND _driver_hits "${_file}")
                     else()
                         list(APPEND _stray_hits "${_file}")
@@ -211,7 +228,12 @@ function(_cmpf_scan_define build_dir out_driver out_stray)
         foreach(_entry IN LISTS _entries)
             if(_entry MATCHES "\"file\"[ \t]*:[ \t]*\"([^\"]+)\"")
                 set(_file "${CMAKE_MATCH_1}")
-                if(_file MATCHES "/transpiler/src/")
+                # See the >=3.19 branch above for the rationale on why
+                # `transpiler/CMakeFiles/sturm-transpile.dir/` counts as
+                # a driver-target hit (the driver's own generated PCH
+                # source `cmake_pch.hxx.cxx` lands there).
+                if(_file MATCHES "/transpiler/src/" OR
+                   _file MATCHES "/transpiler/CMakeFiles/sturm-transpile\\.dir/")
                     list(APPEND _driver_hits "${_file}")
                 else()
                     list(APPEND _stray_hits "${_file}")
