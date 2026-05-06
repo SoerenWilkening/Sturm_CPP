@@ -1,6 +1,143 @@
 cmake_minimum_required(VERSION 3.16)
 project(STURM VERSION 0.1.2 LANGUAGES CXX C)
 
+# ── sturm-yial — host clang vs plugin LLVM invariant gate ─────────────────────
+#
+# The transpiler plugin (`sturm-transpile-plugin`) links the libclang-cpp /
+# libLLVM shared libraries from the LLVM install resolved by find_package(LLVM
+# CONFIG). The plugin's `FrontendPluginRegistry::Add<>` static registrar
+# therefore lands in *that* libclang-cpp's static registry. When the host
+# clang (CMAKE_CXX_COMPILER) is a *different* install (e.g. Apple Clang at
+# `/usr/bin/c++` while LLVM_DIR points at Homebrew's `/usr/local/opt/llvm@17`),
+# Apple Clang's own statically linked FrontendPluginRegistry never sees the
+# Add<>. The plugin loads cleanly, but the host treats `getActionType() ==
+# ReplaceAction` as if no plugin had registered an action: it falls back to
+# the default EmitObjAction against the *unrewritten* source. Every
+# transpiler matcher is invisible — qint alias substitution, qram-subscript
+# rewrite, etc. all silently no-op. Tests link, run, and emit zero gates.
+#
+# This trap surfaced as bd-autopilot RED on 2026-05-06 (sturm-7t85 epic-
+# boundary gate, test #389 example_qram_demo_run). The gate below catches
+# the mismatch at configure time with an actionable diagnostic, before any
+# silent runtime regression.
+#
+# When to fire: only when the user has explicitly pinned LLVM_DIR (or
+# Clang_DIR) AND CMAKE_CXX_COMPILER points at a clang outside that LLVM
+# install's prefix. The acceptance criteria require:
+#
+#   1. (mismatch)  -DCMAKE_CXX_COMPILER=/usr/bin/c++  +
+#                  -DLLVM_DIR=/usr/local/opt/llvm@17/lib/cmake/llvm
+#                  → FATAL_ERROR with actionable hint.
+#   2. (match)     -DCMAKE_CXX_COMPILER=/usr/local/opt/llvm@17/bin/clang++ +
+#                  matching LLVM_DIR
+#                  → succeed.
+#   3. (unset)     no LLVM_DIR / no CMAKE_CXX_COMPILER overrides
+#                  → gate silent (it gates on mismatch, not on absence).
+#
+# Implementation:
+#   - Resolve `${CMAKE_CXX_COMPILER}` to its real-path install prefix
+#     (parent of `bin/`).
+#   - Resolve `${LLVM_DIR}` to its install prefix (the LLVMConfig.cmake
+#     file lives at `<prefix>/lib/cmake/llvm/LLVMConfig.cmake`, three
+#     directories above the prefix).
+#   - When both are set, compare the two prefixes case-sensitively
+#     after `get_filename_component(... REALPATH)` to canonicalize
+#     symlinks (Homebrew's `/usr/local/opt/llvm@17` is itself a symlink
+#     into `/usr/local/Cellar/...`).
+#   - Mismatch → FATAL_ERROR with a message that names both paths,
+#     the FrontendPluginRegistry cause, and the recommended fix.
+#
+# The pinned ctest is `cmake_host_clang_gate` (tests/cmake_host_clang_gate.cmake).
+function(_sturm_check_host_clang_gate)
+    if(NOT DEFINED CACHE{LLVM_DIR} AND NOT DEFINED CACHE{Clang_DIR}
+       AND NOT LLVM_DIR AND NOT Clang_DIR)
+        # Acceptance criterion 3: no LLVM_DIR / no Clang_DIR set →
+        # gate stays silent. find_package(LLVM CONFIG) will produce
+        # its own diagnostic if it cannot locate LLVM via the system
+        # default search path.
+        return()
+    endif()
+
+    # Pick whichever of LLVM_DIR / Clang_DIR is set (prefer LLVM_DIR as
+    # the canonical handle; Clang_DIR mirrors LLVM_DIR in practice on
+    # every distro we support, so they share an install prefix).
+    set(_llvm_dir "")
+    if(LLVM_DIR AND NOT "${LLVM_DIR}" STREQUAL "LLVM_DIR-NOTFOUND")
+        set(_llvm_dir "${LLVM_DIR}")
+    elseif(Clang_DIR AND NOT "${Clang_DIR}" STREQUAL "Clang_DIR-NOTFOUND")
+        set(_llvm_dir "${Clang_DIR}")
+    endif()
+    if(NOT _llvm_dir)
+        return()
+    endif()
+
+    # Canonicalize the LLVM install prefix.
+    # Layout: <prefix>/lib/cmake/{llvm,clang}/{LLVM,Clang}Config.cmake.
+    # `get_filename_component(... DIRECTORY)` strips one path component
+    # at a time; three pops give us <prefix>.
+    get_filename_component(_llvm_dir_real "${_llvm_dir}" REALPATH)
+    get_filename_component(_p1 "${_llvm_dir_real}" DIRECTORY)
+    get_filename_component(_p2 "${_p1}" DIRECTORY)
+    get_filename_component(_llvm_prefix "${_p2}" DIRECTORY)
+
+    # Canonicalize the host compiler's install prefix. CMAKE_CXX_COMPILER
+    # may be empty (CMake's first pass before language detection); skip
+    # the gate in that case — CMake will populate it on the second pass
+    # and re-run the configure script.
+    if(NOT CMAKE_CXX_COMPILER)
+        return()
+    endif()
+    get_filename_component(_cxx_real "${CMAKE_CXX_COMPILER}" REALPATH)
+    get_filename_component(_cxx_bin "${_cxx_real}" DIRECTORY)
+    get_filename_component(_cxx_prefix "${_cxx_bin}" DIRECTORY)
+
+    # Match: the two prefixes resolve to the same install. Configure
+    # may proceed; the plugin's libclang-cpp will be the same one the
+    # host clang statically linked, and the FrontendPluginRegistry
+    # registries will coincide.
+    if(_cxx_prefix STREQUAL _llvm_prefix)
+        return()
+    endif()
+
+    # Mismatch. Build the actionable diagnostic. The needles
+    # `FrontendPluginRegistry` and `CMAKE_CXX_COMPILER` are pinned by
+    # the cmake_host_clang_gate ctest so a future reword cannot drop
+    # them silently.
+    #
+    # The recommended fix: point CMAKE_CXX_COMPILER at the clang++ that
+    # ships with the LLVM install resolved via LLVM_DIR. By
+    # construction that path is `<llvm_prefix>/bin/clang++`.
+    set(_recommended_cxx "${_llvm_prefix}/bin/clang++")
+    message(FATAL_ERROR
+        "sturm-yial host-clang invariant violated.\n"
+        "\n"
+        "  CMAKE_CXX_COMPILER = ${CMAKE_CXX_COMPILER}\n"
+        "    → resolves to install prefix: ${_cxx_prefix}\n"
+        "  LLVM_DIR           = ${_llvm_dir}\n"
+        "    → resolves to install prefix: ${_llvm_prefix}\n"
+        "\n"
+        "The transpiler plugin (sturm-transpile-plugin) links the\n"
+        "libclang-cpp / libLLVM shared libraries from the LLVM install\n"
+        "above. Its FrontendPluginRegistry::Add<> registers into *that*\n"
+        "libclang-cpp's static registry. When the host clang is a\n"
+        "different install, the host's own statically linked\n"
+        "FrontendPluginRegistry never sees the Add<>; the plugin loads\n"
+        "but its ReplaceAction is invisible, the host falls back to the\n"
+        "default EmitObjAction against the unrewritten source, and every\n"
+        "transpiler rewrite silently no-ops (zero gates emitted).\n"
+        "\n"
+        "Fix: set CMAKE_CXX_COMPILER to the clang++ from the same\n"
+        "LLVM install as LLVM_DIR. Recommended:\n"
+        "    -DCMAKE_CXX_COMPILER=${_recommended_cxx}\n"
+        "\n"
+        "Or, to fall back to the system default compiler, unset both\n"
+        "LLVM_DIR and Clang_DIR (the gate triggers only on mismatch,\n"
+        "not on the absence of LLVM_DIR).\n"
+        "\n"
+        "See sturm-yial for the full root-cause trace.")
+endfunction()
+_sturm_check_host_clang_gate()
+
 # ── C++ standard ──────────────────────────────────────────────────────────────
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)

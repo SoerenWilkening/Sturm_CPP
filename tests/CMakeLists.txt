@@ -383,3 +383,73 @@ if(STURM_FULL_TEST_SUITE)
         # the project's `--parallel 6` cap.
         PROCESSORS 2)
 endif()
+
+# ── sturm-yial — host-clang vs plugin-LLVM mismatch gate ────────────────────
+#
+# Drives the sturm-yial contract for the configure-time gate added in the
+# top-level `CMakeLists.txt`:
+#   - When `CMAKE_CXX_COMPILER` and `LLVM_DIR` are both supplied AND
+#     resolve to *different* install prefixes, the configure FATAL_ERRORs
+#     with an actionable diagnostic naming both paths, the
+#     FrontendPluginRegistry cause, and the recommended fix.
+#   - When the two share a prefix, configure succeeds.
+#   - When neither is supplied, the gate stays silent (the gate is on the
+#     mismatch, not on absence of LLVM_DIR).
+#
+# Background: on 2026-05-06 the bd-autopilot epic-boundary gate hit RED
+# on `example_qram_demo_run` because `build/CMakeCache.txt` had Apple
+# Clang as `CMAKE_CXX_COMPILER` while the plugin .dylib linked Homebrew
+# LLVM. The plugin loaded silently but its FrontendPluginRegistry
+# Add<>'d ReplaceAction landed in a registry the host clang never
+# consulted — every transpiler rewrite was invisible, every generated
+# circuit empty. See sturm-yial for the full root-cause trace.
+#
+# Implementation: the script (`cmake_host_clang_gate.cmake`) runs three
+# out-of-tree configures (mismatch / match / unset) and asserts the
+# gate's behavior in each case. Configure-only — no compilation — so
+# the test stays fast. Auto-detects a "different" host clang for the
+# MISMATCH case (Apple Clang at `/usr/bin/c++` on macOS); SKIPs the
+# MISMATCH case on platforms where no second clang is available.
+#
+# sturm-dp9a parallel: gated behind `STURM_FULL_TEST_SUITE` (default
+# OFF). The three child configures cost ~3-5 minutes wall time on the
+# autopilot loop, which is wasted on per-iteration ctests. Re-enable
+# with `-DSTURM_FULL_TEST_SUITE=ON` for CI / pre-release / any change
+# that touches the top-level CMake gate or the host-clang invariant.
+if(STURM_FULL_TEST_SUITE)
+    # Auto-detect a "different" clang for the MISMATCH case. On macOS,
+    # Apple Clang lives at `/usr/bin/c++` and is the canonical mismatch
+    # against Homebrew's `/usr/local/opt/llvm@17/bin/clang++` or
+    # `/opt/homebrew/opt/llvm@17/bin/clang++`. On Linux, picking
+    # `/usr/bin/c++` (g++) would not exercise the gate (the gate is
+    # specific to clang/LLVM mismatches), so we leave MISMATCH_CXX
+    # empty there and the script SKIPs the MISMATCH case.
+    set(STURM_HOST_CLANG_GATE_MISMATCH_CXX "")
+    if(APPLE AND EXISTS "/usr/bin/c++")
+        # Only useful if `/usr/bin/c++` is NOT the parent build's
+        # compiler (otherwise it would not be a mismatch).
+        get_filename_component(_parent_cxx_real "${CMAKE_CXX_COMPILER}" REALPATH)
+        get_filename_component(_apple_cxx_real "/usr/bin/c++" REALPATH)
+        if(NOT _parent_cxx_real STREQUAL _apple_cxx_real)
+            set(STURM_HOST_CLANG_GATE_MISMATCH_CXX "/usr/bin/c++")
+        endif()
+    endif()
+
+    add_test(NAME cmake_host_clang_gate
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_host_clang_gate"
+            "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+            "-DPARENT_CLANG_DIR=${Clang_DIR}"
+            "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+            "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+            "-DMISMATCH_CXX=${STURM_HOST_CLANG_GATE_MISMATCH_CXX}"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_host_clang_gate.cmake"
+    )
+    set_tests_properties(cmake_host_clang_gate PROPERTIES
+        LABELS "cmake;host-clang-gate"
+        # The script runs up to three child configures sequentially, each
+        # spawning its own internal helpers. Reserve 2 slots to stay under
+        # the project's `--parallel 6` cap.
+        PROCESSORS 2)
+endif()

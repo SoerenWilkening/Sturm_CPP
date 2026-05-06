@@ -69,13 +69,43 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
-_Add your build and test commands here_
-
 ```bash
-# Example:
-# npm install
-# npm test
+# Configure (macOS / Homebrew LLVM 17). The host-clang invariant below
+# requires CMAKE_CXX_COMPILER and LLVM_DIR to come from the SAME LLVM
+# install — see "Host-clang invariant" below.
+cmake -S . -B build \
+    -DCMAKE_CXX_COMPILER=/usr/local/opt/llvm@17/bin/clang++ \
+    -DLLVM_DIR=/usr/local/opt/llvm@17/lib/cmake/llvm \
+    -DClang_DIR=/usr/local/opt/llvm@17/lib/cmake/clang
+cmake --build build --parallel 6
+ctest --test-dir build --parallel 6 --output-on-failure
 ```
+
+### Host-clang invariant (sturm-yial)
+
+The transpiler plugin (`sturm-transpile-plugin`) links the
+`libclang-cpp` / `libLLVM` shared libraries from the LLVM install
+resolved via `find_package(LLVM CONFIG)` — typically the one pinned by
+`LLVM_DIR`. Its `FrontendPluginRegistry::Add<>` static registrar lands
+in *that* libclang-cpp's static registry. **The host clang
+(`CMAKE_CXX_COMPILER`) must come from the same LLVM install.** When
+the two installs differ (e.g. Apple Clang at `/usr/bin/c++` while
+`LLVM_DIR` points at Homebrew's `/usr/local/opt/llvm@17`), the host's
+own statically linked `FrontendPluginRegistry` never sees the `Add<>`;
+the plugin loads cleanly but its `getActionType() == ReplaceAction` is
+invisible, the host falls back to the default `EmitObjAction` against
+the *unrewritten* source, and every transpiler matcher (qint alias
+substitution, qram-subscript rewrite, etc.) silently no-ops. Tests
+link, run, and emit zero gates.
+
+The top-level `CMakeLists.txt` carries a configure-time gate
+(`_sturm_check_host_clang_gate`) that compares the install prefixes of
+`CMAKE_CXX_COMPILER` and `LLVM_DIR` and `FATAL_ERROR`s on mismatch
+with an actionable diagnostic. If you see a `sturm-yial` error block
+during configure, follow its "Recommended" line — it points at the
+`clang++` that ships with the same LLVM install as your `LLVM_DIR`.
+The pinned ctest is `cmake_host_clang_gate` (gated behind
+`STURM_FULL_TEST_SUITE=ON`).
 
 ## Project Context
 
