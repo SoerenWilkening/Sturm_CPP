@@ -89,10 +89,16 @@ std::string fixup_example(std::string_view src) {
 // Post-transpile narrow patch: pin `i` width to `W` so the QRAM_read call
 // site (W = 4) does not need a `frontend::qint(qint_t<32>)` implicit
 // ctor that bumps the counter. Follow-up sturm-65rs.17.
+//
+// sturm-vm38: the example body changed from `qint i = 10;` to `qint i = 2;`
+// when the phi() proxy stub line `i.phi() += 3;` landed. The fix-up shape
+// is otherwise identical — we still narrow the inferred 32-bit width down
+// to W so the QRAM_read(W=4) call site does not implicitly cross-construct
+// a frontend::qint and bump the counter.
 std::string post_fixup_index(std::string_view content) {
     std::string out(content);
-    const std::string_view n = "sturm::qint_t<32> i = 10;";
-    const std::string_view r = "sturm::qint_t<W> i = sturm::qint_t<W>(10);";
+    const std::string_view n = "sturm::qint_t<32> i = 2;";
+    const std::string_view r = "sturm::qint_t<W> i = sturm::qint_t<W>(2);";
     auto pos = out.find(n);
     if (pos != std::string::npos) out.replace(pos, n.size(), r);
     return out;

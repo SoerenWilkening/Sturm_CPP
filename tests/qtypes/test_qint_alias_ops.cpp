@@ -174,6 +174,40 @@ static void test_compound_assign_measure() {
     reset_measurement_count();
 }
 
+// ── 1f. Phase / rotation proxy stubs: phi()/theta() += / -= ──────────────
+// sturm-vm38 — `qint_t<W>::phi()`/theta() return PhiProxy/ThetaProxy
+// whose `operator+=(double)`/`operator-=(double)` emit per-bit RZ/RY
+// rotations against the active backend. The frontend alias mirrors the
+// public surface (PRD §4.1 step 2) but, like every other A2 stub, has no
+// classical equivalent: phase rotations are intrinsically quantum. The
+// stub bodies bump `g_measurement_count` (matching the observability
+// contract every other alias op uses — counter > 0 post-transpile means
+// the matcher missed a site) and leave `classical_value()` unchanged
+// (no classical mirror).
+static void test_phi_theta_proxy_measure() {
+    // phi() += / -= each bump the counter +1 per call (the proxy itself
+    // is free; the bump is on the rotation application).
+    {  qint q(7);
+       reset_measurement_count();
+       q.phi() += 0.5;
+       assert(measurement_count() == 1u);
+       q.phi() -= 0.25;
+       assert(measurement_count() == 2u);
+       // Phase rotations have no classical mirror — value_ unchanged.
+       assert(q.classical_value() == 7);
+    }
+    // theta() += / -= same shape.
+    {  qint q(11);
+       reset_measurement_count();
+       q.theta() += 0.5;
+       assert(measurement_count() == 1u);
+       q.theta() -= 0.25;
+       assert(measurement_count() == 2u);
+       assert(q.classical_value() == 11);
+    }
+    reset_measurement_count();
+}
+
 #undef STURM_MEASURED
 #undef STURM_MEASURED_VOID
 
@@ -232,6 +266,21 @@ STURM_HAS_BIN(has_shreq, std::declval<T&>() >>= 1);
 STURM_HAS_BIN(has_assign_i64, std::declval<T&>() = std::declval<std::int64_t>());
 STURM_HAS_BIN(has_subscript,  std::declval<const T&>()[std::declval<std::size_t>()]);
 STURM_HAS_BIN(has_explicit_i64, static_cast<std::int64_t>(std::declval<const T&>()));
+
+// sturm-vm38 — phase / rotation proxy stubs. The drift-gate the previous
+// SFINAE harness missed enumerated *operator overloads* (op+=, op-=, …)
+// only — it never probed the named member methods `phi()` / `theta()`,
+// which is why the alias's lack of these went undetected until a user
+// hit the `i.phi() += 3;` parse error in examples/qram_demo.cpp. These
+// traits close that gap by checking BOTH the named-method existence AND
+// that the returned proxy has a well-formed `operator+=(double)` (the
+// load-bearing piece — phase/rotation rate of change). `operator-=` is
+// implementation-derivable from `+=` (parent calls `+=(-delta)`) so the
+// gate pins `+=` as canonical; `-=` is exercised at runtime above.
+STURM_HAS_BIN(has_phi_plus_double,
+              std::declval<T&>().phi() += std::declval<double>());
+STURM_HAS_BIN(has_theta_plus_double,
+              std::declval<T&>().theta() += std::declval<double>());
 
 // sturm-65rs.3 / Beat A2 — mixed-type free ops. Per op three traits:
 // `_qi` (`T OP int64_t`), `_iq` (`int64_t OP T`), `_qb` (`T OP bool`).
@@ -313,6 +362,16 @@ STURM_ALIAS_OP_PARITY(has_assign_i64,   "operator=(int64_t)");
 STURM_ALIAS_OP_PARITY(has_subscript,    "operator[](size_t) const");
 STURM_ALIAS_OP_PARITY(has_explicit_i64, "explicit operator int64_t() const");
 
+// sturm-vm38 — phase / rotation proxy stubs. PhiProxy / ThetaProxy on
+// `qint_t<W>` (qint_core.hpp:241/308) have `operator+=(double)`; the
+// alias must expose proxies whose `+=(double)` is well-formed too,
+// otherwise `i.phi() += 3;` is a parse error against the alias spelling
+// (the original sturm-vm38 footgun in examples/qram_demo.cpp).
+STURM_ALIAS_OP_PARITY(has_phi_plus_double,
+                      "phi() returning a proxy with operator+=(double)");
+STURM_ALIAS_OP_PARITY(has_theta_plus_double,
+                      "theta() returning a proxy with operator+=(double)");
+
 // sturm-65rs.3 / Beat A2 — mixed-type free ops on `frontend::qint`.
 // Positive forward (`qint OP int64_t`) for all 8 ops; positive reverse
 // only for `+`; negative reverse for the 7 non-`+` ops (PRD §3 — backend
@@ -371,6 +430,7 @@ int main() {
     test_compare_values();
     test_bitwise_measure();
     test_compound_assign_measure();
+    test_phi_theta_proxy_measure();
     test_post_transpile_unreachability();
     std::puts("test_qint_alias_ops: OK");
     return 0;

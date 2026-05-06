@@ -3,9 +3,13 @@
 // Drift-gate for D0 (sturm-65rs.11) callsite re-spellings, phi() / theta()
 // proxy surface family. Each anchor pins a site whose primary backend-only
 // contact is `q.phi()` or `q.theta()` — the rotation-gate proxies that
-// exist only on `sturm::qint_t<W>`. The frontend `sturm::frontend::qint`
-// class has no rotation proxies (rotations require backend qubit allocation
-// + gate emission, neither of which are part of the user-facing surface).
+// emit RZ / RY gates only on `sturm::qint_t<W>`. The frontend
+// `sturm::frontend::qint` class carries observability-only PhiProxyStub /
+// ThetaProxyStub stubs (sturm-vm38) so user code like `qint i; i.phi() +=
+// 3;` parses pre-transpile, but those stubs no-op the value and bump the
+// measurement counter — they do NOT allocate qubits or emit rotation
+// gates, which is what these anchor sites actually depend on. So the
+// re-spelling check still pins these sites at `sturm::qint_t<64>`.
 //
 // History: this file is the phi()/theta() slice of the per-surface split
 // that sturm-1os7 introduced when the original (single-file) D1 hit the

@@ -205,6 +205,40 @@ public:
         return value_;
     }
 
+    // ── Phase / rotation proxy stubs (sturm-vm38) ────────────────────────
+    // Mirror `qint_t<W>::PhiProxy` / `::ThetaProxy` from qint_core.hpp:241
+    // / :308. PRD §4.1 step 2: the alias mirrors `qint_t<W>`'s public
+    // surface; phi()/theta() were missed by the original A2 SFINAE
+    // drift-gate (which enumerated operator overloads only, not named
+    // member methods), so user code like `qint i = 2; i.phi() += 3;`
+    // failed to parse pre-transpile even though the C1 matcher would
+    // have substituted `frontend::qint -> sturm::qint_t<W>` and routed
+    // the call to the real backend proxy post-transpile.
+    //
+    // Bodies bump the per-thread measurement counter and no-op the
+    // classical `value_`: phase rotations have no classical mirror
+    // (rotating a classical state is a no-op). The bump preserves the
+    // observability contract every other A2 stub uses — counter > 0
+    // post-transpile means the C1 matcher missed a substitution site.
+    struct PhiProxyStub {
+        qint& parent;
+        void operator+=(double /*delta*/) noexcept {
+            qint_alias_detail::bump_measurement_count();
+            // No classical mirror: phase is intrinsically quantum.
+        }
+        void operator-=(double delta) noexcept { operator+=(-delta); }
+    };
+    struct ThetaProxyStub {
+        qint& parent;
+        void operator+=(double /*delta*/) noexcept {
+            qint_alias_detail::bump_measurement_count();
+            // No classical mirror: rotation is intrinsically quantum.
+        }
+        void operator-=(double delta) noexcept { operator+=(-delta); }
+    };
+    [[nodiscard]] PhiProxyStub   phi()   noexcept { return PhiProxyStub{*this}; }
+    [[nodiscard]] ThetaProxyStub theta() noexcept { return ThetaProxyStub{*this}; }
+
     // ── Test / introspection accessor ────────────────────────────────────
     // Direct access to the underlying classical value. NOT a public API
     // for user code (use the implicit conversion); exposed because the
