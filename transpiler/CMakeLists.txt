@@ -242,6 +242,43 @@ if(NOT LLVM_ENABLE_RTTI)
     target_compile_options(sturm-transpile PRIVATE -fno-rtti)
 endif()
 target_compile_features(sturm-transpile PRIVATE cxx_std_20)
+
+# ── sturm-2vbr — Position-Independent-Code on the driver ───────────────────
+# The PCH the driver writes is REUSE_FROM'd by the sturm-transpile-plugin
+# SHARED library below. CMake REUSE_FROM enforces matching `target_compile_*`
+# settings between the two targets, but it does NOT normalize the compiler
+# default PIE state per target type. On Linux clang++-17:
+#
+#   * executables default to `-fpie`; CMake's POSITION_INDEPENDENT_CODE ON
+#     on an executable adds `-fPIE` (NOT `-fPIC`). Either flavor of PIE
+#     tags the PCH with `is pie = true`.
+#   * SHARED libraries are forced to `-fPIC` (`is pie = false`),
+#     regardless of POSITION_INDEPENDENT_CODE.
+#
+# Loading the driver's `is pie = true` PCH from the plugin's `-fPIC`
+# compile then trips:
+#
+#     error: is pie differs in PCH file vs. current file
+#
+# Setting POSITION_INDEPENDENT_CODE ON alone is therefore insufficient —
+# the executable would still get `-fPIE` (`is pie = true`). We need to
+# force `-fPIC` (`is pie = false`) on the driver to match the plugin's
+# PCH consumer state. `target_compile_options(... -fPIC)` is the
+# narrowest knob that works on Linux without reaching for the
+# CMAKE_<LANG>_COMPILE_OPTIONS_PIE override:
+#
+#   * Linux clang++-17: `-fPIC` produces a PIC executable with
+#     `is pie = false`, matching the plugin.
+#   * macOS clang (Apple or Homebrew LLVM 17): `-fPIC` is a no-op (PIC
+#     is the only supported relocation model on Mach-O), so nothing
+#     changes vs. the current macOS build.
+#
+# The driver remains an executable; PIC executables are first-class on
+# every modern Linux distro. The PCH's `is pie = false` then matches
+# the plugin's compile context, and REUSE_FROM resolves cleanly.
+# Pinned by the `cmake_pch_pie_match` ctest in
+# `tests/cmake_pch_pie_match.cmake`.
+target_compile_options(sturm-transpile PRIVATE -fPIC)
 # LLVM's definition list (LLVM_DEFINITIONS) carries the flags the headers
 # were compiled with. Without these the Clang headers may see a different
 # configuration than the library and fail to link.

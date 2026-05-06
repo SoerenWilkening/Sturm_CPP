@@ -453,3 +453,51 @@ if(STURM_FULL_TEST_SUITE)
         # the project's `--parallel 6` cap.
         PROCESSORS 2)
 endif()
+
+# ── sturm-2vbr — PCH PIE-state match between driver and plugin ────────────
+#
+# Drives the sturm-2vbr contract that the `sturm-transpile` driver and
+# `sturm-transpile-plugin` SHARED library compile with matching
+# Position-Independent-Code state. Without that match, the plugin's
+# `target_precompile_headers(... REUSE_FROM sturm-transpile)` fails on
+# Linux clang++-17 with:
+#
+#     error: is pie differs in PCH file vs. current file
+#
+# because the driver (executable) defaults to `-fpie` (`is pie = true`)
+# while the plugin (SHARED) is forced to `-fPIC` (`is pie = false`).
+# The fix in `transpiler/CMakeLists.txt` pins
+# `POSITION_INDEPENDENT_CODE ON` on the driver target so the PCH the
+# driver writes is `is pie = false` (matching the plugin). On macOS the
+# fix is a no-op (Mach-O is always PIC); the test is platform-agnostic
+# because it asserts on the per-target CXX_FLAGS line, not on the
+# behavior at compile time.
+#
+# Implementation: the script (`cmake_pch_pie_match.cmake`) runs one
+# out-of-tree configure (forcing the Unix Makefiles generator so the
+# per-target `flags.make` location is well-defined), then reads the
+# CXX_FLAGS lines for both targets and compares their `-fPIC` state.
+# Configure-only — no compilation — so the test stays fast.
+#
+# Not gated behind STURM_FULL_TEST_SUITE: the configure is fast (~30 s)
+# AND the contract is the kind of CMake-infrastructure breakage that
+# only surfaces on the platforms (Linux executables) where the
+# autopilot's default macOS workstation cannot reproduce by inspection.
+# Running it on every iteration buys cheap insurance against the kind
+# of silent regression that closed sturm-2vbr.
+add_test(NAME cmake_pch_pie_match
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_pch_pie_match"
+        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+        "-DPARENT_CLANG_DIR=${Clang_DIR}"
+        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_pch_pie_match.cmake"
+)
+set_tests_properties(cmake_pch_pie_match PROPERTIES
+    LABELS "cmake;pch-pie-match"
+    # The child configure spawns find_package(LLVM CONFIG) and the full
+    # transpiler subdirectory; reserve 2 slots to stay under the
+    # project's `--parallel 6` cap.
+    PROCESSORS 2)
