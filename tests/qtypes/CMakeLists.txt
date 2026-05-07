@@ -277,3 +277,79 @@ add_test(NAME test_qint_alias_no_counter_infra
          COMMAND test_qint_alias_no_counter_infra)
 set_tests_properties(test_qint_alias_no_counter_infra PROPERTIES
     LABELS "qtypes;qram-subscript;qac")
+
+# ── sturm-v0db.6 (Wave 3 / W3.5 / A12) ────────────────────────────────────────
+# IR-scan stub test: defense-in-depth gate that fires red if a future edit
+# reintroduces a value-semantics body (or a call into the deleted W3.4
+# detail namespace) on `sturm::frontend::qint`'s alias operators.
+#
+# Pipeline:
+#   1. `fixture_qint_alias_stubs.cpp` is compiled with `clang++ -S
+#      -emit-llvm -O0` by an `add_custom_command` whose output is
+#      `${CMAKE_CURRENT_BINARY_DIR}/qint_alias_stubs.ll`. The fixture's
+#      [[gnu::used]] entry points reference every alias operator + ctor
+#      so the host compiler emits each body into the IR.
+#   2. `test_qint_alias_stubs` (THIS executable) reads the resulting
+#      `.ll` file at run time and runs four checks (PRD §10.4 A12 /
+#      plan §29):
+#        - per-function gep+load scan on qint members (excluding
+#          `classical_value()`, which legitimately reads its single
+#          field; free operators are not scanned because the SysV
+#          x86-64 ABI coerces an 8-byte struct returned by-value
+#          through a register, forcing a final gep+load that is a
+#          pure ABI artifact, not value semantics);
+#        - global call/invoke scan for any reference to the deleted
+#          W3.4 detail namespace;
+#        - IR file size sanity bound (catches umbrella-include drift).
+#
+# The IR generation invokes ${CMAKE_CXX_COMPILER} directly so the
+# clang version pinned by the host-clang invariant (sturm-yial) is the
+# one that produces the IR -- this matters because the mangled-name
+# prefixes the IR scanner anchors on are Itanium-ABI specific and the
+# pinned clang is the one whose ABI we test against.
+#
+# Header-only / pre-transpile profile: no LLVM dev headers, no backend
+# translation units, no STURM_BACKEND_ENABLED. The IR-scan test parses
+# `.ll` text with the standard library only.
+set(_sturm_qint_alias_fixture_src
+    "${CMAKE_CURRENT_SOURCE_DIR}/fixture_qint_alias_stubs.cpp")
+set(_sturm_qint_alias_stubs_ll
+    "${CMAKE_CURRENT_BINARY_DIR}/qint_alias_stubs.ll")
+
+# Mirror the include / define plumbing that any header-only qtypes test
+# relies on (cf. test_qint_alias above): the `${CMAKE_SOURCE_DIR}/include`
+# tree carries the alias headers, and `STURM_ANCILLA_CAPACITY` is the
+# top-level `add_compile_definitions` from `CMakeLists.txt:162` -- it
+# does NOT propagate to a hand-rolled `add_custom_command` invocation,
+# so we re-pass it explicitly.
+add_custom_command(
+    OUTPUT  "${_sturm_qint_alias_stubs_ll}"
+    COMMAND "${CMAKE_CXX_COMPILER}"
+            -std=c++17 -S -emit-llvm -O0
+            "-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}"
+            "-I${CMAKE_SOURCE_DIR}/include"
+            "-I${CMAKE_BINARY_DIR}/include"
+            -o "${_sturm_qint_alias_stubs_ll}"
+            "${_sturm_qint_alias_fixture_src}"
+    DEPENDS "${_sturm_qint_alias_fixture_src}"
+    COMMENT "Generating qint_alias_stubs.ll for sturm-v0db.6 IR scan"
+    VERBATIM)
+# `add_custom_target` is the dependency anchor that the test executable
+# links its `add_dependencies` against; the IR file itself is declared
+# as `OUTPUT` of the custom command above so CMake can wire it in as
+# `DEPENDS` here. (BYPRODUCTS only takes effect when the custom target
+# carries its own COMMAND, which we deliberately avoid -- the actual
+# build rule lives on `add_custom_command` per CMake best practice.)
+add_custom_target(qint_alias_stubs_ll
+    DEPENDS "${_sturm_qint_alias_stubs_ll}")
+
+add_executable(test_qint_alias_stubs
+    test_qint_alias_stubs.cpp
+)
+add_dependencies(test_qint_alias_stubs qint_alias_stubs_ll)
+target_compile_features(test_qint_alias_stubs PRIVATE cxx_std_20)
+target_compile_definitions(test_qint_alias_stubs PRIVATE
+    "STURM_QINT_ALIAS_STUBS_LL_PATH=\"${_sturm_qint_alias_stubs_ll}\"")
+add_test(NAME test_qint_alias_stubs COMMAND test_qint_alias_stubs)
+set_tests_properties(test_qint_alias_stubs PROPERTIES
+    LABELS "qtypes;qram-subscript;qac")
