@@ -1,5 +1,5 @@
 // tests/packaging/test_qint_alias_first_include.cpp — sturm-jysu acceptance
-// + sturm-v0db.1 / W3.0 cycle pre-flight (plan §24).
+// + sturm-v0db.1 / W3.0 cycle pre-flight + sturm-v0db.2 / W3.1.
 //
 // (sturm-jysu) Pins the include-order invariant the B0 audit
 // (sturm-65rs.5) and B1 acceptance test (test_qint_resolution.cpp) MISSED:
@@ -15,13 +15,17 @@
 // (sturm-v0db.1 / W3.0) Pre-flights the W3.2 include shape: qbool.hpp will
 // be added *inside* qint_alias_ops.hpp by W3.2 so every alias-touching TU
 // drags in qbool transitively (PRD §10.3.4). This TU pre-flights the probe
-// here (reverted at end of W3.0 in the sense that W3.2 moves the include
-// into qint_alias_ops.hpp). Verifies the compound cycle path
+// here. Verifies the compound cycle path
 //   qint_alias.hpp -> qint_fwd.hpp -> qint_alias.hpp,
 // followed by qint_alias_ops.hpp -> qbool.hpp -> qint_core.hpp, parses
-// cleanly under the alias-header-first order. PRD §10 G10 / B0 cycle
-// re-run gate: qint_core.hpp makes no frontend:: references, so qbool
-// (which inherits qint_t<1>) introduces no fold-back into the alias.
+// cleanly under the alias-header-first order.
+//
+// (sturm-v0db.2 / W3.1) Runtime measurement-counter assertions are GONE.
+// Under Wave 3 the counter infrastructure is being deleted in W3.4 (G9)
+// and pre-transpile execution is unsupported. The `is_same_v<sturm::qint,
+// sturm::frontend::qint>` invariants are retained — they are the
+// load-bearing pin for include-order resilience. Smoke-test reduces to
+// "implicit ctor int64_t -> qint compiles under alias-first include order".
 
 // (1) qint_alias.hpp MUST be the first sturm header — load-bearing.
 #include "sturm/qtypes/qint_alias.hpp"
@@ -50,21 +54,12 @@ static_assert(sizeof(::sturm::qbool) > 0,
               "sturm::qbool must be a complete type when qint_alias.hpp is "
               "the first sturm header (sturm-v0db.1 / W3.0 cycle pre-flight).");
 
-// (3) Smoke: the implicit-conversion contract still works through the bare
-// sturm::qint spelling under this include order.
+// (3) Smoke: implicit ctor int64_t -> qint works under alias-first order.
+// Wave 3 (sturm-v0db.2 / W3.1): measurement-counter assertions removed —
+// the counter is being deleted in W3.4 (G9). Compile-only smoke remains
+// the include-order regression gate.
 int main() {
-    ::sturm::frontend::qint_alias_detail::reset_measurement_count();
-    if (::sturm::frontend::qint_alias_detail::measurement_count() != 0) {
-        return 1;
-    }
-    ::sturm::qint q = 7;  // implicit ctor int64_t -> qint (P4a, no bump).
-    if (::sturm::frontend::qint_alias_detail::measurement_count() != 0) {
-        return 2;
-    }
-    std::size_t s = q;    // implicit operator size_t() — bumps the counter.
-    (void)s;
-    if (::sturm::frontend::qint_alias_detail::measurement_count() != 1) {
-        return 3;
-    }
+    ::sturm::qint q = 7;  // implicit ctor int64_t -> qint (P4a, free).
+    (void)q;
     return 0;
 }

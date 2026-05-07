@@ -1,12 +1,16 @@
 // test_qint_alias_subst_e2e.cpp -- sturm-65rs.13 (Beat E1) end-to-end gate.
 // Plan §14, PRD A5. Four steps against `examples/qram_demo.cpp`:
 //   (1) Run `sturm-transpile` over a hermetic fix-up copy of the example
-//       (handles F1-bound substring footguns + local-shadow parse bug).
+//       (sturm-v0db.2 / W3.1: the fixup is now a no-op — the substring
+//       footguns it patched are gone from the source).
 //   (2) Read `${tmp}/gen/qram_demo.cpp`.
 //   (3) Assert `find("sturm::frontend::qint") == npos` — PRD A5.
 //   (4) Compile + run (with a width-pin patch on `i`; follow-up
 //       sturm-65rs.17 lifts this via QRAM-context width inference).
-//       Exit 0 attests PRD G1 (example exits 1 if counter != 0).
+//       Wave 3 (sturm-v0db.2 / W3.1): the run gate is exit-zero only.
+//       The Wave-1 PRD G1 contract is replaced by Wave-2 G6
+//       (`test_sturm_gen_clean` — pre-transpile-side coverage check;
+//       counter infrastructure being deleted in W3.4 / G9).
 // LoC budget: <= 200 (plan §1, §14 / E1).
 
 #include <cstdio>
@@ -58,31 +62,20 @@ void spit(const fs::path& p, std::string_view s) {
 
 // Pre-transpile fix-up: F1-bound cleanup (substring footguns) +
 // local-shadow rename. Order-sensitive — anchored substrings only.
-//   (a) Keep `qint` resolving via `using sturm::qint;` so the C2
-//       matcher still fires on declarations.
-//   (b) Replace `using sturm::frontend::qint_alias_detail::*;` with a
-//       namespace alias `fe = sturm::frontend;` so `fe::qint_alias_detail`
-//       does NOT contain `sturm::frontend::qint` as a substring.
-//   (c) Split `qint a = 3, b = 4;` into single-declarator lines so the
-//       C2 emitter does not collide ReplaceText ranges over the shared
-//       multi-declarator TypeLoc.
+//
+// sturm-v0db.2 / W3.1: re-pinned against the current `examples/qram_demo.cpp`
+// (PRD §10 / Wave 3 — pre-transpile execution unsupported, counter
+// infrastructure being deleted in W3.4). The Wave-1 `using sturm::frontend
+// ::qint_alias_detail::*;` and `qint a = 3, b = 4;` shapes no longer
+// appear in the example; the `using sturm::qint;` form already resolves
+// the bare `qint` to the alias class via qint_fwd.hpp (post-B1), so no
+// `using` rewrite is needed. The fixup_example function is retained as
+// the central hook so future shape drift can be patched here without
+// touching the run/compile harness; it is currently a no-op.
 std::string fixup_example(std::string_view src) {
     std::string out(src);
-    auto repl = [&](std::string_view n, std::string_view r) {
-        auto pos = out.find(n);
-        if (pos != std::string::npos) out.replace(pos, n.size(), r);
-    };
-    repl("using qint = sturm::frontend::qint;", "using sturm::qint;");
-    repl("using sturm::frontend::qint_alias_detail::measurement_count;",
-         "namespace fe = sturm::frontend;");
-    repl("using sturm::frontend::qint_alias_detail::reset_measurement_count;",
-         "");
-    repl("    reset_measurement_count();",
-         "    fe::qint_alias_detail::reset_measurement_count();");
-    repl("const auto m = measurement_count();",
-         "const auto m = fe::qint_alias_detail::measurement_count();");
-    repl("qint a = 3, b = 4;", "qint qa = 3; qint qb = 4;");
-    repl("a += b;",            "qa += qb;");
+    // Intentionally empty: examples/qram_demo.cpp post-W3 needs no
+    // pre-transpile substring rewrites. Reserved for future drift.
     return out;
 }
 
@@ -159,6 +152,12 @@ int main() {
     const std::string raw = slurp(src_root / "examples" / "qram_demo.cpp");
     CHECK(!raw.empty());
     const std::string fixed = fixup_example(raw);
+    // sturm-v0db.2 / W3.1 — re-pinned post-fixup-no-op.
+    // The two substring shapes the Wave-1 fixup rewrote no longer
+    // appear in the source (`using sturm::qint;` form is fine post-B1
+    // and the counter-using bodies are gone). Pin both as ABSENT so
+    // any reintroduction (which would also defeat the W3.4 counter
+    // deletion) fails loudly.
     CHECK(fixed.find("using qint = sturm::frontend::qint;") == std::string::npos);
     CHECK(fixed.find("using sturm::frontend::qint_alias_detail::") == std::string::npos);
 
@@ -191,7 +190,13 @@ int main() {
     CHECK(compiled);
     if (!compiled) std::fprintf(stderr, "compile log:\n%s\n", clog.c_str());
     else {
-        // PRD G1: example's main() exits 1 iff measurement_count() != 0.
+        // sturm-v0db.2 / W3.1 — example's main() returns 0 on success.
+        // The Wave-1 PRD G1 contract ("counter == 0 post-transpile")
+        // has been replaced by the Wave-2 G6 sturm_gen-clean gate
+        // (PRD §10 / W3 — counter infrastructure being deleted in
+        // W3.4 / G9). The exit-zero check below remains the smoke
+        // gate that the rewritten + recompiled program runs without
+        // crashing or aborting.
         std::string rlog;
         const bool ok = run_command("'" + bin_path.string() + "' 2>&1", rlog);
         CHECK(ok);

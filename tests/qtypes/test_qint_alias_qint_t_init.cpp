@@ -1,4 +1,4 @@
-// test_qint_alias_qint_t_init.cpp -- sturm-qjt7
+// test_qint_alias_qint_t_init.cpp -- sturm-qjt7 + sturm-v0db.2 (W3.1).
 //
 // Pins that the frontend `qint` accepts implicit construction from
 // `sturm::qint_t<W>` so the user-facing rewrite source line
@@ -7,19 +7,21 @@
 //
 // PARSES against the production header. The C1 matcher then replaces
 // the VarDecl initializer pre-codegen, so this constructor body is
-// unreachable on the rewrite path; the body bumps the measurement
-// counter so a missed rewrite would show up as a non-zero
-// `qint_alias::measurement_count()` (parallel to `operator size_t()`).
+// unreachable on the rewrite path.
 //
-// Compile-only across the three PRD §7 container shapes; runtime
-// semantics are exercised by tests/qram/test_qram_e2e.cpp and
-// tests/qram/test_qram_read_qrom_gates.cpp.
+// Wave 3 update (sturm-v0db.2 / W3.1, PRD §10.3.5):
+//   * Runtime measurement-counter assertion is GONE — the counter is
+//     being deleted in W3.4 (G9). The G6 sturm_gen-clean gate
+//     (Wave-2) is the strictly stronger replacement for the Wave-1
+//     "missed C1 rewrite => counter > 0" observability.
+//   * Compile-only parse tests across the three PRD §7 container
+//     shapes are retained, plus the `is_constructible_v` /
+//     `is_convertible_v` / `is_nothrow_constructible_v` static_asserts.
 
 #include "sturm/qtypes/qint.hpp"           // backend qint_t<W>
 #include "sturm/qtypes/qint_alias.hpp"     // frontend qint
 
 #include <array>
-#include <cassert>
 #include <cstddef>
 #include <cstdint>
 #include <type_traits>
@@ -63,29 +65,9 @@ static_assert(std::is_convertible_v<sturm::qint_t<4>, qint>,
 static_assert(std::is_nothrow_constructible_v<qint, sturm::qint_t<4>>,
               "frontend::qint(qint_t<W>) must be noexcept");
 
-// ── (5) Constructor body is observable via measurement counter ──────────
-// On the rewrite path the body is unreachable. If a future change
-// silently disables the matcher, the body still bumps the same
-// per-thread counter as `operator size_t()` so the G1 e2e assertion
-// (`measurement_count() == 0` post-transpile) flags the regression.
-static void test_constructor_bumps_measurement_counter() {
-    sturm::frontend::qint_alias_detail::reset_measurement_count();
-    assert(sturm::frontend::qint_alias_detail::measurement_count() == 0u);
-
-    sturm::qint_t<4> src(7);
-    qint b = src;
-    (void)b;
-
-    assert(sturm::frontend::qint_alias_detail::measurement_count() == 1u
-           && "converting ctor must bump the measurement counter so a "
-              "missed C1 rewrite is observable");
-    sturm::frontend::qint_alias_detail::reset_measurement_count();
-}
-
 int main() {
     test_init_from_std_array_compiles();
     test_init_from_c_array_compiles();
     test_init_from_pointer_compiles();
-    test_constructor_bumps_measurement_counter();
     return 0;
 }
