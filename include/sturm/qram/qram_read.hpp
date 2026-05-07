@@ -87,10 +87,12 @@
 namespace sturm {
 
 // ── qram namespace: read-counter observability surface ───────────────
-// Mirrors `qint_alias_detail::g_measurement_count` shape so the
-// observability works without a bespoke sink. PRD §11.2.7 (single
+// Thread-local `qram_read` counter that observes dispatched calls
+// without requiring a custom sink installation. PRD §11.2.7 (single
 // `qram_read` counter for D1; per-path counters land with gate
-// emission).
+// emission). The Wave-2 G6 `test_sturm_gen_clean` gate is the
+// canonical pre-transpile coverage check (frontend alias erasure);
+// this counter is the runtime observability surface for backend tests.
 namespace qram {
 
 inline thread_local std::size_t g_qram_read_count = 0;
@@ -325,12 +327,13 @@ inline void __QRAM_read_adj(const qint_t<W>* a,
 // the declaration of `i`, expose a thin overload per container shape
 // that takes `const sturm::frontend::qint&` for the index argument.
 //
-// Body posture: build a non-measuring `qint_t<W>` from the alias's
-// `classical_value()` (the underlying int64_t) and forward to the
-// canonical overload. `classical_value()` does NOT bump
-// `qint_alias_detail::g_measurement_count` (unlike `operator size_t()`
-// and the converting ctor), so the example's `measurement_count() == 0`
-// post-call assertion (sturm-ddgo) holds. Mirrored on
+// Body posture: build a `qint_t<W>` from the alias's
+// `classical_value()` (a direct field read on the alias's classical
+// part) and forward to the canonical overload. Wave 3
+// (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8) made every other alias
+// body a pure type-stub; this is the only path that does not
+// zero-initialise. The Wave-2 G6 `test_sturm_gen_clean` gate pins
+// post-rewrite invariants on the emitted source. Mirrored on
 // `__QRAM_read_adj` so the matcher's planted adjoint resolves too.
 //
 // Template-head trick: the leading `bool _FrontendIdx = true` parameter

@@ -64,14 +64,14 @@ void spit(const fs::path& p, std::string_view s) {
 // local-shadow rename. Order-sensitive — anchored substrings only.
 //
 // sturm-v0db.2 / W3.1: re-pinned against the current `examples/qram_demo.cpp`
-// (PRD §10 / Wave 3 — pre-transpile execution unsupported, counter
-// infrastructure being deleted in W3.4). The Wave-1 `using sturm::frontend
-// ::qint_alias_detail::*;` and `qint a = 3, b = 4;` shapes no longer
-// appear in the example; the `using sturm::qint;` form already resolves
-// the bare `qint` to the alias class via qint_fwd.hpp (post-B1), so no
-// `using` rewrite is needed. The fixup_example function is retained as
-// the central hook so future shape drift can be patched here without
-// touching the run/compile harness; it is currently a no-op.
+// (PRD §10 / Wave 3 — pre-transpile execution unsupported). The
+// Wave-1 `using sturm::frontend::detail-ns::*;` and `qint a = 3, b = 4;`
+// shapes no longer appear in the example; the `using sturm::qint;`
+// form already resolves the bare `qint` to the alias class via
+// qint_fwd.hpp (post-B1), so no `using` rewrite is needed. The
+// fixup_example function is retained as the central hook so future
+// shape drift can be patched here without touching the run/compile
+// harness; it is currently a no-op.
 std::string fixup_example(std::string_view src) {
     std::string out(src);
     // Intentionally empty: examples/qram_demo.cpp post-W3 needs no
@@ -81,13 +81,15 @@ std::string fixup_example(std::string_view src) {
 
 // Post-transpile narrow patch: pin `i` width to `W` so the QRAM_read call
 // site (W = 4) does not need a `frontend::qint(qint_t<32>)` implicit
-// ctor that bumps the counter. Follow-up sturm-65rs.17.
+// ctor — under Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8) that
+// ctor's body is a pure type-stub, but matching widths is still the
+// canonical post-rewrite shape. Follow-up sturm-65rs.17.
 //
 // sturm-vm38: the example body changed from `qint i = 10;` to `qint i = 2;`
 // when the phi() proxy stub line `i.phi() += 3;` landed. The fix-up shape
 // is otherwise identical — we still narrow the inferred 32-bit width down
 // to W so the QRAM_read(W=4) call site does not implicitly cross-construct
-// a frontend::qint and bump the counter.
+// a frontend::qint.
 std::string post_fixup_index(std::string_view content) {
     std::string out(content);
     const std::string_view n = "sturm::qint_t<32> i = 2;";
@@ -153,13 +155,12 @@ int main() {
     CHECK(!raw.empty());
     const std::string fixed = fixup_example(raw);
     // sturm-v0db.2 / W3.1 — re-pinned post-fixup-no-op.
-    // The two substring shapes the Wave-1 fixup rewrote no longer
-    // appear in the source (`using sturm::qint;` form is fine post-B1
-    // and the counter-using bodies are gone). Pin both as ABSENT so
-    // any reintroduction (which would also defeat the W3.4 counter
-    // deletion) fails loudly.
+    // The Wave-1 `using qint = sturm::frontend::qint;` shape no longer
+    // appears in the source (`using sturm::qint;` form is fine post-B1).
+    // Pin as ABSENT so any reintroduction fails loudly. The Wave-1
+    // `using sturm::frontend::<detail-ns>::*;` shape is gated by W3.6's
+    // tree-grep audit (the namespace is deleted under W3.4 / G9).
     CHECK(fixed.find("using qint = sturm::frontend::qint;") == std::string::npos);
-    CHECK(fixed.find("using sturm::frontend::qint_alias_detail::") == std::string::npos);
 
     const fs::path tmp_dir = fs::temp_directory_path() / "sturm_e1";
     fs::remove_all(tmp_dir);

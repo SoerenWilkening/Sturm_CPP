@@ -125,9 +125,19 @@ int main() {
                       "#include \"sturm/qtypes/qint.hpp\"\n")) ++failures;
     if (!expect_clean("identifier suffix uncompute_*_qint",
                       "uncompute_eq_qint(c, a, b);\n")) ++failures;
-    if (!expect_clean("identifier prefix qint_alias_detail",
-                      "using sturm::frontend::qint_alias_detail::"
-                      "measurement_count;\n")) ++failures;
+    // ── Positive-control: qint_alias_detail re-introduction guard ──
+    //    sturm-v0db.5 / W3.4 (PRD §10.3.3 / G9). After W3.4 deletes
+    //    the entire `qint_alias_detail` namespace from the production
+    //    headers, ANY future re-introduction of the substring
+    //    `qint_alias_detail::` MUST trip the scanner. The synthesized
+    //    line below is a documented exemption from W3.6's tree-grep
+    //    audit gate (`tests/qtypes/test_qint_alias_no_counter_infra`)
+    //    which excludes this specific test source by path.
+    const std::string regress_alias_detail =
+        "using sturm::frontend::qint_alias_detail::measurement_count;\n";
+    if (!expect_offense("qint_alias_detail re-introduction guard",
+                        regress_alias_detail, 1,
+                        "qint_alias_detail::")) ++failures;
     if (!expect_clean("block comment spanning lines",
                       "/* qint a[4]; legacy spelling -- documented\n"
                       "   for migration purposes */\n"

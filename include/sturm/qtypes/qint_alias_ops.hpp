@@ -1,16 +1,15 @@
 #pragma once
-// qint_alias_ops.hpp — Operator stubs for the frontend `qint` alias class
-// (sturm-u9ge.10 / Beat A2).
+// qint_alias_ops.hpp — Operator type-stubs for the frontend `qint` alias
+// class (sturm-u9ge.10 / Beat A2; Wave-3-stripped per sturm-v0db.4 / W3.3).
 //
 // PRD §4.1 step 2 / plan §4 / A2: "mirror the public surface of `qint_t<W>`
-// so user code that uses `qint` outside subscript still compiles." The
-// implementation strategy is **measure-then-classical**: each stub invokes
-// the load-bearing implicit `operator size_t()` (in qint_alias.hpp) on each
-// quantum operand and forwards to the corresponding classical operation.
-// Lossy by design: pre-transpile, anything that is not the matched
-// subscript shape silently measures; post-transpile, the C1 matcher
-// (sturm-u9ge.12) rewrites the matched shape to `QRAM_read(...)` and the
-// stub bodies are unreachable.
+// so user code that uses `qint` outside subscript still compiles." Wave 3
+// (PRD §10.3.2 / G8) collapsed every operator body to a pure type-stub
+// (`return qint{};`, `return qbool();`, or `return a;`); the matched
+// subscript shape is rewritten by the C1 matcher to `QRAM_read(...)` and
+// every stub body is unreachable on the rewrite path. The Wave-3
+// transpiler is mandatory (host-clang invariant sturm-yial), so the
+// pre-transpile reachable path is no longer a concern.
 //
 // The stubs deliberately do **NOT** route through backend `qint_t<W>`
 // operators: that would commit to a width on the frontend (defeating the
@@ -32,10 +31,6 @@
 // All compound-assigns are free functions (C++ allows non-member compound
 // assigns). qint_alias.hpp (A1) stays untouched.
 //
-// `__builtin_unreachable()` policy (PRD §4.1 step 2): no alias-level
-// operator here is transpiler-only; every one is a legal pre-transpile
-// spelling using the measure-then-classical body.
-//
 // Drift cost: every new `qint_t<W>` operator must show up here too —
 // `tests/qtypes/test_qint_alias_ops.cpp`'s SFINAE harness (plan §14)
 // fires if `qint_t<W>` exposes an operator the alias does not.
@@ -51,7 +46,7 @@
 //
 // LoC budget: <= 300 (plan §1, §4 / A2).
 
-#include "sturm/qtypes/qint_alias.hpp"   // sturm::frontend::qint + measurement counter
+#include "sturm/qtypes/qint_alias.hpp"   // sturm::frontend::qint (alias class)
 #include "sturm/qtypes/qbool.hpp"        // sturm::qbool — Wave-3 G7 + G10 (return
                                          // type for compares + op[] read).
 
@@ -62,36 +57,17 @@
 namespace sturm {
 namespace frontend {
 
-// ── detail — measure helper ───────────────────────────────────────────
-// Going through `static_cast<std::size_t>(q)` exercises the load-bearing
-// implicit `operator size_t()`, which is the *only* surface that bumps
-// `qint_alias_detail::g_measurement_count`. Tests pin per-stub bumps;
-// the post-transpile coverage check pins the total stays at zero.
-namespace qint_alias_detail {
-
-inline std::int64_t measure_to_int(const qint& q) noexcept {
-    const std::size_t v = q;   // implicit -> bumps counter.
-    return static_cast<std::int64_t>(v);
-}
-
-// SFINAE alias: any integral type other than `bool` and `qint`. Used in
-// the mixed-type overloads (arithmetic `+ - * / % & | ^`, all six compares).
-template <class T>
-using IntOp = std::enable_if_t<std::is_integral_v<T>
-                               && !std::is_same_v<T, bool>>;
-
-// sturm-65rs.3 / Beat A2 — single helper for the seven mixed-type
-// arithmetic/bitwise free ops (`-`, `*`, `/`, `%`, `&`, `|`, `^`). The
-// helper measures the qint operand exactly once (via `measure_to_int`)
-// and forwards to a classical callable `op(int64_t, int64_t) -> int64_t`.
-// `/` and `%` pass a divisor-guarding callable, mirroring the
-// `qint × qint` policy (`y != 0 ? x OP y : 0`) at lines 104-114 above.
-template <class Int, class F>
-inline qint mixed_arith(const qint& a, Int c, F op) noexcept {
-    return qint(op(measure_to_int(a), static_cast<std::int64_t>(c)));
-}
-
-} // namespace qint_alias_detail
+// ── Wave 3 / W3.4 / G9 (sturm-v0db.5, PRD §10.3.3) ────────────────────
+// The legacy frontend detail namespace (the measure-helper, the mixed-
+// arith forwarder, and the `IntOp<T>` SFINAE alias) has been deleted.
+// Under Wave 3 the alias's operator bodies are pure type-stubs
+// (W3.3 / G8); none of them measure or forward to a classical
+// fallback. The mixed-type integer-overload templates below inline
+// the SFINAE predicate directly — `class = std::enable_if_t<
+// std::is_integral_v<Int> && !std::is_same_v<Int, bool>>` — in place
+// of the old `IntOp<Int>` typedef. Future re-introduction of any
+// deleted symbol is gated by W3.6's tree-grep audit
+// (`tests/qtypes/test_qint_alias_no_counter_infra`).
 
 // ── Out-of-line member: qint::operator[](size_t) const ──────────────────
 // Wave-3 G7 + G10 (PRD §10.3.4). Lives here so `qint_alias.hpp` stays
@@ -109,12 +85,13 @@ inline qbool qint::operator[](std::size_t /*k*/) const noexcept {
 //   return qbool();      compares (qint × qint and qint × <integral>)
 //   return a;            compound assigns and compound shifts
 //
-// No body reads or writes `value_`. No body calls into
-// `qint_alias_detail::*` (the namespace's surviving symbols
-// `measure_to_int` / `mixed_arith` / `IntOp` are removed in W3.4 /
-// sturm-v0db.5). Compound assigns return `a` unchanged — they MUST
-// NOT compute `a OP b` even speculatively (that would re-invoke the
-// free op which now returns a default).
+// No body reads or writes `value_`. No body calls into the legacy
+// frontend detail namespace (its surviving helpers — the measure
+// forwarder, the mixed-arith helper, and the `IntOp` SFINAE alias —
+// were deleted in W3.4 / sturm-v0db.5; the SFINAE predicate is now
+// inlined at each callsite). Compound assigns return `a` unchanged
+// — they MUST NOT compute `a OP b` even speculatively (that would
+// re-invoke the free op which now returns a default).
 //
 // The transpiler (sturm-yial host-clang invariant) is mandatory under
 // Wave 3; the C1 matcher rewrites every alias usage so the bodies are
@@ -130,28 +107,28 @@ inline qint operator%(const qint& /*a*/, const qint& /*b*/) noexcept { return qi
 
 // Mixed-type `qint + <integral>` (and symmetric). Mirrors the explicit
 // overloads `qint_t<W>` carries in qint_arith{,_backend}.hpp.
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator+(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator+(Int /*c*/, const qint& /*a*/) noexcept { return qint{}; }
 
 // ── Mixed-type `qint OP <integral>` for the 7 non-+ ops ─────────────────
 // sturm-65rs.3 / Beat A2. Forward direction only (PRD §3 — backend
 // lacks reverse non-+; the alias stays symmetric).
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator-(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator*(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator/(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator%(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator&(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator|(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qint operator^(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 
 // ── Arithmetic: unary - ───────────────────────────────────────────────
@@ -170,17 +147,17 @@ inline qbool operator> (const qint& /*a*/, const qint& /*b*/) noexcept { return 
 inline qbool operator>=(const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
 
 // Mixed-type compare `qint OP <integral>` — Wave-3 G7: returns `qbool`.
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qbool operator==(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qbool operator!=(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qbool operator< (const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qbool operator<=(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qbool operator> (const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
-template <class Int, class = qint_alias_detail::IntOp<Int>>
+template <class Int, class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>>
 inline qbool operator>=(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 
 // ── Bitwise: binary & | ^ ─────────────────────────────────────────────

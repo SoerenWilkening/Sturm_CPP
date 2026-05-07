@@ -5,7 +5,7 @@
 // a sibling unit test. Header-only; the gate executable and the unit
 // test both include it.
 //
-// Two pattern families:
+// Three pattern families:
 //   1. QUALIFIED hits (sturm-7t85.4 G4): plain-substring scan for
 //      `sturm::frontend::qint` and the two `using qint = (::)?sturm
 //      ::frontend::qint` typedef spellings.
@@ -13,14 +13,23 @@
 //      regression where `qint a[4];` (carrier-imported via
 //      `using sturm::qint;`) survives unrewritten in sturm_gen output.
 //      Naive `\bqint\b` would false-positive on `qint_t<W>`,
-//      `qint_alias_detail`, `uncompute_*_qint`, and on the benign
-//      import line itself, so we strip C/C++ comments + string
-//      literals first, then accept `\bqint\b` only when the next char
-//      is NOT `_` (which excludes `qint_t`, `qint_alias_*`, etc.) and
-//      the line is neither a `#include` nor the `using sturm::qint`
-//      import. Identifier-prefix `_qint` (e.g. `uncompute_eq_qint`)
-//      is excluded by the word-boundary check (preceding char `_` is
-//      a word char in C-identifier sense).
+//      `uncompute_*_qint`, and on the benign import line itself, so
+//      we strip C/C++ comments + string literals first, then accept
+//      `\bqint\b` only when the next char is NOT `_` (which excludes
+//      `qint_t`, etc.) and the line is neither a `#include` nor the
+//      `using sturm::qint` import. Identifier-prefix `_qint` (e.g.
+//      `uncompute_eq_qint`) is excluded by the word-boundary check
+//      (preceding char `_` is a word char in C-identifier sense).
+//   3. FORBIDDEN substrings (sturm-v0db.5 / W3.4 / G9 — PRD §10.3.3):
+//      raw-substring scan with NO follow-char exclusion. Any hit is
+//      an offense. The patterns table below lists the namespace-
+//      qualified spellings that defend against future re-introduction
+//      of the legacy frontend detail namespace deleted in W3.4. This
+//      family is parallel to W3.6's tree-grep audit gate
+//      (`tests/qtypes/test_qint_alias_no_counter_infra`); both fire
+//      on reintroduction. The unit test
+//      `test_sturm_gen_clean_unit.cpp` exercises the positive
+//      control on a synthesized input.
 
 #pragma once
 
@@ -43,6 +52,19 @@ inline constexpr std::string_view kQualifiedPatterns[] = {
     "sturm::frontend::qint",
     "using qint = ::sturm::frontend::qint",
     "using qint = sturm::frontend::qint",
+};
+
+// sturm-v0db.5 / W3.4 / PRD §10.3.3 / G9. Raw-substring patterns scanned
+// without any follow-char exclusion: any hit is an offense. Used to
+// defend against future re-introduction of symbols whose namespace was
+// deleted in W3.4 (the legacy frontend detail namespace). Parallel to
+// W3.6's tree-grep audit gate. The pattern below is split across two
+// adjacent string literals so this header source itself does NOT
+// contain the contiguous `<ns-name>::` substring at the byte level —
+// W3.6's audit gate scans this file by raw substring and the split
+// keeps it clean.
+inline constexpr std::string_view kForbiddenSubstrings[] = {
+    "qint_alias_detail" "::",
 };
 
 inline constexpr std::string_view kBarePatternLabel =
@@ -133,9 +155,9 @@ inline void scan_text(const std::filesystem::path& path,
 
         // Family 1: qualified-pattern substring scan on raw line. All
         // three patterns end in `qint`, so a trailing word-boundary
-        // post-check excludes `sturm::frontend::qint_alias_detail`,
-        // `sturm::frontend::qint_t<...>`, and similar legitimate
-        // identifier-prefix uses of the namespaced spelling.
+        // post-check excludes `sturm::frontend::qint_t<...>` and
+        // similar legitimate identifier-prefix uses of the namespaced
+        // spelling.
         for (std::string_view pat : kQualifiedPatterns) {
             std::size_t pos = 0;
             while ((pos = raw.find(pat, pos)) != std::string_view::npos) {
@@ -147,6 +169,17 @@ inline void scan_text(const std::filesystem::path& path,
                     break;  // one hit per (pattern, line) is enough.
                 }
                 pos = after;
+            }
+        }
+
+        // Family 3: forbidden substrings (sturm-v0db.5 / W3.4 / G9).
+        // Raw substring scan with NO follow-char exclusion: any hit
+        // is an offense. Defends against re-introduction of symbols
+        // whose namespace was deleted in W3.4 (the legacy frontend
+        // detail namespace; see the `kForbiddenSubstrings` table).
+        for (std::string_view pat : kForbiddenSubstrings) {
+            if (raw.find(pat) != std::string_view::npos) {
+                out.push_back(Offense{path, line_no, rstrip_eol(raw), pat});
             }
         }
 

@@ -73,12 +73,13 @@ ForwardingTraceFn set_forwarding_trace(ForwardingTraceFn hook) noexcept {
 // PRD §11.2.7: bumps the **path-specific split counter** on the active
 // sink (`qrom_read()` for path tag 1, `qreg_read()` for path tag 2;
 // surface lives on `Sink` from B0 / sturm-2w6h.1) AND the process-wide
-// thread-local umbrella counter `qram::g_qram_read_count` (parallel to
-// the alias-class `qint_alias_detail::g_measurement_count` shape) so
-// tests that do not install a custom sink can still observe the
-// dispatched-call increment. Then fires the forwarding-trace hook
-// (test-only) with the path tag (1 = QROM, 2 = QREG) and the type-
-// erased argument quadruple.
+// thread-local umbrella counter `qram::g_qram_read_count` so tests that
+// do not install a custom sink can still observe the dispatched-call
+// increment. The Wave-2 G6 `test_sturm_gen_clean` gate pins the
+// pre-transpile alias-erasure invariants; this counter is the runtime
+// observability surface for backend tests. Then fires the forwarding-
+// trace hook (test-only) with the path tag (1 = QROM, 2 = QREG) and
+// the type-erased argument quadruple.
 //
 // ── B4 (sturm-2w6h.6) wiring ───────────────────────────────────────
 // Per the issue's call-order spec the umbrella `current_sink()->

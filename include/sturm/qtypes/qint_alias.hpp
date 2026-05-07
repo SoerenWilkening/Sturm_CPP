@@ -44,7 +44,6 @@
 #include "sturm/qtypes/qint_fwd.hpp"   // sturm::qint_t<W> for the negative
                                        // SFINAE in the test (consumer-side).
 
-#include <atomic>
 #include <cstddef>
 #include <cstdint>
 
@@ -63,42 +62,18 @@ class qbool;
 
 namespace frontend {
 
-// ── qint_alias_detail ─────────────────────────────────────────────────────
-// Thread-local measurement counter used as the observable side-effect of
-// the frontend `qint`'s implicit `operator size_t()`. Tests pin
-// `measurement_count()` going up by one per implicit-conversion site, so
-// the post-transpile end-to-end test (G1, sturm-u9ge.17) can use the
-// *same* counter to assert it stays at zero — i.e. the matcher erased
-// every conversion site.
-//
-// Implementation choices:
-//   * `inline thread_local` — header-only; one counter per thread, no
-//     ODR collisions (matches `detail::g_sink` in counter_sink.hpp).
-//   * Plain `std::size_t`, not atomic — single-thread observability is
-//     the contract; cross-thread aggregation is out of scope.
-//
-// The counter is intentionally `qint_alias_detail::measurement_count`
-// rather than living on a sink object: the implicit conversion happens
-// in arbitrary integral contexts (subscript, comparison, range-for
-// bound, …) where there is no natural sink hookpoint, and we want the
-// observability to work in tests that do not install a custom sink.
-namespace qint_alias_detail {
-
-inline thread_local std::size_t g_measurement_count = 0;
-
-inline std::size_t measurement_count() noexcept {
-    return g_measurement_count;
-}
-
-inline void reset_measurement_count() noexcept {
-    g_measurement_count = 0;
-}
-
-inline void bump_measurement_count() noexcept {
-    ++g_measurement_count;
-}
-
-} // namespace qint_alias_detail
+// ── Wave 3 / W3.4 / G9 (sturm-v0db.5, PRD §10.3.3) ───────────────────────
+// The legacy frontend detail namespace (thread-local measurement
+// counter + bump/reset/get accessors) has been deleted. Under Wave 3
+// the alias's operator bodies are pure type-stubs (W3.3 / G8); none
+// of them count anything. Pre-transpile observability moves to the
+// Wave-2 G6 `test_sturm_gen_clean` gate (a strictly stronger
+// contract: the rewritten source must contain zero alias type-
+// spellings, regardless of any runtime counter). Future
+// re-introduction of any deleted symbol is gated by W3.6's tree-grep
+// audit (`tests/qtypes/test_qint_alias_no_counter_infra`) and the
+// parallel forbidden-substring family in
+// `transpiler/tests/test_sturm_gen_clean_scan.hpp`.
 
 // ── class qint ───────────────────────────────────────────────────────────
 // Frontend, non-templated, intentionally minimal. The implicit
@@ -146,10 +121,11 @@ public:
     // Post-transpile the C1 matcher REPLACES the VarDecl initializer
     // with the explicit `sturm::qint_t<W> b; ::sturm::QRAM_read(a, i, b);`
     // pair (PRD §8 / archive/prd_qram_subscript.md §9 row 3), so this
-    // body is unreachable on the rewrite path. If the matcher ever
-    // misses the site, the body bumps the same measurement counter as
-    // `operator size_t()` so the regression is observable to the G1
-    // e2e check (`measurement_count() == 0` post-transpile).
+    // body is unreachable on the rewrite path. Wave 3 (sturm-v0db.4 /
+    // W3.3, PRD §10.3.2 / G8): pure type-stub `{}`. The Wave-2 G6
+    // `test_sturm_gen_clean` gate enforces the post-rewrite invariant
+    // (zero alias type-spellings in the emitted source) — strictly
+    // stronger than the deprecated W2-era runtime counter check.
     //
     // NOLINTNEXTLINE(google-explicit-constructor,hicpp-explicit-conversions)
     template <std::size_t W>
@@ -160,14 +136,14 @@ public:
     // what makes `a[qint_idx]` parse uniformly across `std::array<qint,
     // N>`, C-style arrays (`qint a[10]`), and pointers (`qint *a`)."
     //
-    // Body: invoke the (notional) measurement and return the measured
-    // value cast to size_t. In the alias-class model (PRD §5):
-    //   * Pre-transpile, this body is reached and *does* measure — that
-    //     is the silent-measurement footgun §10.1 accepts.
-    //   * Post-transpile, the C1 matcher has rewritten every matched
-    //     subscript site, and this body is unreachable. The G1 e2e test
-    //     pins that `measurement_count()` stays at 0 across a fully-
-    //     transpiled run.
+    // Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): the body is a
+    // pure type-stub `return 0;`. The Wave-3 transpiler is mandatory
+    // (host-clang invariant sturm-yial); the C1 matcher has rewritten
+    // every matched subscript site, so this body is unreachable on
+    // the rewrite path. The Wave-2 G6 `test_sturm_gen_clean` gate
+    // pins that the rewritten source has zero alias type-spellings —
+    // strictly stronger than the deprecated W2-era runtime counter
+    // check.
     //
     // The body is defined out-of-line below `class qint` so the
     // class definition stays compact and readable.
@@ -242,7 +218,7 @@ public:
     // Direct access to the underlying classical value. NOT a public API
     // for user code (use the implicit conversion); exposed because the
     // test suite needs to verify round-trips without going through the
-    // measurement counter every time.
+    // implicit conversion path every time.
     [[nodiscard]] int64_t classical_value() const noexcept { return value_; }
 
 private:
