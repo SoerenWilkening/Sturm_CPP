@@ -95,206 +95,121 @@ inline qint mixed_arith(const qint& a, Int c, F op) noexcept {
 
 // ── Out-of-line member: qint::operator[](size_t) const ──────────────────
 // Wave-3 G7 + G10 (PRD §10.3.4). Lives here so `qint_alias.hpp` stays
-// free of qbool.hpp / qint_core.hpp includes. Bumps the alias-uniform
-// counter exactly once (W3.3 strips the body to `return qbool();`);
-// reads `value_` directly to avoid a second bump via `operator size_t()`.
-inline qbool qint::operator[](std::size_t k) const noexcept {
-    qint_alias_detail::bump_measurement_count();
-    if (k >= 64) {
-        return qbool(false);
-    }
-    return qbool(((static_cast<std::uint64_t>(value_) >> k) & 1u) != 0u);
+// free of qbool.hpp / qint_core.hpp includes. W3.3 (sturm-v0db.4 /
+// PRD §10.3.2 / G8): pure type-stub `return qbool();`. No counter
+// bump, no `value_` access — the body is unreachable post-transpile
+// (the C1 matcher rewrites the alias usage).
+inline qbool qint::operator[](std::size_t /*k*/) const noexcept {
+    return qbool();
 }
+
+// ── Wave 3 / W3.3 — pure type-stub bodies (PRD §10.3.2 / G8) ─────────
+// Every free-operator body below is one of:
+//   return qint{};       arithmetic, bitwise, unary, shifts
+//   return qbool();      compares (qint × qint and qint × <integral>)
+//   return a;            compound assigns and compound shifts
+//
+// No body reads or writes `value_`. No body calls into
+// `qint_alias_detail::*` (the namespace's surviving symbols
+// `measure_to_int` / `mixed_arith` / `IntOp` are removed in W3.4 /
+// sturm-v0db.5). Compound assigns return `a` unchanged — they MUST
+// NOT compute `a OP b` even speculatively (that would re-invoke the
+// free op which now returns a default).
+//
+// The transpiler (sturm-yial host-clang invariant) is mandatory under
+// Wave 3; the C1 matcher rewrites every alias usage so the bodies are
+// unreachable on the rewrite path. They exist purely as type-stubs the
+// host C++ compiler can typecheck pre-transpile.
 
 // ── Arithmetic: binary + - * / % ─────────────────────────────────────
-inline qint operator+(const qint& a, const qint& b) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              + qint_alias_detail::measure_to_int(b));
-}
-
-inline qint operator-(const qint& a, const qint& b) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              - qint_alias_detail::measure_to_int(b));
-}
-
-inline qint operator*(const qint& a, const qint& b) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              * qint_alias_detail::measure_to_int(b));
-}
-
-inline qint operator/(const qint& a, const qint& b) noexcept {
-    const auto x = qint_alias_detail::measure_to_int(a);
-    const auto y = qint_alias_detail::measure_to_int(b);
-    return qint(y != 0 ? (x / y) : 0);
-}
-
-inline qint operator%(const qint& a, const qint& b) noexcept {
-    const auto x = qint_alias_detail::measure_to_int(a);
-    const auto y = qint_alias_detail::measure_to_int(b);
-    return qint(y != 0 ? (x % y) : 0);
-}
+inline qint operator+(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
+inline qint operator-(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
+inline qint operator*(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
+inline qint operator/(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
+inline qint operator%(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
 
 // Mixed-type `qint + <integral>` (and symmetric). Mirrors the explicit
 // overloads `qint_t<W>` carries in qint_arith{,_backend}.hpp.
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator+(const qint& a, Int c) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              + static_cast<std::int64_t>(c));
-}
+inline qint operator+(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator+(Int c, const qint& a) noexcept {
-    return a + c;
-}
+inline qint operator+(Int /*c*/, const qint& /*a*/) noexcept { return qint{}; }
 
 // ── Mixed-type `qint OP <integral>` for the 7 non-+ ops ─────────────────
 // sturm-65rs.3 / Beat A2. Forward direction only (PRD §3 — backend
-// lacks reverse non-+; the alias stays symmetric). Routed through the
-// inline helper `mixed_arith` to keep marginal LoC small (PRD R4).
+// lacks reverse non-+; the alias stays symmetric).
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator-(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return x - y; });
-}
+inline qint operator-(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator*(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return x * y; });
-}
+inline qint operator*(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator/(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return y != 0 ? x / y : 0; });
-}
+inline qint operator/(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator%(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return y != 0 ? x % y : 0; });
-}
+inline qint operator%(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator&(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return x & y; });
-}
+inline qint operator&(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator|(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return x | y; });
-}
+inline qint operator|(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qint operator^(const qint& a, Int c) noexcept {
-    return qint_alias_detail::mixed_arith(a, c,
-        [](std::int64_t x, std::int64_t y) noexcept { return x ^ y; });
-}
+inline qint operator^(const qint& /*a*/, Int /*c*/) noexcept { return qint{}; }
 
 // ── Arithmetic: unary - ───────────────────────────────────────────────
-inline qint operator-(const qint& a) noexcept {
-    return qint(-qint_alias_detail::measure_to_int(a));
-}
+inline qint operator-(const qint& /*a*/) noexcept { return qint{}; }
 
 // ── Compare: == != < <= > >= ─────────────────────────────────────────
 // Wave-3 G7 (PRD §10.3.5): all twelve compare overloads (six qint × qint
 // + six qint × Int templated) return `sturm::qbool` to match the
-// backend's `qint_t<W>::operator==/!=/<…` return type. Body wraps the
-// classical compare in `qbool(bool)` — qbool's value-ctor (qbool.hpp:52)
-// is a no-op classical wrap (no qubit allocated). W3.3 strips bodies.
-inline qbool operator==(const qint& a, const qint& b) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a)
-              == qint_alias_detail::measure_to_int(b));
-}
-inline qbool operator!=(const qint& a, const qint& b) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a)
-              != qint_alias_detail::measure_to_int(b));
-}
-inline qbool operator<(const qint& a, const qint& b) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a)
-               < qint_alias_detail::measure_to_int(b));
-}
-inline qbool operator<=(const qint& a, const qint& b) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a)
-              <= qint_alias_detail::measure_to_int(b));
-}
-inline qbool operator>(const qint& a, const qint& b) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a)
-               > qint_alias_detail::measure_to_int(b));
-}
-inline qbool operator>=(const qint& a, const qint& b) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a)
-              >= qint_alias_detail::measure_to_int(b));
-}
+// backend's `qint_t<W>::operator==/!=/<…` return type. W3.3 strips
+// bodies to `return qbool();` (default-constructed classical false).
+inline qbool operator==(const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
+inline qbool operator!=(const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
+inline qbool operator< (const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
+inline qbool operator<=(const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
+inline qbool operator> (const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
+inline qbool operator>=(const qint& /*a*/, const qint& /*b*/) noexcept { return qbool(); }
 
 // Mixed-type compare `qint OP <integral>` — Wave-3 G7: returns `qbool`.
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qbool operator==(const qint& a, Int c) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a) == static_cast<std::int64_t>(c));
-}
+inline qbool operator==(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qbool operator!=(const qint& a, Int c) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a) != static_cast<std::int64_t>(c));
-}
+inline qbool operator!=(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qbool operator<(const qint& a, Int c) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a) <  static_cast<std::int64_t>(c));
-}
+inline qbool operator< (const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qbool operator<=(const qint& a, Int c) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a) <= static_cast<std::int64_t>(c));
-}
+inline qbool operator<=(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qbool operator>(const qint& a, Int c) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a) >  static_cast<std::int64_t>(c));
-}
+inline qbool operator> (const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline qbool operator>=(const qint& a, Int c) noexcept {
-    return qbool(qint_alias_detail::measure_to_int(a) >= static_cast<std::int64_t>(c));
-}
+inline qbool operator>=(const qint& /*a*/, Int /*c*/) noexcept { return qbool(); }
 
 // ── Bitwise: binary & | ^ ─────────────────────────────────────────────
-inline qint operator&(const qint& a, const qint& b) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              & qint_alias_detail::measure_to_int(b));
-}
-inline qint operator|(const qint& a, const qint& b) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              | qint_alias_detail::measure_to_int(b));
-}
-inline qint operator^(const qint& a, const qint& b) noexcept {
-    return qint(qint_alias_detail::measure_to_int(a)
-              ^ qint_alias_detail::measure_to_int(b));
-}
+inline qint operator&(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
+inline qint operator|(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
+inline qint operator^(const qint& /*a*/, const qint& /*b*/) noexcept { return qint{}; }
 
 // ── Bitwise: unary ~ ─────────────────────────────────────────────────
-inline qint operator~(const qint& a) noexcept {
-    return qint(~qint_alias_detail::measure_to_int(a));
-}
+inline qint operator~(const qint& /*a*/) noexcept { return qint{}; }
 
 // ── Bitwise: shifts (rhs = classical int) ────────────────────────────
-inline qint operator<<(const qint& a, int n) noexcept {
-    const auto x = qint_alias_detail::measure_to_int(a);
-    return qint((n >= 0 && n < 64) ? (x << n) : 0);
-}
-
-inline qint operator>>(const qint& a, int n) noexcept {
-    const auto x = qint_alias_detail::measure_to_int(a);
-    return qint((n >= 0 && n < 64) ? (x >> n) : 0);
-}
+inline qint operator<<(const qint& /*a*/, int /*n*/) noexcept { return qint{}; }
+inline qint operator>>(const qint& /*a*/, int /*n*/) noexcept { return qint{}; }
 
 // ── Compound assigns ──────────────────────────────────────────────────
-// Free-function form keeps qint_alias.hpp's class body minimal. Each
-// stub goes through the corresponding `a OP b` free operator above —
-// which measures both operands — and copy-assigns into LHS. The copy-
-// assign does NOT measure (RHS is a freshly-constructed classical qint).
-
-inline qint& operator+=(qint& a, const qint& b) noexcept { a = a + b; return a; }
-inline qint& operator-=(qint& a, const qint& b) noexcept { a = a - b; return a; }
-inline qint& operator*=(qint& a, const qint& b) noexcept { a = a * b; return a; }
-inline qint& operator/=(qint& a, const qint& b) noexcept { a = a / b; return a; }
-inline qint& operator%=(qint& a, const qint& b) noexcept { a = a % b; return a; }
-inline qint& operator&=(qint& a, const qint& b) noexcept { a = a & b; return a; }
-inline qint& operator|=(qint& a, const qint& b) noexcept { a = a | b; return a; }
-inline qint& operator^=(qint& a, const qint& b) noexcept { a = a ^ b; return a; }
-inline qint& operator<<=(qint& a, int n)        noexcept { a = a << n; return a; }
-inline qint& operator>>=(qint& a, int n)        noexcept { a = a >> n; return a; }
+// W3.3 constraint (PRD §10.3.2 / plan §27): "Compound assigns return
+// `a` unchanged — they MUST NOT compute `a OP b` even speculatively,
+// because that would re-invoke the free op (which now returns a
+// default)." Body is just `return a;`.
+inline qint& operator+=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator-=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator*=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator/=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator%=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator&=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator|=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator^=(qint& a, const qint& /*b*/) noexcept { return a; }
+inline qint& operator<<=(qint& a, int /*n*/)         noexcept { return a; }
+inline qint& operator>>=(qint& a, int /*n*/)         noexcept { return a; }
 
 } // namespace frontend
 } // namespace sturm

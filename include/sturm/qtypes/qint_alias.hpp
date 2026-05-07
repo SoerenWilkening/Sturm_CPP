@@ -178,37 +178,37 @@ public:
     // PRD §4.1 member-ops bullet, plan §4 / A1. Three member ops mirror
     // shapes carried by `qint_t<W>` so user code that compiles against
     // either spelling stays compiling against the alias.
+    //
+    // Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): every body is a
+    // pure type-stub. The transpiler is mandatory (sturm-yial host-clang
+    // invariant); the C1 matcher rewrites the alias usage so these
+    // bodies are unreachable on the rewrite path. They exist purely so
+    // the host C++ compiler can typecheck the source file pre-transpile.
 
-    // operator=(int64_t v) — classical-int copy-assign on an existing
-    // `qint`. P4a: classical-to-quantum is FREE — no measurement-counter
-    // bump. (Counterpart: qint_core.hpp:181, where the backend bumps no
-    // counter either; the qubit-pool releases it does are bookkeeping
-    // not measurement.)
-    qint& operator=(int64_t v) noexcept {
-        value_ = v;
+    // operator=(int64_t v) — pure type-stub. Body returns `*this`
+    // unchanged; does NOT write `value_` (G8 — the only `value_` writes
+    // in the alias are the class default `= 0` and the int64_t ctor's
+    // mem-init).
+    qint& operator=(int64_t /*v*/) noexcept {
         return *this;
     }
 
     // operator[](size_t k) const — bit read. Wave-3 G7: returns
-    // `sturm::qbool` (was classical `bool` pre-W3) so the alias's
-    // `operator[]` return type matches `qint_t<W>::operator[]`. The
-    // body lives out-of-line in `qint_alias_ops.hpp` (PRD §10.3.4) so
-    // this header avoids pulling `sturm/qtypes/qbool.hpp` (and its
-    // transitive `qint_core.hpp`) into every TU that only needs the
-    // bare alias class. A forward declaration of `sturm::qbool` is
+    // `sturm::qbool`. The body lives out-of-line in `qint_alias_ops.hpp`
+    // (PRD §10.3.4) so this header avoids pulling `sturm/qtypes/qbool.hpp`
+    // (and its transitive `qint_core.hpp`) into every TU that only needs
+    // the bare alias class. A forward declaration of `sturm::qbool` is
     // already in scope (above the `frontend::` namespace), which is
-    // sufficient for the by-value return-type spelling.
+    // sufficient for the by-value return-type spelling. W3.3 strips the
+    // out-of-line body to `return qbool();`.
     qbool operator[](std::size_t k) const noexcept;
 
-    // explicit operator int64_t() — converting cast. `explicit` so any
+    // explicit operator int64_t() — pure type-stub. `explicit` so any
     // *implicit* int64_t use is a compile error; the load-bearing
     // implicit conversion site on the alias is `operator size_t()`
-    // alone. Each invocation bumps the counter +1 (backend qint_t<W>'s
-    // counterpart is at qint_core.hpp:97; the alias bumps the same
-    // observability counter the rest of the alias uses).
+    // alone. Body returns `0`; does NOT read `value_` (G8).
     explicit operator int64_t() const noexcept {
-        qint_alias_detail::bump_measurement_count();
-        return value_;
+        return 0;
     }
 
     // ── Phase / rotation proxy stubs (sturm-vm38) ────────────────────────
@@ -221,26 +221,19 @@ public:
     // have substituted `frontend::qint -> sturm::qint_t<W>` and routed
     // the call to the real backend proxy post-transpile.
     //
-    // Bodies bump the per-thread measurement counter and no-op the
-    // classical `value_`: phase rotations have no classical mirror
-    // (rotating a classical state is a no-op). The bump preserves the
-    // observability contract every other A2 stub uses — counter > 0
-    // post-transpile means the C1 matcher missed a substitution site.
+    // Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): bodies are pure
+    // type-stubs (`{}`). No counter bumps, no `value_` access. The C1
+    // matcher rewrites `frontend::qint` to `sturm::qint_t<W>` so these
+    // bodies are unreachable on the rewrite path.
     struct PhiProxyStub {
         qint& parent;
-        void operator+=(double /*delta*/) noexcept {
-            qint_alias_detail::bump_measurement_count();
-            // No classical mirror: phase is intrinsically quantum.
-        }
-        void operator-=(double delta) noexcept { operator+=(-delta); }
+        void operator+=(double /*delta*/) noexcept {}
+        void operator-=(double /*delta*/) noexcept {}
     };
     struct ThetaProxyStub {
         qint& parent;
-        void operator+=(double /*delta*/) noexcept {
-            qint_alias_detail::bump_measurement_count();
-            // No classical mirror: rotation is intrinsically quantum.
-        }
-        void operator-=(double delta) noexcept { operator+=(-delta); }
+        void operator+=(double /*delta*/) noexcept {}
+        void operator-=(double /*delta*/) noexcept {}
     };
     [[nodiscard]] PhiProxyStub   phi()   noexcept { return PhiProxyStub{*this}; }
     [[nodiscard]] ThetaProxyStub theta() noexcept { return ThetaProxyStub{*this}; }
@@ -262,30 +255,31 @@ private:
 };
 
 // ── Out-of-line operator size_t ──────────────────────────────────────────
-// Defined `inline` so the header stays self-contained. The body is the
-// "measurement-then-classical" stub — bumps the per-thread counter (so
-// tests / G1 can observe it ran) and returns the classical value cast
-// to `size_t`.
+// Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): pure type-stub. The
+// body returns `0` and never reads `value_`. Pre-transpile this body is
+// reachable when a user writes `a[qint_idx]` and the type still resolves
+// to `frontend::qint`; post-transpile the C1 matcher has rewritten the
+// expression to `QRAM_read(...)` and the body is unreachable. Under
+// Wave 3 the transpiler is mandatory (host-clang invariant sturm-yial),
+// so the pre-transpile reachable path is no longer a concern.
 //
-// TODO(backend): when the real quantum measurement path lands, replace
-// the bump-and-return body with a call into the active backend's
-// measurement op (parallel to `qint_t<W>::operator int64_t()`'s
-// TODO(backend) at qint_core.hpp:96). The counter will remain — its
-// purpose is observability for the matcher's coverage assertion.
+// TODO(backend): when the real quantum measurement path lands, this
+// stub will be deleted entirely — by then user source flows directly
+// to `qint_t<W>::operator int64_t()` post-rewrite, and there is no
+// pre-transpile fallback semantics to preserve.
 inline qint::operator std::size_t() const noexcept {
-    qint_alias_detail::bump_measurement_count();
-    return static_cast<std::size_t>(value_);
+    return 0;
 }
 
 // ── Out-of-line converting constructor from backend qint_t<W> ────────────
-// Body never accesses `src` (we don't pull qint_core.hpp here — keeps the
-// frontend header decoupled from the backend layout). Bumps the
-// measurement counter on the same rationale as `operator size_t()`: a
-// missed C1 rewrite shows up immediately in the G1 e2e assertion.
+// Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): pure type-stub `{}`.
+// No member-init list (note: the class-default `int64_t value_ = 0;`
+// still applies, so `value_` is zero-initialised — the body itself
+// neither reads nor writes any field). Body never accesses `src` (we
+// do not pull qint_core.hpp here — keeps the frontend header decoupled
+// from the backend layout).
 template <std::size_t W>
-inline qint::qint(const ::sturm::qint_t<W>& /*src*/) noexcept : value_(0) {
-    qint_alias_detail::bump_measurement_count();
-}
+inline qint::qint(const ::sturm::qint_t<W>& /*src*/) noexcept {}
 
 // ── Sanity: the implicit conversion really IS implicit ───────────────────
 // We do NOT static_assert this here — the compiler must be free to
