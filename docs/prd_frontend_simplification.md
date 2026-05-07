@@ -77,6 +77,17 @@ G6. **No-argument renderer entry points.**
   always pulling the runtime, the option to compile without
   `STURM_BACKEND_ENABLED` goes away. This is a deliberate
   simplification, not a deferral.
+- **Control-flow gaps in auto-injected lifecycle (R7).** The
+  transpiler-injected lifecycle (G4) wraps `int main(...)` with an IIFE
+  followed by `sturm_set_thread_context(nullptr)` + `sturm_backend_destroy`.
+  Non-local control flow that bypasses the IIFE return path will skip
+  that teardown: `setjmp` / `longjmp`, `std::exit` / `std::_Exit` /
+  `std::quick_exit`, and uncaught exceptions that escape the lambda all
+  leak the heap-allocated `sturm_backend_context_t`. Userland code that
+  uses any of these from inside `main` must either call
+  `sturm_backend_destroy` explicitly before the bypass, or opt into the
+  manual lifecycle via `STURM_NO_AUTO_LIFECYCLE`. The same caveats are
+  documented in `include/sturm.h`'s comment block.
 
 ## 4. User-visible shape (target)
 

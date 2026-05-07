@@ -125,19 +125,34 @@ add_test(NAME test_detail_layout COMMAND test_detail_layout)
 set_tests_properties(test_detail_layout PROPERTIES
     LABELS "packaging")
 
-# ── sturm-zmfk.1 / E3.M1 — umbrella header acceptance test ──────────────────
-# Pins the public-API surface promised by `<sturm/sturm.hpp>`: a TU that
-# includes ONLY the umbrella must reach `sturm::qint`, `sturm::qbool`,
-# `WHEN(...)`, `sturm::add_mod`, and `sturm::invert<&fn>()`. If the
-# umbrella ever drops a public header, the corresponding probe in
-# test_umbrella_only.cpp stops compiling. Header-only build linking
-# against the `sturm` INTERFACE target.
-add_executable(test_umbrella_only test_umbrella_only.cpp)
+# ── sturm-ilz3 / Phase 3 — sturm.h umbrella header acceptance test ─────────
+# Pins the contract for the NEW front-door umbrella `<sturm.h>` introduced
+# by PRD §5.1 (drives A5 first half / G1). A TU that includes ONLY
+# `<sturm.h>` (no other `<sturm/...>` headers) must:
+#   1. Compile `qint a = 5;` (the user-level alias is brought in by the
+#      umbrella's `using sturm::qint;`).
+#   2. Reach the C ABI lifecycle (sturm_backend_create / destroy and
+#      sturm_set_thread_context).
+#   3. Reach the IR / GateRecord / GateIR types so `ctx->ir.append(...)`
+#      observably grows the IR — proves the umbrella does not drop a
+#      header that the gate-emission reachpoints (GateRecord,
+#      sturm_gate_kind_t, BackendContext::ir) need. Linkage pulls in
+#      `context.cpp` + `gate_kind.c` so the C ABI symbols (`sturm_*`)
+#      resolve at link time. The legacy `<sturm/sturm.hpp>` umbrella is
+#      still tested by `test_detail_layout.cpp`.
+add_executable(test_umbrella_only
+    test_umbrella_only.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
 target_link_libraries(test_umbrella_only PRIVATE sturm)
 target_compile_features(test_umbrella_only PRIVATE cxx_std_20)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11")
 add_test(NAME test_umbrella_only COMMAND test_umbrella_only)
 set_tests_properties(test_umbrella_only PROPERTIES
-    LABELS "packaging")
+    LABELS "packaging;frontend_simpl")
 
 # ── sturm-65rs.6 / B1 — qint resolution acceptance test ────────────────────
 # Pins the post-B1 type identity of `sturm::qint`: it IS sturm::frontend::qint
