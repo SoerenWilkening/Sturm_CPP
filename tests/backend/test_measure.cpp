@@ -50,7 +50,7 @@ struct ScopedCtx {
     sturm::OrkanBridge*      bridge{nullptr};
 
     ScopedCtx(sturm_mode_t mode, uint32_t n_qubits = 1u) {
-        ctx = sturm_backend_create(mode, 17u);
+        ctx = sturm_backend_create(mode);
         assert(ctx);
         if (mode == STURM_MODE_SIMULATE) {
             bridge = new sturm::OrkanBridge();

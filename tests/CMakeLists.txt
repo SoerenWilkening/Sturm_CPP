@@ -10,7 +10,6 @@ find_package(Threads REQUIRED)
 # the bottom of this file). Adding it here would skip the transpile step.
 set(STURM_TEST_SOURCES
     test_smoke.cpp
-    test_qubit_pool.cpp
     test_sink_counter.cpp
     test_sink_recording.cpp
     test_qbool.cpp

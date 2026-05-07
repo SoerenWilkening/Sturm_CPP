@@ -55,7 +55,7 @@ int main() {
     // predicate ancilla and W=4 lazy qubits for `b`. 8 qubits is plenty.
     constexpr uint32_t kNumQubits = 8;
     sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND, kNumQubits);
+        sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
     
     qint a[4];

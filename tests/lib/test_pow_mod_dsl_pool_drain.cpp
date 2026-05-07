@@ -154,7 +154,7 @@ static void run_pool_drain_case(uint32_t base_val, uint32_t exp_val,
     // beats 3.4 / 3.5 / 3.6 / 3.7 use to bypass the orkan stub's 30-qubit
     // ceiling at W=2+ chain pow_mod.
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

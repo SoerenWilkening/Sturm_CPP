@@ -439,7 +439,7 @@ struct ScopedAppendContext {
 
     ScopedAppendContext() {
         sturm::QubitPool::instance().reset_for_testing();
-        ctx = sturm_backend_create(STURM_MODE_APPEND, 17u);
+        ctx = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx && "sturm_backend_create(APPEND) returned null");
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

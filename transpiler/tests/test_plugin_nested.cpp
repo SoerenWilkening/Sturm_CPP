@@ -164,10 +164,8 @@ std::string common_flags() {
     f += " -I";
     f += generated_include_dir();
     f += " -DSTURM_BACKEND_ENABLED=1";
-    // qubit_pool.hpp hard-requires this define at parse time; it is
-    // set globally by the top-level CMakeLists.txt for the rest of
-    // the tree, so match the default value here.
-    f += " -DSTURM_ANCILLA_CAPACITY=256";
+    // sturm-5jta (P2.b / G5): the legacy ancilla-cap define is gone;
+    // qubit_pool.hpp grows on demand without a compile-time knob.
     return f;
 }
 
@@ -280,8 +278,7 @@ void compare_one(const std::string& dir, const char* name) {
             " -- " +
             " -std=c++20 -I" + include_dir() +
             " -I" + generated_include_dir() +
-            " -DSTURM_BACKEND_ENABLED=1" +
-            " -DSTURM_ANCILLA_CAPACITY=256";
+            " -DSTURM_BACKEND_ENABLED=1";
         auto r = run(cmd);
         CHECK_MSG(r.exit_code == 0, "sturm-transpile step failed", r);
         CHECK_MSG(file_exists(rewritten),

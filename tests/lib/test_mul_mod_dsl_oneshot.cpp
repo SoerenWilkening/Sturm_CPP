@@ -67,7 +67,7 @@ struct SimCtx {
     explicit SimCtx(uint32_t n_q, uint32_t max_q = 64u, bool bypass = false) {
         if (bypass) orkan::allocate(bridge.state(), n_q);
         else        bridge.allocate(n_q);
-        ctx  = sturm_backend_create(STURM_MODE_SIMULATE, max_q);
+        ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();
@@ -282,7 +282,7 @@ static void run_oneshot_trace_case(uint32_t a_val, uint32_t b_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -472,10 +472,10 @@ int main() {
     }
 
     // sturm-8n73: high-W trace spot checks validating that kMaxN > 32
-    // works.  These fit in the per-target STURM_ANCILLA_CAPACITY=256
-    // budget (peak live = 7W+7 ≤ 256 for W ≤ 35).  The W=64 path is
-    // exercised separately by test_modular_arith_highw_trace which
-    // overrides STURM_ANCILLA_CAPACITY=1024.
+    // works.  Peak live ancillas scale as 7W+7; sturm-5jta dropped the
+    // legacy compile-time pool cap, so any W is supported (the pool
+    // grows on demand).  The W=64 path is exercised separately by
+    // test_modular_arith_highw_trace.
     constexpr std::size_t W8  = 8u;
     constexpr std::size_t W16 = 16u;
 

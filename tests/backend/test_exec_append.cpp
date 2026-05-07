@@ -20,7 +20,7 @@
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
 static sturm_backend_context_t* make_append_ctx() {
-    return sturm_backend_create(STURM_MODE_APPEND, 17u);
+    return sturm_backend_create(STURM_MODE_APPEND);
 }
 
 // ── Test 1: single push lands in ctx.ir ──────────────────────────────────────

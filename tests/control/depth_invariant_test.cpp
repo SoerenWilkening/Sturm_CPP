@@ -86,7 +86,7 @@ struct CtxScope {
     sturm_backend_context_t* ctx;
     sturm_backend_context_t* prev;
     CtxScope() {
-        ctx  = sturm_backend_create(STURM_MODE_APPEND, 256u);
+        ctx  = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx);
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

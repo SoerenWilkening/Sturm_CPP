@@ -21,7 +21,7 @@ struct ScopedCtx {
     sturm_backend_context_t* prev;
 
     explicit ScopedCtx(sturm_mode_t mode, uint32_t max_q = 17u) {
-        ctx  = sturm_backend_create(mode, max_q);
+        ctx  = sturm_backend_create(mode);
         assert(ctx);
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

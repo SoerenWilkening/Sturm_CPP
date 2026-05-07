@@ -316,17 +316,14 @@ set(_sturm_qint_alias_fixture_src
 set(_sturm_qint_alias_stubs_ll
     "${CMAKE_CURRENT_BINARY_DIR}/qint_alias_stubs.ll")
 
-# Mirror the include / define plumbing that any header-only qtypes test
+# Mirror the include plumbing that any header-only qtypes test
 # relies on (cf. test_qint_alias above): the `${CMAKE_SOURCE_DIR}/include`
-# tree carries the alias headers, and `STURM_ANCILLA_CAPACITY` is the
-# top-level `add_compile_definitions` from `CMakeLists.txt:162` -- it
-# does NOT propagate to a hand-rolled `add_custom_command` invocation,
-# so we re-pass it explicitly.
+# tree carries the alias headers. (sturm-5jta: legacy compile-time pool
+# cap removed — the qubit pool grows on demand.)
 add_custom_command(
     OUTPUT  "${_sturm_qint_alias_stubs_ll}"
     COMMAND "${CMAKE_CXX_COMPILER}"
             -std=c++17 -S -emit-llvm -O0
-            "-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}"
             "-I${CMAKE_SOURCE_DIR}/include"
             "-I${CMAKE_BINARY_DIR}/include"
             -o "${_sturm_qint_alias_stubs_ll}"
@@ -356,8 +353,7 @@ set_tests_properties(test_qint_alias_stubs PROPERTIES
 
 # ── sturm-zbzo (Frontend simpl. P2.a / G5) ────────────────────────────────
 # Pool-growth gate after qubit-cap removal. After P2.a:
-#   * STURM_ANCILLA_CAPACITY / kCapExceededMsg / kCapacity / acquire()
-#     cap-check + abort path are gone.
+#   * The legacy cap macro / sentinel constant / abort path are gone.
 #   * QubitPool has no cap; allocate() grows the pool on demand.
 #   * BackendContext takes only (mode) — no max_qubits.
 # This test acquires 1024 qubits (well past every former cap) and

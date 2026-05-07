@@ -2,8 +2,9 @@
 // validation that kMaxN=64 actually works end-to-end for circuit-
 // generation use cases.
 //
-// Builds with STURM_ANCILLA_CAPACITY=1024 so the W=64 ancilla peak
-// (~7W+7 = 455 live) fits with headroom.  Drives all three primitives
+// sturm-5jta (P2.b / G5): the qubit pool now grows on demand without a
+// compile-time knob, so the W=64 ancilla peak (~7W+7 = 455 live) is
+// allocated naturally.  Drives all three primitives
 // (lib_double_mod_dsl, lib_add_mod_inplace_dsl, lib_mul_mod_dsl_oneshot)
 // in APPEND-mode classical-trace replay -- statevector simulation is
 // infeasible past ~W=16 regardless of the pool size, so this file
@@ -98,7 +99,7 @@ static void run_double_mod_trace(uint64_t x_val, uint64_t n_val) {
     lt_bit = sturm::BitProxy(lt_own);
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 1024u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -166,7 +167,7 @@ static void run_inplace_trace(uint64_t a_val, uint64_t dest_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 1024u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -237,7 +238,7 @@ static void run_oneshot_trace(uint64_t a_val, uint64_t b_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 1024u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -348,7 +349,7 @@ static void run_public_mul_mod_case(uint64_t a_val, uint64_t b_val,
     const int pre_in_use = sturm::QubitPool::instance().in_use();
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 1024u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

@@ -108,7 +108,7 @@ int main() {
     constexpr uint32_t kNumQubits = 32;
 
     sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND, kNumQubits);
+        sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
 
     std::size_t gates_after_dead = 0;

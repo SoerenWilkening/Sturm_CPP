@@ -149,22 +149,8 @@ function(add_quantum_executable target)
             "Pass one or more .cpp files after the target name.")
     endif()
 
-    # STURM_ANCILLA_CAPACITY must match the value baked into the rest of
-    # the build (root CMakeLists.txt add_compile_definitions) and the
-    # value exposed to out-of-tree find_package(sturm) consumers via
-    # sturmConfig.cmake (which sets this variable before include()ing
-    # this file). Referencing ${STURM_ANCILLA_CAPACITY} here keeps the
-    # transpile pass and the compile pass in sync, preventing divergent
-    # macro-driven template instantiations.
-    if(NOT DEFINED STURM_ANCILLA_CAPACITY)
-        message(FATAL_ERROR
-            "add_quantum_executable(${target}): STURM_ANCILLA_CAPACITY "
-            "is not defined. In-tree builds set it in the top-level "
-            "CMakeLists.txt; find_package(sturm) consumers receive it "
-            "from sturmConfig.cmake. If you are including "
-            "SturmTranspile.cmake directly, set STURM_ANCILLA_CAPACITY "
-            "before the include().")
-    endif()
+    # sturm-5jta (P2.b / G5): the legacy compile-time pool cap is gone.
+    # The qubit pool grows on demand without a compile-time knob.
 
     # PLUGINS is a plugin-mode-only feature. Forwarding it to dump mode
     # would silently drop the paths because the dump-mode path invokes
@@ -556,8 +542,7 @@ function(_sturm_add_quantum_executable_dump target)
             "--extra-arg=-std=c++20"
             "--extra-arg=-I${CMAKE_SOURCE_DIR}/include"
             "--extra-arg=-I${CMAKE_BINARY_DIR}/include"
-            "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
-            "--extra-arg=-DSTURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
+            "--extra-arg=-DSTURM_BACKEND_ENABLED=1")
 
         # sturm-r1c1: force the libTooling parse to use llvm@17's bundled
         # libc++ headers instead of whatever the host SDK ships. Apple's

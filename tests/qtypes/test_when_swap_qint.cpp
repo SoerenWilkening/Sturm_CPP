@@ -47,7 +47,7 @@ struct ScopedAppendCtx {
     sturm_backend_context_t* ctx;
     sturm_backend_context_t* prev;
     explicit ScopedAppendCtx(uint32_t mq = 64u) {
-        ctx  = sturm_backend_create(STURM_MODE_APPEND, mq);
+        ctx  = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx);
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

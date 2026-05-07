@@ -79,7 +79,7 @@ struct SimCtx {
     sturm_backend_context_t* prev;
     explicit SimCtx(uint32_t n_q, uint32_t max_q = 128u) {
         bridge.allocate(n_q);
-        ctx  = sturm_backend_create(STURM_MODE_SIMULATE, max_q);
+        ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();
@@ -273,7 +273,7 @@ static void run_roundtrip_case_w3(uint32_t x_val, uint32_t n_val) {
     sturm::OrkanBridge bridge;
     orkan::allocate(bridge.state(), n_orkan_w3);
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_SIMULATE, 128u);
+        sturm_backend_create(STURM_MODE_SIMULATE);
     assert(ctx);
     ctx->orkan_state_ptr = &bridge;
     sturm_backend_context_t* prev = sturm_get_thread_context();
@@ -382,7 +382,7 @@ static void run_roundtrip_trace_case(uint32_t x_val, uint32_t n_val) {
     lt_bit = sturm::BitProxy(lt_own);
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

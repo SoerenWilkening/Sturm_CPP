@@ -235,8 +235,12 @@ Files touched:
   - `sturm_backend_create` signature update.
 - `STURM_ANCILLA_CAPACITY` preprocessor macro: deleted from CMake and
   any `target_compile_definitions`.
-- All ~80 callers of `sturm_backend_create(mode, N)` updated to
-  `sturm_backend_create(mode)` — mechanical, mostly tests.
+- All 126 caller files of `sturm_backend_create(mode, N)` (189 call
+  sites in total) updated to `sturm_backend_create(mode)` —
+  mechanical, mostly tests. (sturm-5jta confirmed the actual count
+  via `grep -rln "sturm_backend_create" --include="*.cpp"
+  --include="*.hpp" --include="*.h"`; the original "~80" estimate was
+  conservative.)
 
 ### 5.6 — No-argument renderer entry points
 
@@ -282,8 +286,8 @@ finer-grained limits remain the user's responsibility (G5).
 
 ### 5.8 — Migration
 
-- All ~80 `sturm_backend_create(mode, N)` call sites updated. Mostly
-  `tests/`. Mechanical.
+- All 189 `sturm_backend_create(mode, N)` call sites across 126 files
+  updated (sturm-5jta). Mostly `tests/`. Mechanical.
 - `examples/`: each example either (a) deletes the explicit lifecycle
   and relies on auto-injection, or (b) keeps the explicit form with
   `#define STURM_NO_AUTO_LIFECYCLE`. Default to (a) unless the example

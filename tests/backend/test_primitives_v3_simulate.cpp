@@ -50,7 +50,7 @@ struct SimCtx {
 
     explicit SimCtx(uint32_t n_qubits) {
         bridge.allocate(n_qubits);
-        ctx  = sturm_backend_create(STURM_MODE_SIMULATE, 17u);
+        ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();

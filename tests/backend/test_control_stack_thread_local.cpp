@@ -16,7 +16,7 @@
 static void test_thread_local_independent() {
     // Main thread: create a context, install it, push a control.
     sturm_backend_context_t* ctx_main =
-        sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+        sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx_main != nullptr);
     sturm_set_thread_context(ctx_main);
 
@@ -28,7 +28,7 @@ static void test_thread_local_independent() {
     bool thread_ok = false;
     std::thread worker([&thread_ok]() {
         sturm_backend_context_t* ctx_worker =
-            sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+            sturm_backend_create(STURM_MODE_COUNT_ONLY);
         assert(ctx_worker != nullptr);
         sturm_set_thread_context(ctx_worker);
 

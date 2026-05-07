@@ -63,7 +63,7 @@ struct ScopedCountCtx {
     sturm_backend_context_t* prev;
 
     ScopedCountCtx() {
-        ctx  = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+        ctx  = sturm_backend_create(STURM_MODE_COUNT_ONLY);
         assert(ctx && "sturm_backend_create failed");
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);
@@ -82,7 +82,7 @@ struct ScopedAppendCtx {
     sturm_backend_context_t* prev;
 
     ScopedAppendCtx() {
-        ctx  = sturm_backend_create(STURM_MODE_APPEND, 17u);
+        ctx  = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx && "sturm_backend_create failed");
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

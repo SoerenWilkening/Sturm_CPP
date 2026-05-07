@@ -98,7 +98,7 @@ static void run_roundtrip_case_w2_sim(uint32_t a_val, uint32_t b_val,
     sturm::OrkanBridge bridge;
     orkan::allocate(bridge.state(), n_orkan_w2_full);
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_SIMULATE, 64u);
+        sturm_backend_create(STURM_MODE_SIMULATE);
     assert(ctx);
     ctx->orkan_state_ptr = &bridge;
     sturm_backend_context_t* prev = sturm_get_thread_context();
@@ -202,7 +202,7 @@ static void run_roundtrip_case_trace(uint32_t a_val, uint32_t b_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

@@ -70,7 +70,7 @@ struct SimCtx {
     explicit SimCtx(uint32_t n_q, uint32_t max_q = 128u, bool bypass = false) {
         if (bypass) orkan::allocate(bridge.state(), n_q);
         else        bridge.allocate(n_q);
-        ctx  = sturm_backend_create(STURM_MODE_SIMULATE, max_q);
+        ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();
@@ -266,7 +266,7 @@ static void run_trace_case(uint32_t x_val, uint32_t n_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 128u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -362,7 +362,7 @@ static void run_xor_into_case(uint32_t x_val, uint32_t n_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 128u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -444,7 +444,7 @@ static int peak_ancilla_square_mod_for(uint32_t x_val, uint32_t n_val) {
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 128u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

@@ -135,7 +135,7 @@ static void run_cap_lift_case(uint64_t base_val, uint64_t exp_val,
     // in_use() / high_water() figures are valid even though no
     // statevector is involved.
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, /*max_q=*/4096u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

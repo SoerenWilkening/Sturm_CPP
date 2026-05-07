@@ -55,7 +55,7 @@ struct AppendCtx {
     sturm_backend_context_t* ctx;
     sturm_backend_context_t* prev;
     explicit AppendCtx(uint32_t max_q = 128u) {
-        ctx = sturm_backend_create(STURM_MODE_APPEND, max_q);
+        ctx = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx);
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

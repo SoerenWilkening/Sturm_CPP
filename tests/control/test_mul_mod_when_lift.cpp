@@ -134,7 +134,7 @@ static void run_case(uint32_t a_val, uint32_t b_val, uint32_t n_val,
     }
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 256u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

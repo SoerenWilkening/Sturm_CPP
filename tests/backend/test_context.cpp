@@ -42,7 +42,7 @@ static void test_mode_roundtrip() {
 static void test_counter_starts_zero() {
     // Create a fresh context to get a clean counter.
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+        sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != nullptr);
     assert(sturm_gate_count(ctx) == 0u);
     sturm_backend_destroy(ctx);
@@ -58,7 +58,7 @@ static void test_context_switch_no_leak() {
     sturm_backend_context_t* original = sturm_get_thread_context();
 
     sturm_backend_context_t* fresh =
-        sturm_backend_create(STURM_MODE_APPEND, 17u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(fresh != nullptr);
 
     // Install the fresh context.
@@ -88,15 +88,17 @@ static void test_thread_local_shared_within_thread() {
 
 // ── Test 6: BackendContext has an accessible QubitPool member ─────────────────
 //
-// The BackendContext.pool field must be a sturm::QubitPool instance whose
-// max_qubits matches the value passed to sturm_backend_create.
+// The BackendContext.pool field must be a sturm::QubitPool instance.
+// sturm-5jta (P2.b / G5): the legacy max_qubits cap is gone — the pool
+// grows on demand and exposes only in_use() / high_water().
 
 static void test_context_has_qubit_pool() {
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_COUNT_ONLY, 8u);
+        sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != nullptr);
-    // pool.max_qubits must match the capacity used at construction.
-    assert(ctx->pool.max_qubits == 8u);
+    // pool starts empty and exposes its diagnostic counters.
+    assert(ctx->pool.in_use() == 0);
+    assert(ctx->pool.high_water() == 0);
     sturm_backend_destroy(ctx);
 }
 

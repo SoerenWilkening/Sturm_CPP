@@ -4,8 +4,9 @@
 // Verifies the integration between the type destructors and QubitPool:
 //   - Construct and destroy 10 000 qbools (with qubit allocation) one at a time.
 //   - Construct and destroy 10 000 qint_t<1> values (with qubit allocation).
-//   - After each full loop: QubitPool::in_use() == 0 and
-//     high_water() <= capacity().
+//   - After each full loop: QubitPool::in_use() == 0 (the legacy
+//     capacity() bound is gone post-sturm-5jta — the pool grows on
+//     demand).
 
 #include "sturm/qtypes/qint.hpp"
 #include "sturm/qtypes/qbool.hpp"
@@ -57,7 +58,10 @@ static void test_qbool_lifecycle() {
 
     // Pool invariants after all iterations.
     CHECK(QubitPool::instance().in_use() == 0);
-    CHECK(QubitPool::instance().high_water() <= QubitPool::capacity());
+    // sturm-5jta (P2.b / G5): the legacy capacity() bound is gone — the
+    // pool grows on demand. Spot-check that high_water stays bounded by
+    // the test's own allocation envelope (kIters loop = 10k allocations).
+    CHECK(QubitPool::instance().high_water() <= 100000);
 }
 
 // ── test: 10k qint_t<1> with qubit allocation, one at a time ─────────────────
@@ -93,7 +97,10 @@ static void test_qint1_lifecycle() {
 
     // Pool invariants after all iterations.
     CHECK(QubitPool::instance().in_use() == 0);
-    CHECK(QubitPool::instance().high_water() <= QubitPool::capacity());
+    // sturm-5jta (P2.b / G5): the legacy capacity() bound is gone — the
+    // pool grows on demand. Spot-check that high_water stays bounded by
+    // the test's own allocation envelope (kIters loop = 10k allocations).
+    CHECK(QubitPool::instance().high_water() <= 100000);
 }
 
 // ── test: 10k qint<64> (classical) — no qubits allocated ────────────────────
@@ -111,7 +118,10 @@ static void test_qint64_classical_lifecycle() {
     }
 
     CHECK(QubitPool::instance().in_use() == 0);
-    CHECK(QubitPool::instance().high_water() <= QubitPool::capacity());
+    // sturm-5jta (P2.b / G5): the legacy capacity() bound is gone — the
+    // pool grows on demand. Spot-check that high_water stays bounded by
+    // the test's own allocation envelope (kIters loop = 10k allocations).
+    CHECK(QubitPool::instance().high_water() <= 100000);
     // Classical qints never touch the pool.
     CHECK(QubitPool::instance().high_water() == 0);
 }
@@ -135,7 +145,10 @@ static void test_mixed_lifecycle() {
     }
 
     CHECK(QubitPool::instance().in_use() == 0);
-    CHECK(QubitPool::instance().high_water() <= QubitPool::capacity());
+    // sturm-5jta (P2.b / G5): the legacy capacity() bound is gone — the
+    // pool grows on demand. Spot-check that high_water stays bounded by
+    // the test's own allocation envelope (kIters loop = 10k allocations).
+    CHECK(QubitPool::instance().high_water() <= 100000);
 }
 
 // ── main ──────────────────────────────────────────────────────────────────────

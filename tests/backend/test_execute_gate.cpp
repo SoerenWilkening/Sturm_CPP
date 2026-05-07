@@ -51,7 +51,7 @@ struct ScopedCtx {
     sturm_backend_context_t* prev;
 
     explicit ScopedCtx(sturm_mode_t mode) {
-        ctx  = sturm_backend_create(mode, 17u);
+        ctx  = sturm_backend_create(mode);
         assert(ctx);
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);
@@ -120,7 +120,7 @@ static void test_simulate_counter() {
     sturm::OrkanBridge bridge;
     bridge.allocate(4u);
 
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_SIMULATE, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_SIMULATE);
     assert(ctx);
     // Wire the bridge into the context.
     ctx->orkan_state_ptr = &bridge;
@@ -153,7 +153,7 @@ static void test_simulate_h_then_x() {
     sturm::OrkanBridge bridge;
     bridge.allocate(2u);
 
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_SIMULATE, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_SIMULATE);
     assert(ctx);
     ctx->orkan_state_ptr = &bridge;
 
@@ -271,7 +271,7 @@ static void test_crot_simulate_via_execute_gate(
             sturm::OrkanBridge bridge;
             bridge.allocate(2u);
 
-            sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_SIMULATE, 17u);
+            sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_SIMULATE);
             assert(ctx);
             ctx->orkan_state_ptr = &bridge;
 

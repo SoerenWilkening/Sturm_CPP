@@ -25,10 +25,9 @@ set(STURM_CONTROL_BACKEND_SOURCES
 #
 # pow_mod at n=8 peaks at 4·W² + 2W + 8 = 280 transient ancillas above
 # the 4·W=32 input qubits (see tests/lib/test_pow_mod_dsl_ancilla.cpp
-# for the structural breakdown).  STURM_ANCILLA_CAPACITY=512 matches
-# the post-sturm-8n73 project-wide default; we keep the explicit -U/-D
-# override so the per-target intent ("worst-case fits at 512") is
-# pinned even if the project default ever moves again.
+# for the structural breakdown).  sturm-5jta dropped the legacy
+# compile-time pool cap, so this peak is allocated naturally (the pool
+# grows on demand).
 add_executable(test_baseline_gate_counts
     test_baseline_gate_counts.cpp
     ${STURM_CONTROL_BACKEND_SOURCES}
@@ -40,15 +39,9 @@ target_compile_features(test_baseline_gate_counts PRIVATE cxx_std_20)
 target_compile_definitions(test_baseline_gate_counts PRIVATE
     STURM_BACKEND_ENABLED=1
 )
-# Pin per-target STURM_ANCILLA_CAPACITY=512 (matches the project-wide
-# default since sturm-8n73, but keep the explicit pin so the worst-case
-# pow_mod n=8 budget of 280 transient ancillas stays documented at the
-# target).  The -U/-D dance silences the compiler's -Wmacro-redefined
-# warning we'd hit if both definitions reached the preprocessor
-# (sturm-cgg5).
-target_compile_options(test_baseline_gate_counts PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=512
-)
+# sturm-5jta (P2.b / G5): the legacy compile-time pool cap is gone — the
+# qubit pool grows on demand. The worst-case pow_mod n=8 budget of
+# 280 transient ancillas is allocated naturally.
 target_link_libraries(test_baseline_gate_counts PRIVATE orkan_headers)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
@@ -83,14 +76,8 @@ target_compile_features(test_add_mod_when_lift PRIVATE cxx_std_20)
 target_compile_definitions(test_add_mod_when_lift PRIVATE
     STURM_BACKEND_ENABLED=1
 )
-# Inherit the same STURM_ANCILLA_CAPACITY override pattern used by
-# test_baseline_gate_counts.  W=2 here easily fits in any reasonable
-# pool, but we pin the historical 256 cap explicitly via -U/-D for
-# consistency (and to silence -Wmacro-redefined under the post-
-# sturm-8n73 project default of 512 -- see sturm-cgg5).
-target_compile_options(test_add_mod_when_lift PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
-)
+# sturm-5jta (P2.b / G5): the legacy compile-time pool cap is gone — the
+# qubit pool grows on demand.
 target_link_libraries(test_add_mod_when_lift PRIVATE orkan_headers)
 # sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
 if(STURM_FULL_TEST_SUITE)
@@ -118,9 +105,6 @@ target_compile_features(test_mul_mod_when_lift PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_mod_when_lift PRIVATE
     STURM_BACKEND_ENABLED=1
 )
-target_compile_options(test_mul_mod_when_lift PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
-)
 target_link_libraries(test_mul_mod_when_lift PRIVATE orkan_headers)
 add_test(NAME test_mul_mod_when_lift COMMAND test_mul_mod_when_lift)
 set_tests_properties(test_mul_mod_when_lift
@@ -139,9 +123,6 @@ target_compile_definitions(test_pow_mod_when_lift PRIVATE
 )
 # pow_mod's chain-style allocations balloon at W=2; bump the ancilla cap to
 # 512 to match test_baseline_gate_counts' header budget.
-target_compile_options(test_pow_mod_when_lift PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=512
-)
 target_link_libraries(test_pow_mod_when_lift PRIVATE orkan_headers)
 add_test(NAME test_pow_mod_when_lift COMMAND test_pow_mod_when_lift)
 set_tests_properties(test_pow_mod_when_lift
@@ -166,9 +147,6 @@ target_compile_features(test_mul_when_lift PRIVATE cxx_std_20)
 target_compile_definitions(test_mul_when_lift PRIVATE
     STURM_BACKEND_ENABLED=1
 )
-target_compile_options(test_mul_when_lift PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
-)
 target_link_libraries(test_mul_when_lift PRIVATE orkan_headers)
 add_test(NAME test_mul_when_lift COMMAND test_mul_when_lift)
 set_tests_properties(test_mul_when_lift
@@ -184,9 +162,6 @@ target_include_directories(test_div_when_lift PRIVATE
 target_compile_features(test_div_when_lift PRIVATE cxx_std_20)
 target_compile_definitions(test_div_when_lift PRIVATE
     STURM_BACKEND_ENABLED=1
-)
-target_compile_options(test_div_when_lift PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
 )
 target_link_libraries(test_div_when_lift PRIVATE orkan_headers)
 add_test(NAME test_div_when_lift COMMAND test_div_when_lift)
@@ -216,9 +191,6 @@ target_compile_definitions(test_depth_invariant PRIVATE
 )
 # pow_mod's chain-style allocations balloon at W=2; bump the ancilla cap
 # to 512 to match test_baseline_gate_counts / test_pow_mod_when_lift.
-target_compile_options(test_depth_invariant PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=512
-)
 target_link_libraries(test_depth_invariant PRIVATE orkan_headers)
 add_test(NAME test_depth_invariant COMMAND test_depth_invariant)
 set_tests_properties(test_depth_invariant

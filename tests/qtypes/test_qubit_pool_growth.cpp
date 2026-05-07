@@ -2,20 +2,19 @@
 // Plan §3 Phase 2 / PRD §5.5.
 //
 // After P2.a:
-//   * `STURM_ANCILLA_CAPACITY`, `kCapacity`, `kCapExceededMsg`, the
-//     `acquire()` cap-check + abort path are gone.
+//   * The legacy cap macro / sentinel constant / abort path are gone.
 //   * `QubitPool` is default-constructible (no `max_qubits` arg).
 //   * Pool grows on demand; there is no hard cap.
 //
 // This test pins the post-change contract by acquiring enough qubits to
-// blow past the *former* cap (256 / 512 — whatever the deleted
-// `STURM_ANCILLA_CAPACITY` was set to) and asserting the pool keeps
-// handing out fresh, monotonically-allocated indices without aborting.
+// blow past the former singleton cap (256 / 512 — whatever the deleted
+// compile-time knob was set to) and asserting the pool keeps handing
+// out fresh, monotonically-allocated indices without aborting.
 //
 // Concretely we acquire 1024 qubits in a single pool instance. Before
 // P2.a this would have aborted on the 17th acquire() (per-context cap
-// of 17) or on the (kCapacity+1)st allocate() (singleton cap). After
-// P2.a it must succeed.
+// of 17) or on the (former-singleton-cap+1)st allocate(). After P2.a
+// it must succeed.
 
 #include "sturm/core/context.hpp"
 #include "sturm/core/qubit_pool.hpp"

@@ -20,7 +20,6 @@
 #   - a fake `sturm::transpile-plugin` IMPORTED library points at a
 #     placeholder `.so` (unused by dump mode but required by the helper's
 #     target presence checks if PLUGINS were ever passed);
-#   - `STURM_ANCILLA_CAPACITY` is set;
 #   - `STURM_TRANSPILE_MODE=dump` is selected (drives the
 #     `add_custom_command` path that emits the transpiler invocation onto
 #     the generated build script).
@@ -95,9 +94,6 @@ set(_proj_cmakelists "${_proj_dir}/CMakeLists.txt")
 file(WRITE "${_proj_cmakelists}"
 "cmake_minimum_required(VERSION 3.16)
 project(sturm_aqe_unit_harness CXX)
-
-# STURM_ANCILLA_CAPACITY is required by the helper.
-set(STURM_ANCILLA_CAPACITY 16)
 
 # Force dump mode so the helper emits an add_custom_command whose argv we
 # can grep on the generated build script. Plugin mode would emit
@@ -197,8 +193,7 @@ endif()
 # Assertion 3: the canonical extra-arg flags are present.
 foreach(_flag
         "--extra-arg=-std=c\\+\\+20"
-        "--extra-arg=-DSTURM_BACKEND_ENABLED=1"
-        "--extra-arg=-DSTURM_ANCILLA_CAPACITY=16")
+        "--extra-arg=-DSTURM_BACKEND_ENABLED=1")
     if(NOT _combined MATCHES "${_flag}")
         message(FATAL_ERROR
             "test_add_quantum_executable_command_line: generated build "

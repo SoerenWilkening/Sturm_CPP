@@ -57,7 +57,7 @@ struct SimCtx {
     sturm_backend_context_t* prev;
     explicit SimCtx(uint32_t n_q, uint32_t max_q = 64u) {
         bridge.allocate(n_q);
-        ctx  = sturm_backend_create(STURM_MODE_SIMULATE, max_q);
+        ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();
@@ -210,7 +210,7 @@ static void run_mul_mod_case(uint32_t a_val, uint32_t b_val, uint32_t n_val) {
 
     // APPEND-mode context (execute_gate just records to ctx.ir).
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -294,7 +294,7 @@ static void run_pow_mod_case(uint32_t base_val, uint32_t exp_val,
 
     // APPEND-mode context (execute_gate just records to ctx.ir).
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);
@@ -394,7 +394,7 @@ static void prepare_inputs(sturm_backend_context_t*& ctx,
                            const std::array<int, W>& qi_b,
                            const std::array<int, W>& qi_n,
                            uint32_t a_val, uint32_t b_val, uint32_t n_val) {
-    ctx = sturm_backend_create(STURM_MODE_APPEND, 64u);
+    ctx = sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

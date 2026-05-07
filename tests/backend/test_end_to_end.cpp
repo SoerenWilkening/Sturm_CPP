@@ -31,11 +31,8 @@
 // Harness: plain assert + main (no gtest), matching the project pattern.
 
 #define STURM_BACKEND_ENABLED 1
-// STURM_ANCILLA_CAPACITY is supplied by the build system (see
-// tests/backend/CMakeLists.txt -- the per-target -U/-D pair pins it
-// at 256 here, matching the pre-sturm-8n73 default).  Defining it at
-// source level would clash with the project-wide -D set by the root
-// CMakeLists.txt and trip -Wmacro-redefined (sturm-cgg5).
+// sturm-5jta (P2.b / G5): the legacy ancilla-cap define is gone — the
+// qubit pool grows on demand without a compile-time knob.
 
 #include "sturm/core/core.h"
 #include "sturm/core/context.hpp"
@@ -54,7 +51,7 @@ struct ScopedCtx {
     sturm_backend_context_t* prev;
 
     explicit ScopedCtx(sturm_mode_t mode) {
-        ctx  = sturm_backend_create(mode, 17u);
+        ctx  = sturm_backend_create(mode);
         assert(ctx && "sturm_backend_create must not return null");
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

@@ -193,7 +193,6 @@ std::string transpile_with_real_headers(std::string_view body,
         "-std=c++20", "-fsyntax-only",
         "-DSTURM_BACKEND_ENABLED=1",
         "-DORKAN_USING_STUB=1",
-        "-DSTURM_ANCILLA_CAPACITY=512",
         std::string("-I") + STURM_INCLUDE_DIR,
         std::string("-I") + STURM_VENDOR_DIR,
     };

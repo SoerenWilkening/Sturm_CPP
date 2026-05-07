@@ -114,7 +114,7 @@ struct SimCtx {
         } else {
             bridge.allocate(n_q);
         }
-        ctx  = sturm_backend_create(STURM_MODE_SIMULATE, max_q);
+        ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();
@@ -321,7 +321,7 @@ static int peak_ancilla_for_trace(uint32_t x_val, uint32_t n_val) {
     lt_bit = sturm::BitProxy(lt_own);
 
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

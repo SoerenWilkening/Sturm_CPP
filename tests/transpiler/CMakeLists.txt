@@ -2284,13 +2284,8 @@ target_compile_definitions(test_gate_equivalence_or_single PRIVATE
     # both sides — the test would pass trivially.
     STURM_BACKEND_ENABLED=1
 )
-# Per-target STURM_ANCILLA_CAPACITY=256 pin via the silenced -U/-D pair
-# (sturm-cgg5).  The post-sturm-8n73 project default is 512; this target
-# keeps the historical 256 cap explicit so future bumps to the project
-# default do not silently grow this test's pool footprint.
-target_compile_options(test_gate_equivalence_or_single PRIVATE
-    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
-)
+# sturm-5jta (P2.b / G5): the legacy compile-time pool cap is gone —
+# the qubit pool grows on demand.
 target_link_libraries(test_gate_equivalence_or_single PRIVATE sturm orkan_headers)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c

@@ -137,7 +137,7 @@ static void run_pool_drain_case(uint32_t a_val, uint32_t b_val,
     // beat 2.6 (mul_mod_dsl_ancilla) and beat 2.4 (W=3 trace) use to
     // bypass the orkan stub's 30-qubit ceiling at W=3.
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

@@ -29,7 +29,7 @@
 struct AppendCtx {
     sturm_backend_context_t *ctx, *prev;
     AppendCtx() {
-        ctx = sturm_backend_create(STURM_MODE_APPEND, 256u); assert(ctx);
+        ctx = sturm_backend_create(STURM_MODE_APPEND); assert(ctx);
         prev = sturm_get_thread_context(); sturm_set_thread_context(ctx);
     }
     ~AppendCtx() { sturm_set_thread_context(prev); sturm_backend_destroy(ctx); }

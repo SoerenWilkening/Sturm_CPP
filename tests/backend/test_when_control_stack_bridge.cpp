@@ -41,7 +41,7 @@ struct ScopedAppendCtx {
     sturm_backend_context_t* prev;
 
     ScopedAppendCtx() {
-        ctx  = sturm_backend_create(STURM_MODE_APPEND, 32u);
+        ctx  = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx && "sturm_backend_create failed");
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);
@@ -211,7 +211,7 @@ struct ScopedSimCtx {
     sturm::OrkanBridge*      bridge;
 
     ScopedSimCtx() {
-        ctx    = sturm_backend_create(STURM_MODE_SIMULATE, sturm::kMaxQubits);
+        ctx    = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx && "sturm_backend_create failed");
         bridge = new sturm::OrkanBridge();
         bridge->allocate(sturm::kMaxQubits);

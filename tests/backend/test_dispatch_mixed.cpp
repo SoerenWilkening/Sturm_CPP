@@ -26,7 +26,7 @@
 
 static sturm_backend_context_t* make_context() {
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+        sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx && "sturm_backend_create failed");
     sturm_set_thread_context(ctx);
     return ctx;

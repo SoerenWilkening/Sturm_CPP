@@ -3417,7 +3417,6 @@ target_compile_definitions(test_qint_alias_subst_e2e PRIVATE
     STURM_E1_SOURCE_DIR="${CMAKE_SOURCE_DIR}"
     STURM_E1_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
     STURM_E1_CXX="${CMAKE_CXX_COMPILER}"
-    STURM_E1_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}
     STURM_E1_RUNTIME_SOURCES="${_e1_runtime_sources_joined}"
     STURM_E1_ORKAN_INCLUDE_DIR="${_e1_orkan_include}"
 )

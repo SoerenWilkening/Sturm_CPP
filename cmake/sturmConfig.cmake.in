@@ -32,18 +32,14 @@
 # simply `target_link_libraries(foo PRIVATE sturm::sturm)`.
 set_and_check(STURM_INCLUDE_DIR "@PACKAGE_CMAKE_INSTALL_INCLUDEDIR@")
 
-# The ancilla-pool capacity is baked at STURM configure time and burned
-# into this file via configure_package_config_file(). Public headers
-# (qubit_pool.hpp) reference STURM_ANCILLA_CAPACITY as a preprocessor
-# symbol, so downstream consumers must see it too.
-set(STURM_ANCILLA_CAPACITY @STURM_ANCILLA_CAPACITY@)
+# sturm-5jta (P2.b / G5): the legacy ancilla-pool capacity knob is gone —
+# the qubit pool grows on demand without a compile-time symbol.
 
 if(NOT TARGET sturm::sturm)
     add_library(sturm::sturm INTERFACE IMPORTED)
     set_target_properties(sturm::sturm PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${STURM_INCLUDE_DIR}"
-        INTERFACE_COMPILE_FEATURES cxx_std_20
-        INTERFACE_COMPILE_DEFINITIONS "STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
+        INTERFACE_COMPILE_FEATURES cxx_std_20)
 endif()
 
 # Back-compat unprefixed alias so in-tree code paths (which link `sturm`
@@ -52,8 +48,7 @@ if(NOT TARGET sturm)
     add_library(sturm INTERFACE IMPORTED)
     set_target_properties(sturm PROPERTIES
         INTERFACE_INCLUDE_DIRECTORIES "${STURM_INCLUDE_DIR}"
-        INTERFACE_COMPILE_FEATURES cxx_std_20
-        INTERFACE_COMPILE_DEFINITIONS "STURM_ANCILLA_CAPACITY=${STURM_ANCILLA_CAPACITY}")
+        INTERFACE_COMPILE_FEATURES cxx_std_20)
 endif()
 
 # ── 2. sturm-transpile executable ─────────────────────────────────────────

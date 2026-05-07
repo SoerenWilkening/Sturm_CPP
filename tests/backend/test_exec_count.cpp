@@ -50,7 +50,7 @@ void operator delete[](void* p, std::size_t) noexcept { std::free(p); }
 
 // Build a minimal valid BackendContext in COUNT_ONLY mode.
 static sturm_backend_context_t* make_count_ctx() {
-    return sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    return sturm_backend_create(STURM_MODE_COUNT_ONLY);
 }
 
 // ── Test 1: exec_count is callable without crashing ───────────────────────────

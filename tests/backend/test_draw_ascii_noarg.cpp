@@ -53,7 +53,7 @@ static std::size_t count_lines(const std::string& s) {
 
 // ── Case 1: empty IR → empty string ───────────────────────────────────────────
 static void test_empty_ir_returns_empty_string() {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND, 8u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
 
     // No gates appended → IR is empty → diagram is the empty string.
@@ -67,7 +67,7 @@ static void test_empty_ir_returns_empty_string() {
 
 // ── Case 2: 1-qubit gate → 1-rail diagram ────────────────────────────────────
 static void test_one_qubit_gate_one_rail() {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND, 8u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
 
     // Append a single H gate on q0. Canvas width = 0 + 1 = 1 rail.
@@ -85,7 +85,7 @@ static void test_one_qubit_gate_one_rail() {
 
 // ── Case 3: multi-qubit IR → max-index+1 rails ───────────────────────────────
 static void test_multi_qubit_max_index_plus_one_rails() {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND, 8u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
 
     // Gates touching qubits {0, 2, 5}. Max index = 5 → canvas = 6 rails.
@@ -108,7 +108,7 @@ static void test_multi_qubit_max_index_plus_one_rails() {
 
 // ── Case 4: gate_count() == ir.size() ────────────────────────────────────────
 static void test_gate_count_matches_ir_size() {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND, 8u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
 
     assert(sturm::gate_count() == 0u);

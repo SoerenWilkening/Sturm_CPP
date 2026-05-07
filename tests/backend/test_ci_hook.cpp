@@ -44,6 +44,11 @@ static bool contains(const std::string& haystack, const char* needle) {
 // runtime. Those names are intentionally absent from the list below —
 // principle B10 makes destructor-driven inverse emission a non-goal, so no
 // replacement backend test covers them.
+//
+// sturm-5jta (Frontend simpl. P2.b / G5) retired test_qubit_cap (M18) along
+// with the 17-qubit cap and the abort-on-overflow path. The replacement
+// contract — pool grows on demand, no abort — is pinned by
+// tests/qtypes/test_qubit_pool_growth.cpp (label: qtypes), not this list.
 
 static const char* kRequiredTests[] = {
     "test_gate_kind",              // M1
@@ -62,7 +67,6 @@ static const char* kRequiredTests[] = {
     "test_reduction_table",        // M14
     "test_dispatch_all_classical", // M15
     "test_dispatch_mixed",         // M16
-    "test_qubit_cap",              // M18
     "test_instantiations",         // M25
     "test_end_to_end",             // M26
 };

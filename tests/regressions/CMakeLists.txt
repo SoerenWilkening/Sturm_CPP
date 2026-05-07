@@ -63,11 +63,10 @@ _sturm_add_drift_gate(test_qint_callsite_respelling_xchecks
 # ── sturm-zbzo (Frontend simpl. P2.a / G5 / PRD A4) ──────────────────────
 # Tree-grep audit gate against re-introduction of any qubit-cap
 # artefact. After P2.a, the production trees (include/, src/,
-# transpiler/src/) must contain none of:
-#
-#   * STURM_ANCILLA_CAPACITY   (deleted compile-time knob)
-#   * kCapExceededMsg          (deleted abort sentinel constant)
-#   * "max 17"                 (deleted abort-message body fragment)
+# transpiler/src/) must contain none of the deleted compile-time knob,
+# the deleted abort sentinel constant, or the deleted abort-message
+# body fragment.  See test_no_cap_artifacts.cpp for the forbidden
+# token list.
 #
 # Test files / docs / examples may legitimately mention these for
 # historical or migration prose — the scan is restricted to production

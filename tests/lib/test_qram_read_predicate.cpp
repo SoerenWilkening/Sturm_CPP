@@ -49,7 +49,7 @@ struct SimCtx {
     sturm_backend_context_t* prev;
     explicit SimCtx(uint32_t n_q, uint32_t max_q = 64u) {
         bridge.allocate(n_q);
-        ctx = sturm_backend_create(STURM_MODE_SIMULATE, max_q);
+        ctx = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
         prev = sturm_get_thread_context();
@@ -67,7 +67,7 @@ struct AppendCtx {
     sturm_backend_context_t* ctx;
     sturm_backend_context_t* prev;
     explicit AppendCtx(uint32_t max_q = 64u) {
-        ctx = sturm_backend_create(STURM_MODE_APPEND, max_q);
+        ctx = sturm_backend_create(STURM_MODE_APPEND);
         assert(ctx);
         prev = sturm_get_thread_context();
         sturm_set_thread_context(ctx);

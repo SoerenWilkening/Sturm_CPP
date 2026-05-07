@@ -29,7 +29,7 @@ static void test_mode_enum_values(void) {
 /* ── Test: create / destroy roundtrip ──────────────────────────────────────── */
 
 static void test_create_destroy(void) {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != NULL);
     sturm_backend_destroy(ctx);
     /* Destroying NULL is a no-op, must not crash. */
@@ -39,7 +39,7 @@ static void test_create_destroy(void) {
 /* ── Test: gate counter starts at zero ─────────────────────────────────────── */
 
 static void test_gate_counter_starts_zero(void) {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != NULL);
     assert(sturm_gate_count(ctx) == 0u);
     sturm_backend_destroy(ctx);
@@ -48,7 +48,7 @@ static void test_gate_counter_starts_zero(void) {
 /* ── Test: set/get thread context roundtrip ────────────────────────────────── */
 
 static void test_set_get_thread_context(void) {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != NULL);
 
     sturm_set_thread_context(ctx);
@@ -63,7 +63,7 @@ static void test_set_get_thread_context(void) {
 /* ── Test: sturm_execute_gate is callable (symbol is reachable) ─────────────── */
 
 static void test_execute_gate_callable(void) {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != NULL);
     sturm_set_thread_context(ctx);
 
@@ -86,7 +86,7 @@ static void test_execute_gate_callable(void) {
 /* ── Test: gate counter increments after execute_gate calls ────────────────── */
 
 static void test_gate_counter_increments(void) {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != NULL);
     sturm_set_thread_context(ctx);
 
@@ -105,7 +105,7 @@ static void test_gate_counter_increments(void) {
 /* ── Test: sturm_measure is callable ───────────────────────────────────────── */
 
 static void test_measure_callable(void) {
-    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx != NULL);
     sturm_set_thread_context(ctx);
 
@@ -120,8 +120,8 @@ static void test_measure_callable(void) {
 /* ── Test: multiple distinct contexts are independent ───────────────────────── */
 
 static void test_independent_contexts(void) {
-    sturm_backend_context_t* ctx_a = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
-    sturm_backend_context_t* ctx_b = sturm_backend_create(STURM_MODE_COUNT_ONLY, 17u);
+    sturm_backend_context_t* ctx_a = sturm_backend_create(STURM_MODE_COUNT_ONLY);
+    sturm_backend_context_t* ctx_b = sturm_backend_create(STURM_MODE_COUNT_ONLY);
     assert(ctx_a != NULL);
     assert(ctx_b != NULL);
     assert(ctx_a != ctx_b);

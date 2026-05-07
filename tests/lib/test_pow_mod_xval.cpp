@@ -61,7 +61,7 @@ uint32_t sim_call(uint32_t v0, uint32_t v1, Fn body) {
     int rs[3 * W]; for (std::size_t k = 0; k < 3u * W; ++k)
         rs[k] = sturm::QubitPool::instance().allocate();
     sturm::OrkanBridge br; br.allocate(n_orkan);
-    auto* ctx = sturm_backend_create(STURM_MODE_SIMULATE, 64u); ctx->orkan_state_ptr = &br;
+    auto* ctx = sturm_backend_create(STURM_MODE_SIMULATE); ctx->orkan_state_ptr = &br;
     auto* prev = sturm_get_thread_context(); sturm_set_thread_context(ctx);
     int q0[W], q1[W], qr[W];
     for (std::size_t i = 0; i < W; ++i) {
@@ -99,7 +99,7 @@ uint32_t path_b(uint32_t a, uint32_t x, uint32_t n) {
         r[i] = sturm::QubitPool::instance().allocate();
     sturm::qbool aq[W], xq[W], nq[W], rq[W]; sturm::BitProxy ab[W], xb[W], nb[W], rb[W];
     wrap(qa, aq, ab); wrap(qx, xq, xb); wrap(qn, nq, nb); wrap(qr, rq, rb);
-    auto* ctx = sturm_backend_create(STURM_MODE_APPEND, 64u);
+    auto* ctx = sturm_backend_create(STURM_MODE_APPEND);
     auto* prev = sturm_get_thread_context(); sturm_set_thread_context(ctx);
     sturm::lib_pow_mod_dsl<sturm::BitProxy>(ab, xb, nb, W, rb);
     std::vector<uint8_t> bits(

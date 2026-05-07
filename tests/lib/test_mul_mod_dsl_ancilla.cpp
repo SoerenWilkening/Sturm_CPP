@@ -109,7 +109,7 @@ static int peak_ancilla_for(uint32_t a_val, uint32_t b_val,
     // footprint (see orchestrator brief: "ancilla peak is independent
     // of which executor records the gates").
     sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND, 64u);
+        sturm_backend_create(STURM_MODE_APPEND);
     assert(ctx);
     sturm_backend_context_t* prev = sturm_get_thread_context();
     sturm_set_thread_context(ctx);

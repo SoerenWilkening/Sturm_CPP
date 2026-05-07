@@ -105,7 +105,7 @@ int main() {
     constexpr uint32_t kNumQubits = 32;
 
     sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND, kNumQubits);
+        sturm_backend_create(STURM_MODE_APPEND);
     sturm_set_thread_context(ctx);
 
     // Case 1 and Case 2 below demonstrate the Phase H per-iteration and

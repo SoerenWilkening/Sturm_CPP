@@ -120,7 +120,6 @@ TranspileOutcome run_transpiler(const fs::path& tmp_dir,
         << " --extra-arg=-std=c++20"
         << " --extra-arg=-I" << STURM_E1_INCLUDE_DIR
         << " --extra-arg=-DSTURM_BACKEND_ENABLED=1"
-        << " --extra-arg=-DSTURM_ANCILLA_CAPACITY=" << STURM_E1_ANCILLA_CAPACITY
         << " 2>&1";
     FILE* fp = ::popen(cmd.str().c_str(), "r");
     if (!fp) return r;
@@ -177,7 +176,6 @@ int main() {
     std::ostringstream cc;
     cc << STURM_E1_CXX << " -std=c++20 -I" << STURM_E1_INCLUDE_DIR
        << " -DSTURM_BACKEND_ENABLED=1"
-       << " -DSTURM_ANCILLA_CAPACITY=" << STURM_E1_ANCILLA_CAPACITY
        << " '" << out.generated_path.string() << "'"
 #ifdef STURM_E1_RUNTIME_SOURCES
        << " " << STURM_E1_RUNTIME_SOURCES
