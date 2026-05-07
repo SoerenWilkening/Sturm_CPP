@@ -154,6 +154,14 @@ include(GNUInstallDirs)
 # compile-time knob is gone — the qubit pool grows on demand. SIMULATE-mode
 # memory cost is the user's responsibility (PRD §5.5).
 
+# ── sturm-mixe — STURM_MODE build flag (Frontend simpl. P1 / PRD §5.3 / G3) ──
+# Declares the `STURM_MODE` cache STRING (default APPEND), validates it,
+# and exposes the `sturm::frontend` INTERFACE library carrying
+# `STURM_MODE_DEFAULT=STURM_MODE_<X>` as a compile definition. Toggling
+# the flag between configures invalidates the INTERFACE library's compile
+# definition and forces a rebuild of dependents (OQ5).
+include(${CMAKE_SOURCE_DIR}/cmake/SturmFrontend.cmake)
+
 # ── sturm-r5pn.3 — Modular pow rewrite gate ───────────────────────────────────
 # Plan §2.2 / PRD §3.4: STURM_MODULAR_POW gates the transpiler's
 # `pow(a, x) % n  =>  lib_pow_mod_dsl(a, x, n)` rewrite (Phase 5).

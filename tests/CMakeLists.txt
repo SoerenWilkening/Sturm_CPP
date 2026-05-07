@@ -453,6 +453,58 @@ if(STURM_FULL_TEST_SUITE)
         PROCESSORS 2)
 endif()
 
+# ── sturm-mixe — STURM_MODE build flag (Frontend simpl. P1 / PRD §5.3) ─────
+#
+# Drives the contract for the new `STURM_MODE` cache STRING introduced
+# by `cmake/SturmFrontend.cmake`:
+#
+#   - Invalid value → FATAL_ERROR with `STURM_MODE` and the offending
+#     token in the diagnostic (`cmake_sturm_mode_flag`).
+#   - Valid value (APPEND / COUNT / SIMULATE) → `STURM_MODE_DEFAULT`
+#     compile def lands on `sturm::frontend`; a probe TU's static_assert
+#     compiles cleanly (`cmake_sturm_mode_flag`).
+#   - Toggling the flag in the same build dir forces a recompile of
+#     every TU linked to `sturm::frontend` (OQ5 / `cmake_sturm_mode_rebuild`).
+#
+# Both tests use a tiny scratch project that includes the parent's
+# `cmake/SturmFrontend.cmake` directly (so they exercise the real source
+# file). The flag test is configure-only for the invalid-mode case and
+# configure+build for the valid-mode cases (the static_assert fires at
+# compile time). The rebuild test must build twice in the same dir to
+# observe the mtime delta on the probe object file. Neither test
+# touches the full STURM source tree, so they stay fast (~10–30 s).
+#
+# Gated behind `STURM_FULL_TEST_SUITE` (impl plan §3 P1): each test
+# spawns at least two out-of-tree configure+build cycles via tiny
+# scratch CMake projects. Default OFF keeps the autopilot ctest loop
+# fast; set `-DSTURM_FULL_TEST_SUITE=ON` for CI / pre-release / any
+# change to `cmake/SturmFrontend.cmake`, the `STURM_MODE` cache
+# variable, or the `sturm::frontend` INTERFACE library.
+if(STURM_FULL_TEST_SUITE)
+    add_test(NAME cmake_sturm_mode_flag
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_sturm_mode_flag"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_sturm_mode_flag.cmake"
+    )
+    set_tests_properties(cmake_sturm_mode_flag PROPERTIES
+        LABELS "cmake;frontend-simpl"
+        # The script runs four child configures + three builds sequentially.
+        # Reserve 2 slots to stay under the project's `--parallel 6` cap.
+        PROCESSORS 2)
+
+    add_test(NAME cmake_sturm_mode_rebuild
+        COMMAND "${CMAKE_COMMAND}"
+            "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+            "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_sturm_mode_rebuild"
+            -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake/cmake_sturm_mode_rebuild.cmake"
+    )
+    set_tests_properties(cmake_sturm_mode_rebuild PROPERTIES
+        LABELS "cmake;frontend-simpl"
+        # Two configures + two builds + 2 s sleeps for mtime resolution.
+        PROCESSORS 2)
+endif()
+
 # ── sturm-2vbr — PCH PIE-state match between driver and plugin ────────────
 #
 # Drives the sturm-2vbr contract that the `sturm-transpile` driver and
