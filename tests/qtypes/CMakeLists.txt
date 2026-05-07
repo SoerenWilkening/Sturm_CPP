@@ -353,3 +353,32 @@ target_compile_definitions(test_qint_alias_stubs PRIVATE
 add_test(NAME test_qint_alias_stubs COMMAND test_qint_alias_stubs)
 set_tests_properties(test_qint_alias_stubs PROPERTIES
     LABELS "qtypes;qram-subscript;qac")
+
+# ── sturm-zbzo (Frontend simpl. P2.a / G5) ────────────────────────────────
+# Pool-growth gate after qubit-cap removal. After P2.a:
+#   * STURM_ANCILLA_CAPACITY / kCapExceededMsg / kCapacity / acquire()
+#     cap-check + abort path are gone.
+#   * QubitPool has no cap; allocate() grows the pool on demand.
+#   * BackendContext takes only (mode) — no max_qubits.
+# This test acquires 1024 qubits (well past every former cap) and
+# asserts no abort, all indices distinct, and clean release.
+#
+# Pulls the M19 backend sources because the test exercises
+# BackendContext directly (sturm_backend_context_t {STURM_MODE_COUNT_ONLY}
+# touches context.cpp's process-wide-default machinery transitively via
+# the constructor).
+add_executable(test_qubit_pool_growth
+    test_qubit_pool_growth.cpp
+    ${STURM_QTYPES_BACKEND_SOURCES}
+)
+target_include_directories(test_qubit_pool_growth PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qubit_pool_growth PRIVATE cxx_std_20)
+target_compile_definitions(test_qubit_pool_growth PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qubit_pool_growth PRIVATE orkan_headers)
+add_test(NAME test_qubit_pool_growth COMMAND test_qubit_pool_growth)
+set_tests_properties(test_qubit_pool_growth PROPERTIES
+    LABELS "qtypes;frontend-simplification;qubit-cap-removal")

@@ -37,14 +37,16 @@ typedef enum sturm_mode {
 
 /* Create a new backend context.
  *
- * mode       — initial execution mode (can be changed via sturm_set_mode).
- * max_qubits — qubit pool capacity; pass 17 for the PRD §6 default.
+ * mode — initial execution mode (can be changed via sturm_set_mode).
  *
  * Returns a heap-allocated context. The caller owns the object; free with
  * sturm_backend_destroy.  Returns NULL on allocation failure.
+ *
+ * sturm-zbzo (Frontend simpl. P2.a / G5): the legacy `max_qubits`
+ * argument is gone — the qubit pool grows on demand. SIMULATE-mode
+ * memory cost is the user's responsibility (PRD §5.5).
  */
-sturm_backend_context_t* sturm_backend_create(sturm_mode_t mode,
-                                               uint32_t     max_qubits);
+sturm_backend_context_t* sturm_backend_create(sturm_mode_t mode);
 
 /* Destroy a context previously returned by sturm_backend_create.
  * Passing NULL is a no-op.

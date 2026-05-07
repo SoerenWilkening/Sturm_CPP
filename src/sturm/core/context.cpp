@@ -20,10 +20,10 @@
 //
 // Created once (lazy, via a function-local static) and shared across threads
 // that have not installed a per-thread context.  The default starts in
-// COUNT_ONLY mode with a 17-qubit cap.
+// COUNT_ONLY mode. sturm-zbzo (G5): qubit pool has no cap and grows on demand.
 
 static sturm_backend_context_t* get_process_default() {
-    static sturm_backend_context_t s_default{STURM_MODE_COUNT_ONLY, 17u};
+    static sturm_backend_context_t s_default{STURM_MODE_COUNT_ONLY};
     return &s_default;
 }
 
@@ -34,9 +34,8 @@ static thread_local sturm_backend_context_t* s_thread_ctx = nullptr;
 // ── C ABI: lifecycle ──────────────────────────────────────────────────────────
 
 extern "C"
-sturm_backend_context_t* sturm_backend_create(sturm_mode_t mode,
-                                               uint32_t     max_qubits) {
-    auto* ctx = new (std::nothrow) sturm_backend_context_t{mode, max_qubits};
+sturm_backend_context_t* sturm_backend_create(sturm_mode_t mode) {
+    auto* ctx = new (std::nothrow) sturm_backend_context_t{mode};
     return ctx; // nullptr on allocation failure
 }
 

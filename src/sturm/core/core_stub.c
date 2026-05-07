@@ -20,7 +20,6 @@
 
 struct sturm_backend_context {
     sturm_mode_t mode;
-    uint32_t     max_qubits;
     uint64_t     gate_count;
 };
 
@@ -40,13 +39,11 @@ static STURM_THREAD_LOCAL sturm_backend_context_t* s_thread_ctx = NULL;
 
 /* ── Lifecycle ──────────────────────────────────────────────────────────────── */
 
-sturm_backend_context_t* sturm_backend_create(sturm_mode_t mode,
-                                               uint32_t     max_qubits) {
+sturm_backend_context_t* sturm_backend_create(sturm_mode_t mode) {
     sturm_backend_context_t* ctx =
         (sturm_backend_context_t*)malloc(sizeof(sturm_backend_context_t));
     if (!ctx) return NULL;
     ctx->mode       = mode;
-    ctx->max_qubits = max_qubits;
     ctx->gate_count = 0u;
     return ctx;
 }

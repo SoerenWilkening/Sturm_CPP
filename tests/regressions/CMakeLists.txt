@@ -59,3 +59,26 @@ _sturm_add_drift_gate(test_qint_callsite_respelling_lifecycle
 # into a tautology.
 _sturm_add_drift_gate(test_qint_callsite_respelling_xchecks
     test_qint_callsite_respelling_xchecks.cpp)
+
+# ── sturm-zbzo (Frontend simpl. P2.a / G5 / PRD A4) ──────────────────────
+# Tree-grep audit gate against re-introduction of any qubit-cap
+# artefact. After P2.a, the production trees (include/, src/,
+# transpiler/src/) must contain none of:
+#
+#   * STURM_ANCILLA_CAPACITY   (deleted compile-time knob)
+#   * kCapExceededMsg          (deleted abort sentinel constant)
+#   * "max 17"                 (deleted abort-message body fragment)
+#
+# Test files / docs / examples may legitimately mention these for
+# historical or migration prose — the scan is restricted to production
+# code. The test is a header-only TU that walks the configured source
+# root at run time using <filesystem> + std::ifstream.
+add_executable(test_no_cap_artifacts
+    test_no_cap_artifacts.cpp
+)
+target_compile_features(test_no_cap_artifacts PRIVATE cxx_std_20)
+target_compile_definitions(test_no_cap_artifacts PRIVATE
+    "STURM_SOURCE_ROOT=\"${CMAKE_SOURCE_DIR}\"")
+add_test(NAME test_no_cap_artifacts COMMAND test_no_cap_artifacts)
+set_tests_properties(test_no_cap_artifacts PROPERTIES
+    LABELS "regressions;frontend-simplification;qubit-cap-removal")

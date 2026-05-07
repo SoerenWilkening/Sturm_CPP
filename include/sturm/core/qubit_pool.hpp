@@ -1,76 +1,35 @@
 #pragma once
-// qubit_pool.hpp — Bounded ancilla pool (Step 1, spec §1.1)
-// Header-only singleton. Capacity = STURM_ANCILLA_CAPACITY (default 256).
-// Thread-safe via a single std::mutex.
+// qubit_pool.hpp — Unbounded ancilla pool (PRD §5.5 / G5).
+// Header-only. Thread-safe via a single std::mutex.
 //
-// Per-context use: construct with an explicit max_qubits capacity.
-// The singleton instance() uses kCapacity (compile-time constant).
+// After sturm-zbzo (Frontend simpl. P2.a):
+//   * No compile-time cap macro, sentinel constant, or abort message.
+//   * No per-context cap argument; the pool grows on demand.
+//   * `allocate()` and `acquire()` both grow on demand and never abort
+//     — `acquire()` is kept as an alias so existing call sites (the
+//     qbool / lossy_oop / lib_*_dsl primitives) keep compiling.
+//   * SIMULATE-mode memory cost is the user's responsibility (PRD §5.5).
 
-#include <atomic>
-#include <cstdio>
-#include <cstdlib>
 #include <mutex>
-#include <stdexcept>
 #include <vector>
 
 namespace sturm {
 
 class QubitPool {
 public:
-    // ── Compile-time capacity ──────────────────────────────────────────────
-    static constexpr int kCapacity = STURM_ANCILLA_CAPACITY;
-
-    // ── Per-context qubit cap ──────────────────────────────────────────────
-    // Set to kCapacity for the global singleton; overridden by the
-    // BackendContext-owned pool.
-    // Per-context pools use acquire() (M18) which enforces this cap.
-    // The global singleton uses allocate() (legacy path; no hard cap).
-    uint32_t max_qubits{static_cast<uint32_t>(kCapacity)};
-
     // ── Singleton access ───────────────────────────────────────────────────
     static QubitPool& instance() {
         static QubitPool inst;
         return inst;
     }
 
-    // ── Per-context constructor ────────────────────────────────────────────
-    // Creates a QubitPool scoped to a specific BackendContext with the given
-    // qubit capacity.  Not accessible via instance().
-    explicit QubitPool(uint32_t cap)
-        : max_qubits(cap) {}
-
-    // ── Stable abort message (M18) ────────────────────────────────────────
-    // Any code that checks the abort message must match this string exactly.
-    static constexpr const char* kCapExceededMsg =
-        "STURM: qubit cap exceeded (max 17)";
-
-    // ── acquire() — cap-enforcing allocation (M18) ────────────────────────
-    // Allocates one qubit index.  Aborts with a stable message if the number
-    // of in-use qubits would exceed max_qubits (hard cap per PRD §6).
-    // Use this instead of allocate() when the 17-qubit hard limit must be
-    // enforced (i.e. from BackendContext-scoped pools).
-    int acquire() {
-        std::lock_guard<std::mutex> lk(mutex_);
-        if (in_use_ >= static_cast<int>(max_qubits)) {
-            std::fprintf(stderr, "%s\n", kCapExceededMsg);
-            std::fflush(stderr);
-            std::abort();
-        }
-        if (!free_.empty()) {
-            int idx = free_.back();
-            free_.pop_back();
-            ++in_use_;
-            return idx;
-        }
-        int hw = high_water_;
-        high_water_ = hw + 1;
-        ++in_use_;
-        return hw;
-    }
+    // ── Default constructor ────────────────────────────────────────────────
+    // No cap argument; the pool grows on demand.
+    QubitPool() = default;
 
     // ── Allocate one ancilla index ─────────────────────────────────────────
     // Returns a recycled index from the free-list if available, otherwise
-    // hands out the next never-issued index. Throws if pool is exhausted.
+    // hands out the next never-issued index. No cap; never throws.
     int allocate() {
         std::lock_guard<std::mutex> lk(mutex_);
         if (!free_.empty()) {
@@ -80,13 +39,17 @@ public:
             return idx;
         }
         int hw = high_water_;
-        if (hw >= kCapacity) {
-            throw std::runtime_error("ancilla pool exhausted");
-        }
         high_water_ = hw + 1;
         ++in_use_;
         return hw;
     }
+
+    // ── acquire() — backwards-compatible alias (sturm-zbzo) ────────────────
+    // Once enforced a hard cap and aborted on overflow; the cap is gone
+    // (G5). The name remains so existing callers (qbool_ops.hpp,
+    // lossy_oop.hpp, lib/*_dsl.hpp …) keep compiling without a mechanical
+    // sweep. Every call now grows the pool on demand.
+    int acquire() { return allocate(); }
 
     // ── Release an ancilla index back to the pool ──────────────────────────
     // TODO(backend): reset qubit to |0⟩ on the actual device before recycling.
@@ -102,8 +65,6 @@ public:
         return in_use_;
     }
 
-    static constexpr int capacity() { return kCapacity; }
-
     int high_water() const {
         std::lock_guard<std::mutex> lk(mutex_);
         return high_water_;
@@ -118,8 +79,6 @@ public:
     }
 
 private:
-    QubitPool() = default;
-
     mutable std::mutex mutex_;
     std::vector<int>   free_;
     int                high_water_{0};

@@ -32,9 +32,9 @@ struct BackendContext {
     sturm_mode_t  mode;
     uint64_t      gate_count{0};
 
-    // Per-context qubit pool.  Capacity is set at construction time via
-    // max_qubits; the global singleton (QubitPool::instance()) is a separate
-    // object used by the frontend qtypes.
+    // Per-context qubit pool.  After sturm-zbzo (G5) the pool has no cap
+    // and grows on demand; the global singleton (QubitPool::instance())
+    // is a separate object used by the frontend qtypes.
     // TODO(backend): wire allocate()/release() through this pool when the
     //                frontend qtype constructors accept a context argument (M-future).
     QubitPool     pool;
@@ -74,8 +74,8 @@ struct BackendContext {
     // Readable by qbool operators without depending on WhenLift.
     ControlStack  control_stack;
 
-    explicit BackendContext(sturm_mode_t m, uint32_t max_q)
-        : mode(m), pool(max_q) {}
+    explicit BackendContext(sturm_mode_t m)
+        : mode(m) {}
 };
 
 // ── set_mode / get_current_mode ───────────────────────────────────────────────
