@@ -94,6 +94,25 @@ target_compile_features(test_draw_ascii PRIVATE cxx_std_20)
 add_test(NAME test_draw_ascii COMMAND test_draw_ascii)
 set_tests_properties(test_draw_ascii PROPERTIES LABELS "backend")
 
+# ── Frontend simpl. P5 (sturm-uoeb): no-arg renderer entry points ────────────
+add_executable(test_draw_ascii_noarg
+    test_draw_ascii_noarg.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_draw_ascii_noarg PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_draw_ascii_noarg PRIVATE cxx_std_20)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_test(NAME test_draw_ascii_noarg COMMAND test_draw_ascii_noarg)
+set_tests_properties(test_draw_ascii_noarg PROPERTIES LABELS "backend")
+
 # ── M8: APPEND executor ──────────────────────────────────────────────────────
 add_executable(test_exec_append
     test_exec_append.cpp

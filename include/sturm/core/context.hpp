@@ -86,6 +86,18 @@ struct BackendContext {
 void set_mode(sturm_mode_t mode);
 sturm_mode_t get_current_mode();
 
+// ── current_thread_context_or_null (sturm-uoeb / PRD §5.6) ───────────────────
+//
+// Returns the per-thread context pointer *without* the process-wide-default
+// fallback that sturm_get_thread_context() applies. When the calling thread
+// has not installed a context (or has cleared it via
+// sturm_set_thread_context(nullptr)), this returns nullptr — letting the
+// no-argument renderer entry points (sturm::draw_ascii / print_ascii /
+// gate_count) assert on the absence of an active lifecycle, which is a
+// programming error per PRD §5.6.
+
+sturm_backend_context_t* current_thread_context_or_null() noexcept;
+
 // ── execute_gate — C++ Layer B helper (M13) ───────────────────────────────────
 //
 // Increments ctx.gate_count unconditionally, then dispatches to one of the

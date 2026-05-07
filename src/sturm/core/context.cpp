@@ -101,4 +101,15 @@ sturm_mode_t get_current_mode() {
     return ctx->mode;
 }
 
+// ── current_thread_context_or_null (sturm-uoeb / PRD §5.6) ───────────────────
+//
+// Mirrors sturm_get_thread_context but does NOT apply the process-wide
+// default fallback. Used by the no-arg renderer entry points so that an
+// assert can fire when the user calls sturm::draw_ascii() / print_ascii() /
+// gate_count() outside a lifecycle scope.
+
+sturm_backend_context_t* current_thread_context_or_null() noexcept {
+    return s_thread_ctx;
+}
+
 } // namespace sturm

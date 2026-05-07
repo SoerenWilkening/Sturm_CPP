@@ -12,7 +12,11 @@
 //   - SWAP:         "x" on both qubits.
 //   - Rows strictly between the involved qubits get a centered "|".
 //
-// Header-only (no .cpp) — include and call sturm::draw_ascii(ir, n_qubits).
+// Two flavours of entry point:
+//   - draw_ascii(ir, n_qubits)  — explicit form, header-only (inline).
+//   - draw_ascii() / print_ascii() / gate_count()  — no-argument form
+//     declared here, defined in src/sturm/backend/draw_ascii_noarg.cpp.
+//     They query the calling thread's installed BackendContext (PRD §5.6).
 
 #pragma once
 
@@ -28,6 +32,22 @@
 #include <vector>
 
 namespace sturm {
+
+// ── No-argument entry points (PRD §5.6) ──────────────────────────────────────
+//
+// These operate on the thread-local BackendContext installed via
+// sturm_set_thread_context (typically by the auto-injected lifecycle).
+// All three assert that a per-thread context is currently installed —
+// calling them outside a lifecycle scope is a programming error.
+//
+// Canvas-width derivation: scan the IR for the maximum referenced qubit
+// index; rail count = max + 1. An empty IR yields an empty string (locks
+// the PRD §5.6 ambiguity per docs/impl_plan_frontend_simplification.md
+// §10).
+
+std::string draw_ascii();
+void        print_ascii();
+std::size_t gate_count();
 
 inline std::string draw_ascii(const GateIR& ir, std::size_t n_qubits) {
     std::vector<std::string> rows(n_qubits);
