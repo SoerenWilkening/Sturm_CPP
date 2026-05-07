@@ -153,6 +153,17 @@ target_link_libraries(test_orkan_bridge PRIVATE orkan_headers)
 add_test(NAME test_orkan_bridge COMMAND test_orkan_bridge)
 set_tests_properties(test_orkan_bridge PROPERTIES LABELS "backend")
 
+# ── Frontend simpl. P6 (sturm-ovok): SIMULATE-mode OOM guard death test ──────
+add_executable(test_simulate_oom
+    test_simulate_oom.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+)
+target_include_directories(test_simulate_oom PRIVATE ${CMAKE_SOURCE_DIR}/include)
+target_compile_features(test_simulate_oom PRIVATE cxx_std_20)
+target_link_libraries(test_simulate_oom PRIVATE orkan_headers)
+add_test(NAME test_simulate_oom COMMAND test_simulate_oom)
+set_tests_properties(test_simulate_oom PROPERTIES LABELS "backend")
+
 # ── M10: SIMULATE executor — 1-qubit gates ────────────────────────────────────
 add_executable(test_exec_simulate_1q
     test_exec_simulate_1q.cpp

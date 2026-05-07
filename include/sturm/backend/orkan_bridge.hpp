@@ -22,6 +22,9 @@
 #pragma once
 
 #include <cstdint>
+#include <cstdio>     // fprintf
+#include <cstdlib>    // abort
+#include <new>        // std::bad_alloc
 
 // Select the real Orkan header or the local stub depending on what
 // OrkanFetch.cmake resolved at configure time.
@@ -58,6 +61,21 @@ public:
     // n must be <= kMaxQubits (17).
     // Initializes to |0…0⟩.
     void allocate(uint32_t n);
+
+    // SIMULATE-mode allocation with bad_alloc OOM guard (sturm-ovok / PRD §5.7).
+    // On bad_alloc → stderr stable message + std::abort. No kMaxQubits cap.
+    void allocate_simulate(uint32_t n) {
+        try {
+            if (n >= 64u) throw std::bad_alloc{}; // 1ULL << 64 is UB
+            orkan::allocate(state_, n);
+        } catch (const std::bad_alloc&) {
+            std::fprintf(stderr,
+                "STURM: SIMULATE mode out of memory at %u qubits — "
+                "reduce qubit count\n", n);
+            std::fflush(stderr);
+            std::abort();
+        }
+    }
 
     // Re-initialize the current statevector to |0…0⟩.
     // Requires a prior call to allocate().
