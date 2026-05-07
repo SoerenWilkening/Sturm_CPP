@@ -13,6 +13,7 @@
 #include "sturm/control/when_fwd.hpp"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/primitives.hpp"
+#include "sturm/ops/lifted_primitives.hpp"
 #include "sturm/qtypes/qbool.hpp"
 #include "sturm/qtypes/qbool_ops.hpp"
 #include "sturm/core/context.hpp"
@@ -197,7 +198,56 @@ struct BitProxy {
         // else: no quantum effect, caller handles classical value.
         return *this;
     }
+
+    // ── Per-bit phase / rotation proxies (sturm-51wc) ────────────────────
+    // Single-bit slice of qint_t<W>::PhiProxy / ThetaProxy. The full-register
+    // proxies fan rotation across every allocated bit of the parent; these
+    // emit on exactly one bit. Stored by value: a BitProxy is a 5-field
+    // pointer pack into the parent qint_t/qbool, and the parent — not the
+    // BitProxy temporary — must outlive the proxy. Forward-declared here +
+    // defined out-of-line below because each holds a BitProxy by value, which
+    // requires BitProxy to be complete.
+    struct PhiProxy;
+    struct ThetaProxy;
+    PhiProxy   phi();
+    ThetaProxy theta();
 };
+
+// ── BitProxy::PhiProxy / ThetaProxy out-of-line definitions ─────────────────
+struct BitProxy::PhiProxy {
+    BitProxy bit;
+    // RZ on a classical bit is just an unobservable global phase when no
+    // control is active, so skip. Under a WHEN control the phase becomes
+    // relative between control branches and IS observable, so promote.
+    // Predicate matches BitProxy::flip().
+    void operator+=(double delta) {
+        if (!bit.is_quantum() && detail::current_control == nullptr) {
+            return;
+        }
+        bit.ensure_quantum();
+        emit_RZ_lifted(get_ctx(),
+                       static_cast<uint32_t>(bit.qubit_index()),
+                       delta);
+    }
+    void operator-=(double delta) { operator+=(-delta); }
+};
+
+struct BitProxy::ThetaProxy {
+    BitProxy bit;
+    // RY on |0> or |1> creates a superposition — that IS the quantum
+    // operation that justifies promoting a classical bit, so unconditional
+    // ensure_quantum + emit.
+    void operator+=(double delta) {
+        bit.ensure_quantum();
+        emit_RY_lifted(get_ctx(),
+                       static_cast<uint32_t>(bit.qubit_index()),
+                       delta);
+    }
+    void operator-=(double delta) { operator+=(-delta); }
+};
+
+inline BitProxy::PhiProxy   BitProxy::phi()   { return PhiProxy{*this}; }
+inline BitProxy::ThetaProxy BitProxy::theta() { return ThetaProxy{*this}; }
 
 // ── BitProxy lazy expressions (tag types for operator^= dispatch) ───────────
 inline AndExpr<BitProxy> operator&(const BitProxy& a, const BitProxy& b) noexcept {

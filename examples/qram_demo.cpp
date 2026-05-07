@@ -64,7 +64,8 @@ int main() {
     }
 
     qint i = 2;
-    i.phi() += 3;
+    i[0].phi() += 3;
+    i[1].phi() += 3;
     qint b = a[i];
     
     std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);

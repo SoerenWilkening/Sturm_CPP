@@ -1441,6 +1441,25 @@ set_source_files_properties(
 add_test(NAME test_bitproxy_when_promotion COMMAND test_bitproxy_when_promotion)
 set_tests_properties(test_bitproxy_when_promotion PROPERTIES LABELS "backend")
 
+# ── sturm-51wc: per-bit phi()/theta() proxies on BitProxy (RZ/RY) ────────────
+add_executable(test_bit_proxy_phi_theta
+    test_bit_proxy_phi_theta.cpp
+    ${M19_SOURCES}
+)
+target_include_directories(test_bit_proxy_phi_theta PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_bit_proxy_phi_theta PRIVATE cxx_std_20)
+target_compile_definitions(test_bit_proxy_phi_theta PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_compile_options(test_bit_proxy_phi_theta PRIVATE
+    -USTURM_ANCILLA_CAPACITY -DSTURM_ANCILLA_CAPACITY=256
+)
+target_link_libraries(test_bit_proxy_phi_theta PRIVATE orkan_headers)
+add_test(NAME test_bit_proxy_phi_theta COMMAND test_bit_proxy_phi_theta)
+set_tests_properties(test_bit_proxy_phi_theta PROPERTIES LABELS "backend")
+
 # ── M8: Template logic/swap/compare/c_and DSL (BitProxy instantiation) ───────
 add_executable(test_m8_template_dsl
     test_m8_template_dsl.cpp
