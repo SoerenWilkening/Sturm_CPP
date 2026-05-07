@@ -456,17 +456,28 @@ to the backend's, eliminating the asymmetry.
 
 ### 10.0 Status update on prior non-goals / follow-ups
 
-| Item                                                | Wave 1 status | Wave 3 status                          |
-|-----------------------------------------------------|---------------|----------------------------------------|
-| `qbool`-returning compares on the alias             | non-goal §3   | **in scope** (G7)                      |
-| `qbool` from `operator[]` read on the alias         | implicit §3   | **in scope** (G7) — same principle     |
-| `qbool` from mixed-type compares (`qint OP int`)    | implicit §3   | **in scope** (G7) — same principle     |
-| Write-side `q[k] = …` on the alias (`sturm-65rs.16`) | follow-up §7  | unchanged (still deferred — BitProxy)  |
-| Per-Parm/Field width inference (`sturm-65rs.17`)    | follow-up §7  | unchanged (still deferred)             |
-| Bump `kDefaultWidth` 32→64 (`sturm-65rs.18`)        | follow-up §7  | unchanged (still deferred)             |
+Wave 3 shipped 2026-05-07 under bd epic `sturm-v0db`
+(beats `.1` .. `.8`). G7–G10 / A11–A15 below are all met; the
+status column is the post-landing record.
 
-`bd sturm-65rs.15` is absorbed by this wave and should be closed when
-Wave 3 lands.
+| Item                                                | Wave 1 status | Wave 3 status                                    |
+|-----------------------------------------------------|---------------|--------------------------------------------------|
+| `qbool`-returning compares on the alias             | non-goal §3   | ✓ shipped (G7 / A11; `sturm-v0db.3`)             |
+| `qbool` from `operator[]` read on the alias         | implicit §3   | ✓ shipped (G7 / A11; `sturm-v0db.3`)             |
+| `qbool` from mixed-type compares (`qint OP int`)    | implicit §3   | ✓ shipped (G7 / A11; `sturm-v0db.3`)             |
+| Pure type-stub bodies                               | n/a           | ✓ shipped (G8 / A12; `sturm-v0db.4`)             |
+| `g_measurement_count` / `measure_to_int` removed    | n/a           | ✓ shipped (G9 / A14; `sturm-v0db.5`)             |
+| `qint_alias_ops.hpp` includes `qbool.hpp` (cycle audit clean) | n/a   | ✓ shipped (G10; `sturm-v0db.1`)                  |
+| IR-scan stub test                                   | n/a           | ✓ shipped (A12; `sturm-v0db.6`)                  |
+| Tree-grep audit gate + `sturm_gen_clean` re-run     | n/a           | ✓ shipped (A13 + A14; `sturm-v0db.7`)            |
+| Backwards-compat fixture proof                      | n/a           | ✓ shipped (A15; carried by W3.3 / `sturm-v0db.4`) |
+| Doc + memory + PRD-status updates                   | n/a           | ✓ shipped (this beat; `sturm-v0db.8`)            |
+| Write-side `q[k] = …` on the alias (`sturm-65rs.16`) | follow-up §7  | unchanged (still deferred — BitProxy)            |
+| Per-Parm/Field width inference (`sturm-65rs.17`)    | follow-up §7  | unchanged (still deferred)                       |
+| Bump `kDefaultWidth` 32→64 (`sturm-65rs.18`)        | follow-up §7  | unchanged (still deferred)                       |
+
+`bd sturm-65rs.15` was absorbed by this wave and is closed at W3.7 with
+a `--reason` pointing at this row block.
 
 ### 10.1 Problem (additional)
 

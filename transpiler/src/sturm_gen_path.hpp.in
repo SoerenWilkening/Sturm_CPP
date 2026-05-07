@@ -7,7 +7,7 @@
 // Consumed by `transpiler/tests/test_sturm_gen_clean.cpp` (sturm-7t85.4 /
 // G4) so the test resolves the correct directory regardless of which
 // build tree it was configured under (build/, build_mac/, build_linux/,
-// ...). Risk R7 in `docs/prd_qint_alias_completion.md` §9.5: any
+// ...). Risk R7 in `docs/archive/prd_qint_alias_completion.md` §9.5: any
 // build-dir drift between configure-time and run-time produces a
 // compile-time error here, not a silent test pass.
 //

@@ -259,7 +259,7 @@ that already uses `static_cast<int64_t>` deliberately.
 
 ## 4. Migration note — bare `qint` is now the frontend alias
 
-> **Tracks** [`prd_qint_alias_completion.md`](prd_qint_alias_completion.md)
+> **Tracks** [`prd_qint_alias_completion.md`](archive/prd_qint_alias_completion.md)
 > §6 R3, beat F1 / `sturm-65rs.14`.
 
 Before the `sturm-qac` epic, the bare spelling `sturm::qint` was an
@@ -307,6 +307,36 @@ read `qint q;` and assumed 64 bits will silently widen to 32 after
 the transpile. Re-spell as `sturm::qint_t<64>` if you depend on the
 wider value range; the `kDefaultWidth` knob is a one-line bump if a
 future epic moves the default back to 64 (sturm-65rs.18).
+
+**Wave 3 — alias is mandatory-transpile.** As of Wave 3 (closed
+2026-05-07; see
+[`prd_qint_alias_completion.md`](archive/prd_qint_alias_completion.md) §10),
+the frontend `sturm::frontend::qint` alias is a **pure type-stub
+class with a mandatory transpiler**. Every operator body is a
+trivial expression that produces a default-constructed return value
+(`return qbool();` / `return qint{};` / `return 0;` / `return
+*this;` / `{}`); no body reads or writes `value_`, calls into any
+helper, or counts anything. **Pre-transpile execution is
+unsupported.** Source code that includes `<sturm/sturm.hpp>` or
+`<sturm/prelude.hpp>` and exercises the alias must be run through
+`sturm-transpile` before compilation; the transpiler's host-clang
+invariant `sturm-yial` enforces that the plugin loads and the C1 +
+alias-substitution matchers fire. The Wave-2 G6
+`test_sturm_gen_clean` gate (now THE coverage contract under Wave 3)
+asserts the post-transpile output contains zero `sturm::frontend::qint`
+spellings — strictly stronger than the deprecated W2-era runtime
+counter check that lived on the alias class. If you want to compile
+a TU that exercises the alias *without* running the transpiler
+first, you cannot — the alias's operator return values are
+default-constructed sentinels, not lossy-correct measurements.
+Compares now return `sturm::qbool` (parity with `qint_t<W>`); the
+old `bool` returns are gone. The Wave-1-era "measurement footgun"
+warning in §3 above is preserved as the user-rule but its
+implementation surface has shifted: the implicit `operator size_t()`
+remains as a parse-time invariant (so `a[qint_idx]` parses) but its
+body returns `0` and never measures anything; the post-transpile
+`qint_t<W>::operator int64_t()` is `explicit` and remains the
+real safety net for missed sites.
 
 ---
 

@@ -11,15 +11,29 @@
 // and pointers (`qint* a`) — the three container shapes the C1 matcher
 // recognises in PRD §7.
 //
-// The load-bearing piece is the **implicit** `operator size_t() const
-// noexcept`. That is the *only* implicit-measurement site introduced by
-// the QRAM-subscript epic. Per PRD §5, the alias model relies on a
-// post-transpile compile-time safety net: pre-transpile, this implicit
-// conversion lets `a[qint_idx]` parse; post-transpile, the C1 matcher
-// has rewritten the expression to `QRAM_read(a, i, b)` and the emitted
-// file references only `qint_t<W>` (whose `operator int64_t()` is
-// `explicit`, so any missed site becomes a compile error rather than
-// a silent runtime measurement).
+// Wave 3 contract (PRD §10, epic `sturm-v0db`): the alias is a **pure
+// type-stub class** with a **mandatory** transpiler. Every operator
+// body is a trivial expression that produces a default-constructed
+// return value (`return qbool();` / `return qint{};` / `return 0;` /
+// `return *this;` / `{}`); no body reads or writes `value_`, calls
+// into any helper, or counts anything. The Wave-1 "lossy-correct
+// runtime fallback" framing — where the implicit `operator size_t()`
+// was the load-bearing piece — is obsolete: under Wave 3 the
+// transpiler is mandatory (host-clang invariant `sturm-yial`), the
+// alias never executes at runtime, and the bodies need only
+// type-check pre-transpile. The Wave-2 G6 `test_sturm_gen_clean` gate
+// is THE coverage contract — it asserts the post-transpile output
+// contains zero `sturm::frontend::qint` spellings, which is strictly
+// stronger than any pre-transpile counter check could be.
+//
+// `is_convertible_v<qint, size_t>` is preserved as a parse-time
+// invariant (the implicit `operator size_t() const noexcept` declaration
+// stays — its body is `return 0;`); this keeps `a[qint_idx]` parsing
+// uniformly across `std::array<qint, N>`, C-arrays (`qint a[N]`), and
+// pointers (`qint* a`) — the three container shapes the C1 matcher
+// recognises in PRD §7. The matcher then rewrites the expression to
+// `QRAM_read(a, i, b)` and the emitted file references only
+// `qint_t<W>` post-transpile.
 //
 // Beat A1 deliberately keeps the surface tiny:
 //   * default ctor
@@ -131,19 +145,22 @@ public:
     template <std::size_t W>
     qint(const ::sturm::qint_t<W>& src) noexcept;
 
-    // ── Implicit operator size_t (the load-bearing piece) ────────────────
-    // PRD §4.1: "Implicit `operator size_t() const noexcept;`. This is
-    // what makes `a[qint_idx]` parse uniformly across `std::array<qint,
-    // N>`, C-style arrays (`qint a[10]`), and pointers (`qint *a`)."
+    // ── Implicit operator size_t — parse-time invariant ──────────────────
+    // PRD §4.1 / Wave 3 §10.3.6: the implicit `operator size_t() const`
+    // is preserved as a **parse-time invariant** (not a load-bearing
+    // runtime measurement site). Its sole role under Wave 3 is to keep
+    // `is_convertible_v<qint, size_t>` true, which is what makes
+    // `a[qint_idx]` parse uniformly across `std::array<qint, N>`,
+    // C-style arrays (`qint a[10]`), and pointers (`qint *a`) — the
+    // three container shapes the C1 matcher recognises in PRD §7.
     //
     // Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): the body is a
-    // pure type-stub `return 0;`. The Wave-3 transpiler is mandatory
-    // (host-clang invariant sturm-yial); the C1 matcher has rewritten
-    // every matched subscript site, so this body is unreachable on
-    // the rewrite path. The Wave-2 G6 `test_sturm_gen_clean` gate
-    // pins that the rewritten source has zero alias type-spellings —
-    // strictly stronger than the deprecated W2-era runtime counter
-    // check.
+    // pure type-stub `return 0;`. The transpiler is mandatory under
+    // Wave 3 (host-clang invariant sturm-yial); the C1 matcher has
+    // rewritten every matched subscript site, so the body is
+    // unreachable on the rewrite path. The Wave-2 G6
+    // `test_sturm_gen_clean` gate (THE coverage contract under Wave 3)
+    // pins that the rewritten source has zero alias type-spellings.
     //
     // The body is defined out-of-line below `class qint` so the
     // class definition stays compact and readable.
@@ -180,9 +197,10 @@ public:
     qbool operator[](std::size_t k) const noexcept;
 
     // explicit operator int64_t() — pure type-stub. `explicit` so any
-    // *implicit* int64_t use is a compile error; the load-bearing
+    // *implicit* int64_t use is a compile error; the parse-time
     // implicit conversion site on the alias is `operator size_t()`
-    // alone. Body returns `0`; does NOT read `value_` (G8).
+    // alone (preserved as the Wave-3 invariant — see header banner).
+    // Body returns `0`; does NOT read `value_` (G8).
     explicit operator int64_t() const noexcept {
         return 0;
     }
@@ -232,17 +250,14 @@ private:
 
 // ── Out-of-line operator size_t ──────────────────────────────────────────
 // Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8): pure type-stub. The
-// body returns `0` and never reads `value_`. Pre-transpile this body is
-// reachable when a user writes `a[qint_idx]` and the type still resolves
-// to `frontend::qint`; post-transpile the C1 matcher has rewritten the
-// expression to `QRAM_read(...)` and the body is unreachable. Under
-// Wave 3 the transpiler is mandatory (host-clang invariant sturm-yial),
-// so the pre-transpile reachable path is no longer a concern.
-//
-// TODO(backend): when the real quantum measurement path lands, this
-// stub will be deleted entirely — by then user source flows directly
-// to `qint_t<W>::operator int64_t()` post-rewrite, and there is no
-// pre-transpile fallback semantics to preserve.
+// body returns `0` and never reads `value_`. The declaration's sole
+// purpose is to keep `is_convertible_v<qint, size_t>` true (parse-time
+// invariant that makes `a[qint_idx]` parse — see in-class comment).
+// Under Wave 3 the transpiler is mandatory (host-clang invariant
+// sturm-yial); the C1 matcher rewrites every matched subscript site,
+// so this body is unreachable on the rewrite path. The Wave-2 G6
+// `test_sturm_gen_clean` gate is THE coverage contract — it verifies
+// the post-transpile output contains zero alias type-spellings.
 inline qint::operator std::size_t() const noexcept {
     return 0;
 }
