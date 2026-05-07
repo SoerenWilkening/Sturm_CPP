@@ -21,7 +21,7 @@
 //   arithmetic     : + - * / %     (binary, qint × qint)
 //                    + with int    (qint × <integral>; symmetric)
 //                    -             (unary)
-//   compare        : == != < <= > >=    (binary, return bool)
+//   compare        : == != < <= > >=    (binary, return qbool — W3 G7)
 //                                       qint × qint and qint × <integral>
 //   bitwise        : & | ^         (binary)
 //                    ~             (unary)
@@ -32,31 +32,28 @@
 // All compound-assigns are free functions (C++ allows non-member compound
 // assigns). qint_alias.hpp (A1) stays untouched.
 //
-// `__builtin_unreachable()` policy (PRD §4.1 step 2): the only "transpiler-
-// only" shape called out by the PRD is the `qint_t<W> b = QRAM_read(...)`
-// temporary, which is a *backend* type and not part of this header. None
-// of the alias-level operators here are transpiler-only; every one is a
-// legal pre-transpile spelling and uses the measure-then-classical body.
+// `__builtin_unreachable()` policy (PRD §4.1 step 2): no alias-level
+// operator here is transpiler-only; every one is a legal pre-transpile
+// spelling using the measure-then-classical body.
 //
-// Drift cost: every new `qint_t<W>` operator must show up here too.
-// `tests/qtypes/test_qint_alias_ops.cpp` runs a SFINAE-based static-
-// assertion harness (plan §14) that fails if `qint_t<W>` exposes an
-// operator the alias does not — so the cost is loud, not silent.
+// Drift cost: every new `qint_t<W>` operator must show up here too —
+// `tests/qtypes/test_qint_alias_ops.cpp`'s SFINAE harness (plan §14)
+// fires if `qint_t<W>` exposes an operator the alias does not.
 //
 // ── Mixed-type integer overloads ─────────────────────────────────────
-// `qint OP <integral>` for arithmetic `+` and all six comparisons: needed
-// to break the otherwise-ambiguous lookup between built-in
-// `size_t OP <integral>` (via implicit `qint -> size_t`) and our
-// `qint OP qint` (via implicit `<integral> -> qint`). Templated over any
-// integral type so an int literal `q + 3` matches without standard-
-// conversion warnings. `bool` is excluded so `q + true` does not compile.
-// Reverse-direction `<integral> OP qint` is provided **only** for
-// arithmetic `+`, mirroring `qint_t<W>` (whose comparisons are members,
-// so `3 < q` does not match there either).
+// `qint OP <integral>` for arithmetic `+` and all six comparisons:
+// breaks the ambiguity between built-in `size_t OP <integral>` (via
+// implicit `qint -> size_t`) and our `qint OP qint` (via implicit
+// `<integral> -> qint`). Templated over any integral except `bool` so
+// `q + 3` matches without conversion warnings while `q + true` rejects.
+// Reverse `<integral> OP qint` is provided only for arithmetic `+`
+// (mirrors `qint_t<W>`, whose compares are members).
 //
 // LoC budget: <= 300 (plan §1, §4 / A2).
 
 #include "sturm/qtypes/qint_alias.hpp"   // sturm::frontend::qint + measurement counter
+#include "sturm/qtypes/qbool.hpp"        // sturm::qbool — Wave-3 G7 + G10 (return
+                                         // type for compares + op[] read).
 
 #include <cstddef>
 #include <cstdint>
@@ -95,6 +92,19 @@ inline qint mixed_arith(const qint& a, Int c, F op) noexcept {
 }
 
 } // namespace qint_alias_detail
+
+// ── Out-of-line member: qint::operator[](size_t) const ──────────────────
+// Wave-3 G7 + G10 (PRD §10.3.4). Lives here so `qint_alias.hpp` stays
+// free of qbool.hpp / qint_core.hpp includes. Bumps the alias-uniform
+// counter exactly once (W3.3 strips the body to `return qbool();`);
+// reads `value_` directly to avoid a second bump via `operator size_t()`.
+inline qbool qint::operator[](std::size_t k) const noexcept {
+    qint_alias_detail::bump_measurement_count();
+    if (k >= 64) {
+        return qbool(false);
+    }
+    return qbool(((static_cast<std::uint64_t>(value_) >> k) & 1u) != 0u);
+}
 
 // ── Arithmetic: binary + - * / % ─────────────────────────────────────
 inline qint operator+(const qint& a, const qint& b) noexcept {
@@ -183,58 +193,60 @@ inline qint operator-(const qint& a) noexcept {
 }
 
 // ── Compare: == != < <= > >= ─────────────────────────────────────────
-// Lossy by design (PRD §4.1): post-measurement compare returns classical
-// `bool`. `qbool` (the qint_t<W> compare result) requires committing to a
-// backend width, which the alias deliberately does not.
-inline bool operator==(const qint& a, const qint& b) noexcept {
-    return qint_alias_detail::measure_to_int(a)
-        == qint_alias_detail::measure_to_int(b);
+// Wave-3 G7 (PRD §10.3.5): all twelve compare overloads (six qint × qint
+// + six qint × Int templated) return `sturm::qbool` to match the
+// backend's `qint_t<W>::operator==/!=/<…` return type. Body wraps the
+// classical compare in `qbool(bool)` — qbool's value-ctor (qbool.hpp:52)
+// is a no-op classical wrap (no qubit allocated). W3.3 strips bodies.
+inline qbool operator==(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+              == qint_alias_detail::measure_to_int(b));
 }
-inline bool operator!=(const qint& a, const qint& b) noexcept {
-    return qint_alias_detail::measure_to_int(a)
-        != qint_alias_detail::measure_to_int(b);
+inline qbool operator!=(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+              != qint_alias_detail::measure_to_int(b));
 }
-inline bool operator<(const qint& a, const qint& b) noexcept {
-    return qint_alias_detail::measure_to_int(a)
-         < qint_alias_detail::measure_to_int(b);
+inline qbool operator<(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+               < qint_alias_detail::measure_to_int(b));
 }
-inline bool operator<=(const qint& a, const qint& b) noexcept {
-    return qint_alias_detail::measure_to_int(a)
-        <= qint_alias_detail::measure_to_int(b);
+inline qbool operator<=(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+              <= qint_alias_detail::measure_to_int(b));
 }
-inline bool operator>(const qint& a, const qint& b) noexcept {
-    return qint_alias_detail::measure_to_int(a)
-         > qint_alias_detail::measure_to_int(b);
+inline qbool operator>(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+               > qint_alias_detail::measure_to_int(b));
 }
-inline bool operator>=(const qint& a, const qint& b) noexcept {
-    return qint_alias_detail::measure_to_int(a)
-        >= qint_alias_detail::measure_to_int(b);
+inline qbool operator>=(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+              >= qint_alias_detail::measure_to_int(b));
 }
 
-// Mixed-type compare `qint OP <integral>` — see header banner.
+// Mixed-type compare `qint OP <integral>` — Wave-3 G7: returns `qbool`.
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline bool operator==(const qint& a, Int c) noexcept {
-    return qint_alias_detail::measure_to_int(a) == static_cast<std::int64_t>(c);
+inline qbool operator==(const qint& a, Int c) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a) == static_cast<std::int64_t>(c));
 }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline bool operator!=(const qint& a, Int c) noexcept {
-    return qint_alias_detail::measure_to_int(a) != static_cast<std::int64_t>(c);
+inline qbool operator!=(const qint& a, Int c) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a) != static_cast<std::int64_t>(c));
 }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline bool operator<(const qint& a, Int c) noexcept {
-    return qint_alias_detail::measure_to_int(a) <  static_cast<std::int64_t>(c);
+inline qbool operator<(const qint& a, Int c) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a) <  static_cast<std::int64_t>(c));
 }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline bool operator<=(const qint& a, Int c) noexcept {
-    return qint_alias_detail::measure_to_int(a) <= static_cast<std::int64_t>(c);
+inline qbool operator<=(const qint& a, Int c) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a) <= static_cast<std::int64_t>(c));
 }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline bool operator>(const qint& a, Int c) noexcept {
-    return qint_alias_detail::measure_to_int(a) >  static_cast<std::int64_t>(c);
+inline qbool operator>(const qint& a, Int c) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a) >  static_cast<std::int64_t>(c));
 }
 template <class Int, class = qint_alias_detail::IntOp<Int>>
-inline bool operator>=(const qint& a, Int c) noexcept {
-    return qint_alias_detail::measure_to_int(a) >= static_cast<std::int64_t>(c);
+inline qbool operator>=(const qint& a, Int c) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a) >= static_cast<std::int64_t>(c));
 }
 
 // ── Bitwise: binary & | ^ ─────────────────────────────────────────────

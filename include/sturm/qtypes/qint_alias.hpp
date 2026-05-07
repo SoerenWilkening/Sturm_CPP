@@ -49,6 +49,18 @@
 #include <cstdint>
 
 namespace sturm {
+
+// ── Forward declaration of qbool (Wave-3 G7 + G10) ────────────────────────
+// The frontend `qint::operator[](size_t) const` returns `sturm::qbool`. The
+// FULL definition lives in `sturm/qtypes/qbool.hpp`, which is intentionally
+// NOT included here (PRD §10.3.4: keep the bare class header free of
+// backend includes — the include is added in `qint_alias_ops.hpp` along
+// with the out-of-line `operator[]` definition). A forward declaration is
+// sufficient for the in-class declaration because returning `qbool` by
+// value in a function declaration only requires the type to be declared,
+// not complete.
+class qbool;
+
 namespace frontend {
 
 // ── qint_alias_detail ─────────────────────────────────────────────────────
@@ -177,22 +189,16 @@ public:
         return *this;
     }
 
-    // operator[](size_t k) const — bit read. Lossy by design, like the
-    // alias-level compares: each call goes through the measurement
-    // counter (+1) and returns the classical bit. Out-of-range reads
-    // (k >= 64) return false but ALSO bump the counter — the alias is
-    // width-agnostic and uniform-cost on every call site, so the cost
-    // model is independent of operand value. (Backend qint_t<W>'s
-    // `operator[]` returns a qbool view; the alias returns classical
-    // bool because per PRD §3 wiring qbool through the alias would
-    // force a backend-width commitment.)
-    bool operator[](std::size_t k) const noexcept {
-        qint_alias_detail::bump_measurement_count();
-        if (k >= 64) {
-            return false;
-        }
-        return ((static_cast<std::uint64_t>(value_) >> k) & 1u) != 0u;
-    }
+    // operator[](size_t k) const — bit read. Wave-3 G7: returns
+    // `sturm::qbool` (was classical `bool` pre-W3) so the alias's
+    // `operator[]` return type matches `qint_t<W>::operator[]`. The
+    // body lives out-of-line in `qint_alias_ops.hpp` (PRD §10.3.4) so
+    // this header avoids pulling `sturm/qtypes/qbool.hpp` (and its
+    // transitive `qint_core.hpp`) into every TU that only needs the
+    // bare alias class. A forward declaration of `sturm::qbool` is
+    // already in scope (above the `frontend::` namespace), which is
+    // sufficient for the by-value return-type spelling.
+    qbool operator[](std::size_t k) const noexcept;
 
     // explicit operator int64_t() — converting cast. `explicit` so any
     // *implicit* int64_t use is a compile error; the load-bearing
