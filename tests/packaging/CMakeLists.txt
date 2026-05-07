@@ -154,6 +154,35 @@ add_test(NAME test_umbrella_only COMMAND test_umbrella_only)
 set_tests_properties(test_umbrella_only PROPERTIES
     LABELS "packaging;frontend_simpl")
 
+# ── sturm-5qey / Phase 4 — opt-in feature headers acceptance test ──────────
+# Pins the contract for `<sturm/qram.h>` and `<sturm/draw_ascii.h>` (PRD
+# §5.2 / G2 / A5 second half). A TU that includes ONLY `<sturm.h>` plus
+# `<sturm/qram.h>` must reach `sturm::QRAM_read` and observe the runtime
+# entry-point growing the IR end-to-end (the C1 transpiler matcher
+# rewrites `qint b = a[i];` into a `QRAM_read(a, i, b)` call — this test
+# pins that runtime contract without invoking the transpiler). Linkage
+# pulls the QRAM body, the backend simulate / orkan bridge sources, and
+# the dispatch / control-stack sources the QROM XOR-fanout DSL emits
+# WHEN-lifted CXs through (mirrors tests/qram/CMakeLists.txt's
+# STURM_QRAM_BACKEND_SOURCES set).
+add_executable(test_umbrella_qram
+    test_umbrella_qram.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp)
+target_link_libraries(test_umbrella_qram PRIVATE sturm orkan_headers)
+target_compile_features(test_umbrella_qram PRIVATE cxx_std_20)
+add_test(NAME test_umbrella_qram COMMAND test_umbrella_qram)
+set_tests_properties(test_umbrella_qram PROPERTIES
+    LABELS "packaging;frontend_simpl")
+
 # ── sturm-65rs.6 / B1 — qint resolution acceptance test ────────────────────
 # Pins the post-B1 type identity of `sturm::qint`: it IS sturm::frontend::qint
 # (PRD §4.2), and a LOCAL `using qint = sturm::qint_t<W>;` still resolves to
