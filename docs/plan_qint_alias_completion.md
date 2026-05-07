@@ -7,8 +7,11 @@
   `sturm-65rs.*`.
 - Wave 2 (§§19–22): drafted 2026-05-05 under bd epic `sturm-qaca`
   (`sturm-qaca.1` .. `sturm-qaca.5`). Tracks PRD §9 / G5–G6 / A7–A10.
+- Wave 3 (§§23–30): drafted 2026-05-07 under bd epic `sturm-v0db`
+  (`sturm-v0db.1` .. `sturm-v0db.8`). Tracks PRD §10 / G7–G10 /
+  A11–A15. Beat → id map at §23a.
 
-**Tracks.** `docs/prd_qint_alias_completion.md` G1–G6 / A1–A10.
+**Tracks.** `docs/prd_qint_alias_completion.md` G1–G10 / A1–A15.
 **Predecessors.** `docs/archive/plan_qram_subscript.md` (alias-class
 introduction, beats A1/A2/B1/C1), `docs/archive/plan_qram_backend.md`
 (QROM emission, `render_qint_typename`).
@@ -16,6 +19,8 @@ introduction, beats A1/A2/B1/C1), `docs/archive/plan_qram_backend.md`
 `sturm-65rs.1` .. `sturm-65rs.18`). Beat → bd-id map at §1a.
 **Scope tag (wave 2).** `sturm-qaca` epic; child ids
 `sturm-qaca.1` .. `sturm-qaca.5`. Beat → bd-id map at §19a.
+**Scope tag (wave 3).** `sturm-v0db` epic; child ids
+`sturm-v0db.1` .. `sturm-v0db.8`. Beat → bd-id map at §23a.
 
 ---
 
@@ -925,5 +930,538 @@ consumed by G2.)
    (project CLAUDE.md hard cap on `--parallel 6`).
 5. After wave-2 closes, both `prd_qint_alias_completion.md` and this
    plan move to `docs/archive/` per project convention (the move
-   deferred at wave-1 §18 step 4 happens here).
+   deferred at wave-1 §18 step 4 happens here). **Superseded by §30
+   below — the move is now contingent on Wave 3 closing.**
 6. `git push` succeeds (project session-completion rule).
+
+---
+
+## §23 Wave 3 — Mandatory transpiler; alias as pure type-stubs
+
+Wave 3 tracks PRD §10 / G7–G10 / A11–A15 — collapsing the alias's
+runtime contract now that the transpiler is mandatory in the build
+(host-clang invariant `sturm-yial`). Two coupled changes: (1) compares
+and `operator[]` read return `qbool` to match `qint_t<W>`'s surface;
+(2) every alias operator body becomes a trivial type-stub
+(`return qbool();` / `return qint{};` / `return 0;` / `return *this;` /
+`{}`). The supporting infra (`qint_alias_detail::g_measurement_count`,
+`measure_to_int`, `mixed_arith`, every `bump_*`/`reset_*`/
+`measurement_count()` helper) is deleted; its observability role
+passes to the Wave-2 G6 `test_sturm_gen_clean` gate, which is the
+strictly stronger contract.
+
+The eight beats below land in dependency order. After every beat the
+full test suite runs green under `--parallel 6`. Each module obeys
+the project's ≤ 300 LoC budget unless explicitly noted.
+
+### §23a Beat → bd-id map (Wave 3)
+
+| Beat   | bd id              | Title                                                  |
+|--------|--------------------|--------------------------------------------------------|
+| —      | `sturm-v0db`       | epic                                                   |
+| W3.0   | `sturm-v0db.1`     | Pre-flight baseline + cycle audit                      |
+| W3.1   | `sturm-v0db.2`     | Failing tests for new contracts (TDD red)              |
+| W3.2   | `sturm-v0db.3`     | qbool include + return-type retrofit (G7 + G10)        |
+| W3.3   | `sturm-v0db.4`     | Pure stub bodies (G8)                                  |
+| W3.4   | `sturm-v0db.5`     | Counter / `measure_to_int` infra deletion (G9)         |
+| W3.5   | `sturm-v0db.6`     | IR-scan stub test (A12)                                |
+| W3.6   | `sturm-v0db.7`     | Tree-grep audit gate (A14) + sturm_gen_clean re-run (A13) |
+| W3.7   | `sturm-v0db.8`     | Doc + memory + PRD-status updates (PRD §10.3.6)        |
+
+### §23b Pre-flight assumptions (verified against the tree)
+
+These constrain beat scope; revisit if the tree changes before W3
+lands.
+
+1. **`qint_alias_detail::*` callers** today: `tests/qtypes/test_qint_alias{,_ops,_member_ops,_qint_t_init}.cpp`,
+   `tests/packaging/test_qint_resolution.cpp`,
+   `tests/packaging/test_qint_alias_first_include.cpp`,
+   `transpiler/tests/test_qint_alias_subst_e2e.cpp`, plus comment
+   references in `transpiler/tests/test_sturm_gen_clean_{scan.hpp,unit.cpp}`
+   and `include/sturm/qram/qram_read.hpp:90,331`. **No production
+   callers of the counter** — confirms PRD R8.
+2. **`i.classical_value()` is called from `qram_read.hpp:350`**
+   (the matcher-miss wrapper bridging `frontend::qint` index →
+   `qint_t<W>` index). This forces W3 to KEEP `classical_value()`
+   and `value_` storage; correctness for the matcher-miss path
+   becomes the gate's responsibility (`test_sturm_gen_clean`).
+3. **PRD §10.3.5 says "rewrite to use `classical_value()` or delete"
+   while R11 recommends removing `classical_value()`.** This plan
+   keeps it (per (2)). Tests that asserted runtime values via
+   operators (e.g. `(a + 5).classical_value() == 12`) are deleted
+   in W3.1; tests that exercise only the ctor + `classical_value()`
+   (e.g. `qint q(7); q.classical_value() == 7`) are kept.
+4. **PRD §10.3.2 lists body shapes for "operators" only —
+   constructors not addressed.** This plan keeps
+   `qint(int64_t v) : value_(v) {}` so the ctor-driven smoke
+   survives. The `qint(const qint_t<W>&)` ctor body becomes `{}`
+   (it only carried `bump_measurement_count()`).
+5. **`qint_alias_detail::IntOp<T>` SFINAE alias** is the one symbol
+   in the namespace not addressed by PRD §10.3.3 that is still
+   load-bearing (mixed-type templates need it to exclude `bool`).
+   W3.4 inlines the predicate at each callsite
+   (`std::enable_if_t<std::is_integral_v<T> && !std::is_same_v<T, bool>>`)
+   so the namespace can truly disappear.
+
+---
+
+## §24 Beat W3.0 — Pre-flight baseline + cycle audit (`sturm-v0db.1`)
+
+**Goal.** Capture green state before destructive edits; verify the
+new include relationship (`qint_alias_ops.hpp` → `qbool.hpp`
+→ `qint_core.hpp`) does not reintroduce a cycle.
+
+**Files touched.**
+- `tests/packaging/test_qint_alias_first_include.cpp` (extend, ≤ 80 LoC).
+
+**Tests added/updated.**
+- Extend the existing first-include TU to also include
+  `qint_alias_ops.hpp` immediately after `qint_alias.hpp`. The new
+  `#include "sturm/qtypes/qbool.hpp"` planned for W3.2 is added in
+  this TU **only** (a probe edit, reverted at end of W3.0). Verifies
+  that the cycle qint_alias.hpp → qint_fwd.hpp → qint_alias.hpp,
+  followed by qint_alias_ops.hpp → qbool.hpp → qint_core.hpp,
+  parses under `-std=c++17`.
+
+**Acceptance.**
+- Full `ctest --parallel 6` green; passing-test count recorded.
+- Cycle-audit TU compiles with the W3.2 include shape pre-flighted.
+
+**Dependency.** None.
+
+---
+
+## §25 Beat W3.1 — Failing tests for new contracts (`sturm-v0db.2`)
+
+**Goal.** Land the test changes that drive W3.2 + W3.3
+implementation. After this beat the build is intentionally **red**
+on `test_qint_alias_ops` (the new `is_same_v<..., qbool>` asserts
+fail because compares still return `bool`); other tests build clean.
+
+**Files touched.**
+- `tests/qtypes/test_qint_alias.cpp`
+- `tests/qtypes/test_qint_alias_ops.cpp`
+- `tests/qtypes/test_qint_alias_member_ops.cpp`
+- `tests/qtypes/test_qint_alias_qint_t_init.cpp`
+- `tests/packaging/test_qint_resolution.cpp`
+- `tests/packaging/test_qint_alias_first_include.cpp`
+- `transpiler/tests/test_qint_alias_subst_e2e.cpp` (snapshot
+  `repl()` updates only).
+
+**Tests added/updated.**
+- **`test_qint_alias_ops.cpp` rewrite.** Drop the `STURM_MEASURED`
+  macros and every `test_*_measure` runtime function. Drop
+  `test_compare_values`, `test_mixed_arith_ops` (their value
+  assertions are stub-incompatible). Keep the SFINAE drift-gate
+  harness (signatures only — return-type ignored by `STURM_HAS_BIN`).
+  **Add A11 assertions** — 13 positive
+  `static_assert(std::is_same_v<decltype(...), sturm::qbool>)`:
+  six `qint × qint` compares, six `qint × int64_t` mixed-type
+  compares, one `decltype(std::declval<const qint&>()[std::size_t{}])`.
+  Keep arith/bitwise return-type asserts as `qint`. Remove
+  `test_phi_theta_proxy_measure` runtime body (counter assertions
+  inside) but keep the SFINAE pin
+  `STURM_ALIAS_OP_PARITY(has_phi_plus_double, ...)` etc.
+- **`test_qint_alias.cpp`.** Drop `test_implicit_conversion_measures`
+  and `test_round_trip_value` (both depend on the
+  `value_ → size_t` runtime path). Keep parse-tests
+  `test_subscript_*_compiles`, the `is_convertible_v<frontend::qint,
+  size_t>` positive static_assert (still load-bearing for
+  `a[qint_idx]` parse), the `is_convertible_v<qint_t<W>, size_t>`
+  negatives, and default-constructibility.
+- **`test_qint_alias_member_ops.cpp`.** Drop the runtime bodies of
+  `test_op_assign_int64_round_trip`, `test_op_subscript_in_range`,
+  `test_op_subscript_oob_returns_false_but_bumps`,
+  `test_op_int64_cast_bumps`. Replace with one ctor-driven probe
+  (`qint q(0x1234); assert(q.classical_value() == 0x1234);`) and
+  retain the three SFINAE drift-gates (`has_assign_int64`,
+  `has_subscript`, `has_explicit_int64`). Add an `is_same_v` pin
+  for `decltype(std::declval<const qint&>()[0])` returning
+  `sturm::qbool` (also covered in `test_qint_alias_ops.cpp`; the
+  duplication is intentional — local to the file under test).
+- **`test_qint_alias_qint_t_init.cpp`.** Drop
+  `test_constructor_bumps_measurement_counter`. Keep the three
+  compile-only parse tests + the `is_constructible_v` /
+  `is_convertible_v` / `is_nothrow_constructible_v` static_asserts.
+- **`test_qint_resolution.cpp`** + **`test_qint_alias_first_include.cpp`.**
+  Drop counter assertions; keep `is_same_v<sturm::qint,
+  sturm::frontend::qint>` invariants and the implicit-ctor smoke
+  (`sturm::qint q = 5;` should compile without referencing any
+  counter — the counter no longer exists post-W3.4).
+- **`transpiler/tests/test_qint_alias_subst_e2e.cpp`.** The snapshot
+  `repl()` calls at lines 76-83, 163, 194 rewrite a copy of
+  `test_qint_alias.cpp`; once the source-file edits above land,
+  the snapshot's `repl()` pre-images must match the new content.
+  Audit and re-pin in this beat (otherwise the e2e test diverges
+  silently — no compile error, just a string-replace miss).
+
+**Acceptance.**
+- `tests/qtypes/test_qint_alias_ops.cpp` fails to compile with
+  errors of the shape `static_assert failed: 'is_same_v<bool, qbool>'`
+  (or equivalent) on every newly-added compare assertion. **This
+  red state is the gate** — it confirms the assertions are
+  contractful, not vacuous.
+- All other tests in the suite still build and run (the file edits
+  above are subtractive elsewhere).
+- Wave-2 `test_sturm_gen_clean` still GREEN (W3.1 changes no
+  transpiler input).
+
+**Dependency.** §24 (W3.0).
+
+---
+
+## §26 Beat W3.2 — qbool include + return-type retrofit (`sturm-v0db.3`)
+
+**Goal.** Make W3.1's new `is_same_v<..., qbool>` asserts pass while
+operator bodies still measure-and-classical (W3.3 strips bodies).
+Splitting the type change from the body change keeps each diff
+bisectable.
+
+**Files touched.**
+- `include/sturm/qtypes/qint_alias.hpp` (declaration of
+  `operator[]`; class body — qbool include stays out per PRD
+  §10.3.4).
+- `include/sturm/qtypes/qint_alias_ops.hpp` (qbool include;
+  return-type changes; out-of-line `operator[]` definition).
+- (no test edits in this beat — W3.1 already pinned the contract.)
+
+**Implementation skeleton.**
+
+```cpp
+// include/sturm/qtypes/qint_alias_ops.hpp — top of file
+#include "sturm/qtypes/qbool.hpp"  // qbool — Wave-3 G7 + G10
+```
+
+```cpp
+// qint_alias.hpp — class qint, replace bool operator[] with declaration
+qbool operator[](std::size_t k) const noexcept;
+```
+
+```cpp
+// qint_alias_ops.hpp — out-of-line definition
+inline qbool qint::operator[](std::size_t k) const noexcept {
+    qint_alias_detail::bump_measurement_count();   // stripped in W3.3
+    if (k >= 64) return qbool(false);
+    return qbool((static_cast<std::uint64_t>(value_) >> k) & 1u);
+}
+```
+
+```cpp
+// qint_alias_ops.hpp — every compare body, e.g.
+inline qbool operator==(const qint& a, const qint& b) noexcept {
+    return qbool(qint_alias_detail::measure_to_int(a)
+              == qint_alias_detail::measure_to_int(b));
+}
+// Twelve total: six `qint × qint` + six templated `qint × Int`.
+```
+
+**Acceptance.**
+- `test_qint_alias_ops.cpp` GREEN (A11 asserts fire; existing
+  signature drift-gates still hold).
+- All other tests GREEN (qbool's default ctor allocates no qubit;
+  the wrapping `qbool(bool)` ctor at qbool.hpp:52 is no-op).
+- `test_sturm_gen_clean` GREEN.
+
+**Dependency.** §25 (W3.1).
+
+---
+
+## §27 Beat W3.3 — Pure stub bodies (`sturm-v0db.4`)
+
+**Goal.** Strip every operator body to PRD §10.3.2 shapes. After
+this beat the alias has no value semantics on its operator surface;
+ctors still set `value_` per §23b note 4.
+
+**Files touched.**
+- `include/sturm/qtypes/qint_alias.hpp` (member ops + proxy stubs +
+  out-of-line `operator size_t()` / converting ctor).
+- `include/sturm/qtypes/qint_alias_ops.hpp` (every free op body).
+
+**Body rewrite table.**
+
+| Site                                                    | Pre-W3.3 body                              | Post-W3.3 body          |
+|---------------------------------------------------------|--------------------------------------------|-------------------------|
+| `qint::operator=(int64_t)`                              | `value_ = v; return *this;`                | `return *this;`         |
+| `qint::operator size_t() const`                         | bump + `static_cast<size_t>(value_)`       | `return 0;`             |
+| `qint::operator int64_t() const`                        | bump + `value_`                            | `return 0;`             |
+| `qint::operator[](size_t) const` (out-of-line)          | bump + bit-extract                         | `return qbool();`       |
+| `qint::PhiProxyStub::operator+=(double)`                | `bump_measurement_count();`                | `{}`                    |
+| `qint::ThetaProxyStub::operator+=(double)`              | `bump_measurement_count();`                | `{}`                    |
+| `qint::qint(const qint_t<W>&)` (out-of-line)            | `value_(0); bump_measurement_count();`     | `{}` (no member init)   |
+| `operator+/-/* / / / % / & / | / ^` (qint × qint, free)  | `qint(measure_to_int(a) OP measure_to_int(b))` | `return qint{};`        |
+| Mixed-type `operator OP (qint, Int)` (8 overloads)      | `mixed_arith` / direct                     | `return qint{};`        |
+| Reverse `operator+(Int, qint)`                          | `return a + c;`                            | `return qint{};`        |
+| Unary `operator-(qint)` / `operator~(qint)`             | `qint(-/~ measure_to_int(a))`              | `return qint{};`        |
+| Shifts `operator<<(qint, int)` / `operator>>(qint, int)`| guarded shift on `measure_to_int(a)`       | `return qint{};`        |
+| Compares `operator==/!=/</<=/>/>=` (qint × qint, free)  | `qbool(measure_to_int(a) OP measure_to_int(b))` | `return qbool();`       |
+| Mixed-type compares (12 overloads)                      | similar                                    | `return qbool();`       |
+| Compound assigns `operator+=/-=/...(qint&, qint)` etc.  | `a = a OP b; return a;`                    | `return a;`             |
+| Compound shifts `operator<<=(qint&, int)` etc.          | `a = a << n; return a;`                    | `return a;`             |
+
+**Constraints (do NOT relax).**
+- No body reads or writes `value_` (G8). The class default
+  `int64_t value_ = 0;` and the int64_t ctor's member init
+  `value_(v)` are the only `value_` writes in the alias.
+- No body calls into `qint_alias_detail::*` (the namespace is
+  about to disappear in W3.4).
+- Compound assigns return `a` unchanged — they MUST NOT compute
+  `a OP b` even speculatively, because that would re-invoke the
+  free op (which now returns a default).
+
+**Acceptance.**
+- All tests from W3.1 GREEN.
+- `test_sturm_gen_clean` GREEN.
+- Manual sanity: `examples/qram_demo.cpp` builds + runs under
+  `cmake --build build_mac --target example_qram_demo --parallel 6`
+  (Wave-2 G4 contract; the matcher rewrites the read line so stub
+  bodies are unreachable; circuit diagram still emits).
+
+**Dependency.** §26 (W3.2).
+
+---
+
+## §28 Beat W3.4 — Counter / measure_to_int infra deletion (`sturm-v0db.5`)
+
+**Goal.** Delete every symbol in `qint_alias_detail`. Mechanical;
+no body now references any of them.
+
+**Files touched.**
+- `include/sturm/qtypes/qint_alias.hpp` — delete the
+  `qint_alias_detail` namespace block (lines 73-89 today).
+- `include/sturm/qtypes/qint_alias_ops.hpp` — delete `measure_to_int`
+  (line 75-78), `mixed_arith` (line 92-95), and the
+  `qint_alias_detail` namespace block. **Inline `IntOp<T>`** at
+  each of the 14 mixed-type templates: replace
+  `class = qint_alias_detail::IntOp<Int>` with
+  `class = std::enable_if_t<std::is_integral_v<Int> && !std::is_same_v<Int, bool>>`.
+- `include/sturm/qram/qram_read.hpp` — reword comment lines 90 and
+  331-332 to drop `qint_alias_detail::g_measurement_count`
+  references; replace with a pointer to the sturm_gen_clean gate.
+- `transpiler/tests/test_sturm_gen_clean_unit.cpp:128-130` — the
+  "identifier prefix `qint_alias_detail`" test case becomes
+  vacuous (the namespace is gone). **Repurpose** to a
+  positive-control: assert that a synthesized line
+  `using sturm::frontend::qint_alias_detail::measurement_count;`
+  in input IS still flagged as a `qualified-pattern` hit by the
+  scanner (defends against a future re-introduction).
+- `transpiler/tests/test_sturm_gen_clean_scan.hpp:16` — comment
+  update (drop the `qint_alias_detail` mention from the
+  "exclude on `_` follow-char" example list, since it can no
+  longer occur in real output).
+
+**Acceptance.**
+- Full `ctest --parallel 6` GREEN.
+- `grep -rE 'g_measurement_count|bump_measurement_count|reset_measurement_count|measure_to_int' include tests transpiler examples`
+  is empty (excluding `docs/` and `build*/`). **Note:** the regex
+  above is run by W3.6's audit gate; this beat's manual grep is
+  a sanity check.
+- The `qint_alias_detail::` substring still appears at one
+  documented location: a positive-control test case in
+  `test_sturm_gen_clean_unit.cpp` that synthesizes the string
+  in test input. W3.6's audit gate is configured to exclude this
+  specific test source.
+
+**Dependency.** §27 (W3.3).
+
+---
+
+## §29 Beat W3.5 — IR-scan stub test (`sturm-v0db.6`)
+
+**Goal.** Ship A12 — defense-in-depth IR scan that fires if a future
+edit reintroduces a value-semantics body.
+
+**Files added.**
+- `tests/qtypes/fixture_qint_alias_stubs.cpp` — instantiates each
+  alias operator + ctor on `frontend::qint`, calls them in a
+  `[[gnu::used]]`-marked function so `-O0` can't dead-strip.
+- `tests/qtypes/test_qint_alias_stubs.cpp` — the unit test below.
+- `tests/qtypes/CMakeLists.txt` — `add_custom_command` that runs
+  `${CMAKE_CXX_COMPILER} -std=c++17 -S -emit-llvm -O0 -I${INCLUDE_DIRS}
+  -o stubs.ll fixture_qint_alias_stubs.cpp` at build time, with the
+  resulting `stubs.ll` declared as a `BYPRODUCTS` of an `add_custom_target`
+  that the test depends on. Gated on `STURM_FULL_TEST_SUITE=ON` if
+  IR generation costs are nontrivial.
+
+**Test strategy.**
+1. Read `${CMAKE_CURRENT_BINARY_DIR}/stubs.ll`.
+2. For each function whose mangled name starts with
+   `_ZNK?6sturm8frontend4qintR?` (Itanium ABI prefix for
+   `sturm::frontend::qint::*`), assert no `getelementptr inbounds`
+   / `load` against a member of `%"struct.sturm::frontend::qint"` —
+   excludes `classical_value()` (mangled `_ZNK?...15classical_valueEv`)
+   from the scan, because reading `value_` is its job.
+3. Assert no `call` / `invoke` operand mentions a symbol containing
+   `qint_alias_detail` (impossible post-W3.4 — defense-in-depth).
+4. Assert no `call` / `invoke` to demangled
+   `sturm::frontend::qint_alias_detail::*`.
+
+**Negative-control verification (one-shot, manual, during landing).**
+- Reintroduce `qint_alias_detail::bump_measurement_count();` in one
+  operator body, rebuild, confirm `test_qint_alias_stubs` fires
+  RED, revert. Document in commit message ("verified IR-scan
+  negative control").
+
+**Acceptance.**
+- `test_qint_alias_stubs` GREEN.
+- LLVM IR file size < 100 KB (sanity bound on fixture scope —
+  the fixture should not pull in the whole umbrella).
+
+**Dependency.** §28 (W3.4). (Could run in parallel with §30 if you
+have two workers.)
+
+---
+
+## §30 Beat W3.6 — Tree-grep audit + sturm_gen_clean re-run (`sturm-v0db.7`)
+
+**Goal.** Permanent regression gate against re-introduction of any
+deleted-infra symbol; pin `test_sturm_gen_clean` GREEN under stub
+bodies.
+
+**Files added/touched.**
+- `tests/qtypes/test_qint_alias_no_counter_infra.cpp` — new C++
+  unit using `<filesystem>` + `<regex>`:
+  1. Globs `${SOURCE_ROOT}/{include,tests,transpiler/src,transpiler/tests,examples}/**/*.{cpp,hpp,h}`.
+  2. Asserts zero hits for the regex
+     `\b(measure_to_int|g_measurement_count|bump_measurement_count|reset_measurement_count)\b|qint_alias_detail::`.
+  3. Excludes `docs/`, `build*/sturm_gen/`, the W3.4-permitted
+     positive-control test source
+     `transpiler/tests/test_sturm_gen_clean_unit.cpp`, and any
+     `CHANGELOG.md` under `docs/` (PRD §10.3.6 "deleted-symbols
+     announcement" lives there).
+  4. Reports offending file:line on failure (mirrors the
+     Wave-2 G6 gate's output shape).
+- `tests/qtypes/CMakeLists.txt` — register the new test.
+- (no edit to `test_sturm_gen_clean` — it stays as-is; this beat
+  just re-runs it and pins GREEN as A13.)
+
+**SOURCE_ROOT plumbing.** Mirror Wave-2 G6's
+`configure_file(<sturm_gen_path.hpp>)` pattern: a
+`configure_file(test_qint_alias_audit_path.hpp.in
+test_qint_alias_audit_path.hpp)` records the configured source
+directory at CMake-configure time, so the test compiles cleanly
+against the path it scans.
+
+**Acceptance.**
+- `test_qint_alias_no_counter_infra` GREEN.
+- `test_sturm_gen_clean` GREEN (A13 pin).
+- Negative-control: re-introducing `bump_measurement_count();` in
+  any header makes the new gate RED with file:line output (manual,
+  one-shot during landing).
+
+**Dependency.** §28 (W3.4). Independent of §29 (W3.5).
+
+---
+
+## §31 Beat W3.7 — Doc + memory + PRD-status updates (`sturm-v0db.8`)
+
+**Goal.** Bring narrative artifacts in line with code state. Cleanup
+beat; doesn't gate any other beat.
+
+**Files touched.**
+- `include/sturm/qtypes/qint_alias.hpp` — header-banner rewrite of
+  the regions PRD §10.3.6 calls out (lines 14-22, 51-72, 146-159,
+  180-188, 208-222, 258-272). Drop the "load-bearing implicit
+  `operator size_t()`" framing; describe the new contract:
+  pure type-stubs, mandatory transpiler, runtime bodies are
+  placeholders, sturm_gen_clean is *the* coverage gate. Keep the
+  `is_convertible_v<qint, size_t>` static_assert as a parse-time
+  invariant note.
+- `docs/qram_user_intro.md` — add a paragraph that the alias is
+  mandatory-transpile and pre-transpile execution is unsupported
+  (PRD §10.3.6).
+- `docs/prd_qint_alias_completion.md` §10.0 — flip the Wave-3
+  status table rows to ✅ shipped, with bd issue ids next to each
+  G7–G10 / A11–A15 line.
+- `bd remember` updates:
+  - Retire / rewrite memory
+    `sturm-hpp-umbrella-does-not-expose-qbool-operators`: under
+    W3.2's `qint_alias_ops.hpp` → `qbool.hpp` include, every
+    alias-touching TU now sees qbool's operators (PRD §10.3.6
+    bullet 2).
+  - New memory: "Wave 3: alias is mandatory-transpile;
+    pre-transpile execution unsupported. Alias operator bodies are
+    pure stubs — `return qbool()` / `return qint{}` / `return 0;`
+    / `return *this;` / `{}`. `test_sturm_gen_clean` is the
+    coverage contract (Wave-2 G6, promoted to *the* gate under
+    Wave 3)."
+- Close `bd sturm-65rs.15` with a `--reason` referencing this
+  wave (PRD §10.0 absorption).
+- Move `docs/prd_qint_alias_completion.md` and this plan to
+  `docs/archive/` per project convention (the §22 step 5 move
+  deferred there happens here, not at Wave 2 close).
+
+**Acceptance.**
+- `git push` succeeds (project session-completion rule).
+- `bd close sturm-v0db.1 ... sturm-v0db.8` runs cleanly.
+- `bd sturm-65rs.15` closed with reason.
+- Header banners no longer mention measurement counter or
+  "lossy by design"; describe the type-stub contract.
+
+**Dependency.** §29 + §30.
+
+---
+
+## §32 Wave 3 dependency graph
+
+```
+§24 W3.0 ──► §25 W3.1 ──► §26 W3.2 ──► §27 W3.3 ──► §28 W3.4 ──┬──► §29 W3.5 ──┐
+                                                                │              ├──► §31 W3.7
+                                                                └──► §30 W3.6 ─┘
+```
+
+- **W3.1 strictly before W3.2.** The new `is_same_v<..., qbool>`
+  asserts must transition red → green to verify they are
+  contractful.
+- **W3.2 strictly before W3.3.** Splitting return-type change from
+  body-stripping makes regressions bisectable to a single change
+  kind.
+- **W3.4 strictly after W3.3.** Deleting `measure_to_int` and the
+  counter infra is only safe once no body references them.
+- **W3.5 / W3.6 parallelizable** if two workers are available;
+  otherwise sequential in either order.
+- **W3.7 last** — narrative cleanup depends on code-state being
+  final.
+
+---
+
+## §33 Wave 3 risk register (mirrors PRD §10.5)
+
+| R   | Risk                                                  | Mitigation                                                |
+|-----|-------------------------------------------------------|-----------------------------------------------------------|
+| R8  | A consumer relied on `measurement_count()` for cost   | Tree-grep in §23b confirms zero non-test consumers;       |
+|     | reporting                                             | W3.7 migration note is the warning surface                |
+| R9  | qbool umbrella exposure leaks operators into TUs that | W3.2 keeps the include in `qint_alias_ops.hpp` only       |
+|     | previously didn't see them                            | (NOT in `qint_alias.hpp`); ADL surface contained          |
+| R10 | Matcher-miss returns garbage value instead of a       | W3.6 + Wave-2 G6 gate fires RED at build time, strictly   |
+|     | coincidentally-correct one                            | louder than today's silent-wrong-number — *risk reduced*  |
+| R11 | Removing `value_` consumers invalidates `classical_value()` | This plan KEEPS `classical_value()` (qram_read.hpp:350    |
+|     |                                                       | calls it); §23b note 3 documents the divergence from       |
+|     |                                                       | PRD R11's removal recommendation                          |
+| R12 | `transpile_qint_alias_subst_e2e.cpp` snapshot drift   | W3.1 audits and re-pins the `repl()` calls; CI runs       |
+|     | from W3.1 source edits                                | the e2e test green at end of beat                         |
+| R13 | IR-scan test cost on the fast suite                   | Gate `test_qint_alias_stubs` behind                       |
+|     |                                                       | `STURM_FULL_TEST_SUITE=ON` if measured > 5s build-side    |
+| R14 | Mandatory-transpile assumption (host-clang invariant) | Project CLAUDE.md "Host-clang invariant" section pins     |
+|     | regresses, alias bodies start executing               | the `sturm-yial` configure-time gate; W3.6 audit and      |
+|     |                                                       | sturm_gen_clean fire RED if alias residue reaches output  |
+
+---
+
+## §34 Wave 3 definition of done (epic `sturm-v0db`)
+
+1. PRD A11–A15 all GREEN.
+2. All beats `sturm-v0db.1` .. `sturm-v0db.8` closed in bd.
+3. `bd sturm-65rs.15` closed with `--reason` referencing this wave
+   (PRD §10.0 absorption).
+4. `examples/qram_demo.cpp` builds + runs under
+   `cmake --build build_mac --target example_qram_demo --parallel 6`
+   (PRD A9 / Wave-2 G4 contract still holds under stub bodies).
+5. `test_sturm_gen_clean` GREEN (A13).
+6. `test_qint_alias_no_counter_infra` GREEN (A14).
+7. `test_qint_alias_stubs` GREEN (A12).
+8. `bd memories qbool` reflects the retired/rewritten
+   `sturm-hpp-umbrella-does-not-expose-qbool-operators` memory and
+   the new "Wave 3 stub contract" memory.
+9. `docs/prd_qint_alias_completion.md` and this plan move to
+   `docs/archive/` (Wave-2 §22 step 5 deferred move happens here).
+10. `git push` succeeds (project session-completion rule).

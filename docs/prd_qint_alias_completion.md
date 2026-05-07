@@ -7,6 +7,10 @@
 - Wave 2 (§9): drafted 2026-05-05. Tracked under bd epic `sturm-qaca`.
   Triggered by post-wave-1 build failure on
   `examples/qram_demo.cpp` (array-carrier alias erasure gap).
+- Wave 3 (§10): drafted 2026-05-07. Pre-transpile runtime path
+  abandoned; alias becomes pure type-stubs. Supersedes the Wave-1 §3
+  "qbool-returning compares" non-goal and the Wave-1 §7 follow-ups
+  `.15` (qbool compares) — see §10.0 for the precise re-classification.
 
 **Predecessors.** `docs/archive/prd_qram_subscript.md` (frontend alias-class
 introduction, sturm-u9ge) and `docs/archive/prd_qram_backend.md` (QROM
@@ -78,10 +82,12 @@ unchanged. The QRAM-subscript C1 matcher is unchanged on the wire.
 
 ## 3. Non-goals
 
-- `qbool`-returning compares on the alias. The alias compares return
-  classical `bool`. Wiring `qbool` through the alias would force a
-  backend-width commitment on every compare result; that is a separate
-  decision (see §7 follow-ups).
+- ~~`qbool`-returning compares on the alias.~~ **Superseded by Wave 3
+  (§10).** Original wave-1 reasoning was that `qbool` would force a
+  backend-width commitment on every compare result; that reasoning was
+  imprecise (`qbool` is fixed-width `qint_t<1>` and its default ctor
+  allocates no qubit — `include/sturm/qtypes/qbool.hpp:47-48`). The
+  real concern was header coupling, which Wave 3 accepts.
 - Write-side bit assignment `q[k] = …` on the alias. Mirroring the
   backend's non-const `BitProxy` overload requires a width.
 - Reverse-direction `<integral> OP qint` for non-`+` arithmetic (the
@@ -245,11 +251,16 @@ LoC is small and uniform; if still over, split into
 
 ## 7. Follow-ups (out of scope)
 
-- `qbool`-returning compares on the alias.
-- Write-side `q[k] = …` on the alias.
-- Per-ParmVarDecl / per-FieldDecl width inference (currently rule-3
-  default; revisit if 32 turns out too narrow in practice).
-- Bumping `kDefaultWidth` from 32 to 64.
+- ~~`qbool`-returning compares on the alias.~~ **Promoted into scope by
+  Wave 3 (§10);** absorbs bd `sturm-65rs.15` plus the parallel
+  `operator[]` read and the mixed-type `qint OP <integral>` compares.
+- Write-side `q[k] = …` on the alias (bd `sturm-65rs.16` — still
+  deferred; requires a `BitProxy` width commitment).
+- Per-ParmVarDecl / per-FieldDecl width inference (bd `sturm-65rs.17`
+  — still deferred; currently rule-3 default; revisit if 32 turns out
+  too narrow in practice).
+- Bumping `kDefaultWidth` from 32 to 64 (bd `sturm-65rs.18` — still
+  deferred).
 
 ## 8. References
 
@@ -419,3 +430,276 @@ so a stale path fails at compile, not silently.
   evidence captured during the wave-2 design session).
 - `include/sturm/qram/qram_read.hpp:242-271` (overload set the
   rewritten carrier must satisfy).
+
+---
+
+## 10. Wave 3 — Mandatory transpiler; alias as pure type-stubs (2026-05-07)
+
+Waves 1 + 2 left the alias with two coupled properties:
+
+- *Lossy-correct runtime bodies.* Each operator measures both operands
+  and computes the classical result so a TU that escapes the
+  transpiler still produces the right values
+  (`include/sturm/qtypes/qint_alias_ops.hpp:88-238`).
+- *Asymmetric return types vs. the backend.* Compares return classical
+  `bool` (`qint_alias_ops.hpp:189-238`) where `qint_t<W>::operator==`
+  returns `qbool` (`qint_compare.hpp:45`). `operator[](size_t)` on
+  the alias returns `bool` (`qint_alias.hpp:189-195`) where
+  `qint_t<W>::operator[]` returns `qbool` (`qint_compare.hpp` banner
+  line 5).
+
+Wave 3 collapses both. The transpiler is mandatory in the build (the
+host-clang invariant `sturm-yial` already enforces the plugin loads),
+so the alias never executes at runtime and its bodies need only
+type-check. Removing the runtime contract lets the return types snap
+to the backend's, eliminating the asymmetry.
+
+### 10.0 Status update on prior non-goals / follow-ups
+
+| Item                                                | Wave 1 status | Wave 3 status                          |
+|-----------------------------------------------------|---------------|----------------------------------------|
+| `qbool`-returning compares on the alias             | non-goal §3   | **in scope** (G7)                      |
+| `qbool` from `operator[]` read on the alias         | implicit §3   | **in scope** (G7) — same principle     |
+| `qbool` from mixed-type compares (`qint OP int`)    | implicit §3   | **in scope** (G7) — same principle     |
+| Write-side `q[k] = …` on the alias (`sturm-65rs.16`) | follow-up §7  | unchanged (still deferred — BitProxy)  |
+| Per-Parm/Field width inference (`sturm-65rs.17`)    | follow-up §7  | unchanged (still deferred)             |
+| Bump `kDefaultWidth` 32→64 (`sturm-65rs.18`)        | follow-up §7  | unchanged (still deferred)             |
+
+`bd sturm-65rs.15` is absorbed by this wave and should be closed when
+Wave 3 lands.
+
+### 10.1 Problem (additional)
+
+5. **Alias return types diverge from backend return types.** A user
+   who writes `qbool c = (a == b);` against `frontend::qint`
+   today gets a hard compile error pre-transpile (alias `==` returns
+   `bool`); the same line works against `qint_t<W>`. The transpiler's
+   contract is "spell-level type substitution," so it cannot patch
+   over an expression whose *type* is wrong — only operand types.
+   The fix is to align the alias's operator return types with the
+   backend's.
+
+6. **Lossy-correct alias bodies are dead weight under a mandatory
+   transpiler.** Every operator on `frontend::qint` carries a
+   classical-fallback body and bumps
+   `qint_alias_detail::g_measurement_count`
+   (`qint_alias.hpp:73-89, 175-247`,
+   `qint_alias_ops.hpp:74-178`). The bodies exist to make
+   pre-transpile execution lossy-correct; with the transpiler
+   mandatory, that path is never reached. The bodies remain
+   compilable code that influences nothing — and worse, they mask
+   matcher-coverage gaps (a missed type-spelling shape produces a
+   coincidentally-correct runtime value instead of failing loudly).
+
+### 10.2 Goals (additive)
+
+G7. **Return-type parity with the backend.** Every alias operator's
+return type matches `qint_t<W>`'s counterpart:
+- `frontend::qint::operator==/!=/</<=/>/>=` (member or free) return
+  `sturm::qbool`.
+- `frontend::qint::operator[](size_t)` (read) returns `sturm::qbool`.
+- Mixed-type free compares `qint OP <integral>` return
+  `sturm::qbool`.
+- Arithmetic and bitwise ops return `frontend::qint` (already
+  parity, unchanged).
+
+G8. **Pure type-stub bodies.** Every alias operator body is the
+trivial expression that produces a default-constructed return value
+(`return qbool();`, `return qint{};`, `return 0;`, `return;`). No
+classical math, no counter bumps, no use of `value_`. The class's
+`int64_t value_` storage may stay (zero-init, vestigial) to preserve
+ABI/layout for any callers that took addresses of `frontend::qint`
+during Waves 1–2; consumers of `value_` are removed.
+
+G9. **`measure_to_int` / `g_measurement_count` infrastructure
+removed.** `qint_alias_detail::g_measurement_count`,
+`measurement_count()`, `reset_measurement_count()`,
+`bump_measurement_count()`, and `measure_to_int()` are deleted.
+Tests that asserted `measurement_count() == 0` post-transpile (the
+Wave-1 G1 e2e check) are replaced by the Wave-2 G6 sturm_gen-clean
+gate, which is the strictly stronger contract.
+
+G10. **Header coupling acknowledged.** `qint_alias_ops.hpp` includes
+`sturm/qtypes/qbool.hpp` (which transitively pulls
+`sturm/qtypes/qint_core.hpp`). Every TU that reaches the alias now
+sees `qint_t<W>` and `qbool`. The B0 cycle audit
+(`bd sturm-65rs.5`) is re-run and confirmed clean — `qint_core.hpp`
+makes no `frontend::` references.
+
+### 10.3 Functional requirements (additive)
+
+#### 10.3.1 Operator return-type changes
+
+| Header                  | Operator                                       | Old return | New return                    |
+|-------------------------|------------------------------------------------|------------|-------------------------------|
+| `qint_alias.hpp`        | `qint::operator[](size_t) const`               | `bool`     | `sturm::qbool`                |
+| `qint_alias_ops.hpp`    | `operator==/!=/</<=/>/>=(qint, qint)`          | `bool`     | `sturm::qbool`                |
+| `qint_alias_ops.hpp`    | `operator==/!=/</<=/>/>=(qint, Int)` (templ.)  | `bool`     | `sturm::qbool`                |
+| (unchanged)             | arithmetic, bitwise, unary, shifts             | `qint`     | `qint` (no change)            |
+
+Note: `explicit operator int64_t() const` keeps return type `int64_t`
+(the cast itself is the type the user wrote — the transpiler doesn't
+have to substitute it). `operator size_t() const` keeps return type
+`size_t` for the same reason.
+
+#### 10.3.2 Body shape (all operators)
+
+Every body is one of:
+
+```cpp
+return qbool();              // compares, op[] read
+return qint{};               // arithmetic, bitwise, unary, shifts
+return 0;                    // operator int64_t / operator size_t
+return *this;                // operator=(int64_t)
+{ /* nothing */ }            // phi()/theta() proxies' += / -=
+```
+
+No `value_` reads or writes. No counter bumps. The class's
+`value_` member stays as zero-init `int64_t` storage (G8) but is
+never read or assigned by any operator body.
+
+#### 10.3.3 Removed infrastructure
+
+Delete from `include/sturm/qtypes/qint_alias.hpp`:
+- `qint_alias_detail::g_measurement_count` (line 75)
+- `qint_alias_detail::measurement_count()` (line 77)
+- `qint_alias_detail::reset_measurement_count()` (line 81)
+- `qint_alias_detail::bump_measurement_count()` (line 85)
+- All `bump_measurement_count()` call sites in member bodies
+  (`qint_alias.hpp:190, 204, 226, 234, 270, 281`).
+
+Delete from `include/sturm/qtypes/qint_alias_ops.hpp`:
+- `qint_alias_detail::measure_to_int(const qint&)` (line 77)
+- `qint_alias_detail::mixed_arith` helper (line 92).
+- All `measure_to_int(...)` call sites — bodies become trivial stubs
+  (G8).
+
+Delete the entire `qint_alias_detail` namespace from both headers
+once the above are gone (the namespace becomes empty).
+
+#### 10.3.4 Header dependency
+
+Add to `include/sturm/qtypes/qint_alias_ops.hpp`:
+
+```cpp
+#include "sturm/qtypes/qbool.hpp"  // qbool return type for compares + op[] read
+```
+
+`qint_alias.hpp`'s `operator[]` declaration also needs `qbool`
+visible; either include `qbool.hpp` there directly or move
+`operator[]` to `qint_alias_ops.hpp` (preferred — keeps the bare
+class header free of backend includes; aligns with the existing
+"member ops in `qint_alias.hpp`, free ops in `qint_alias_ops.hpp`"
+split).
+
+#### 10.3.5 Test updates
+
+- `tests/qtypes/test_qint_alias_ops.cpp`: drop *value-correctness*
+  assertions on every operator (e.g. `(a + 5) == expected`); keep
+  the SFINAE drift-gate `static_assert`s — they verify the
+  *signatures* are present and rejected for `bool` integrals.
+  Update positive-SFINAE assertions for compares and op[] read to
+  expect return type `qbool`, not `bool` (use
+  `std::is_same_v<decltype(a == b), qbool>`).
+- `tests/qtypes/test_qint_alias.cpp`: drop assertions that mention
+  `measurement_count()`. The Wave-1 G1 contract (counter stays at 0
+  post-transpile) is replaced by Wave-2 G6 (sturm_gen-clean gate).
+- Any test that constructs a `frontend::qint` and reads its value
+  through an operator (rather than `classical_value()`): rewrite to
+  use the `classical_value()` accessor or delete — operator bodies
+  no longer compute meaningful values.
+
+#### 10.3.6 Documentation / memory updates
+
+- `qint_alias.hpp` header comment (lines 14-22, 51-72, 146-159, 180-188,
+  208-222, 258-272): rewrite to describe the new contract. The
+  "load-bearing implicit `operator size_t()`" framing is obsolete —
+  the matcher's coverage gate is what's load-bearing now.
+- `bd remember "sturm-hpp-umbrella-does-not-expose-qbool-operators"`:
+  invalidated by §10.3.4 — qbool's operators now leak through the
+  alias headers. Either retire the memory or update it to "every
+  qint-alias-touching TU sees qbool's operators."
+- `docs/qram_user_intro.md` migration note: add a paragraph that the
+  alias is mandatory-transpile and pre-transpile execution is
+  unsupported.
+
+### 10.4 Acceptance criteria (additive)
+
+A11. **Return-type SFINAE.** `test_qint_alias_ops.cpp` includes a
+positive `static_assert(std::is_same_v<decltype(a == b),
+sturm::qbool>)` for every alias compare (six member-shape, six
+mixed-type-shape, twelve total) and one for `decltype(a[0])`.
+
+A12. **Empty-bodies SFINAE / IR scan.** A new test
+`tests/qtypes/test_qint_alias_stubs.cpp` compiles a TU that
+instantiates each alias operator, lowers it to LLVM IR with `-S
+-emit-llvm -O0`, and asserts:
+- No call into `qint_alias_detail::*` (the namespace is gone).
+- No load from any `value_` field of a `frontend::qint` instance
+  inside any operator body.
+
+  Negative-control verification (manual, one-shot during landing):
+  re-introducing a `bump_measurement_count()` makes the test RED.
+
+A13. **`sturm_gen`-clean gate stays GREEN under Wave-3 stubs.** The
+Wave-2 G6 gate `test_sturm_gen_clean` is unchanged; verify it still
+passes after the alias bodies are stripped (the gate's contract is
+about post-transpile *output*, not alias internals — should be a
+no-op verification but worth re-running once).
+
+A14. **Removed-infra audit.** A grep over the source tree for
+`measure_to_int|g_measurement_count|bump_measurement_count|reset_measurement_count|qint_alias_detail::`
+returns zero hits outside the deleted-symbols announcement in
+`docs/CHANGELOG.md` (or wherever release notes live).
+
+A15. **Backwards-compat fixture proof.** All
+`tests/transpiler/fixtures/*.cpp` that include the alias headers
+keep compiling. The 50+ Wave-1 fixtures with local `using qint =
+sturm::qint_t<W>;` are unaffected (those never touched the alias).
+
+### 10.5 Risks & rollbacks (additive)
+
+R8. *A consumer relied on `measurement_count()` for cost reporting.*
+Audit: the counter has zero non-test consumers (grep confirms). If
+external user code depends on it, the migration note in §10.3.6 is
+the warning surface; the symbol's removal is a hard break.
+
+R9. *qbool's umbrella exposure leaks operators into TUs that
+previously didn't see them.* `qbool` provides `operator&&`,
+`operator||`, `operator!`, contextual `operator bool`, etc. Any TU
+that includes `qint_alias_ops.hpp` (transitively, via the umbrella)
+now sees these. Mitigation: this is a contained ADL surface (qbool
+is a class, not a template); existing user code that overloads
+these names on its own types stays unambiguous because qbool is in
+namespace `sturm`.
+
+R10. *A frontend::qint operator gets invoked at runtime because the
+matcher missed a spelling.* Today the body returns a
+coincidentally-correct value; post-Wave-3 it returns garbage. The
+mitigation IS the Wave-2 G6 gate (`test_sturm_gen_clean`). If a new
+spelling shape ships before its matcher arm does, the gate fires
+RED at build time, not at runtime — strictly louder than today's
+"silent wrong number." The risk is therefore *reduced*, not raised.
+
+R11. *Removing `value_` reads-and-writes invalidates any user who
+took the address of an alias instance.* `value_` is a private
+member, so no legitimate external read path exists. Internal reads
+(via `classical_value()`) become meaningless but still compile;
+either remove `classical_value()` or document it as "always returns
+0 — vestigial." Recommendation: remove (it has only test consumers,
+and the new contract is "no value semantics on the alias").
+
+### 10.6 References (additive)
+
+- `include/sturm/qtypes/qint_alias.hpp:73-89` (delete-site:
+  `qint_alias_detail` counter infra).
+- `include/sturm/qtypes/qint_alias_ops.hpp:74-178` (delete-site:
+  `measure_to_int` + `mixed_arith` + bodies that call them).
+- `include/sturm/qtypes/qbool.hpp:47-53` (default + classical-bool
+  ctors — both allocate no qubit, used by all stub return values).
+- `include/sturm/qtypes/qint_compare.hpp:5,45,59,73,…` (backend
+  compare return types — the parity target).
+- `transpiler/tests/test_sturm_gen_clean` (Wave-2 G6 — promoted to
+  *the* coverage contract under Wave 3).
+- bd issues: `sturm-65rs.15` (absorbed), `sturm-65rs.16` /
+  `.17` / `.18` (still deferred).
