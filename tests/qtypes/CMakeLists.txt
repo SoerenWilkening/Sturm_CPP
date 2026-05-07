@@ -233,3 +233,47 @@ target_compile_features(test_qint_alias_member_ops PRIVATE cxx_std_20)
 add_test(NAME test_qint_alias_member_ops COMMAND test_qint_alias_member_ops)
 set_tests_properties(test_qint_alias_member_ops PROPERTIES
     LABELS "qtypes;qram-subscript")
+
+# ── sturm-v0db.7 (Wave 3 / W3.6 / A14) ────────────────────────────────────────
+# Tree-grep audit gate: permanent regression guard against re-introduction
+# of any deleted-infrastructure token from the qint-alias completion epic.
+# After W3.4 (sturm-v0db.5 / G9) wiped the `qint_alias_detail` namespace,
+# this test walks the configured source root at run time and hard-fails
+# the build if any of the deleted tokens reappear in {include, tests,
+# transpiler/src, transpiler/tests, examples}/**/*.{cpp,hpp,h}.
+#
+# Forbidden tokens (PRD §10.3.6 A14):
+#   * \b(measure_to_int|g_measurement_count|
+#         bump_measurement_count|reset_measurement_count)\b
+#   * qint_alias_detail::
+#
+# Allow-listed (single-source documented exemption per PRD §10.3.6):
+#   * transpiler/tests/test_sturm_gen_clean_unit.cpp — the G6 unit-level
+#     scanner's positive-control fixture deliberately includes the
+#     literal `qint_alias_detail::` substring to verify its detector arm
+#     fires.
+#
+# SOURCE_ROOT plumbing mirrors Wave-2 G6's <sturm_gen_path.hpp>: a
+# configure_file bakes ${CMAKE_SOURCE_DIR} into a constexpr constant in
+# `test_qint_alias_audit_path.hpp` so the test compiles cleanly against
+# the path it scans. A stale path errors at run time (directory does
+# not exist), not silently at scan time.
+#
+# Header-only / pre-transpile profile: no LLVM, no backend sources, no
+# STURM_BACKEND_ENABLED. The test depends on <filesystem> + <regex>
+# from the C++20 standard library only.
+configure_file(
+    "${CMAKE_CURRENT_SOURCE_DIR}/test_qint_alias_audit_path.hpp.in"
+    "${CMAKE_CURRENT_BINARY_DIR}/test_qint_alias_audit_path.hpp"
+    @ONLY)
+add_executable(test_qint_alias_no_counter_infra
+    test_qint_alias_no_counter_infra.cpp
+)
+target_include_directories(test_qint_alias_no_counter_infra PRIVATE
+    ${CMAKE_CURRENT_BINARY_DIR}
+)
+target_compile_features(test_qint_alias_no_counter_infra PRIVATE cxx_std_20)
+add_test(NAME test_qint_alias_no_counter_infra
+         COMMAND test_qint_alias_no_counter_infra)
+set_tests_properties(test_qint_alias_no_counter_infra PROPERTIES
+    LABELS "qtypes;qram-subscript;qac")

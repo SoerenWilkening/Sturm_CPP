@@ -1,0 +1,28 @@
+#pragma once
+
+// test_qint_alias_audit_path.hpp -- generated from
+// tests/qtypes/test_qint_alias_audit_path.hpp.in by configure_file
+// (tests/qtypes/CMakeLists.txt) under sturm-v0db.7 (Wave 3 / W3.6 /
+// PRD §10.3.6 A14, plan §30).
+//
+// Single source of truth for the configured `${CMAKE_SOURCE_DIR}` —
+// the tree-grep audit gate (`test_qint_alias_no_counter_infra`) walks
+// the project source root to assert that the deleted-infra tokens
+// (G9 / W3.4) never reappear. Recording the path at configure time
+// guarantees that build-tree drift (build/, build_mac/, build_pch/,
+// cmake-build-debug/ …) cannot cause the test to silently pass by
+// scanning the wrong directory: a stale path produces a
+// directory-existence error at run time, not a silent no-op.
+//
+// Mirrors the Wave-2 G6 pattern (`<sturm_gen_path.hpp>`) recorded by
+// `transpiler/src/sturm_gen_path.hpp.in` -> `configure_file` ->
+// `${CMAKE_BINARY_DIR}/include/sturm_gen_path.hpp`.
+
+namespace sturm::qtypes::testing {
+
+// Absolute path to the configured project source tree. The audit
+// gate scans the subdirectories enumerated in plan §30 / PRD §10.3.6
+// A14: `{include,tests,transpiler/src,transpiler/tests,examples}`.
+inline constexpr const char* kSturmSourceRoot = "@CMAKE_SOURCE_DIR@";
+
+}  // namespace sturm::qtypes::testing
