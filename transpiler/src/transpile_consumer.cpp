@@ -51,6 +51,14 @@
 // the alias-subst rewrite — single-VarDecl-single-rewrite per PRD R2.
 #include "matcher_qint_alias_subst.hpp"
 #include "qint_alias_subst_emitter.hpp"
+// sturm-e3ru (Frontend simpl. P7): main_lifecycle matcher + emitter.
+// The matcher fires on the unique `int main(...)` FunctionDecl when
+// the STURM_UMBRELLA_INCLUDED sentinel is defined (and
+// STURM_NO_AUTO_LIFECYCLE is not). Drained alongside the QRAM /
+// alias-subst drains; the emitter produces one `QReplacement` over
+// main's body CompoundStmt range per PRD §5.4 listing.
+#include "matcher_main_lifecycle.hpp"
+#include "main_lifecycle_emitter.hpp"
 
 #include "matcher_reversible_drive.hpp"
 #include "matcher_user_routine.hpp"
@@ -313,6 +321,16 @@ TranspileConsumer::TranspileConsumer(clang::CompilerInstance& ci,
     // (PRD R2 single-VarDecl-single-rewrite invariant).
     sturm::transpile::register_qint_alias_subst_matcher(
         finder_, qint_alias_subst_matches_);
+    // sturm-e3ru (Frontend simpl. P7): register the main_lifecycle
+    // matcher. Pattern shape `functionDecl(isMain())` is structurally
+    // disjoint from every per-op / per-VarDecl matcher above, so
+    // registration order is irrelevant for correctness. The callback
+    // consults the parent CompilerInstance's Preprocessor to gate on
+    // STURM_NO_AUTO_LIFECYCLE / STURM_UMBRELLA_INCLUDED at hit time.
+    // Drained in `HandleTranslationUnit` alongside the QRAM /
+    // alias-subst drains.
+    sturm::transpile::register_main_lifecycle_matcher(
+        finder_, ci.getPreprocessor(), main_lifecycle_hits_);
     sturm::transpile::register_eq_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_ne_compare_qint_matcher(finder_, unit_);
     sturm::transpile::register_lt_compare_qint_matcher(finder_, unit_);
@@ -1165,6 +1183,21 @@ void TranspileConsumer::HandleTranslationUnit(clang::ASTContext& ctx) {
         sturm::transpile::emit_qint_alias_subst_replacements(
             sm, lang, qint_alias_subst_matches_, claimed,
             unit_.replacements);
+        // sturm-e3ru (Frontend simpl. P7): drain the main_lifecycle
+        // hits. The emitter rewrites main's body CompoundStmt range
+        // (open-brace through close-brace inclusive) into the IIFE
+        // form per PRD §5.4. Drained inside the same source-manager
+        // / lang-options scope as the QRAM / alias-subst drains so
+        // the same `sm` / `lang` references are reused.
+        //
+        // Anchor disjointness: `functionDecl(isMain())` is
+        // structurally disjoint from every QRAM / alias-subst
+        // anchor above, so no cross-flavour suppression set is
+        // needed. The matcher's own `body_has_sturm_ctx_probe`
+        // guard already prevents double-rewriting under repeat
+        // passes (PRD §5.4 idempotency requirement).
+        sturm::transpile::emit_main_lifecycle_replacements(
+            sm, lang, main_lifecycle_hits_, unit_.replacements);
     }
 
     // Phase T T-1 (sturm-xrob.2): drive the reversible-adjoint

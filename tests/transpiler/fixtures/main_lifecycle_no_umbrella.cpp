@@ -1,0 +1,16 @@
+// Frontend simpl. P7 (sturm-e3ru): STURM_UMBRELLA_INCLUDED sentinel-skip
+// (input).
+//
+// When STURM_UMBRELLA_INCLUDED is NOT defined (i.e., the user's TU did
+// not transitively `#include "sturm.h"`), the matcher_main_lifecycle
+// MUST skip the rewrite. The expected output is byte-identical to the
+// input (no body rewrite, only the auto-generated header prepended).
+//
+// This is the negative twin of main_lifecycle_basic.cpp: same body,
+// no umbrella sentinel — therefore no auto-injection.
+
+int main() {
+    int x = 42;
+    (void)x;
+    return 0;
+}

@@ -85,6 +85,12 @@
 // AFTER the QRAM emitter so the QRAM-claimed VarDecls override the
 // alias-subst VarDecl arm (PRD R2 / single-VarDecl-single-rewrite).
 #include "matcher_qint_alias_subst.hpp"
+// sturm-e3ru (Frontend simpl. P7 / Phase 7): main-lifecycle auto-injection.
+// The matcher fires on the unique `int main(...)` FunctionDecl when the
+// umbrella sentinel is defined and the escape hatch is not. Drained
+// alongside the QRAM / modular drains; produces one `QReplacement`
+// over main's body CompoundStmt range.
+#include "matcher_main_lifecycle.hpp"
 
 #include <string>
 #include <vector>
@@ -241,6 +247,12 @@ private:
     // overlap guard (a `QintAliasSubstClaimedDecls` set populated from
     // the QRAM hits) gates the alias-subst VarDecl arm.
     std::vector<QintAliasSubstMatch>    qint_alias_subst_matches_;
+    // sturm-e3ru (Frontend simpl. P7): main-lifecycle hits collected
+    // during `matchAST`. Drained alongside the QRAM / alias-subst
+    // drains; the emitter produces one `QReplacement` per hit over
+    // the matched main's body CompoundStmt source range. Limited to
+    // at most one hit per TU by the matcher's own de-dup pass.
+    std::vector<MainLifecycleHit>       main_lifecycle_hits_;
     // sturm-v0ur (LO-2 wiring): cleanup records assembled from
     // `lossy_hits_` after `matchAST`. Each `ExternalCleanup` carries
     // a close-brace `SourceLocation` and the pre-formatted cleanup

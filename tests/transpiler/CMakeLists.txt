@@ -4869,3 +4869,94 @@ set_tests_properties(example_qram_demo_run PROPERTIES
     LABELS "transpiler;qram;qac"
     FIXTURES_REQUIRED "example_qram_demo_built"
     REQUIRED_FILES "$<TARGET_FILE:example_qram_demo>")
+
+# ── Frontend simpl. P7 (sturm-e3ru): main_lifecycle snapshot fixtures ──────
+# Five fixtures (PRD §5.4 acceptance gates A6 + idempotency probe):
+#   - basic        — IIFE form rewrite from `int main()` body.
+#   - argc         — argc/argv form: rewrite preserves `[&]` capture.
+#   - no_auto      — STURM_NO_AUTO_LIFECYCLE escape hatch → round-trip.
+#   - no_umbrella  — STURM_UMBRELLA_INCLUDED missing → sentinel skip.
+#   - idempotent   — already-rewritten source → no-op (`__sturm_ctx` probe).
+#
+# All five reuse the standard run_snapshot.cmake driver (byte-level
+# compare against the .expected.cpp golden). The fixtures inline the
+# umbrella sentinel via `#define STURM_UMBRELLA_INCLUDED 1` because the
+# transpiler runs with a FixedCompilationDatabase that has no include
+# paths; defining the macro inline is equivalent to having the umbrella
+# in the include path (the matcher only consults
+# `Preprocessor::isMacroDefined`).
+add_test(
+    NAME snapshot_main_lifecycle_basic
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_basic.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_basic.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_basic
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_basic PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_main_lifecycle_argc
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_argc.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_argc.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_argc
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_argc PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_main_lifecycle_no_auto
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_no_auto.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_no_auto.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_no_auto
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_no_auto PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_main_lifecycle_no_umbrella
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_no_umbrella.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_no_umbrella.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_no_umbrella
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_no_umbrella PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_main_lifecycle_idempotent
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_idempotent.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_idempotent.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_idempotent
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_idempotent PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# R3 mitigation: a fixture whose filename contains `gtest` MUST be left
+# alone (PRD §3 Non-goals; risk register R3). Same body shape as
+# main_lifecycle_argc.cpp but with `gtest` in the basename, so the only
+# gate that fires is the source-file probe.
+add_test(
+    NAME snapshot_main_lifecycle_gtest
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_gtest.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_gtest.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_gtest
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_gtest PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

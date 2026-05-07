@@ -212,6 +212,13 @@ add_executable(sturm-transpile
     # PRD §3 non-goal). Linked here so the C3 consumer (sturm-65rs.10)
     # wiring resolves cleanly.
     src/qint_alias_subst_emitter.cpp
+    # sturm-e3ru (Frontend simpl. P7): main_lifecycle matcher + emitter.
+    # The matcher fires on the unique `int main(...)` FunctionDecl in TUs
+    # where the umbrella sentinel (STURM_UMBRELLA_INCLUDED) is defined
+    # and the escape hatch (STURM_NO_AUTO_LIFECYCLE) is not. The companion
+    # emitter rewrites main's body into the IIFE form (PRD §5.4 listing).
+    src/matcher_main_lifecycle.cpp
+    src/main_lifecycle_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -590,6 +597,12 @@ add_library(sturm-transpile-plugin SHARED
     # the main binary so the plugin-path consumer (same TranspileConsumer)
     # links the same emitter symbols at dlopen.
     src/qint_alias_subst_emitter.cpp
+    # sturm-e3ru (Frontend simpl. P7): main_lifecycle matcher + emitter.
+    # Mirror the main binary so the plugin-path consumer (same
+    # TranspileConsumer) registers and drains the matcher identically
+    # at dlopen.
+    src/matcher_main_lifecycle.cpp
+    src/main_lifecycle_emitter.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
