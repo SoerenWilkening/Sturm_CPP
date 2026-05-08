@@ -19,6 +19,7 @@ target_sources(example_or_circuit PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_or_circuit PRIVATE orkan_headers)
 set_source_files_properties(
@@ -43,6 +44,7 @@ target_sources(example_constant_arith PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_constant_arith PRIVATE orkan_headers)
 
@@ -63,6 +65,7 @@ target_sources(example_qint_arith PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_qint_arith PRIVATE orkan_headers)
 
@@ -84,6 +87,7 @@ target_sources(example_comparison PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_comparison PRIVATE orkan_headers)
 
@@ -107,6 +111,7 @@ target_sources(example_compound_expression PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_compound_expression PRIVATE orkan_headers)
 
@@ -132,6 +137,7 @@ target_sources(example_when_integration PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_when_integration PRIVATE orkan_headers)
 
@@ -161,6 +167,7 @@ target_sources(example_nested_when PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_nested_when PRIVATE orkan_headers)
 
@@ -193,6 +200,7 @@ target_sources(example_control_flow PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_control_flow PRIVATE orkan_headers)
 
@@ -222,6 +230,7 @@ target_sources(example_user_routine PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_user_routine PRIVATE orkan_headers)
 
@@ -242,6 +251,7 @@ target_sources(example_phase_abc_demo PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_phase_abc_demo PRIVATE orkan_headers)
 
@@ -274,6 +284,7 @@ target_sources(example_zero_ancilla_fusion PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_zero_ancilla_fusion PRIVATE orkan_headers)
 
@@ -304,6 +315,7 @@ target_sources(example_dead_ancilla PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_dead_ancilla PRIVATE orkan_headers)
 
@@ -340,6 +352,7 @@ target_sources(example_uncompute_hoisting PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_uncompute_hoisting PRIVATE orkan_headers)
 
@@ -377,6 +390,7 @@ target_sources(example_peephole_reorder PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_peephole_reorder PRIVATE orkan_headers)
 
@@ -414,6 +428,7 @@ target_sources(example_rotations PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_rotations PRIVATE orkan_headers)
 
@@ -446,6 +461,7 @@ target_sources(example_in_memory_transpile PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)
 
@@ -468,6 +484,7 @@ target_sources(example_mul_demo PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
 target_link_libraries(example_mul_demo PRIVATE orkan_headers)
 
@@ -498,9 +515,36 @@ target_sources(example_qram_demo PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
 )
 target_link_libraries(example_qram_demo PRIVATE orkan_headers)
+
+# ── Example: explicit-lifecycle escape-hatch demo (sturm-yggr / Phase 8) ───
+# Routed through sturm-transpile but the source defines
+# `STURM_NO_AUTO_LIFECYCLE` BEFORE including `sturm.h`, so
+# `matcher_main_lifecycle` (sturm-e3ru) skips the TU and the user's
+# explicit `sturm_backend_create` / `sturm_backend_destroy` pair is the
+# only lifecycle in play. Didactic counter-example to the rest of the
+# `examples/` directory which all take the auto-injected path. Same
+# helper / bypass pattern as every preceding example above; no opt-in
+# headers needed beyond the umbrella because the body never renders an
+# ASCII diagram.
+add_quantum_executable(example_explicit_lifecycle
+    explicit_lifecycle.cpp
+)
+target_sources(example_explicit_lifecycle PRIVATE
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
+)
+target_link_libraries(example_explicit_lifecycle PRIVATE orkan_headers)
 
 # ── PM4-7: demo plugin exercising the PM4-1 / PM4-2 extension surface ───────
 # Builds `sturm-pm4-demo-plugin` as a MODULE shared library. The plugin is

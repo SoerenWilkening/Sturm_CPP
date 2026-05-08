@@ -1,26 +1,9 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
+#include "sturm.h"
 #include "sturm/control/when.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
 #include "sturm/uncompute/uncompute_api.hpp"
 
 #include <cstdint>
 #include <cstdio>
-
-// Bring `qbool` into the global namespace so every flat decl the
-// transpiler emits — `qbool __stu_tN = ...;` from the Phase E compound
-// flatten and the Phase F WHEN-lift, plus the fused
-// `ccnot_inplace(x, a, b);` call from the Phase J PJ-1 peephole —
-// resolves unqualified at the call site. Same convention as the
-// single-phase templates (examples/compound_expression.cpp,
-// examples/when_integration.cpp, examples/zero_ancilla_fusion.cpp).
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase M PM1-8: in-memory transpile tutorial
@@ -84,14 +67,13 @@ using sturm::qbool;
 // their injected inverses evaluate purely classically — no gates
 // emit, matching the idiom of compound_expression.cpp /
 // when_integration.cpp.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // ── Phase E: compound qbool expression ──────────────────────────────────
     // `qbool r = (b | c) & d;` → the Phase E matcher flattens the
     // two-deep expression tree into one fresh `__stu_tN` decl for the
@@ -169,7 +151,5 @@ int main() {
         fx ^= __t;
     }
 
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
     return 0;
 }

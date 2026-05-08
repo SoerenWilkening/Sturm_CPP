@@ -1,12 +1,5 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qint.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -38,14 +31,13 @@
 //
 // Width is W=2 so the diagram fits in a terminal: tmp=2 qubits, ancillas=2,
 // plus the 2+2 for a,b → 8 qubits total in scope.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API and the auto-injected lifecycle wraps
+// `main` with `sturm_backend_create` / `destroy`. The opt-in
+// `sturm/draw_ascii.h` exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 16;
-
-    sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     {
         sturm::qint_t<2> a;
         sturm::qint_t<2> b;
@@ -68,11 +60,7 @@ int main() {
         a *= b;
     }
 
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-    std::fprintf(stdout, "\n[gate count = %zu]\n", ctx->ir.size());
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
+    std::fprintf(stdout, "\n[gate count = %zu]\n", sturm::gate_count());
     return 0;
 }

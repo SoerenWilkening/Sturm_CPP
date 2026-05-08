@@ -1,26 +1,8 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
+#include "sturm.h"
 #include "sturm/control/when.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
 
 #include <cstdint>
 #include <cstdio>
-
-// Bring `qbool` into the global namespace so the `__stu_ctrl<N>` decls
-// the Phase G transpiler emits (`qbool __stu_ctrl0 = a & b;` etc.)
-// resolve unqualified — same convention as the Phase F
-// `examples/when_integration.cpp` and the Phase E
-// `examples/compound_expression.cpp` templates.  The hermetic snapshot
-// fixtures under `tests/transpiler/fixtures/when_nested_*` rely on the
-// same `using sturm::qbool;` shape so the matcher sees the same typed
-// DeclRefExpr spelling.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase G: named-named nested `WHEN` AND-fold demo
@@ -80,14 +62,13 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // Case 1 and Case 2 below demonstrate the named-named nested-WHEN
     // AND-fold lowering.  The inline comments inside `main()` deliberately
     // avoid spelling any of the transpiler-injected fragments verbatim
@@ -136,7 +117,5 @@ int main() {
         }
     }
 
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
     return 0;
 }

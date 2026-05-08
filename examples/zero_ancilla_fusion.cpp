@@ -1,32 +1,9 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 #include "sturm/uncompute/uncompute_api.hpp"
 
 #include <cstdint>
 #include <cstdio>
-#include <string>
-
-// Bring `qbool` into the global namespace so the fused
-// `ccnot_inplace(x, a, b);` call the transpiler emits — both as the
-// forward replacement over `qbool __t = a & b; x ^= __t;` AND as the
-// self-adjoint uncompute planted before the enclosing scope closes —
-// resolves unqualified at the call site.  Same convention as the Phase H
-// `examples/control_flow.cpp`, the Phase G `examples/nested_when.cpp`,
-// the Phase F `examples/when_integration.cpp`, the Phase E
-// `examples/compound_expression.cpp`, and the Phase I
-// `examples/user_routine.cpp` templates.  The hermetic snapshot
-// fixtures under `tests/transpiler/fixtures/fuse_xor_and*` rely on the
-// same `using sturm::qbool;` shape so the PJ-1d matcher sees the same
-// typed DeclRefExpr spelling.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase J PJ-1: zero-ancilla fusion demo
@@ -113,14 +90,14 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`. The opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // The Phase J PJ-1 zero-ancilla fusion happy path.  The inline
     // comments inside `main()` deliberately avoid spelling any of the
     // transpiler-injected fragments verbatim so the PJ-1h byte-identity
@@ -157,10 +134,6 @@ int main() {
     // lanes — the PJ-1 fusion erased the ancilla that the unfused
     // path would have allocated for `__t`, so no fourth qubit lane
     // appears in the diagram.
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

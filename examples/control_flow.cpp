@@ -1,29 +1,8 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 
 #include <cstdint>
 #include <cstdio>
-#include <string>
-
-// Bring `qbool` into the global namespace so the flat decls the
-// transpiler emits and the injected `uncompute_or(tmp, a, b);` calls
-// resolve unqualified — same convention as the Phase G
-// `examples/nested_when.cpp`, the Phase F
-// `examples/when_integration.cpp`, and the Phase E
-// `examples/compound_expression.cpp` templates.  The hermetic snapshot
-// fixtures under `tests/transpiler/fixtures/for_intermediate_or_*` /
-// `if_{then,else}_intermediate_or_*` rely on the same
-// `using sturm::qbool;` shape so the OR matcher sees the same typed
-// DeclRefExpr spelling.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase H: classical control flow around quantum ops (for / if-else)
@@ -100,14 +79,14 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`. The opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // Case 1 and Case 2 below demonstrate the Phase H per-iteration and
     // per-branch uncompute lowerings.  The inline comments inside
     // `main()` deliberately avoid spelling any of the transpiler-
@@ -188,10 +167,6 @@ int main() {
     // fired before the renderer walks the GateIR.  The diagram shows
     // the three for-loop iteration pairs and the single if-branch
     // pair in source / LIFO order.
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

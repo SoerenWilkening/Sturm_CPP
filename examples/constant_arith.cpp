@@ -1,11 +1,4 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qint.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -40,14 +33,12 @@
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API and the auto-injected lifecycle wraps
+// `main` with `sturm_backend_create` / `destroy`.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // Inner scope so the transpiler-injected inverses fire BEFORE the
     // qint destructor runs. All four classical-const compound-assigns
     // keep `a` on the classical short-circuit path (both qubits[0] < 0
@@ -66,7 +57,5 @@ int main() {
         //    in build/sturm_gen/examples/constant_arith.cpp.
     }
 
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
     return 0;
 }

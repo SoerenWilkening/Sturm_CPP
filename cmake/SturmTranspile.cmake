@@ -186,6 +186,16 @@ function(add_quantum_executable target)
             "manually or provide a find_package(sturm) wrapper.")
     endif()
 
+    # Link the STURM frontend INTERFACE library so the auto-injected
+    # lifecycle (sturm-e3ru / Phase 7) sees `STURM_MODE_DEFAULT` at the
+    # compile pass that follows the transpile rewrite. The interface
+    # library carries no source / headers; it only propagates
+    # `STURM_MODE_DEFAULT=STURM_MODE_<X>` based on `-DSTURM_MODE=...`
+    # (sturm-mixe / Phase 1 / PRD §5.3).
+    if(TARGET sturm::frontend)
+        target_link_libraries(${target} PRIVATE sturm::frontend)
+    endif()
+
     # sturm-7t85.4 (G4 / PRD A10): record every quantum-executable target
     # in a global property so the `test_sturm_gen_clean` CI gate can
     # `add_dependencies` on the union — making the test fire only after

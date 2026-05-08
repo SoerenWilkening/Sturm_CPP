@@ -1,6 +1,8 @@
 # Getting Started with STURM
 
-**Status:** Draft (2026-04-28).
+**Status:** v2 (2026-05-07). Updated for the
+[`prd_frontend_simplification.md`](prd_frontend_simplification.md)
+umbrella + auto-injected lifecycle.
 **Scope tag:** `packaging-export`.
 **Companion doc:** [`public_api.md`](public_api.md).
 
@@ -28,8 +30,12 @@ run.
   ```
 
   After installing, `/path/to/sturm-prefix` contains:
-  - `include/sturm/...` — the public headers (umbrella:
-    `<sturm/sturm.hpp>`, prelude: `<sturm/prelude.hpp>`).
+  - `include/sturm.h` — the curated public-API umbrella.
+  - `include/sturm/qram.h` — opt-in feature header for the
+    `qint b = a[i];` subscript-rewrite hook.
+  - `include/sturm/draw_ascii.h` — opt-in feature header for the
+    no-arg renderer entry points (`sturm::print_ascii()`,
+    `sturm::draw_ascii()`, `sturm::gate_count()`).
   - `lib/cmake/sturm/sturmConfig.cmake` and `SturmTranspile.cmake` —
     the CMake package config and the `add_quantum_executable` helper.
   - `bin/sturm-transpile` and `bin/sturm-transpile-plugin` — the
@@ -55,22 +61,26 @@ find_package(sturm REQUIRED)
 
 # `add_quantum_executable` runs the source through the STURM Clang
 # plugin (which transpiles in memory and feeds the rewritten buffer to
-# codegen) and links the `sturm` interface target so `<sturm/...>`
-# headers resolve without any extra `target_link_libraries(...)` call.
+# codegen) and links the `sturm` interface target so `sturm.h` and the
+# opt-in `<sturm/...>` headers resolve without any extra
+# `target_link_libraries(...)` call.
 add_quantum_executable(external_consumer main.cpp)
 ```
 
 ### `main.cpp`
 
 ```cpp
-// A minimal STURM consumer. Demonstrates qint/qbool construction from
-// classical literals, a WHEN-guarded modular update on the classical-
-// true short-circuit, and the public `static_cast<int64_t>` readout.
-#include <sturm/prelude.hpp>
+// A minimal STURM consumer. The umbrella `sturm.h` brings the curated
+// public API (qint, qbool, the C-ABI lifecycle) and `using sturm::qint;
+// using sturm::qbool;` into scope. The transpiler's
+// `matcher_main_lifecycle` (PRD §5.4) wraps `main` with the
+// `sturm_backend_create` / `sturm_backend_destroy` pair automatically;
+// the user body is unchanged.
+#include "sturm.h"
 #include <cstdio>
 
 int main() {
-    qint a = 6, b = 5, n = 7;     // unprefixed `qint = qint_t<64>` via prelude
+    qint a = 6, b = 5, n = 7;     // umbrella's `using sturm::qint`
     qbool flag = true;            // classical-true: WHEN body runs
     int64_t r = static_cast<int64_t>(a);
     WHEN(flag) {
@@ -114,6 +124,23 @@ external_consumer: r=4
 This is the classical value of `(a + b) mod n` with `a=6, b=5, n=7`,
 gated by a `qbool` guard known to be `true` at compile time.
 
+## 4. Mode selection at build time
+
+`STURM_MODE` selects the backend mode the auto-injected lifecycle
+calls `sturm_backend_create` with: `APPEND` (default), `COUNT`, or
+`SIMULATE`. Override at configure time:
+
+```bash
+cmake -S . -B build -DCMAKE_PREFIX_PATH=/path/to/sturm-prefix \
+                   -DSTURM_MODE=SIMULATE
+```
+
+Switching modes mid-program is **not** supported via the auto-injected
+path. A user who needs runtime mode selection writes the explicit
+`sturm_backend_create` call themselves and adds
+`#define STURM_NO_AUTO_LIFECYCLE` before including `sturm.h`. See
+`examples/explicit_lifecycle.cpp` for a runnable counter-example.
+
 ## ⚠️ Measurement footgun: `qint → integer` is destructive
 
 Any conversion of a `qint` to a classical integer is a **destructive
@@ -151,5 +178,9 @@ the open follow-ups live in
   user-facing introduction to QRAM: the `qint b = a[i];` shape, the
   supported / unsupported container shapes, and the full version of the
   measurement-footgun explanation.
-- Anything not on that list — including everything reachable only via
-  `<sturm/detail/...>` — is internal and may change without notice.
+- Read [`docs/prd_frontend_simplification.md`](prd_frontend_simplification.md)
+  for the design rationale behind the umbrella + auto-injected
+  lifecycle (G1–G6, A1–A7).
+- Anything not on the public-API list — including everything reachable
+  only via `<sturm/detail/...>` — is internal and may change without
+  notice.

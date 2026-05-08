@@ -1905,6 +1905,14 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    # sturm-e3ru / Phase 7: TranspileConsumer registers the auto-injection
+    # matcher in its ctor and drains its hits via
+    # `emit_main_lifecycle_replacements` in `HandleTranslationUnit`. Link
+    # both TUs so the consumer test binary resolves the symbols at link
+    # time. Mirrors the parallel block in `transpiler/CMakeLists.txt` for
+    # `sturm-transpile` and `sturm-transpile-plugin`.
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/main_lifecycle_emitter.cpp
 )
 target_include_directories(test_transpile_consumer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include

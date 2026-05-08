@@ -1,6 +1,8 @@
 # STURM Public API
 
-**Status:** Draft (2026-04-27).
+**Status:** v2 (2026-05-07). Updated for the
+[`prd_frontend_simplification.md`](prd_frontend_simplification.md)
+umbrella + opt-in feature headers.
 **Scope tag:** `packaging-export`.
 **Companion doc:** [`transpiler_emit_targets.md`](transpiler_emit_targets.md).
 **Machine-readable snapshot:** [`public_api.txt`](public_api.txt).
@@ -10,8 +12,9 @@ the STURM C++ language front-end. A symbol is **public** iff it is
 both:
 
 1. **reachable** from a translation unit that includes only the
-   umbrella header `<sturm/sturm.hpp>` (E3.M1, see
-   `include/sturm/sturm.hpp`), AND
+   curated umbrella header `sturm.h` (PRD §5.1) — optionally with the
+   opt-in feature headers `sturm/qram.h` and `sturm/draw_ascii.h`
+   (PRD §5.2) — AND
 2. **classified `public`** in
    [`docs/transpiler_emit_targets.md`](transpiler_emit_targets.md)
    (E1.M2) — or, when not present in the emit-targets table, lives at
@@ -48,6 +51,24 @@ bash tools/check_public_api_drift.sh   # confirms drift == 0
 The drift check fails CI on any mismatch between the umbrella header's
 reachable surface and the committed snapshot.
 
+## Header layout (PRD §5.1, §5.2)
+
+The public surface is partitioned across one umbrella + two opt-in
+feature headers:
+
+| Header                  | Brings in                                                                       |
+|-------------------------|---------------------------------------------------------------------------------|
+| `sturm.h`               | `qint`, `qbool`, the C-ABI lifecycle, the `using sturm::qint/qbool` aliases.    |
+| `sturm/qram.h`          | The `QRAM_read` overload set (required for the `qint b = a[i];` rewrite hook). |
+| `sturm/draw_ascii.h`    | The IR-taking renderer overload + the no-arg entry points (PRD §5.6).          |
+
+The umbrella sets `STURM_BACKEND_ENABLED 1` (default-on) and the
+sentinel macro `STURM_UMBRELLA_INCLUDED 1` that the transpiler's
+`matcher_main_lifecycle` (PRD §5.4) checks for to decide whether to
+auto-inject the `sturm_backend_create` / `destroy` pair around `int
+main(...)`. Users can opt out with `#define STURM_NO_AUTO_LIFECYCLE`
+before including the umbrella; see `examples/explicit_lifecycle.cpp`.
+
 ## Symbol list
 
 Total: **32 symbols** (4 macros from `WHEN` + `STURM_VERSION_*`,
@@ -59,15 +80,15 @@ Total: **32 symbols** (4 macros from `WHEN` + `STURM_VERSION_*`,
 ### qint — quantum W-bit integer
 
 Defining headers: `qtypes/qint_fwd.hpp` → `qtypes/qint_core.hpp` →
-`qtypes/qint.hpp` (transitively pulled in by the umbrella).
+`qtypes/qint.hpp` (transitively pulled in by the umbrella `sturm.h`).
 
 | Symbol | Defining header | Description |
 |---|---|---|
 | `qint_t` | `qtypes/qint_core.hpp` | Headline class template `qint_t<Width = 64>` (PRD §3.3). The W-bit quantum integer; supports arithmetic, bitwise, comparison, and shift operators (each defined in its own `qtypes/qint_*` header, all transitively included). |
 
-The `qint` alias (`using qint = qint_t<>;`) is delivered separately by
-`<sturm/prelude.hpp>` (E3.M2) and is therefore **not** in this table —
-the umbrella header alone leaves names in `sturm::` per PRD D7.
+The umbrella `sturm.h` brings the user-facing alias `using sturm::qint;`
+into the including TU's namespace; `qint` resolves to
+`sturm::frontend::qint` (the width-agnostic frontend wrapper).
 
 ### qbool — quantum bool
 
@@ -77,6 +98,9 @@ Defining header: `qtypes/qbool.hpp` (forward decl in
 | Symbol | Defining header | Description |
 |---|---|---|
 | `qbool` | `qtypes/qbool.hpp` | Headline class for a boolean that may be in a quantum superposition (PRD §3.3, D7). Inherits from `qint_t<1>`. The forward declaration in `control/when_fwd.hpp` is what the transpiler matchers cite in their diagnostic text. |
+
+The umbrella `sturm.h` brings `using sturm::qbool;` into the
+including TU's namespace.
 
 ### control — `WHEN` and lift utilities
 
@@ -139,6 +163,19 @@ Defining header: `uncompute/uncompute_api.hpp`.
 | `uncompute_gt_qint` | `uncompute/uncompute_api.hpp` | `uncompute_gt_qint(r, a, b)` — adjoint of a `>` comparison write. |
 | `uncompute_ge_qint` | `uncompute/uncompute_api.hpp` | `uncompute_ge_qint(r, a, b)` — adjoint of a `>=` comparison write. |
 
+### draw_ascii — the no-arg renderer entry points (opt-in)
+
+Defining header: `sturm/draw_ascii.h` (PRD §5.6, opt-in).
+
+| Symbol | Defining header | Description |
+|---|---|---|
+| `sturm::draw_ascii()` | `sturm/draw_ascii.h` | No-arg overload — queries the thread-local context, derives canvas width from the IR's max qubit index + 1, and returns the diagram as a `std::string`. |
+| `sturm::print_ascii()` | `sturm/draw_ascii.h` | Convenience: writes `draw_ascii()` to `stdout`. |
+| `sturm::gate_count()` | `sturm/draw_ascii.h` | Returns `ir.size()` of the current thread-local context. |
+
+The IR-taking overload `sturm::draw_ascii(const GateIR&, std::size_t)`
+remains reachable through the same header for tests that prefer it.
+
 ### versioning
 
 Defining header: `version.hpp` (generated from
@@ -163,4 +200,4 @@ symbols in `docs/public_api.txt` because the drift check matches names
 `qtypes/qint_arith*.hpp`, `qtypes/qint_bitwise*.hpp`,
 `qtypes/qint_compare*.hpp`, `qtypes/qint_shift_backend.hpp`,
 `qtypes/qbool_logic.hpp`, and `qtypes/qbool_ops.hpp`, all transitively
-included from `<sturm/sturm.hpp>`.
+included from the umbrella `sturm.h`.

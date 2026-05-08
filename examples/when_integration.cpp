@@ -1,23 +1,8 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
+#include "sturm.h"
 #include "sturm/control/when.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
 
 #include <cstdint>
 #include <cstdio>
-
-// Bring `qbool` into the global namespace so the flat decls the
-// transpiler emits (`qbool __stu_t0 = b | c;` etc.) resolve unqualified
-// — same convention as the Phase E `examples/compound_expression.cpp`
-// and the hermetic Phase F fixtures under
-// `tests/transpiler/fixtures/when_*`.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase F: compound-`WHEN` integration demo (`WHEN((b | c) & d) { ... }`)
@@ -53,14 +38,13 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // Inner scope so the transpiler-injected inverses fire BEFORE any
     // qbool destructors run. All three WHEN-control inputs (b, c, d)
     // are left on the classical short-circuit path (super_mask = 0,
@@ -102,7 +86,5 @@ int main() {
         }
     }
 
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
     return 0;
 }

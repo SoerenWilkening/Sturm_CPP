@@ -1,0 +1,7 @@
+
+--- QRAM read circuit (APPEND-mode IR) ---
+q0: -*--*--*--*-
+q1: -X--|--X--|-
+q2: ----X-----X-
+
+[gate count = 4]

@@ -1,33 +1,9 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 #include "sturm/uncompute/uncompute_api.hpp"
 
 #include <cstdint>
 #include <cstdio>
-#include <string>
-
-// Bring `qbool` into the global namespace so the MVP OR matcher sees
-// the same unqualified typed DeclRefExpr spelling the rest of the
-// examples use, and so the injected `uncompute_or(t, a, b);` call the
-// PJ-3d hoist matcher relocates to the post-loop anchor resolves
-// unqualified at the call site.  Same convention as the Phase J
-// `examples/dead_ancilla.cpp`, the Phase J `examples/zero_ancilla_fusion.cpp`,
-// the Phase I `examples/user_routine.cpp`, the Phase H
-// `examples/control_flow.cpp`, the Phase G `examples/nested_when.cpp`,
-// the Phase F `examples/when_integration.cpp`, and the Phase E
-// `examples/compound_expression.cpp` templates.  The hermetic snapshot
-// fixtures under `tests/transpiler/fixtures/hoist_*` rely on the same
-// `using sturm::qbool;` shape so the PJ-3d matcher sees the same typed
-// DeclRefExpr spelling as here.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase J PJ-3: uncompute-hoisting demo
@@ -128,14 +104,14 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`. The opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     std::size_t gates_before = 0;
     std::size_t gates_after = 0;
 
@@ -160,14 +136,14 @@ int main() {
         qbool b;
         qbool t;  // outer predecl — see top-of-file prose
 
-        gates_before = ctx->ir.size();
+        gates_before = sturm::gate_count();
 
         for (int i = 0; i < 3; ++i) {
             qbool t = a | b;
             (void)t;
         }
 
-        gates_after = ctx->ir.size();
+        gates_after = sturm::gate_count();
     }
 
     // Gate-count summary.  Both operands are classical-zero in this
@@ -188,10 +164,6 @@ int main() {
     // the renderer walks the GateIR.  With classical-zero operands
     // the diagram is effectively empty; the load-bearing observable
     // is the GENERATED FILE layout, not the runtime gate stream.
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

@@ -1,34 +1,20 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
+#include "sturm.h"
 #include "sturm/control/when.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qint.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm/draw_ascii.h"
 
 #include <cstdint>
 #include <cstdio>
-#include <string>
 
-// Bring `qbool` and `qint_t` into the global namespace so the PN-2
-// rotation matchers (`register_theta_add_matcher`,
-// `register_theta_sub_matcher`, `register_phi_add_matcher`,
-// `register_phi_sub_matcher`) see the same unqualified typed
-// DeclRefExpr spelling the hermetic PN-3 snapshot fixtures under
-// `tests/transpiler/fixtures/{theta,phi}_{add,sub}_const.cpp` use, and
-// so the injected `q.theta() -= d;` / `q.phi() += d;` lines the
-// PN-4 uncompute pass emits resolve unqualified at the call site.
-// Same convention as the Phase M `examples/peephole_reorder.cpp`, the
-// Phase J `examples/zero_ancilla_fusion.cpp`, the Phase I
-// `examples/user_routine.cpp`, the Phase H `examples/control_flow.cpp`,
-// the Phase G `examples/nested_when.cpp`, the Phase F
-// `examples/when_integration.cpp`, and the Phase E
-// `examples/compound_expression.cpp` templates.
-using sturm::qbool;
+// Bring `qint_t` into the global namespace so the PN-2 rotation matchers
+// (`register_theta_add_matcher`, `register_theta_sub_matcher`,
+// `register_phi_add_matcher`, `register_phi_sub_matcher`) see the same
+// unqualified typed DeclRefExpr spelling the hermetic PN-3 snapshot
+// fixtures use, and so the injected `q.theta() -= d;` / `q.phi() += d;`
+// lines the PN-4 uncompute pass emits resolve unqualified at the call
+// site.  The PN-2 matchers key on `qint_t<W>`'s nested ThetaProxy /
+// PhiProxy, which the umbrella's curated alias `sturm::qint` (a
+// width-agnostic frontend wrapper) does NOT expose — width-specific
+// rotation work uses `qint_t<W>` directly.
 using sturm::qint_t;
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -110,14 +96,14 @@ using sturm::qint_t;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`. The opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // The Phase N rotation happy path.  The inline comments inside
     // `main()` deliberately avoid spelling any of the transpiler-
     // injected fragments verbatim so the PN-7 byte-identity check
@@ -187,10 +173,6 @@ int main() {
     // the load-bearing observable is the GENERATED FILE layout
     // checked by `check_example_rotations.cmake`, not the runtime
     // gate stream.
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

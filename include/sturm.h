@@ -65,7 +65,19 @@
 #include "sturm/core/context.hpp"       // C++ side: BackendContext, execute_gate
 #include "sturm/qtypes/qint.hpp"        // qint_t<W>, full operator surface
 #include "sturm/qtypes/qint_alias.hpp"  // sturm::frontend::qint (the user-level alias)
+// `qint_alias_ops.hpp` carries the inline definitions for the alias's
+// operator surface (`operator[]`, the mixed-arith free operators, etc.)
+// — without it a user TU that exercises `qint i = 2; i[0]` would link-fail
+// on the out-of-line `frontend::qint::operator[](size_t) const`. Pulled in
+// here so the umbrella is self-contained.
+#include "sturm/qtypes/qint_alias_ops.hpp"
 #include "sturm/qtypes/qbool.hpp"       // sturm::qbool full definition
+// The transpiler injects `uncompute_or` / `uncompute_and` /
+// `uncompute_*_qint` calls before scope-close; pulling the API header in
+// from the umbrella keeps user TUs free of an extra include for each
+// match. (The implementation lives in `src/sturm/uncompute/uncompute_api.cpp`
+// — link as usual.)
+#include "sturm/uncompute/uncompute_api.hpp"
 
 // Bring the user-level type names into the including TU's namespace so
 // `qint a = 5;` and `qbool b;` parse without an explicit `using sturm::...`

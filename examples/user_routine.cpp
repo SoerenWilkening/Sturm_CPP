@@ -1,29 +1,13 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 #include "sturm/routines/invert.hpp"
-#include "sturm/sturm.hpp"
 
 #include <cstdint>
 #include <cstdio>
 
-// Bring `qbool` into the global namespace so the forward routine
-// signature + the transpiler-emitted `invert(rotate_by_k)(tmp, a, 3);`
-// call both resolve their qbool spelling unqualified — same convention
-// as the Phase G `examples/nested_when.cpp`, the Phase F
-// `examples/when_integration.cpp`, the Phase E
-// `examples/compound_expression.cpp`, and the Phase H
-// `examples/control_flow.cpp` templates.  The PI-2 matcher keys on the
-// callee's type signature (non-const qbool& → OUTPUT slot) so the
-// generated file's `invert(rotate_by_k)(...)` call needs `qbool` and
-// `invert` resolvable at the call site.
+// Bring `invert` into the global namespace so the transpiler-emitted
+// `invert(rotate_by_k)(tmp, a, 3);` call resolves the helper unqualified.
 using sturm::invert;
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase I: user-defined routine + automatic adjoint dispatch demo
@@ -124,6 +108,11 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`.
 
 // ── Forward user routine ─────────────────────────────────────────────────────
 // Rotates `out` by `k` bit-flips controlled classically on `in`'s
@@ -229,12 +218,6 @@ void apply_rotation_adj(qbool& out, const qbool& a) {
 STURM_REGISTER_ADJOINT(apply_rotation, apply_rotation_adj)
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // Inner scope so the transpiler-injected adjoint dispatch fires
     // BEFORE we sample the gate-count summary and before `tmp`'s
     // destructor runs.  The inline comments inside `main()`
@@ -259,7 +242,7 @@ int main() {
         // in the top-of-file prose to keep this comment free of
         // false-positive anchors).
         rotate_by_k(tmp, a, 3);
-        gates_after_forward = ctx->ir.size();
+        gates_after_forward = sturm::gate_count();
 
         // Case 2: `apply_rotation` is called with a local qbool
         // `escape` — from main's vantage point the output is
@@ -278,7 +261,7 @@ int main() {
         //    before the `}` below.  The exact emitted text is visible
         //    in build/sturm_gen/examples/user_routine.cpp.
     }
-    gates_after_adjoint = ctx->ir.size();
+    gates_after_adjoint = sturm::gate_count();
 
     // Gate-count summary.  Three contributions land between N1 and
     // N2 at run time; see the top-of-file prose for the detailed
@@ -293,7 +276,5 @@ int main() {
     std::fprintf(stdout, "gates_after_adjoint = %zu\n",
                  gates_after_adjoint);
 
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
     return 0;
 }

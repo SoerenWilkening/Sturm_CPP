@@ -1,30 +1,9 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 #include "sturm/uncompute/uncompute_api.hpp"
 
 #include <cstdint>
 #include <cstdio>
-#include <string>
-
-// Bring `qbool` into the global namespace so the Phase E / PE-4
-// compound-flatten matcher, the Phase A / PA-3 `^=` matcher, and the
-// Phase M / PM5-5 peephole reorder matcher all see the same unqualified
-// typed DeclRefExpr spelling the rest of the examples use.  Same
-// convention as the Phase J `examples/zero_ancilla_fusion.cpp`, the
-// Phase J `examples/uncompute_hoisting.cpp`, the Phase J
-// `examples/dead_ancilla.cpp`, the Phase I `examples/user_routine.cpp`,
-// the Phase H `examples/control_flow.cpp`, the Phase G
-// `examples/nested_when.cpp`, the Phase F `examples/when_integration.cpp`,
-// and the Phase E `examples/compound_expression.cpp` templates.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase M PM5: peephole gate reordering demo (alias-analysis-backed)
@@ -143,14 +122,14 @@ using sturm::qbool;
 //
 // Phase K removed RAII auto-uncompute entirely; the transpiler is now
 // the sole source of uncompute gate emission.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`. The opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // The canonical PM5 peephole-reorder triple pattern through the
     // existing pipeline.  The inline comments inside `main()`
     // deliberately avoid spelling any of the transpiler-injected
@@ -215,10 +194,6 @@ int main() {
     // diagram shows the paired forward + adjoint gates; the load-
     // bearing observable is the GENERATED FILE layout, not the
     // runtime stream.
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

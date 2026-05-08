@@ -1,33 +1,10 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qbool.hpp"
-#include "sturm/qtypes/qbool_ops.hpp"
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 #include "sturm/uncompute/uncompute_api.hpp"
 
 #include <cstddef>
 #include <cstdint>
 #include <cstdio>
-
-// Bring `qbool` into the global namespace so the MVP OR matcher + the
-// Phase A PA-3 `^=` matcher see the same unqualified typed DeclRefExpr
-// spelling the rest of the examples use, and so the injected
-// `uncompute_or(live, a, b);` call the transpiler plants in the
-// reject-path scope resolves unqualified at the call site.  Same
-// convention as the Phase J `examples/zero_ancilla_fusion.cpp`, the
-// Phase I `examples/user_routine.cpp`, the Phase H
-// `examples/control_flow.cpp`, the Phase G `examples/nested_when.cpp`,
-// the Phase F `examples/when_integration.cpp`, and the Phase E
-// `examples/compound_expression.cpp` templates.  The hermetic snapshot
-// fixtures under `tests/transpiler/fixtures/dead_ancilla_*` rely on the
-// same `using sturm::qbool;` shape so the PJ-4a matcher sees the same
-// typed DeclRefExpr spelling as here.
-using sturm::qbool;
 
 // ─────────────────────────────────────────────────────────────────────────────
 // Phase J PJ-4: dead-ancilla elimination demo
@@ -103,14 +80,14 @@ using sturm::qbool;
 // on `x` + an MVP OR three-gate uncompute (CCX + CX + CX), for a net
 // delta of `N2 - N1 == 8` (Phase K removed RAII auto-uncompute, so
 // the transpiler's injection is the sole source of uncompute gates).
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API (including `qbool` at namespace
+// scope) and the auto-injected lifecycle wraps `main` with
+// `sturm_backend_create` / `destroy`. The opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     std::size_t gates_after_dead = 0;
     std::size_t gates_after_live = 0;
 
@@ -135,7 +112,7 @@ int main() {
         //   build/sturm_gen/examples/dead_ancilla.cpp.
         qbool dead = a | b;
     }
-    gates_after_dead = ctx->ir.size();
+    gates_after_dead = sturm::gate_count();
 
     // ── Case 2: reader-reject path — normal Phase A + MVP OR rewrite ───────
     // The PJ-4a matcher bails because `live` has one reader (the
@@ -164,7 +141,7 @@ int main() {
         qbool live = a | b;
         x ^= live;
     }
-    gates_after_live = ctx->ir.size();
+    gates_after_live = sturm::gate_count();
 
     // Gate-count summary.  The Case 1 dead-decl elimination emits ZERO
     // gates (no forward, no uncompute) because the PJ-4a QReplacement
@@ -195,10 +172,6 @@ int main() {
     // every forward gate has its matching inverse — plus the qbool
     // preparation gates for the four `qbool(0.5)` superposed operands
     // (two per scope, four total).
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

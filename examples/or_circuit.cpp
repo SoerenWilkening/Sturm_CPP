@@ -1,15 +1,5 @@
-#define STURM_BACKEND_ENABLED 1
-
-#include "sturm/backend/draw_ascii.hpp"
-#include "sturm/backend/exec_append.hpp"
-#include "sturm/backend/ir.hpp"
-#include "sturm/core/context.hpp"
-#include "sturm/core/core.h"
-#include "sturm/qtypes/qint.hpp"
-#include "sturm/control/when.hpp"
-// Pulls in the adjoint free-function API the transpiler injects below
-// (the OR-uncompute helper, ...).
-#include "sturm/sturm.hpp"
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
 
 #include <cstdint>
 #include <cstdio>
@@ -49,14 +39,13 @@
 //
 // Phase K retired the runtime auto-uncompute layer entirely; the
 // transpiler is now the only inversion path.
+//
+// Frontend simplification (sturm-yggr / Phase 8): the umbrella `sturm.h`
+// brings in the curated public API and the auto-injected lifecycle wraps
+// `main` with `sturm_backend_create` / `destroy`. The opt-in
+// `sturm/draw_ascii.h` exposes the no-arg renderer entry point.
 
 int main() {
-    constexpr uint32_t kNumQubits = 32;
-
-    sturm_backend_context_t *ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    sturm_set_thread_context(ctx);
-
     // ── Phase A demo block ──────────────────────────────────────────────────
     // Wrapped in an inner scope so the transpiler-injected inverses fire
     // BEFORE the diagram is printed below. If the demo lived directly in
@@ -99,10 +88,6 @@ int main() {
         //     <OR-uncompute helper call for c from a,b>
     }
 
-    std::string diagram = sturm::draw_ascii(ctx->ir, kNumQubits);
-    std::fputs(diagram.c_str(), stdout);
-
-    sturm_set_thread_context(nullptr);
-    sturm_backend_destroy(ctx);
+    sturm::print_ascii();
     return 0;
 }

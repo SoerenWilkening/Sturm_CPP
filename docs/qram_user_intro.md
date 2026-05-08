@@ -1,9 +1,10 @@
 # Working with QRAM
 
-**Status:** v1 (2026-05-03), tracks the closed frontend epic
-[`sturm-u9ge`](archive/prd_qram_subscript.md) and the closed backend
+**Status:** v2 (2026-05-07), tracks the closed frontend epic
+[`sturm-u9ge`](archive/prd_qram_subscript.md), the closed backend
 epic `sturm-2w6h` ([`prd_qram_backend.md`](prd_qram_backend.md),
-[`plan_qram_backend.md`](plan_qram_backend.md)).
+[`plan_qram_backend.md`](plan_qram_backend.md)), and the frontend
+simplification PRD [`prd_frontend_simplification.md`](prd_frontend_simplification.md).
 
 **Audience.** Advanced users writing reversible / quantum routines who
 want to read a `qint` element of a container indexed by another `qint`
@@ -37,6 +38,34 @@ expression with a `qint` index on a container of `qint`** — the
 discriminator is the implicit `qint → size_t` conversion the matcher
 sees on the index position
 ([archive/prd_qram_subscript.md §7](archive/prd_qram_subscript.md)).
+
+A complete demo TU lives at `examples/qram_demo.cpp`; the public-API
+shape is:
+
+```cpp
+#include "sturm.h"
+#include "sturm/draw_ascii.h"
+#include "sturm/qram.h"
+
+int main() {
+    qint a[4];
+    for (int i = 0; i < 4; ++i) a[i] = i;
+    qint i = 2;
+    qint b = a[i];
+
+    sturm::print_ascii();
+    std::printf("\n[gate count = %zu]\n", sturm::gate_count());
+    return 0;
+}
+```
+
+The umbrella `sturm.h` brings `qint` and `qbool` into scope and pulls
+the C-ABI lifecycle headers; `sturm/qram.h` makes the `QRAM_read`
+overload set reachable for the subscript-rewrite hook to compile;
+`sturm/draw_ascii.h` exposes the no-arg renderer entry points.
+`main`'s lifecycle is wrapped automatically by the transpiler
+(`matcher_main_lifecycle`) — the user-visible body has no
+`sturm_backend_create` / `destroy` plumbing.
 
 ### What the transpiler does
 
@@ -266,10 +295,10 @@ Before the `sturm-qac` epic, the bare spelling `sturm::qint` was an
 alias for the **backend** template `sturm::qint_t<64>`, declared
 in `qint_fwd.hpp`. After beat B1 (`sturm-65rs.6`), `sturm::qint`
 resolves to the **frontend** alias class
-(`sturm::frontend::qint`). The umbrella `<sturm/sturm.hpp>` and the
-`<sturm/prelude.hpp>` shortcut both pick up the new resolution
-automatically; no source changes are required if you only use the
-public surface (constructors, arithmetic / bitwise / comparison
+(`sturm::frontend::qint`). The umbrella `sturm.h` (PRD §5.1) brings
+the public surface in via `using sturm::qint;` / `using sturm::qbool;`
+at namespace scope; no source changes are required if you only use
+the public surface (constructors, arithmetic / bitwise / comparison
 operators, and the implicit `operator size_t()` that drives
 `a[i]`-style QRAM access).
 
@@ -291,9 +320,9 @@ same TU; they only differ in how `q` is spelled.
 
 **Rule of thumb.** Reach for `sturm::qint_t<W>` directly when you
 need to talk about a specific width or a backend-only operation;
-use the bare `sturm::qint` (or `qint` after `using sturm::qint;` /
-`<sturm/prelude.hpp>`) for ordinary value-level code,
-QRAM subscripts, and the user-facing operator surface PRD §4.1
+use the bare `sturm::qint` (or `qint` after the umbrella's
+`using sturm::qint;`) for ordinary value-level code, QRAM
+subscripts, and the user-facing operator surface PRD §4.1
 mirrors. The five existing call-sites that needed re-spelling are
 audited in PRD §6 R1 + plan beat D0 (`sturm-65rs.11`); see
 `tests/regressions/test_qint_callsite_respelling.cpp` for the
@@ -317,26 +346,25 @@ trivial expression that produces a default-constructed return value
 (`return qbool();` / `return qint{};` / `return 0;` / `return
 *this;` / `{}`); no body reads or writes `value_`, calls into any
 helper, or counts anything. **Pre-transpile execution is
-unsupported.** Source code that includes `<sturm/sturm.hpp>` or
-`<sturm/prelude.hpp>` and exercises the alias must be run through
-`sturm-transpile` before compilation; the transpiler's host-clang
-invariant `sturm-yial` enforces that the plugin loads and the C1 +
-alias-substitution matchers fire. The Wave-2 G6
-`test_sturm_gen_clean` gate (now THE coverage contract under Wave 3)
-asserts the post-transpile output contains zero `sturm::frontend::qint`
-spellings — strictly stronger than the deprecated W2-era runtime
-counter check that lived on the alias class. If you want to compile
-a TU that exercises the alias *without* running the transpiler
-first, you cannot — the alias's operator return values are
-default-constructed sentinels, not lossy-correct measurements.
-Compares now return `sturm::qbool` (parity with `qint_t<W>`); the
-old `bool` returns are gone. The Wave-1-era "measurement footgun"
-warning in §3 above is preserved as the user-rule but its
-implementation surface has shifted: the implicit `operator size_t()`
-remains as a parse-time invariant (so `a[qint_idx]` parses) but its
-body returns `0` and never measures anything; the post-transpile
-`qint_t<W>::operator int64_t()` is `explicit` and remains the
-real safety net for missed sites.
+unsupported.** Source code that includes the umbrella `sturm.h` and
+exercises the alias must be run through `sturm-transpile` before
+compilation; the transpiler's host-clang invariant `sturm-yial`
+enforces that the plugin loads and the C1 + alias-substitution
+matchers fire. The Wave-2 G6 `test_sturm_gen_clean` gate (now THE
+coverage contract under Wave 3) asserts the post-transpile output
+contains zero `sturm::frontend::qint` spellings — strictly stronger
+than the deprecated W2-era runtime counter check that lived on the
+alias class. If you want to compile a TU that exercises the alias
+*without* running the transpiler first, you cannot — the alias's
+operator return values are default-constructed sentinels, not
+lossy-correct measurements.  Compares now return `sturm::qbool`
+(parity with `qint_t<W>`); the old `bool` returns are gone. The
+Wave-1-era "measurement footgun" warning in §3 above is preserved
+as the user-rule but its implementation surface has shifted: the
+implicit `operator size_t()` remains as a parse-time invariant (so
+`a[qint_idx]` parses) but its body returns `0` and never measures
+anything; the post-transpile `qint_t<W>::operator int64_t()` is
+`explicit` and remains the real safety net for missed sites.
 
 ---
 
@@ -354,6 +382,9 @@ real safety net for missed sites.
 - [`archive/plan_qram_subscript.md`](archive/plan_qram_subscript.md) —
   the closed frontend beat plan; H1–H4 are the four out-of-scope
   shape follow-ups (§2.2 above).
+- [`prd_frontend_simplification.md`](prd_frontend_simplification.md) —
+  the umbrella header (§5.1), opt-in feature headers (§5.2), and the
+  auto-injected lifecycle (§5.4).
 - [`01_principles.md`](01_principles.md) — P2 (measurement is
   explicit), P5 (DSL primitive set), P9 / P9c (adjoint synthesis),
   B5a (depth-1 control invariant).

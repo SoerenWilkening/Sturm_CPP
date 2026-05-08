@@ -81,3 +81,28 @@ target_compile_definitions(test_no_cap_artifacts PRIVATE
 add_test(NAME test_no_cap_artifacts COMMAND test_no_cap_artifacts)
 set_tests_properties(test_no_cap_artifacts PROPERTIES
     LABELS "regressions;frontend-simplification;qubit-cap-removal")
+
+# ── sturm-yggr (Frontend simpl. P8 / PRD A1) ─────────────────────────────
+# Byte-identical regression gate: after Phase 8 migrates
+# `examples/qram_demo.cpp` to the new umbrella + opt-in-header shape
+# (PRD §4 "After"), the rewritten demo's stdout must match the
+# pre-rewrite baseline `tests/regressions/data/qram_demo_baseline.txt`
+# (R4 mitigation: baseline captured at the START of Phase 8 so
+# incidental ordering shifts from Phases 1–7 are reflected in it).
+#
+# The test runs the built `example_qram_demo` via popen, captures its
+# stdout, and compares against the committed baseline file byte for
+# byte. On mismatch, the first 50 lines of each side are emitted to
+# stderr for triage.
+add_executable(test_qram_demo_byte_identical
+    test_qram_demo_byte_identical.cpp
+)
+target_compile_features(test_qram_demo_byte_identical PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_demo_byte_identical PRIVATE
+    "EXAMPLE_BINARY_PATH=\"$<TARGET_FILE:example_qram_demo>\""
+    "EXPECTED_OUTPUT_PATH=\"${CMAKE_SOURCE_DIR}/tests/regressions/data/qram_demo_baseline.txt\"")
+add_dependencies(test_qram_demo_byte_identical example_qram_demo)
+add_test(NAME test_qram_demo_byte_identical
+         COMMAND test_qram_demo_byte_identical)
+set_tests_properties(test_qram_demo_byte_identical PROPERTIES
+    LABELS "regressions;frontend-simplification;qram;byte-identical")
