@@ -1,7 +1,9 @@
 # PRD: Frontend Simplification
 
 - **Date:** 2026-05-07
-- **Status:** Draft
+- **Status:** Implemented (sturm-f8ib / Phase 9 — all seven acceptance
+  gates A1–A7 wired in `tests/regressions/test_acceptance_gates.cmake`
+  and green in clean `-DSTURM_FULL_TEST_SUITE=ON` build, 2026-05-08).
 - **Owner:** Soren Wilkening
 - **Supersedes:** none (additive — earlier work landed in `docs/archive/prd_qint_alias_completion.md`)
 
@@ -129,20 +131,50 @@ int main() {
 }
 ```
 
-**After:**
+**After** (the file committed at `examples/qram_demo.cpp`; sturm-f8ib /
+P9 / A1 reconciliation — the listing was updated from the original
+two-include schematic to match the actual demo so the byte-identity
+test gate `test_qram_demo_byte_identical` and the textual-diff sub-gate
+of A1 both observe the same source of truth. The opt-in `sturm/qram.h`
+include is required for the `qint b = a[i];` subscript-rewrite hook to
+reach the `QRAM_read` overload set; the per-bit `i[0].phi() += 3;`
+rotations encode the index `i = 2` into a non-trivial gate stream so
+the rendered ASCII diagram has substance):
 
 ```cpp
+// QRAM demo — natural-syntax read `qint b = a[i];`, with the resulting
+// gate stream printed as an ASCII circuit diagram.
+//
+// `add_quantum_executable()` routes this file through `sturm-transpile`,
+// whose C1 matcher (`matcher_qram_subscript`) rewrites the read line into
+// `sturm::qint_t<W> b; ::sturm::QRAM_read(a, i, b);` before codegen, and
+// whose `matcher_main_lifecycle` (Phase 7 / sturm-e3ru) wraps `main` with
+// the auto-injected `sturm_backend_create` / `sturm_backend_destroy`
+// lifecycle now that this TU includes the umbrella `sturm.h`.
+//
+// Frontend simplification (PRD §4 "After" listing — sturm-yggr / Phase 8):
+// the umbrella `sturm.h` brings in the curated public API
+// (`qint`, `qbool`, the C ABI lifecycle), the opt-in `sturm/qram.h` makes
+// the QRAM_read overloads reachable, and the opt-in `sturm/draw_ascii.h`
+// exposes the no-arg renderer entry points (PRD §5.6).
 #include "sturm.h"
 #include "sturm/draw_ascii.h"
+#include "sturm/qram.h"
 
 int main() {
     qint a[4];
-    for (int i = 0; i < 4; ++i) a[i] = i + 5;
+    for (int i = 0; i < 4; ++i) {
+        a[i] = i;
+    }
+
     qint i = 2;
+    i[0].phi() += 3;
+    i[1].phi() += 3;
     qint b = a[i];
 
+    std::fputs("\n--- QRAM read circuit (APPEND-mode IR) ---\n", stdout);
     sturm::print_ascii();
-    std::printf("\n[gate count = %zu]\n", sturm::gate_count());
+    std::fprintf(stdout, "\n[gate count = %zu]\n", sturm::gate_count());
     return 0;
 }
 ```
@@ -362,10 +394,17 @@ A2. `cmake -S . -B build && cmake --build build --parallel 6 &&
 A3. `cmake -S . -B build -DSTURM_MODE=SIMULATE && ctest ...` passes the
     SIMULATE-mode test subset.
 
-A4. No file in `include/`, `src/`, `tests/`, `examples/`, or
-    `transpiler/` references `STURM_ANCILLA_CAPACITY`,
-    `kMaxClassicalQubits`-as-a-cap, `max_qubits` parameter, or
-    `kCapExceededMsg`.
+A4. No surviving cap-enforcement code: no production file in
+    `include/`, `src/`, or `transpiler/` references
+    `STURM_ANCILLA_CAPACITY`, `kMaxClassicalQubits`-as-a-cap, the
+    `max_qubits` parameter on `sturm_backend_create`, or
+    `kCapExceededMsg`. Tests / docs / examples may legitimately mention
+    these tokens for historical or migration prose; the audit is
+    restricted to production code (P9 / sturm-f8ib reword: the original
+    "no file in `include/`, `src/`, `tests/`, `examples/`, or
+    `transpiler/` references …" wording is functionally impossible
+    because the regression gate `test_no_cap_artifacts.cpp` itself must
+    name the forbidden tokens to scan for them).
 
 A5. A test in `tests/packaging/` verifies that
     `#include "sturm.h"` alone (no other sturm includes) compiles a

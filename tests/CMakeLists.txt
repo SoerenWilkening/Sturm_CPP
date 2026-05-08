@@ -177,6 +177,13 @@ add_subdirectory(transpiler)
 # (which post-B1 resolves to the frontend alias).
 add_subdirectory(regressions)
 
+# ── sturm-f8ib / Frontend simpl. P9 — PRD A1–A7 acceptance roll-up ───────────
+# Wires PRD §8 acceptance criteria as named ctests; aggregator script
+# lives under `tests/regressions/` (heavier driver logic in sibling
+# `tests/regressions/acceptance/`). Must be loaded AFTER the regression
+# subdirectory so the delegated F-2a / F-8 ctests are registered first.
+include(regressions/test_acceptance_gates.cmake)
+
 # ── sturm-vr0v.2: packaging acceptance tests (sturmc CLI driver) ─────────────
 # Lives in `tests/packaging/`; the suite installs into a temp prefix and
 # exercises the installed sturmc binary end-to-end. Gated on the
