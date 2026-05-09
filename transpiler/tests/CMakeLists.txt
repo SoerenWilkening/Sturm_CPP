@@ -3417,6 +3417,12 @@ set(_e1_runtime_sources
     "${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp"
     "${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp"
     "${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp"
+    # sturm-o1zj: P8 (sturm-yggr) migrated examples/qram_demo.cpp to the
+    # opt-in `sturm/draw_ascii.h` header, which exposes the no-arg
+    # `sturm::print_ascii()` / `sturm::gate_count()` entry points
+    # implemented in draw_ascii_noarg.cpp. Mirror examples/CMakeLists.txt's
+    # `example_qram_demo` source list so the rewritten TU links cleanly.
+    "${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp"
     "${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp"
 )
 string(JOIN " " _e1_runtime_sources_joined ${_e1_runtime_sources})

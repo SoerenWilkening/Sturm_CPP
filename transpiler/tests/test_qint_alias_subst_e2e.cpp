@@ -87,24 +87,23 @@ std::string fixup_example(std::string_view src) {
     return out;
 }
 
-// Post-transpile narrow patch: pin `i` width to `W` so the QRAM_read call
-// site (W = 4) does not need a `frontend::qint(qint_t<32>)` implicit
-// ctor — under Wave 3 (sturm-v0db.4 / W3.3, PRD §10.3.2 / G8) that
-// ctor's body is a pure type-stub, but matching widths is still the
-// canonical post-rewrite shape. Follow-up sturm-65rs.17.
+// Post-transpile narrow patch: historically pinned `i` width to a
+// file-scope `W` (the `constexpr std::size_t W = 4;` that lived in the
+// pre-P8 anonymous namespace of `examples/qram_demo.cpp`) so the
+// QRAM_read call site did not need a `frontend::qint(qint_t<32>)`
+// implicit ctor.
 //
-// sturm-vm38: the example body changed from `qint i = 10;` to `qint i = 2;`
-// when the phi() proxy stub line `i.phi() += 3;` landed. The fix-up shape
-// is otherwise identical — we still narrow the inferred 32-bit width down
-// to W so the QRAM_read(W=4) call site does not implicitly cross-construct
-// a frontend::qint.
+// sturm-o1zj: P8 (sturm-yggr) removed the file-scope `W` constant from
+// the example as part of the frontend-simplification migration, and
+// the rewritten array (`qint a[4]`) lands as `sturm::qint_t<32>[4]`,
+// so all three QRAM_read arguments (`a`, `i`, `b`) already share
+// width 32 in the rewritten TU. The historical narrow-patch is
+// therefore a no-op (and would actually break compilation by
+// reintroducing an undeclared `W`). The function is kept as the
+// central hook so future shape drift can be patched here without
+// touching the run/compile harness; it is currently a no-op.
 std::string post_fixup_index(std::string_view content) {
-    std::string out(content);
-    const std::string_view n = "sturm::qint_t<32> i = 2;";
-    const std::string_view r = "sturm::qint_t<W> i = sturm::qint_t<W>(2);";
-    auto pos = out.find(n);
-    if (pos != std::string::npos) out.replace(pos, n.size(), r);
-    return out;
+    return std::string(content);
 }
 
 struct TranspileOutcome {
