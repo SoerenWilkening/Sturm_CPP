@@ -59,6 +59,16 @@ namespace {
 #ifndef STURM_PLUGIN_GENERATED_INCLUDE_DIR
 #error "STURM_PLUGIN_GENERATED_INCLUDE_DIR must be defined to the build-tree include dir holding generated headers (e.g. sturm/version.hpp)"
 #endif
+// sturm-zva0: pre-formatted `-DSTURM_MODE_DEFAULT=STURM_MODE_<X>` flag string
+// derived from the `sturm::frontend` INTERFACE library's INTERFACE_COMPILE_-
+// DEFINITIONS at configure time. The auto-injected lifecycle prologue
+// (sturm-e3ru / P7) emits `sturm_backend_create(STURM_MODE_DEFAULT)` into the
+// rewritten source, so the clang++ invocations below — both the legacy
+// two-step `clang++ -c <rewritten>` and the plugin nested action's
+// implicitly-spawned EmitObjAction — must see the macro defined.
+#ifndef STURM_PLUGIN_MODE_DEFAULT_FLAG
+#error "STURM_PLUGIN_MODE_DEFAULT_FLAG must be defined to the `-DSTURM_MODE_DEFAULT=STURM_MODE_<X>` compile flag string"
+#endif
 
 const char* plugin_path()      { return STURM_PLUGIN_PATH; }
 const char* clangxx_bin()      { return STURM_PLUGIN_CLANGXX; }
@@ -67,6 +77,7 @@ const char* objdump_bin()      { return STURM_PLUGIN_OBJDUMP; }
 const char* examples_dir()     { return STURM_PLUGIN_EXAMPLES_DIR; }
 const char* include_dir()      { return STURM_PLUGIN_INCLUDE_DIR; }
 const char* generated_include_dir() { return STURM_PLUGIN_GENERATED_INCLUDE_DIR; }
+const char* mode_default_flag() { return STURM_PLUGIN_MODE_DEFAULT_FLAG; }
 
 struct RunResult {
     int exit_code = -1;
@@ -166,6 +177,11 @@ std::string common_flags() {
     f += " -DSTURM_BACKEND_ENABLED=1";
     // sturm-5jta (P2.b / G5): the legacy ancilla-cap define is gone;
     // qubit_pool.hpp grows on demand without a compile-time knob.
+    // sturm-zva0: forward the `STURM_MODE_DEFAULT=STURM_MODE_<X>` compile
+    // def from `sturm::frontend` so the rewritten source's auto-injected
+    // `sturm_backend_create(STURM_MODE_DEFAULT)` resolves at compile time.
+    f += " ";
+    f += mode_default_flag();
     return f;
 }
 

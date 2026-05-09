@@ -2026,6 +2026,15 @@ if(STURM_PLUGIN_CLANGXX_BIN AND STURM_PLUGIN_OBJDUMP_BIN AND STURM_FULL_TEST_SUI
         STURM_PLUGIN_EXAMPLES_DIR="${CMAKE_SOURCE_DIR}/examples"
         STURM_PLUGIN_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
         STURM_PLUGIN_GENERATED_INCLUDE_DIR="${CMAKE_BINARY_DIR}/include"
+        # sturm-zva0: forward the `STURM_MODE_DEFAULT=STURM_MODE_<X>` compile
+        # def carried by `sturm::frontend` (sturm-mixe / P1) as a `-D` flag
+        # string. The auto-injected lifecycle prologue (sturm-e3ru / P7)
+        # references `STURM_MODE_DEFAULT` in the rewritten source, so the
+        # second-stage clang++ invocation (and the plugin nested action's
+        # nested EmitObjAction) needs the macro defined. We pull the value
+        # from the INTERFACE_COMPILE_DEFINITIONS of sturm_frontend so the
+        # test stays in lockstep with the canonical source of truth.
+        STURM_PLUGIN_MODE_DEFAULT_FLAG="-D$<JOIN:$<TARGET_PROPERTY:sturm_frontend,INTERFACE_COMPILE_DEFINITIONS>, -D>"
     )
     add_dependencies(test_plugin_nested
         sturm-transpile-plugin sturm-transpile)
@@ -3427,6 +3436,12 @@ target_compile_definitions(test_qint_alias_subst_e2e PRIVATE
     STURM_E1_CXX="${CMAKE_CXX_COMPILER}"
     STURM_E1_RUNTIME_SOURCES="${_e1_runtime_sources_joined}"
     STURM_E1_ORKAN_INCLUDE_DIR="${_e1_orkan_include}"
+    # sturm-zva0: forward the `STURM_MODE_DEFAULT=STURM_MODE_<X>` compile
+    # def carried by `sturm::frontend` (sturm-mixe / P1) so the second-stage
+    # clang++ that compiles the rewritten qram_demo.cpp resolves the
+    # `sturm_backend_create(STURM_MODE_DEFAULT)` token emitted by the
+    # auto-injected lifecycle (sturm-e3ru / P7).
+    STURM_E1_MODE_DEFAULT_FLAG="-D$<JOIN:$<TARGET_PROPERTY:sturm_frontend,INTERFACE_COMPILE_DEFINITIONS>, -D>"
 )
 add_dependencies(test_qint_alias_subst_e2e sturm-transpile)
 # sturm-eksf: gated behind STURM_FULL_TEST_SUITE.

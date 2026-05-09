@@ -39,6 +39,14 @@ namespace fs = std::filesystem;
 #ifndef STURM_E1_ANCILLA_CAPACITY
 #define STURM_E1_ANCILLA_CAPACITY 64
 #endif
+// sturm-zva0: pre-formatted `-DSTURM_MODE_DEFAULT=STURM_MODE_<X>` flag string.
+// Threaded from `sturm::frontend`'s INTERFACE_COMPILE_DEFINITIONS at configure
+// time so the rewritten qram_demo.cpp's auto-injected
+// `sturm_backend_create(STURM_MODE_DEFAULT)` (sturm-e3ru / P7) resolves
+// when the test's host clang++ invocation compiles it back to a binary.
+#ifndef STURM_E1_MODE_DEFAULT_FLAG
+#error "STURM_E1_MODE_DEFAULT_FLAG must be defined to the `-DSTURM_MODE_DEFAULT=STURM_MODE_<X>` compile flag string"
+#endif
 
 static int tests_run = 0, tests_pass = 0;
 #define CHECK(cond) do { ++tests_run;                                   \
@@ -176,6 +184,9 @@ int main() {
     std::ostringstream cc;
     cc << STURM_E1_CXX << " -std=c++20 -I" << STURM_E1_INCLUDE_DIR
        << " -DSTURM_BACKEND_ENABLED=1"
+       // sturm-zva0: forward STURM_MODE_DEFAULT=STURM_MODE_<X> from
+       // `sturm::frontend` so the auto-injected lifecycle resolves.
+       << " " << STURM_E1_MODE_DEFAULT_FLAG
        << " '" << out.generated_path.string() << "'"
 #ifdef STURM_E1_RUNTIME_SOURCES
        << " " << STURM_E1_RUNTIME_SOURCES
