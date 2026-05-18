@@ -127,6 +127,23 @@ target_compile_features(test_draw_json PRIVATE cxx_std_20)
 add_test(NAME test_draw_json COMMAND test_draw_json)
 set_tests_properties(test_draw_json PROPERTIES LABELS "backend")
 
+# ── sturm-l43b: debug-print SVG renderer ─────────────────────────────────────
+# Mirrors the draw_json wiring above: header-only IR-taking overload from
+# include/sturm/backend/draw_svg.hpp + no-arg entry points defined in
+# src/sturm/backend/draw_svg.cpp.
+add_executable(test_draw_svg
+    test_draw_svg.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_svg.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_draw_svg PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_draw_svg PRIVATE cxx_std_20)
+add_test(NAME test_draw_svg COMMAND test_draw_svg)
+set_tests_properties(test_draw_svg PROPERTIES LABELS "backend")
+
 # ── M8: APPEND executor ──────────────────────────────────────────────────────
 add_executable(test_exec_append
     test_exec_append.cpp
