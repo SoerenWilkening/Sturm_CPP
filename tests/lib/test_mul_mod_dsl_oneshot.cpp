@@ -49,6 +49,8 @@
 #include "sturm/backend/ir.hpp"
 #include "sturm/core/gate_kind.h"
 
+#include "classical_replay.hpp"  // sturm-scin: shared APPEND+replay helpers
+
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -167,75 +169,16 @@ static void run_n_zero_oneshot() {
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
-// ── single classical case, simulator-driven (W=2, a=2, b=2, n=3) ─────────────
-template <std::size_t W>
-static void run_oneshot_classical_case(uint32_t a_val, uint32_t b_val,
-                                       uint32_t n_val, uint32_t n_orkan,
-                                       bool bypass_cap) {
-    assert(a_val < n_val && b_val < n_val
-           && "oneshot test: a, b in [0, n) (n parity-agnostic post sturm-4oot.4)");
-    sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = 4u * static_cast<uint32_t>(W);
-    int reserved[64];
-    assert(n_reg <= 64u);
-    for (uint32_t k = 0; k < n_reg; ++k)
-        reserved[k] = sturm::QubitPool::instance().allocate();
-    const int pre_in_use = sturm::QubitPool::instance().in_use();
-    SimCtx sc{n_orkan, 64u, bypass_cap};
-    Reg<W> a = make_reg_blank<W>(0,         a_val, sc.sv());
-    Reg<W> b = make_reg_blank<W>(W,         b_val, sc.sv());
-    Reg<W> n = make_reg_n_seeded<W>(2 * W,  n_val, sc.sv());
-    Reg<W> r = make_reg_blank<W>(3 * W,     0u,    sc.sv());
-
-    sturm::lib_mul_mod_dsl_oneshot<sturm::BitProxy>(a.bits.data(), b.bits.data(),
-                                                    n.bits.data(), W,
-                                                    r.bits.data());
-
-    const uint32_t expect_r = (a_val * b_val) % n_val;
-    assert(read_reg(sc.sv(), a.qi.data(), W, n_orkan) == a_val
-           && "oneshot: a register unchanged");
-    assert(read_reg(sc.sv(), b.qi.data(), W, n_orkan) == b_val
-           && "oneshot: b register unchanged");
-    assert(read_reg(sc.sv(), n.qi.data(), W, n_orkan) == n_val
-           && "oneshot: n register unchanged");
-    assert(read_reg(sc.sv(), r.qi.data(), W, n_orkan) == expect_r
-           && "oneshot: r == (a*b) mod n");
-    assert(sturm::QubitPool::instance().in_use() == pre_in_use
-           && "oneshot: pool live-count returns to pre-call value");
-
-    for (uint32_t k = 0; k < n_reg; ++k)
-        sturm::QubitPool::instance().release(reserved[k]);
-}
-
 // ── classical-trace harness (APPEND mode + bit-vector replay) ────────────────
-// Mirrors test_mul_mod_dsl.cpp's W=3 trace harness but seeds n with the
-// 3-arg make_non_owning factory so the dispatch picks the oneshot path.
-static void apply_gate_classical(std::vector<uint8_t>& bits,
-                                 const sturm::GateRecord& rec) {
-    switch (rec.kind) {
-    case STURM_GATE_X:
-        bits[rec.qubits[0]] ^= 1u; break;
-    case STURM_GATE_CX:
-        if (bits[rec.qubits[0]]) bits[rec.qubits[1]] ^= 1u; break;
-    case STURM_GATE_CCX:
-        if (bits[rec.qubits[0]] && bits[rec.qubits[1]])
-            bits[rec.qubits[2]] ^= 1u;
-        break;
-    default:
-        std::fprintf(stderr, "trace: unsupported gate kind %d\n",
-                     static_cast<int>(rec.kind));
-        std::abort();
-    }
-}
-
-static uint32_t read_reg_classical(const std::vector<uint8_t>& bits,
-                                   const int* qi, std::size_t n) {
-    uint32_t v = 0u;
-    for (std::size_t k = 0; k < n; ++k)
-        if (qi[k] >= 0 && bits[static_cast<std::size_t>(qi[k])])
-            v |= (1u << k);
-    return v;
-}
+//
+// sturm-scin: the prior single-classical-case SIMULATE smoke
+// (`run_oneshot_classical_case<W=2>(2,2,3, n_orkan=25, bypass)`) was the
+// dominant cost in this test (~115 s on a 2^25-amplitude orkan state
+// vector).  Algorithm correctness for non-zero (a, b) is exhaustively
+// validated by the APPEND+replay sweeps below; the run_n_zero_oneshot
+// SIMULATE smoke retains end-to-end statevector coverage of the n==0
+// short-circuit.  The local apply_gate_classical / read_reg_classical
+// helpers also moved to tests/lib/classical_replay.hpp.
 
 template <std::size_t Wn>
 static void run_oneshot_trace_case(uint32_t a_val, uint32_t b_val,
@@ -298,10 +241,10 @@ static void run_oneshot_trace_case(uint32_t a_val, uint32_t b_val,
         if (!squaring && ((b_val >> i) & 1u)) bits[static_cast<std::size_t>(qi_b[i])] = 1u;
         if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])] = 1u;
     }
-    for (std::size_t i = 0; i < ctx->ir.size(); ++i)
-        apply_gate_classical(bits, ctx->ir.at(i));
+    sturm::test_helpers::replay_ir(ctx->ir, bits);
 
     const uint32_t expect_r = (a_val * b_val) % n_val;
+    using sturm::test_helpers::read_reg_classical;
     assert(read_reg_classical(bits, qi_a, Wn) == a_val
            && "oneshot trace: a unchanged");
     if (!squaring) {
@@ -332,23 +275,15 @@ static void run_oneshot_trace_case(uint32_t a_val, uint32_t b_val,
 int main() {
     constexpr std::size_t W2 = 2u;
     constexpr std::size_t W3 = 3u;
-    // W=2 simulator: 4*W (inputs) + 2W+8 (oneshot peak) ≈ 16 qubits at W=2,
-    //   plus headroom: 25 qubits is comfortable.  Bypass kMaxQubits=17 cap.
-    constexpr uint32_t n_orkan_w2 = 25u;
 
     std::printf("sturm-7cix Beat C oneshot: n==0 short-circuit:\n");
     run_n_zero_oneshot();
     std::puts("  PASS: n==0 leaves a/b/n/r unchanged, no allocation");
 
-    // Single W=2 simulator witness — the only orkan-driven correctness
-    // case in the file.  Mirrors test_mul_mod_dsl.cpp's strategy of
-    // keeping one end-to-end unitary witness while shifting bulk
-    // coverage to APPEND-mode trace replays.
-    std::printf("sturm-7cix Beat C oneshot: single W=2 simulator witness "
-                "(2, 2, 3):\n");
-    run_oneshot_classical_case<W2>(/*a=*/2u, /*b=*/2u, /*n=*/3u,
-                                   n_orkan_w2, /*bypass=*/true);
-    std::puts("  PASS: orkan-simulator forward for (2 * 2) mod 3 == 1");
+    // sturm-scin: the W=2 single-case orkan-simulator witness was retired
+    // (it cost ~115 s on a 2^25-amplitude state vector).  The exhaustive
+    // APPEND+replay sweeps below cover correctness; the n==0
+    // short-circuit smoke above retains end-to-end SIMULATE coverage.
 
     std::printf("sturm-7cix Beat C oneshot: W=2 exhaustive trace sweep "
                 "(n in {1, 2, 3}, sturm-4oot.4 even-n n=2 included):\n");

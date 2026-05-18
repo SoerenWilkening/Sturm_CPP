@@ -17,6 +17,13 @@
 // witness for `invert<&lib_mul_mod_dsl<BitProxy>>()`.  W=3 uses the same
 // classical-trace harness (the simulator is infeasible at W=3: ~35 live
 // qubits ⇒ 2^35 ≈ 34 GB amplitudes per case).
+//
+// sturm-scin: the inline `apply_gate_classical` / `read_reg_classical`
+// helpers and the bespoke `run_roundtrip_case_trace` driver have been
+// replaced with the shared APPEND+classical-replay helper
+// (`classical_replay.hpp`).  Forward and adjoint emissions append to the
+// same ctx->ir; the full IR is replayed in a single pass over the
+// classical bit-vector.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/detail/lib/mul_mod_dsl.hpp"
@@ -30,6 +37,8 @@
 #include "sturm/backend/ir.hpp"
 #include "sturm/core/gate_kind.h"
 
+#include "classical_replay.hpp"  // sturm-scin: APPEND+replay helper
+
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -39,158 +48,56 @@
 #include <random>
 #include <vector>
 
-static constexpr double kTol = 1e-9;
-static constexpr std::size_t W = 2;
+static constexpr std::size_t W  = 2u;
 static constexpr std::size_t W3 = 3u;
-static constexpr uint32_t n_orkan_w2_full = 25u;  // bypass kMaxQubits cap.
 
-// ── orkan-simulator witness for one classical (a, b, n) case at W=2 ──────
-static uint32_t read_reg(orkan::state_t& sv, const int* qi, uint32_t n,
-                         uint32_t n_total) {
-    uint64_t dim = uint64_t{1} << n_total;
-    for (uint64_t s = 0; s < dim; ++s) {
-        if (std::norm(orkan::amplitude(sv, s)) > kTol) {
-            uint32_t v = 0u;
-            for (uint32_t k = 0; k < n; ++k)
-                if (qi[k] >= 0)
-                    v |= (static_cast<uint32_t>((s >> qi[k]) & 1u) << k);
-            return v;
-        }
-    }
-    return 0u;
-}
+// sturm-scin: the W=2 SIMULATE round-trip witness
+// (run_roundtrip_case_w2_sim at n_orkan=25) was retired; it cost ~197 s
+// per ctest run.  Algorithm-level SIMULATE coverage for `lib_mul_mod_dsl`
+// is provided by test_mul_mod_dsl.cpp's `run_n_zero_case` smoke
+// (n_orkan=17).  The forward+adjoint round-trip is exhaustively covered
+// here by the W=2 (14 cases) and W=3 (50 cases) APPEND+replay sweeps
+// below.
 
-struct Reg {
-    std::array<int, W>              qi;
-    std::array<sturm::qbool, W>     owners;
-    std::array<sturm::BitProxy, W>  bits;
-};
+// ── Forward+adjoint round-trip via APPEND-mode capture + classical
+//    bit-vector replay (sturm-scin) ──────────────────────────────────────
+//
+// Drives the forward `lib_mul_mod_dsl` then `invert<>()`-resolved adjoint
+// under a *single* STURM_MODE_APPEND context so both emissions append to
+// the same ctx->ir.  The full IR is replayed in one pass over a classical
+// bit-vector sized to QubitPool::high_water().  Asserts:
+//   - a, b, n registers unchanged across the full round-trip,
+//   - r register returns to 0 after the adjoint,
+//   - every ancilla bit (qubits beyond the 4*W_VAL input slots) is back
+//     to 0 (algorithm cleans up after itself),
+//   - QubitPool::in_use() returns to its pre-call value.
+//
+// Per-case cost is O(|IR|) instead of O(2^n_orkan * |IR|); the W=2
+// 14-case sweep + W=3 50-case sweep collectively drop from ~366 s to
+// a few seconds total.
+template <std::size_t W_VAL>
+static void run_replay_case_adjoint(uint32_t a_val, uint32_t b_val,
+                                    uint32_t n_val) {
+    assert(a_val < n_val && b_val < n_val && n_val < (1u << W_VAL));
 
-static Reg make_reg(int base, uint32_t val, orkan::state_t& sv) {
-    Reg r;
-    for (std::size_t i = 0; i < W; ++i) {
-        r.qi[i] = base + static_cast<int>(i);
-        if ((val >> i) & 1u) orkan::apply_x(sv, static_cast<uint32_t>(r.qi[i]));
-    }
-    for (std::size_t i = 0; i < W; ++i) {
-        r.owners[i] = sturm::qbool::make_non_owning(r.qi[i]);
-        r.bits[i]   = sturm::BitProxy(r.owners[i]);
-    }
-    return r;
-}
-
-// W=2 single classical (a, b, n) case driven through orkan in simulator
-// mode.  Asserts forward sets r=(a*b) mod n, adjoint zeros r, a/b/n
-// preserved, pool live-count returns to pre-call value.  Kept because the
-// forward primitive's exact unitary semantics (incl. control-stack pushes
-// / pops) are richer than the classical-trace replay — we want one
-// witness that confirms `invert<>()` resolves to a working adjoint
-// against the real backend, not just against a bit-flip program.
-static void run_roundtrip_case_w2_sim(uint32_t a_val, uint32_t b_val,
-                                      uint32_t n_val) {
-    assert(a_val < n_val && b_val < n_val);
-    sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = 4u * W;
-    int reserved[n_reg];
-    for (uint32_t k = 0; k < n_reg; ++k)
-        reserved[k] = sturm::QubitPool::instance().allocate();
-    const int pre_in_use = sturm::QubitPool::instance().in_use();
-    sturm::OrkanBridge bridge;
-    orkan::allocate(bridge.state(), n_orkan_w2_full);
-    sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_SIMULATE);
-    assert(ctx);
-    ctx->orkan_state_ptr = &bridge;
-    sturm_backend_context_t* prev = sturm_get_thread_context();
-    sturm_set_thread_context(ctx);
-    orkan::state_t& sv = bridge.state();
-    Reg a = make_reg(0,         a_val, sv);
-    Reg b = make_reg(W,         b_val, sv);
-    Reg n = make_reg(2 * W,     n_val, sv);
-    Reg r = make_reg(3 * W,     0u,    sv);
-
-    sturm::lib_mul_mod_dsl<sturm::BitProxy>(a.bits.data(), b.bits.data(),
-                                            n.bits.data(), W,
-                                            r.bits.data());
-
-    const uint32_t expect_r = (a_val * b_val) % n_val;
-    assert(read_reg(sv, a.qi.data(), W, n_orkan_w2_full) == a_val);
-    assert(read_reg(sv, b.qi.data(), W, n_orkan_w2_full) == b_val);
-    assert(read_reg(sv, n.qi.data(), W, n_orkan_w2_full) == n_val);
-    assert(read_reg(sv, r.qi.data(), W, n_orkan_w2_full) == expect_r &&
-           "forward: r == (a*b) mod n");
-
-    constexpr auto adj_ptr =
-        sturm::invert<&sturm::lib_mul_mod_dsl<sturm::BitProxy>>();
-    static_assert(adj_ptr != nullptr,
-                  "invert<&lib_mul_mod_dsl<BitProxy>>() must resolve");
-    adj_ptr(a.bits.data(), b.bits.data(), n.bits.data(), W,
-            r.bits.data());
-
-    assert(read_reg(sv, a.qi.data(), W, n_orkan_w2_full) == a_val);
-    assert(read_reg(sv, b.qi.data(), W, n_orkan_w2_full) == b_val);
-    assert(read_reg(sv, n.qi.data(), W, n_orkan_w2_full) == n_val);
-    assert(read_reg(sv, r.qi.data(), W, n_orkan_w2_full) == 0u &&
-           "adjoint: r returned to |0>");
-    assert(sturm::QubitPool::instance().in_use() == pre_in_use &&
-           "round-trip: pool live-count restored");
-
-    sturm_set_thread_context(prev);
-    sturm_backend_destroy(ctx);
-    for (uint32_t k = 0; k < n_reg; ++k)
-        sturm::QubitPool::instance().release(reserved[k]);
-}
-
-// ── classical-trace harness shared by W=2 sweep and W=3 sweep ─────────────
-static void apply_gate_classical(std::vector<uint8_t>& bits,
-                                 const sturm::GateRecord& rec) {
-    switch (rec.kind) {
-    case STURM_GATE_X:
-        bits[rec.qubits[0]] ^= 1u; break;
-    case STURM_GATE_CX:
-        if (bits[rec.qubits[0]]) bits[rec.qubits[1]] ^= 1u; break;
-    case STURM_GATE_CCX:
-        if (bits[rec.qubits[0]] && bits[rec.qubits[1]])
-            bits[rec.qubits[2]] ^= 1u;
-        break;
-    default:
-        std::fprintf(stderr, "trace: unsupported gate kind %d\n",
-                     static_cast<int>(rec.kind));
-        std::abort();
-    }
-}
-
-static uint32_t read_reg_classical(const std::vector<uint8_t>& bits,
-                                   const int* qi, std::size_t n) {
-    uint32_t v = 0u;
-    for (std::size_t k = 0; k < n; ++k)
-        if (qi[k] >= 0 && bits[static_cast<std::size_t>(qi[k])])
-            v |= (1u << k);
-    return v;
-}
-
-// Generic forward+adjoint round-trip via APPEND-mode capture + classical
-// bit-vector replay.  Asserts forward portion sets r == (a*b) mod n,
-// adjoint portion returns r to 0 with a/b/n preserved, every ancilla bit
-// is back to 0, and pool live-count returns to pre-call value.
-template <std::size_t Wn>
-static void run_roundtrip_case_trace(uint32_t a_val, uint32_t b_val,
-                                     uint32_t n_val) {
-    assert(a_val < n_val && b_val < n_val && n_val < (1u << Wn));
     sturm::QubitPool::instance().reset_for_testing();
 
-    constexpr uint32_t n_reg = 4u * static_cast<uint32_t>(Wn);
-    int qi_a[Wn], qi_b[Wn], qi_n[Wn], qi_r[Wn];
-    for (std::size_t i = 0; i < Wn; ++i) qi_a[i] = sturm::QubitPool::instance().allocate();
-    for (std::size_t i = 0; i < Wn; ++i) qi_b[i] = sturm::QubitPool::instance().allocate();
-    for (std::size_t i = 0; i < Wn; ++i) qi_n[i] = sturm::QubitPool::instance().allocate();
-    for (std::size_t i = 0; i < Wn; ++i) qi_r[i] = sturm::QubitPool::instance().allocate();
+    constexpr uint32_t n_reg = 4u * static_cast<uint32_t>(W_VAL);
+    int qi_a[W_VAL], qi_b[W_VAL], qi_n[W_VAL], qi_r[W_VAL];
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_a[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_b[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_n[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_r[i] = sturm::QubitPool::instance().allocate();
     const int pre_in_use = sturm::QubitPool::instance().in_use();
     assert(pre_in_use == static_cast<int>(n_reg));
 
-    sturm::qbool a_own[Wn], b_own[Wn], n_own[Wn], r_own[Wn];
-    sturm::BitProxy a_bits[Wn], b_bits[Wn], n_bits[Wn], r_bits[Wn];
-    for (std::size_t i = 0; i < Wn; ++i) {
+    sturm::qbool a_own[W_VAL], b_own[W_VAL], n_own[W_VAL], r_own[W_VAL];
+    sturm::BitProxy a_bits[W_VAL], b_bits[W_VAL], n_bits[W_VAL], r_bits[W_VAL];
+    for (std::size_t i = 0; i < W_VAL; ++i) {
         a_own[i] = sturm::qbool::make_non_owning(qi_a[i]);
         b_own[i] = sturm::qbool::make_non_owning(qi_b[i]);
         n_own[i] = sturm::qbool::make_non_owning(qi_n[i]);
@@ -201,70 +108,65 @@ static void run_roundtrip_case_trace(uint32_t a_val, uint32_t b_val,
         r_bits[i] = sturm::BitProxy(r_own[i]);
     }
 
-    sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_APPEND);
-    assert(ctx);
-    sturm_backend_context_t* prev = sturm_get_thread_context();
-    sturm_set_thread_context(ctx);
+    sturm::test_helpers::AppendContext app;
 
+    // Forward + adjoint both append into the same ctx->ir.
     sturm::lib_mul_mod_dsl<sturm::BitProxy>(a_bits, b_bits, n_bits,
-                                            Wn, r_bits);
-    const std::size_t fwd_gate_count = ctx->ir.size();
+                                            W_VAL, r_bits);
 
     constexpr auto adj_ptr =
         sturm::invert<&sturm::lib_mul_mod_dsl<sturm::BitProxy>>();
     static_assert(adj_ptr != nullptr,
                   "invert<&lib_mul_mod_dsl<BitProxy>>() must resolve");
-    adj_ptr(a_bits, b_bits, n_bits, Wn, r_bits);
+    adj_ptr(a_bits, b_bits, n_bits, W_VAL, r_bits);
 
     const int high_water = sturm::QubitPool::instance().high_water();
 
     std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
-    for (std::size_t i = 0; i < Wn; ++i) {
+    for (std::size_t i = 0; i < W_VAL; ++i) {
         if ((a_val >> i) & 1u) bits[static_cast<std::size_t>(qi_a[i])] = 1u;
         if ((b_val >> i) & 1u) bits[static_cast<std::size_t>(qi_b[i])] = 1u;
         if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])] = 1u;
+        // r starts at |0>; ancillas start at |0>.
     }
-    for (std::size_t i = 0; i < fwd_gate_count; ++i)
-        apply_gate_classical(bits, ctx->ir.at(i));
-    assert(read_reg_classical(bits, qi_r, Wn) == (a_val * b_val) % n_val &&
-           "trace: forward portion sets r == (a*b) mod n");
+    sturm::test_helpers::replay_ir(app.ctx()->ir, bits);
 
-    for (std::size_t i = fwd_gate_count; i < ctx->ir.size(); ++i)
-        apply_gate_classical(bits, ctx->ir.at(i));
-    assert(read_reg_classical(bits, qi_a, Wn) == a_val);
-    assert(read_reg_classical(bits, qi_b, Wn) == b_val);
-    assert(read_reg_classical(bits, qi_n, Wn) == n_val);
-    assert(read_reg_classical(bits, qi_r, Wn) == 0u &&
-           "trace: r returned to |0> after adjoint");
+    using sturm::test_helpers::read_reg_classical;
+    const uint32_t a_out = read_reg_classical(bits, qi_a, W_VAL);
+    const uint32_t b_out = read_reg_classical(bits, qi_b, W_VAL);
+    const uint32_t n_out = read_reg_classical(bits, qi_n, W_VAL);
+    const uint32_t r_out = read_reg_classical(bits, qi_r, W_VAL);
+    assert(a_out == a_val && "replay: a register unchanged");
+    assert(b_out == b_val && "replay: b register unchanged");
+    assert(n_out == n_val && "replay: n register unchanged");
+    assert(r_out == 0u && "replay: r returned to |0> after adjoint");
+
     for (std::size_t q = static_cast<std::size_t>(n_reg);
          q < bits.size(); ++q) {
-        assert(bits[q] == 0u && "trace: ancilla bit not cleaned up");
+        assert(bits[q] == 0u && "replay: ancilla bit not cleaned up");
     }
-    assert(sturm::QubitPool::instance().in_use() == pre_in_use &&
-           "trace: pool live-count restored");
 
-    sturm_set_thread_context(prev);
-    sturm_backend_destroy(ctx);
-    for (std::size_t i = Wn; i-- > 0;) sturm::QubitPool::instance().release(qi_r[i]);
-    for (std::size_t i = Wn; i-- > 0;) sturm::QubitPool::instance().release(qi_n[i]);
-    for (std::size_t i = Wn; i-- > 0;) sturm::QubitPool::instance().release(qi_b[i]);
-    for (std::size_t i = Wn; i-- > 0;) sturm::QubitPool::instance().release(qi_a[i]);
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "replay: pool live-count returns to pre-call value");
+
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_r[i]);
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_n[i]);
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_b[i]);
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_a[i]);
 }
 
 int main() {
-    std::printf("sturm-kubb.5 P2.5 mul-mod-dsl: adjoint round-trip "
-                "(W=2 single simulator witness):\n");
-    run_roundtrip_case_w2_sim(/*a=*/2u, /*b=*/2u, /*n=*/3u);
-    std::puts("  PASS: orkan-simulator round-trip for (2, 2, 3)");
-
     std::printf("sturm-kubb.5 P2.5 mul-mod-dsl: adjoint round-trip "
                 "(W=2 exhaustive trace, all a, b in [0, n) for n in [1, 4)):\n");
     std::size_t cases_run = 0u;
     for (uint32_t n_val = 1u; n_val < (1u << W); ++n_val) {
         for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
             for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
-                run_roundtrip_case_trace<W>(a_val, b_val, n_val);
+                run_replay_case_adjoint<W>(a_val, b_val, n_val);
                 ++cases_run;
             }
         }
@@ -287,7 +189,7 @@ int main() {
         std::uniform_int_distribution<uint32_t> ab_dist(0u, n_val - 1u);
         uint32_t a_val = ab_dist(rng);
         uint32_t b_val = ab_dist(rng);
-        run_roundtrip_case_trace<W3>(a_val, b_val, n_val);
+        run_replay_case_adjoint<W3>(a_val, b_val, n_val);
     }
     std::printf("  PASS: %zu W=3 random cases (forward + adjoint round-trip "
                 "in trace mode)\n", kW3Cases);

@@ -50,6 +50,8 @@
 #include "sturm/backend/ir.hpp"
 #include "sturm/core/gate_kind.h"
 
+#include "classical_replay.hpp"  // sturm-scin: shared APPEND+replay helpers
+
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -271,131 +273,24 @@ static void run_xor_into_case(uint32_t x_val, uint32_t n_val) {
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
-// ── Beat sturm-wdas.4 — W=3 random sweep harness ─────────────────────────
-// W=3 peaks at ~16-20 live qubits (4 input + ~4 ancillas + transients);
-// stays inside orkan's 30-qubit ceiling.  We bypass kMaxQubits=17 cap by
-// calling `orkan::allocate(bridge.state(), n_orkan_w3)` directly (matches
-// the W=3 sweep workaround in test_add_mod_dsl.cpp).
-static constexpr std::size_t W3        = 3u;
-static constexpr uint32_t    n_orkan_w3 = 21u;
-
-struct RegX3 {
-    std::array<int, W3 + 1u>             qi;
-    std::array<sturm::qbool, W3 + 1u>    owners;
-    std::array<sturm::BitProxy, W3 + 1u> bits;
-};
-
-struct RegN3 {
-    std::array<int, W3>              qi;
-    std::array<sturm::qbool, W3>     owners;
-    std::array<sturm::BitProxy, W3>  bits;
-};
-
-static RegX3 make_reg_x3(int base, uint32_t val, orkan::state_t& sv) {
-    RegX3 r;
-    for (std::size_t i = 0; i < W3 + 1u; ++i) {
-        r.qi[i] = base + static_cast<int>(i);
-        if (i < W3 && ((val >> i) & 1u))
-            orkan::apply_x(sv, static_cast<uint32_t>(r.qi[i]));
-    }
-    for (std::size_t i = 0; i < W3 + 1u; ++i) {
-        r.owners[i] = sturm::qbool::make_non_owning(r.qi[i]);
-        r.bits[i]   = sturm::BitProxy(r.owners[i]);
-    }
-    return r;
-}
-
-static RegN3 make_reg_n3(int base, uint32_t val, orkan::state_t& sv) {
-    RegN3 r;
-    for (std::size_t i = 0; i < W3; ++i) {
-        r.qi[i] = base + static_cast<int>(i);
-        if ((val >> i) & 1u) orkan::apply_x(sv, static_cast<uint32_t>(r.qi[i]));
-    }
-    for (std::size_t i = 0; i < W3; ++i) {
-        r.owners[i] = sturm::qbool::make_non_owning(r.qi[i]);
-        r.bits[i]   = sturm::BitProxy(r.owners[i]);
-    }
-    return r;
-}
-
-// W=3 driver — mirrors run_classical_case but sized for W=3 and uses the
-// bypass-cap simulator.  Asserts x_bits == (2·x) mod n, n unchanged,
-// lt_flag_out == (2x_orig < n_value), pool live-count clean.
-static void run_classical_case_w3(uint32_t x_val, uint32_t n_val) {
-    assert(x_val < n_val && n_val < (1u << W3));
-    sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = (W3 + 1u) + W3 + 1u;
-    int reserved[n_reg];
-    for (uint32_t k = 0; k < n_reg; ++k)
-        reserved[k] = sturm::QubitPool::instance().allocate();
-    const int pre_in_use = sturm::QubitPool::instance().in_use();
-    sturm::OrkanBridge bridge;
-    orkan::allocate(bridge.state(), n_orkan_w3);
-    sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_SIMULATE);
-    assert(ctx);
-    ctx->orkan_state_ptr = &bridge;
-    sturm_backend_context_t* prev = sturm_get_thread_context();
-    sturm_set_thread_context(ctx);
-    orkan::state_t& sv = bridge.state();
-    RegX3 x  = make_reg_x3(0, x_val, sv);
-    RegN3 n  = make_reg_n3(static_cast<int>(W3 + 1u), n_val, sv);
-    RegLT lt = make_reg_lt(static_cast<int>(W3 + 1u + W3));
-    sturm::lib_double_mod_dsl<sturm::BitProxy>(x.bits.data(), n.bits.data(),
-                                                W3, lt.bit);
-    const uint32_t expect_x  = (2u * x_val) % n_val;
-    const uint32_t expect_lt = (2u * x_val < n_val) ? 1u : 0u;
-    assert(read_reg(sv, x.qi.data(), W3, n_orkan_w3) == expect_x
-           && "W=3: x_bits[0..W-1] == (2x) mod n");
-    assert(read_reg(sv, x.qi.data() + W3, 1u, n_orkan_w3) == 0u
-           && "W=3: x_bits[W] returned to |0>");
-    assert(read_reg(sv, n.qi.data(), W3, n_orkan_w3) == n_val
-           && "W=3: n_bits unchanged");
-    assert(read_reg(sv, &lt.qi, 1u, n_orkan_w3) == expect_lt
-           && "W=3: lt_flag_out == (2x_orig < n_value)");
-    assert(sturm::QubitPool::instance().in_use() == pre_in_use
-           && "W=3: pool live-count returns to pre-call value");
-    sturm_set_thread_context(prev);
-    sturm_backend_destroy(ctx);
-    for (uint32_t k = 0; k < n_reg; ++k)
-        sturm::QubitPool::instance().release(reserved[k]);
-}
+// ── W=3 sweep widths now share the APPEND+replay trace driver ────────────
+// sturm-scin: the W=3 SIMULATE sweep driver (run_classical_case_w3) and its
+// supporting Reg structs / orkan-allocate helpers have been retired in
+// favour of `run_double_mod_trace_case<W3>` defined below.  The W=2
+// SIMULATE smoke (run_classical_case) and the n==0 / XOR-into SIMULATE
+// smokes remain at n_orkan=17 for end-to-end statevector coverage.
+static constexpr std::size_t W3 = 3u;
 
 // ── classical-trace harness (APPEND mode + bit-vector replay) ────────────────
 // sturm-4oot.2: even-n random sweeps for W=4, W=5 land too far above the
 // orkan 30-qubit ceiling for the simulator harness, so we drive the
 // primitive in APPEND mode and replay the resulting IR bit-vector to
-// verify the classical post-conditions.  This mirrors the trace harness
-// in test_mul_mod_dsl_oneshot.cpp (sturm-4oot.4).  `lib_double_mod_dsl`
+// verify the classical post-conditions.  Mirrors the trace harness in
+// test_mul_mod_dsl_oneshot.cpp (sturm-4oot.4).  `lib_double_mod_dsl`
 // emits only X / CX / CCX gates (it composes lib_add_dsl primitives,
-// CNOT-based bit moves, and emit_CCX_lifted MAJ/UMA bodies), so the
-// switch is exhaustive over the gate kinds the algorithm produces.
-static void apply_gate_classical(std::vector<uint8_t>& bits,
-                                 const sturm::GateRecord& rec) {
-    switch (rec.kind) {
-    case STURM_GATE_X:
-        bits[rec.qubits[0]] ^= 1u; break;
-    case STURM_GATE_CX:
-        if (bits[rec.qubits[0]]) bits[rec.qubits[1]] ^= 1u; break;
-    case STURM_GATE_CCX:
-        if (bits[rec.qubits[0]] && bits[rec.qubits[1]])
-            bits[rec.qubits[2]] ^= 1u;
-        break;
-    default:
-        std::fprintf(stderr, "trace: unsupported gate kind %d\n",
-                     static_cast<int>(rec.kind));
-        std::abort();
-    }
-}
-
-static uint32_t read_reg_classical(const std::vector<uint8_t>& bits,
-                                   const int* qi, std::size_t n) {
-    uint32_t v = 0u;
-    for (std::size_t k = 0; k < n; ++k)
-        if (qi[k] >= 0 && bits[static_cast<std::size_t>(qi[k])])
-            v |= (1u << k);
-    return v;
-}
+// CNOT-based bit moves, and emit_CCX_lifted MAJ/UMA bodies); the shared
+// apply_gate_classical helper in tests/lib/classical_replay.hpp aborts
+// loudly on any other kind.
 
 // Run lib_double_mod_dsl<Wn> for one (x, n) input via the trace harness.
 // Asserts x_bits == (2x) mod n, x_bits[Wn]==0, n preserved, lt_flag_out ==
@@ -448,11 +343,11 @@ static void run_double_mod_trace_case(uint32_t x_val, uint32_t n_val) {
         if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])] = 1u;
     }
     // x_bits[Wn] (overflow slot), lt_bit start |0> (already zero).
-    for (std::size_t i = 0; i < ctx->ir.size(); ++i)
-        apply_gate_classical(bits, ctx->ir.at(i));
+    sturm::test_helpers::replay_ir(ctx->ir, bits);
 
     const uint32_t expect_x  = (2u * x_val) % n_val;
     const uint32_t expect_lt = (2u * x_val < n_val) ? 1u : 0u;
+    using sturm::test_helpers::read_reg_classical;
     assert(read_reg_classical(bits, qi_x, Wn) == expect_x
            && "trace: x_bits[0..Wn-1] == (2x) mod n");
     assert(bits[static_cast<std::size_t>(qi_x[Wn])] == 0u
@@ -530,7 +425,7 @@ int main() {
     std::size_t cases_w3_even = 0u;
     for (uint32_t n_val : {2u, 4u, 6u}) {
         for (uint32_t x_val = 0u; x_val < n_val; ++x_val) {
-            run_classical_case_w3(x_val, n_val);
+            run_double_mod_trace_case<W3>(x_val, n_val);
             ++cases_w3_even;
         }
     }
@@ -553,7 +448,7 @@ int main() {
         uint32_t n_val = kOddNs[n_idx_dist(rng)];
         std::uniform_int_distribution<uint32_t> x_dist(0u, n_val - 1u);
         uint32_t x_val = x_dist(rng);
-        run_classical_case_w3(x_val, n_val);
+        run_double_mod_trace_case<W3>(x_val, n_val);
     }
     std::printf("  PASS: %zu W=3 random cases (2 · x) mod n + lt_flag_out "
                 "match classical reference\n", kW3Cases);

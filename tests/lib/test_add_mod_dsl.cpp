@@ -33,6 +33,8 @@
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
 
+#include "classical_replay.hpp"  // sturm-scin: APPEND+replay helper
+
 #include <array>
 #include <cassert>
 #include <cmath>
@@ -40,6 +42,7 @@
 #include <cstdio>
 #include <cstdint>
 #include <random>
+#include <vector>
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
@@ -174,75 +177,106 @@ static void run_classical_case(uint32_t a_val, uint32_t b_val,
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
-// ── Beat 1.4 — W=3 random sweep harness ──────────────────────────────────
-// W=3 peaks at 21 live qubits, exceeding OrkanBridge::allocate's
-// kMaxQubits=17 cap; Beat 1.4 calls orkan::allocate directly on the
-// bridge's state to bypass the cap (orkan stub permits up to 30 qubits).
-static constexpr std::size_t W3        = 3u;
-static constexpr uint32_t    n_orkan_w3 = 21u;
+// ── Beats 1.3 / 1.4 — APPEND+classical-replay driver (sturm-scin) ────────
+//
+// Previously: Beat 1.3 ran the W=2 exhaustive sweep (14 cases) under
+// STURM_MODE_SIMULATE with n_orkan=17, and Beat 1.4 ran the W=3 random
+// sweep (50 cases) under STURM_MODE_SIMULATE with n_orkan_w3=21
+// (2^21 ≈ 2M amplitudes per case + per-case read_reg scan).  Aggregate
+// runtime: ~180 s.
+//
+// Now: both sweeps capture the algorithm's X / CX / CCX gate stream in
+// STURM_MODE_APPEND and replay it as a classical bit-flip program over
+// a `std::vector<uint8_t>` sized to QubitPool::high_water().  Per-case
+// cost drops to O(|IR|), aggregate to a few ms.  The SIMULATE-mode
+// smoke for the algorithm at W=2 is retained via `run_classical_case`
+// (Beat 1.2).
+//
+// Asserts (same contract as the prior SIMULATE-based drivers):
+//   - r register holds (a + b) mod n,
+//   - a, b, n registers unchanged (input reversibility),
+//   - every ancilla bit (qubits beyond the 4*W_VAL input slots) is back
+//     to 0 (algorithm cleans up after itself),
+//   - QubitPool::in_use() returns to its pre-call value (no leaked
+//     ancillas).
 
-struct Reg3 {
-    std::array<int, W3>             qi;
-    std::array<sturm::qbool, W3>    owners;
-    std::array<sturm::BitProxy, W3> bits;
-};
+static constexpr std::size_t W3 = 3u;
 
-static Reg3 make_reg3(int base, uint32_t val, orkan::state_t& sv) {
-    Reg3 r;
-    for (std::size_t i = 0; i < W3; ++i) {
-        r.qi[i] = base + static_cast<int>(i);
-        if ((val >> i) & 1u) orkan::apply_x(sv, static_cast<uint32_t>(r.qi[i]));
-    }
-    for (std::size_t i = 0; i < W3; ++i) {
-        r.owners[i] = sturm::qbool::make_non_owning(r.qi[i]);
-        r.bits[i]   = sturm::BitProxy(r.owners[i]);
-    }
-    return r;
-}
+template <std::size_t W_VAL>
+static void run_replay_case(uint32_t a_val, uint32_t b_val,
+                            uint32_t n_val) {
+    assert(a_val < n_val && b_val < n_val && n_val < (1u << W_VAL));
 
-// Beat 1.4 driver — mirrors run_classical_case but sized for W=3 and uses
-// the bypass-cap simulator (orkan::allocate called directly on the bridge
-// state).  Asserts r==(a+b) mod n, inputs unchanged, pool live-count clean.
-static void run_classical_case_w3(uint32_t a_val, uint32_t b_val,
-                                  uint32_t n_val) {
-    assert(a_val < n_val && b_val < n_val && n_val < (1u << W3));
     sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = 4u * static_cast<uint32_t>(W3);
-    int reserved[n_reg];
-    for (uint32_t k = 0; k < n_reg; ++k)
-        reserved[k] = sturm::QubitPool::instance().allocate();
+
+    constexpr uint32_t n_reg = 4u * static_cast<uint32_t>(W_VAL);
+    int qi_a[W_VAL], qi_b[W_VAL], qi_n[W_VAL], qi_r[W_VAL];
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_a[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_b[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_n[i] = sturm::QubitPool::instance().allocate();
+    for (std::size_t i = 0; i < W_VAL; ++i)
+        qi_r[i] = sturm::QubitPool::instance().allocate();
     const int pre_in_use = sturm::QubitPool::instance().in_use();
-    sturm::OrkanBridge bridge;
-    orkan::allocate(bridge.state(), n_orkan_w3);  // bypass kMaxQubits=17 cap
-    sturm_backend_context_t* ctx =
-        sturm_backend_create(STURM_MODE_SIMULATE);
-    assert(ctx);
-    ctx->orkan_state_ptr = &bridge;
-    sturm_backend_context_t* prev = sturm_get_thread_context();
-    sturm_set_thread_context(ctx);
-    orkan::state_t& sv = bridge.state();
-    Reg3 a = make_reg3(0,                          a_val, sv);
-    Reg3 b = make_reg3(static_cast<int>(W3),       b_val, sv);
-    Reg3 n = make_reg3(static_cast<int>(2u * W3),  n_val, sv);
-    Reg3 r = make_reg3(static_cast<int>(3u * W3),  0u,    sv);
-    sturm::lib_add_mod_dsl<sturm::BitProxy>(a.bits.data(), b.bits.data(),
-                                            n.bits.data(), W3,
-                                            r.bits.data());
+    assert(pre_in_use == static_cast<int>(n_reg));
+
+    sturm::qbool a_own[W_VAL], b_own[W_VAL], n_own[W_VAL], r_own[W_VAL];
+    sturm::BitProxy a_bits[W_VAL], b_bits[W_VAL], n_bits[W_VAL], r_bits[W_VAL];
+    for (std::size_t i = 0; i < W_VAL; ++i) {
+        a_own[i] = sturm::qbool::make_non_owning(qi_a[i]);
+        b_own[i] = sturm::qbool::make_non_owning(qi_b[i]);
+        n_own[i] = sturm::qbool::make_non_owning(qi_n[i]);
+        r_own[i] = sturm::qbool::make_non_owning(qi_r[i]);
+        a_bits[i] = sturm::BitProxy(a_own[i]);
+        b_bits[i] = sturm::BitProxy(b_own[i]);
+        n_bits[i] = sturm::BitProxy(n_own[i]);
+        r_bits[i] = sturm::BitProxy(r_own[i]);
+    }
+
+    sturm::test_helpers::AppendContext app;
+
+    sturm::lib_add_mod_dsl<sturm::BitProxy>(a_bits, b_bits, n_bits,
+                                            W_VAL, r_bits);
+
+    const int high_water = sturm::QubitPool::instance().high_water();
+
+    std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
+    for (std::size_t i = 0; i < W_VAL; ++i) {
+        if ((a_val >> i) & 1u) bits[static_cast<std::size_t>(qi_a[i])] = 1u;
+        if ((b_val >> i) & 1u) bits[static_cast<std::size_t>(qi_b[i])] = 1u;
+        if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(qi_n[i])] = 1u;
+    }
+    sturm::test_helpers::replay_ir(app.ctx()->ir, bits);
+
     const uint32_t expect_r = (a_val + b_val) % n_val;
-    assert(read_reg(sv, a.qi.data(), W3, n_orkan_w3) == a_val
-           && "W=3: a unchanged");
-    assert(read_reg(sv, b.qi.data(), W3, n_orkan_w3) == b_val
-           && "W=3: b unchanged");
-    assert(read_reg(sv, n.qi.data(), W3, n_orkan_w3) == n_val
-           && "W=3: n unchanged");
-    assert(read_reg(sv, r.qi.data(), W3, n_orkan_w3) == expect_r
-           && "W=3: r == (a+b) mod n");
+    using sturm::test_helpers::read_reg_classical;
+    const uint32_t a_out = read_reg_classical(bits, qi_a, W_VAL);
+    const uint32_t b_out = read_reg_classical(bits, qi_b, W_VAL);
+    const uint32_t n_out = read_reg_classical(bits, qi_n, W_VAL);
+    const uint32_t r_out = read_reg_classical(bits, qi_r, W_VAL);
+    assert(a_out == a_val && "replay: a register unchanged");
+    assert(b_out == b_val && "replay: b register unchanged");
+    assert(n_out == n_val && "replay: n register unchanged");
+    assert(r_out == expect_r && "replay: r == (a+b) mod n");
+
+    for (std::size_t q = static_cast<std::size_t>(n_reg);
+         q < bits.size(); ++q) {
+        assert(bits[q] == 0u && "replay: ancilla bit not cleaned up");
+    }
+
     assert(sturm::QubitPool::instance().in_use() == pre_in_use
-           && "W=3: pool live-count returns to pre-call value");
-    sturm_set_thread_context(prev);
-    sturm_backend_destroy(ctx);
-    for (uint32_t k = 0; k < n_reg; ++k)
-        sturm::QubitPool::instance().release(reserved[k]);
+           && "replay: pool live-count returns to pre-call value");
+
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_r[i]);
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_n[i]);
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_b[i]);
+    for (std::size_t i = W_VAL; i-- > 0;)
+        sturm::QubitPool::instance().release(qi_a[i]);
 }
 
 int main() {
@@ -259,12 +293,12 @@ int main() {
     std::puts("  PASS: (1 + 1) mod 3 == 2");
 
     std::printf("sturm-yh3d.3 P1.3 add-mod-dsl: W=2 exhaustive sweep "
-                "(all a, b in [0, n) for n in [1, 4)):\n");
+                "(all a, b in [0, n) for n in [1, 4), APPEND+replay):\n");
     std::size_t cases_run = 0u;
     for (uint32_t n_val = 1u; n_val < (1u << W); ++n_val) {
         for (uint32_t a_val = 0u; a_val < n_val; ++a_val) {
             for (uint32_t b_val = 0u; b_val < n_val; ++b_val) {
-                run_classical_case(a_val, b_val, n_val);
+                run_replay_case<W>(a_val, b_val, n_val);
                 ++cases_run;
             }
         }
@@ -279,7 +313,7 @@ int main() {
     constexpr uint32_t    kW3Seed  = 42u;  // plan §12 risk mitigation
     constexpr std::size_t kW3Cases = 50u;
     std::printf("sturm-yh3d.4 P1.4 add-mod-dsl: W=3 random sweep "
-                "(%zu cases, seed=%u, n in [1, 8)):\n",
+                "(%zu cases, seed=%u, n in [1, 8), APPEND+replay):\n",
                 kW3Cases, kW3Seed);
     std::mt19937 rng(kW3Seed);
     std::uniform_int_distribution<uint32_t> n_dist(1u, (1u << W3) - 1u);
@@ -288,7 +322,7 @@ int main() {
         std::uniform_int_distribution<uint32_t> ab_dist(0u, n_val - 1u);
         uint32_t a_val = ab_dist(rng);
         uint32_t b_val = ab_dist(rng);
-        run_classical_case_w3(a_val, b_val, n_val);
+        run_replay_case<W3>(a_val, b_val, n_val);
     }
     std::printf("  PASS: %zu W=3 random cases (a + b) mod n matches "
                 "classical reference\n", kW3Cases);
