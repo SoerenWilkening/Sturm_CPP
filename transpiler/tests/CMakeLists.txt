@@ -25,7 +25,159 @@ cmake_minimum_required(VERSION 3.16)
 # saves.
 include(${CMAKE_SOURCE_DIR}/cmake/SturmTranspilePch.cmake)
 
+# ── sturm-hbwo: shared OBJECT library for transpiler/src TUs ─────────────────
+# Bundles every `transpiler/src/*.cpp` that is safe to link into every
+# test target (per the sturm-sfkt audit) into a single OBJECT library.
+# Each consumer test executable replaces its per-target enumeration of
+# `${CMAKE_CURRENT_SOURCE_DIR}/../src/*.cpp` files with
+# `$<TARGET_OBJECTS:sturm_transpile_test_objs>`, eliminating the
+# ~150 redundant compiles documented in sturm-sfkt and sturm-hbwo.
+#
+# Members (67 TUs)
+# ----------------
+# Every `transpiler/src/*.cpp` EXCEPT the four hold-outs listed below.
+# See sturm-sfkt §5 for the full per-TU rationale.
+#
+# Hold-outs (NOT in this library)
+# -------------------------------
+#   - main.cpp                         — standalone-binary entry point;
+#                                        registers cl::opt globals + a
+#                                        second `int main`. Never linked
+#                                        into a test.
+#   - plugin.cpp                       — clang plugin entry; links
+#                                        against the host's
+#                                        FrontendPluginRegistry (sturm-yial
+#                                        host-clang invariant).
+#   - entry_point_parsed_attr_info.cpp — plugin-only
+#                                        ParsedAttrInfoRegistry::Add<>
+#                                        registrar (same invariant).
+#   - pm4_link_demo_registrar.cpp      — option-gated link-time-path
+#                                        probe; bundling defeats the
+#                                        STURM_PM4_LINK_DEMO opt-in
+#                                        semantics. Stays in
+#                                        pm4_smoke_linktime's own list.
+#
+# One test target also stays on its custom source list:
+#   - test_plugin_api_compile          — must NOT link
+#                                        plugin_registry.cpp. Bundling
+#                                        would silently rescue a future
+#                                        broken inline in plugin_api.hpp.
+#                                        See the dedicated comment +
+#                                        `add_executable(test_plugin_api_
+#                                        compile ...)` block lower in
+#                                        this file.
+#
+# Compile configuration
+# ---------------------
+# Matches every consuming test target today: includes ../include,
+# ../src, LLVM/Clang include dirs, c++20, ${LLVM_DEFINITIONS}, and
+# -fno-rtti when LLVM_ENABLE_RTTI is off. PCH reuse via
+# `sturm_use_transpile_pch` (mirroring sturm-bs8s' helper) applies
+# `-fPIC` and `target_precompile_headers(... REUSE_FROM sturm-transpile)`.
+#
+# STURM_MODULAR_POW propagation
+# -----------------------------
+# Two TUs (`matcher_modular_op.cpp` + `matcher_modular_pow_mod.cpp`)
+# carry `#ifdef STURM_MODULAR_POW` blocks. Today the define is added
+# per-source via `set_source_files_properties` on the two test targets
+# that need it. With the OBJECT library the source compile is owned by
+# this target, so we apply the define at target scope when
+# `STURM_MODULAR_POW=ON`. The 65 other TUs do not reference the macro;
+# propagating it is observationally a no-op for them. The
+# `cmake_modular_pow_flag` ctest buckets compile_commands entries by
+# the source `file:` path (matches `/transpiler/src/`), so the
+# OBJECT-library compiles register as driver hits, not stray hits.
+add_library(sturm_transpile_test_objs OBJECT
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/loop_reversal.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_nested_rewrite.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/main_lifecycle_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dropped_quantum_return.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_peephole_reorder.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_implicit_warn.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_oos.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_quantum_to_classical_cond.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_drive.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_validate.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_rotation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_freevar.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_lift.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_operand_mutation.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/transpile_consumer.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_check.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_readset.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+)
+target_include_directories(sturm_transpile_test_objs PUBLIC
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+target_compile_features(sturm_transpile_test_objs PUBLIC cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_OBJ NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(sturm_transpile_test_objs PUBLIC
+    ${LLVM_DEFS_LIST_OBJ})
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(sturm_transpile_test_objs PRIVATE -fno-rtti)
+endif()
+if(STURM_MODULAR_POW)
+    target_compile_definitions(sturm_transpile_test_objs PRIVATE
+        STURM_MODULAR_POW)
+endif()
+sturm_use_transpile_pch(sturm_transpile_test_objs)
+
 # Shared io helper sources, compiled into each test binary that needs them.
+# Used by `test_transpile_io`, which deliberately does NOT link the
+# OBJECT library (it has no LLVM/Clang dependency and stays minimal).
 set(STURM_TRANSPILE_IO_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
 )
@@ -121,7 +273,7 @@ set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 # cases pin each new method as firing exactly one Error-severity report.
 add_executable(test_transpile_diag_context
     test_diag_context.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_transpile_diag_context PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -142,8 +294,25 @@ if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
         ${STURM_LIBLLVM}
     )
 else()
+    # sturm-hbwo: this test now links the shared
+    # `sturm_transpile_test_objs` OBJECT library, which carries the
+    # full transpiler/src TU set. The static fallback therefore needs
+    # the complete LibTooling component stack (not just clangBasic) so
+    # the OBJECT library's transitive references resolve at link time.
     target_link_libraries(test_transpile_diag_context PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
         clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
     )
     llvm_map_components_to_libnames(LLVM_LIBS_DIAG support)
     target_link_libraries(test_transpile_diag_context PRIVATE
@@ -173,7 +342,7 @@ sturm_use_transpile_pch(test_transpile_diag_context)
 # registry (P-B), or the diag context (P-D).
 add_executable(test_reversible_attribute
     test_reversible_attribute.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_reversible_attribute PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -226,7 +395,7 @@ sturm_use_transpile_pch(test_reversible_attribute)
 # detection TU is linked, driven via a direct ASTConsumer pipeline.
 add_executable(test_entry_point_attribute
     test_entry_point_attribute.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_entry_point_attribute PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -279,8 +448,7 @@ sturm_use_transpile_pch(test_entry_point_attribute)
 # split, macro gates, and the gtest-filename relaxation.
 add_executable(test_matcher_main_lifecycle_entry_point
     test_matcher_main_lifecycle_entry_point.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_main_lifecycle_entry_point PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -335,9 +503,7 @@ sturm_use_transpile_pch(test_matcher_main_lifecycle_entry_point)
 # substrings.
 add_executable(test_main_lifecycle_emitter_entry_point
     test_main_lifecycle_emitter_entry_point.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/main_lifecycle_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_main_lifecycle_emitter_entry_point PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -408,10 +574,7 @@ sturm_use_transpile_pch(test_main_lifecycle_emitter_entry_point)
 # shape every other direct-ASTConsumer test in this file uses.
 add_executable(test_matcher_reversible_validate
     test_matcher_reversible_validate.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_validate.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_reversible_validate PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -486,9 +649,7 @@ sturm_use_transpile_pch(test_matcher_reversible_validate)
 # ASTConsumer test in this file uses.
 add_executable(test_matcher_reversible_signature
     test_matcher_reversible_signature.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_reversible_signature PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -553,8 +714,7 @@ sturm_use_transpile_pch(test_matcher_reversible_signature)
 # register under the `transpiler` ctest label.
 add_executable(test_synthesis_registry
     test_synthesis_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_synthesis_registry PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -576,10 +736,25 @@ if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
         ${STURM_LIBLLVM}
     )
 else()
+    # sturm-hbwo: bumped to the full LibTooling stack because the
+    # OBJECT library this test now links carries transitive
+    # references (matchers / consumer / rewriter) that the previous
+    # minimal `clangASTMatchers + clangBasic + clangAST` set cannot
+    # resolve on a static-only LLVM install.
     target_link_libraries(test_synthesis_registry PRIVATE
+        clangTooling
         clangASTMatchers
+        clangFrontend
+        clangRewrite
         clangBasic
         clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
     )
     llvm_map_components_to_libnames(LLVM_LIBS_SYN_REG support)
     target_link_libraries(test_synthesis_registry PRIVATE
@@ -611,8 +786,7 @@ sturm_use_transpile_pch(test_synthesis_registry)
 # ASTConsumer test in this file uses.
 add_executable(test_return_to_out_param
     test_return_to_out_param.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_return_to_out_param PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -680,18 +854,7 @@ sturm_use_transpile_pch(test_return_to_out_param)
 # test in this file uses.
 add_executable(test_adjoint_emitter
     test_adjoint_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
-    # sturm-v0ur (LO-2 wiring): `render_uncompute()` now lives in its
-    # own TU; link it for the adjoint_emitter test too.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_adjoint_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -753,8 +916,7 @@ sturm_use_transpile_pch(test_adjoint_emitter)
 # shape every other direct-ASTConsumer test in this file uses.
 add_executable(test_auto_register_emitter
     test_auto_register_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_auto_register_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -825,24 +987,7 @@ sturm_use_transpile_pch(test_auto_register_emitter)
 # other direct-ASTConsumer test in this file uses.
 add_executable(test_matcher_reversible_drive
     test_matcher_reversible_drive.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_drive.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_validate.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_reversible_drive PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -905,7 +1050,7 @@ sturm_use_transpile_pch(test_matcher_reversible_drive)
 # every other direct-ASTConsumer test in this file uses.
 add_executable(test_loop_reversal
     test_loop_reversal.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/loop_reversal.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_loop_reversal PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -990,8 +1135,7 @@ set_tests_properties(test_plugin_api_compile PROPERTIES LABELS "transpiler")
 # whose ctor/dtor live in that library.
 add_executable(test_plugin_registry
     test_plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_plugin_registry PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1006,9 +1150,12 @@ separate_arguments(LLVM_DEFS_LIST_PLUGIN_REG NATIVE_COMMAND
     "${LLVM_DEFINITIONS}")
 target_compile_definitions(test_plugin_registry PRIVATE
     ${LLVM_DEFS_LIST_PLUGIN_REG})
-# MatchFinder's ctor/dtor live in libclangASTMatchers; we only need the
-# minimum to construct + destruct one. Mirror the shared-vs-static split
-# used elsewhere in this file.
+# MatchFinder's ctor/dtor live in libclangASTMatchers; the test itself
+# only needs the minimum to construct + destruct one, but sturm-hbwo
+# pulls in the full `sturm_transpile_test_objs` OBJECT library, whose
+# transitive matcher / consumer / rewriter references demand the
+# complete LibTooling component stack on a static-only LLVM install.
+# Mirror the shared-vs-static split used elsewhere in this file.
 if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
     target_link_libraries(test_plugin_registry PRIVATE
         ${STURM_LIBCLANG_CPP}
@@ -1016,9 +1163,19 @@ if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
     )
 else()
     target_link_libraries(test_plugin_registry PRIVATE
+        clangTooling
         clangASTMatchers
+        clangFrontend
+        clangRewrite
         clangBasic
         clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
     )
     llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN_REG support)
     target_link_libraries(test_plugin_registry PRIVATE
@@ -1044,8 +1201,7 @@ sturm_use_transpile_pch(test_plugin_registry)
 add_executable(test_plugin_demo
     test_plugin_demo.cpp
     ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_plugin_demo PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1070,8 +1226,24 @@ if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
         ${STURM_LIBLLVM}
     )
 else()
+    # sturm-hbwo: bumped to the full LibTooling stack because the
+    # `sturm_transpile_test_objs` OBJECT library this test now links
+    # carries transitive references that the previous minimal
+    # `clangBasic` set cannot resolve on a static-only LLVM install.
     target_link_libraries(test_plugin_demo PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
         clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
     )
     llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN_DEMO support)
     target_link_libraries(test_plugin_demo PRIVATE
@@ -1098,9 +1270,7 @@ sturm_use_transpile_pch(test_plugin_demo)
 # plugin_registry.cpp for the Registry methods.
 add_executable(test_pm4_dogfood_registry
     test_pm4_dogfood_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_pm4_dogfood_registry PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1154,21 +1324,7 @@ sturm_use_transpile_pch(test_pm4_dogfood_registry)
 # loop.
 add_executable(test_transpile_uncompute_pass
     test_uncompute_pass.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
-    # sturm-v0ur (LO-2 wiring): per-op renderer hoisted out of
-    # `uncompute_pass.cpp` so that file stays under the plan §9
-    # 600-LoC budget. The unit-test still consumes the renderer via
-    # the `render_uncompute()` symbol (declared in the same header),
-    # so we link the new TU here too.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    # PM4-3: `uncompute_pass.cpp` now calls into the plugin Registry via
-    # `find_render_fn(kind_id)` when rendering a `QOpKind::PLUGIN` op.
-    # Link `plugin_registry.cpp` so the Registry method bodies resolve at
-    # link time. The synthesize-with-PLUGIN test cases in this file
-    # construct a real Registry and call `register_op` on it.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_transpile_uncompute_pass PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1196,8 +1352,24 @@ if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
         ${STURM_LIBLLVM}
     )
 else()
+    # sturm-hbwo: bumped to the full LibTooling stack because the
+    # `sturm_transpile_test_objs` OBJECT library this test now links
+    # carries transitive references that the previous minimal
+    # `clangBasic` set cannot resolve on a static-only LLVM install.
     target_link_libraries(test_transpile_uncompute_pass PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
         clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
     )
     llvm_map_components_to_libnames(LLVM_LIBS_UNCOMPUTE support)
     target_link_libraries(test_transpile_uncompute_pass PRIVATE
@@ -1234,8 +1406,7 @@ sturm_use_transpile_pch(test_transpile_uncompute_pass)
 # Registry, the matcher TUs, or the uncompute pass.
 add_executable(test_alias_footprint
     test_alias_footprint.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_alias_footprint PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1315,10 +1486,7 @@ sturm_use_transpile_pch(test_alias_footprint)
 # `source_map.cpp` (for format_line_directive) + `qir.cpp`.
 add_executable(test_matcher_peephole_reorder
     test_matcher_peephole_reorder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_peephole_reorder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_peephole_reorder PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1377,7 +1545,7 @@ sturm_use_transpile_pch(test_matcher_peephole_reorder)
 # and no qir.cpp (no QUnit mutation).
 add_executable(test_matcher_lossy_op
     test_matcher_lossy_op.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_lossy_op PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1430,8 +1598,7 @@ sturm_use_transpile_pch(test_matcher_lossy_op)
 # AST-driven half of the test runs the matcher to produce live hits.
 add_executable(test_lossy_rewrite_emitter
     test_lossy_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_lossy_rewrite_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1486,9 +1653,7 @@ sturm_use_transpile_pch(test_lossy_rewrite_emitter)
 # both to produce live hits + matching forward emissions.
 add_executable(test_lossy_scope_exit_emitter
     test_lossy_scope_exit_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_lossy_scope_exit_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1541,10 +1706,7 @@ sturm_use_transpile_pch(test_lossy_scope_exit_emitter)
 # disjointness and `emit_nested_lossy` reuses the LO-2b/2c text emitters.
 add_executable(test_lossy_nested_rewrite
     test_lossy_nested_rewrite.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_nested_rewrite.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_lossy_nested_rewrite PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1596,9 +1758,7 @@ sturm_use_transpile_pch(test_lossy_nested_rewrite)
 # linkage; no QUnit / Rewriter dependency.
 add_executable(test_matcher_modular_op
     test_matcher_modular_op.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_modular_op PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1641,22 +1801,23 @@ endif()
 if(STURM_MODULAR_POW)
     # sturm-qzab.5 (P5 beat 5.5): under the top-level STURM_MODULAR_POW=ON
     # configure, the test executable must exercise the matcher's flag-on
-    # PowMod arm. We do this in two steps:
-    #   1. Re-compile JUST the matcher TU (transpiler/src/matcher_modular_op.cpp)
-    #      with `-DSTURM_MODULAR_POW` so the `#ifdef STURM_MODULAR_POW`
-    #      registration block in `register_modular_op_matcher` fires.
-    #   2. Set a SEPARATE test-only macro `STURM_TEST_MODULAR_POW_ON` on
-    #      the whole test target so the test TU's `#ifdef` gate around the
-    #      flag-on test functions activates.
-    # The tests use the test-only macro (not `STURM_MODULAR_POW` directly)
-    # so the `cmake_modular_pow_flag` ctest's compile_commands.json scan —
-    # which forbids `-DSTURM_MODULAR_POW` outside `transpiler/src/` — does
-    # not false-positive on `transpiler/tests/test_matcher_modular_op.cpp`.
-    set_source_files_properties(
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
-        TARGET_DIRECTORY test_matcher_modular_op
-        PROPERTIES COMPILE_DEFINITIONS STURM_MODULAR_POW)
+    # PowMod arm. The flag-on tests are guarded by the test-only macro
+    # `STURM_TEST_MODULAR_POW_ON` (distinct from the production
+    # `STURM_MODULAR_POW` so the `cmake_modular_pow_flag` ctest's
+    # compile_commands.json scan does not false-positive on the test TU).
+    #
+    # sturm-hbwo: previously a `set_source_files_properties(... TARGET_
+    # DIRECTORY test_matcher_modular_op PROPERTIES COMPILE_DEFINITIONS
+    # STURM_MODULAR_POW)` line added the define per-source on this
+    # target's recompile of `matcher_modular_op.cpp` /
+    # `matcher_modular_pow_mod.cpp`. With the OBJECT-library
+    # consolidation the source compile is owned by
+    # `sturm_transpile_test_objs`, which propagates STURM_MODULAR_POW at
+    # target scope under the same `if(STURM_MODULAR_POW)` gate — see
+    # the OBJECT library definition near the top of this file. The
+    # per-source `set_source_files_properties` block is therefore no
+    # longer needed; only the test-target `STURM_TEST_MODULAR_POW_ON`
+    # macro remains.
     target_compile_definitions(test_matcher_modular_op PRIVATE
         STURM_TEST_MODULAR_POW_ON)
 endif()
@@ -1664,11 +1825,9 @@ add_test(NAME test_matcher_modular_op
          COMMAND test_matcher_modular_op)
 set_tests_properties(test_matcher_modular_op PROPERTIES
     LABELS "transpiler;modular-arith")
-# sturm-bs8s: STURM_MODULAR_POW is a per-source-file define here
-# (set_source_files_properties on matcher_modular_op.cpp +
-# matcher_modular_pow_mod.cpp), so the target-level compile_definitions
-# match the producer's. The PCH headers themselves do not reference
-# STURM_MODULAR_POW, so reuse stays consistent regardless of the flag.
+# sturm-bs8s: STURM_MODULAR_POW is applied at target scope on the
+# `sturm_transpile_test_objs` OBJECT library (sturm-hbwo). PCH headers
+# do not reference STURM_MODULAR_POW so REUSE_FROM stays consistent.
 sturm_use_transpile_pch(test_matcher_modular_op)
 
 # ── Unit test: P5.1 modular_rewrite_emitter (sturm-qzab.1) ─────────────────
@@ -1677,10 +1836,7 @@ sturm_use_transpile_pch(test_matcher_modular_op)
 # of the test runs the matcher to produce live hits.
 add_executable(test_modular_rewrite_emitter
     test_modular_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_modular_rewrite_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1723,14 +1879,14 @@ endif()
 if(STURM_MODULAR_POW)
     # sturm-qzab.5 (P5 beat 5.5): mirror the matcher-test wiring so the
     # AST-driven PowMod emission path is exercised under the flag-on
-    # configure. See the corresponding block above (test_matcher_modular_op)
-    # for the rationale on the STURM_MODULAR_POW vs STURM_TEST_MODULAR_POW_ON
-    # split.
-    set_source_files_properties(
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
-        ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
-        TARGET_DIRECTORY test_modular_rewrite_emitter
-        PROPERTIES COMPILE_DEFINITIONS STURM_MODULAR_POW)
+    # configure. The flag-on tests are guarded by the test-only macro
+    # `STURM_TEST_MODULAR_POW_ON`; see the corresponding block above
+    # (test_matcher_modular_op) for the rationale on the
+    # STURM_MODULAR_POW vs STURM_TEST_MODULAR_POW_ON split. sturm-hbwo
+    # moved the production STURM_MODULAR_POW define onto the
+    # `sturm_transpile_test_objs` OBJECT library so the per-source
+    # `set_source_files_properties` block previously here is no longer
+    # needed.
     target_compile_definitions(test_modular_rewrite_emitter PRIVATE
         STURM_TEST_MODULAR_POW_ON)
 endif()
@@ -1738,8 +1894,9 @@ add_test(NAME test_modular_rewrite_emitter
          COMMAND test_modular_rewrite_emitter)
 set_tests_properties(test_modular_rewrite_emitter PROPERTIES
     LABELS "transpiler;modular-arith")
-# sturm-bs8s: STURM_MODULAR_POW is per-source-file, mirroring
-# test_matcher_modular_op above. PCH headers are STURM_MODULAR_POW-agnostic.
+# sturm-bs8s: STURM_MODULAR_POW is applied at target scope on the
+# `sturm_transpile_test_objs` OBJECT library (sturm-hbwo). PCH headers
+# do not reference STURM_MODULAR_POW so REUSE_FROM stays consistent.
 sturm_use_transpile_pch(test_modular_rewrite_emitter)
 
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
@@ -1748,22 +1905,7 @@ sturm_use_transpile_pch(test_modular_rewrite_emitter)
 # available, fallback to the static per-component archives otherwise.
 add_executable(test_transpile_emitter
     test_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
-    # PM4-3: uncompute_pass.cpp now references `Registry::find_render_fn`
-    # from the plugin TU. Link plugin_registry.cpp so the Registry method
-    # bodies resolve at link time.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_transpile_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1848,72 +1990,11 @@ add_executable(test_transpile_matcher
     # pointing at the ORIGINAL in-loop stmt_range.getBegin() location,
     # NOT the hoist_to_override target (post-loop close brace).
     test_matcher_pm2_hoist_line.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_lift.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
-    # Phase S S-B (sturm-ha2k.3): matcher_outer_var_guard.cpp now calls
-    # `is_reversible()` from reversible_attribute.cpp to gate the
-    # loop-reversal handoff. Link the TU so the matcher unit-test binary
-    # resolves the symbol. reversible_attribute.cpp is a pure-string
-    # predicate whose only Clang deps (AnnotateAttr) are already on the
-    # link line via clangAST / clangBasic.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
-    # Phase N PN-5: qbool(p) prep diagnostic matcher TU. Linked so the
-    # matcher unit-test binary resolves `register_qbool_prep_matcher`
-    # and the `*_for_test` counter helpers.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
-    # Phase N PN-2: rotation matcher TU. Linked so the matcher
-    # unit-test binary resolves `register_theta_add_matcher` and its
-    # three siblings. The `STURM_REGISTER_PLUGIN(PNRotationPlugin)` at
-    # the bottom of the TU also fires during static init here, which
-    # is harmless — the test harness constructs a local MatchFinder
-    # and registers the matchers through the free-function path, not
-    # through the Registry drain (mirrors the PB dogfood test pattern
-    # in `test_matcher_qint_const.cpp`).
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_rotation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
-    # PM3-0 / PM3-2 / PM3-3: matcher_outer_var_guard.cpp and
-    # matcher_user_routine.cpp both call into DiagContext; link its
-    # TU so the test binary resolves `report_outer_var_mutation` and
-    # `report_missing_adjoint`.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    # PM2-2: `matcher_qbool_compound.cpp` now calls
-    # `format_line_directive` from `emitter.cpp` to prefix each
-    # synthesized `__stu_tN` decl with a `#line` directive.  Link the
-    # emitter TU so this test binary resolves the symbol; the helper's
-    # only LLVM / Clang dependencies (`SourceManager`, `PresumedLoc`)
-    # are already satisfied by the existing clangBasic link line.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
-    # PM2-3: `format_line_directive` moved from emitter.cpp into its own TU
-    # `source_map.cpp` so test_transpile_uncompute_pass (no Rewriter
-    # linkage) can resolve just that symbol. Link it here so the PM2-2
-    # compound-matcher tests keep resolving `format_line_directive` via
-    # the shared-source-map TU.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    # emitter.cpp transitively includes io.hpp / skip.hpp / uncompute_pass.hpp
-    # so their implementation TUs must be on the link line too.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
-    # PM4-3: uncompute_pass.cpp now references `Registry::find_render_fn`
-    # from the plugin TU. Link plugin_registry.cpp so Registry method
-    # bodies resolve at link time (the in-tree matcher tests never
-    # construct a `QOpKind::PLUGIN` op, so the branch stays dead — but
-    # the symbol must still resolve).
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
+    # sturm-hbwo: the long enumeration of `transpiler/src/*.cpp` TUs
+    # previously inlined here is now provided by the shared
+    # `sturm_transpile_test_objs` OBJECT library defined at the top
+    # of this file.
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_transpile_matcher PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -1988,155 +2069,11 @@ set_tests_properties(test_transpile_skip PROPERTIES LABELS "transpiler")
 # the M5 sentinel.
 add_executable(test_transpile_consumer
     test_transpile_consumer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/transpile_consumer.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/diag_context.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_bitwise.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_compound.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_const.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_qint.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_compare.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_lift.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_nested.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_operand_mutation.cpp
-    # E7 (sturm-va3z): WHEN free-variable mutation diagnostic. M1 read-set
-    # extractor + M2 write-set checker + M3 matcher wiring. Linked here so
-    # `test_transpile_consumer` resolves the new
-    # `register_when_freevar_matcher` symbol the consumer ctor invokes.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_readset.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_check.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_when_freevar.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_brace_wrap.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_outer_var_guard.cpp
-    # Phase S S-B (sturm-ha2k.3): matcher_outer_var_guard.cpp now calls
-    # `is_reversible()` from reversible_attribute.cpp to gate the
-    # loop-reversal handoff. Link the TU so the consumer test binary
-    # resolves the symbol (clangAST / clangBasic already on the link
-    # line cover AnnotateAttr).
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
-    # Phase N PN-5: qbool(p) prep diagnostic matcher TU. Linked here so
-    # `test_transpile_consumer` resolves the symbol through the shared
-    # TranspileConsumer registration path.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qbool_prep.cpp
-    # Phase N PN-2: rotation matcher TU. Linked here so
-    # `test_transpile_consumer` picks up the `STURM_REGISTER_PLUGIN`
-    # static-init for `PNRotationPlugin` — the consumer's Registry
-    # drain registers the four rotation matchers against its own
-    # `finder_` just like it does for the PB dogfood plugin.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_rotation.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_hoist_invariant.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_ccnot_fuse.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dead_ancilla.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_dropped_quantum_return.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_quantum_to_classical_cond.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/routine_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_user_routine.cpp
-    # Phase T T-1 (sturm-xrob.2): TranspileConsumer now calls
-    # `register_reversible_drive_matcher` (transpile_consumer.cpp:76) and
-    # `drive_reversible_forwards` (transpile_consumer.cpp:564). Link the
-    # driver TU plus its transitive validator / emitter / registry deps
-    # (same source list the `test_matcher_reversible_drive` target
-    # carries): matcher_reversible_drive.cpp is the module under
-    # exercise, matcher_reversible_validate.cpp (P-C) and
-    # matcher_reversible_signature.cpp (Q-B) supply the validator
-    # surfaces the driver consults, return_to_out_param.cpp (Q-A)
-    # populates the signature-normalisation registry entry the driver
-    # reads, synthesis_registry.cpp is the per-forward book-keeping
-    # container, adjoint_emitter.cpp (R-A) renders the __fn_adj body,
-    # and auto_register_emitter.cpp (R-B) renders the
-    # STURM_REGISTER_ADJOINT line. reversible_attribute.cpp and
-    # routine_registry.cpp are already on the link line above (Phase S
-    # S-B and PI-1 respectively), so they do not need repeating.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_drive.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_validate.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_reversible_signature.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/return_to_out_param.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/synthesis_registry.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_pass.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/uncompute_render.cpp
-    # sturm-v0ur (LO-2 wiring): TranspileConsumer now registers the
-    # lossy compound-assign matcher + emitters. Link the three TUs so
-    # the LO-2a/2b/2c symbols resolve at link time (the consumer's
-    # post-walk drains the LO hits vector via `emit_lossy_forward` /
-    # `group_cleanups_by_block` and feeds `register_external_cleanup()`
-    # into `synthesize()`).
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_lossy_op.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_rewrite_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_scope_exit_emitter.cpp
-    # sturm-rry6 (LO-2e): TranspileConsumer now registers the
-    # nested-lossy matcher and drains nested hits in
-    # `HandleTranslationUnit`. Link the LO-2e TU so
-    # `register_nested_lossy_matcher` and `emit_nested_lossy` resolve.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/lossy_nested_rewrite.cpp
-    # sturm-qzab.1/.2/.3 (P5 beats 5.1/5.2/5.3): TranspileConsumer
-    # registers `register_modular_op_matcher` and drains
-    # `modular_hits_` via `emit_modular_forward`. Link both TUs so
-    # the consumer test resolves the symbols at link time. The beat
-    # 5.3 compound-collapse arm rides the same translation units —
-    # no additional sources required.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_op.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_compound_collapse.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_modular_pow_mod.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/modular_rewrite_emitter.cpp
-    # sturm-mm04 (sturm-ddgo regression fix): TranspileConsumer registers
-    # the three QRAM-via-array-subscript matchers (C1 bare-init,
-    # H1 existing-target, H4 expression-position) at construction
-    # (transpile_consumer.cpp:293-297) and drains their hit vectors
-    # through `emit_qram_*_replacements` in `HandleTranslationUnit`
-    # (transpile_consumer.cpp:1118-1123). Link the six matcher /
-    # emitter TUs plus the shared B1 width-inference helper so the
-    # consumer test binary resolves the QRAM symbols at link time.
-    # Mirrors the parallel block in `transpiler/CMakeLists.txt` for
-    # `sturm-transpile` and `sturm-transpile-plugin`.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
-    # sturm-65rs.10 (Beat C3): TranspileConsumer registers the qint
-    # alias substitution matcher in the ctor body and drains its
-    # `qint_alias_subst_matches_` vector via
-    # `emit_qint_alias_subst_replacements` AFTER the QRAM emitters
-    # populate the `QintAliasSubstClaimedDecls` overlap-guard set.
-    # Link the matcher + emitter TUs so the consumer test binary
-    # resolves the new symbols at link time.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
-    # PM4-3: TranspileConsumer now owns a per-consumer plugin Registry
-    # and threads it into `synthesize()`. Link plugin_registry.cpp so
-    # the Registry method bodies (register_op, find_render_fn,
-    # invoke_all, runtime_registrars, registrars) resolve at link time.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/plugin_registry.cpp
-    # PM5-6: TranspileConsumer now calls register_peephole_reorder_matcher
-    # at the tail of its registration block (LAST, after
-    # register_hoist_invariant_matcher). The reorder matcher consumes
-    # the alias extractor (`sturm/transpile/alias.hpp`). Link both TUs
-    # so the callback symbols resolve at link time; the Phase J fixtures
-    # this test harness exercises stay byte-identical because the
-    # reorder matcher's Gate 1..4 guards refuse every pre-Phase-M
-    # fixture (no synthetic __stu_t / xor-assign triple matches).
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_peephole_reorder.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/source_map.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    # sturm-e3ru / Phase 7 + sturm-0tcv: TranspileConsumer registers the
-    # auto-injection matcher in its ctor and drains its hits via
-    # `emit_main_lifecycle_replacements` in `HandleTranslationUnit`. Link
-    # the matcher + emitter + entry-point-attribute TUs so the consumer
-    # test binary resolves the symbols at link time. Mirrors the parallel
-    # block in `transpiler/CMakeLists.txt` for `sturm-transpile` and
-    # `sturm-transpile-plugin`.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/main_lifecycle_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+    # sturm-hbwo: the long enumeration of `transpiler/src/*.cpp` TUs
+    # previously inlined here is now provided by the shared
+    # `sturm_transpile_test_objs` OBJECT library defined at the top
+    # of this file.
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_transpile_consumer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2727,7 +2664,7 @@ set_tests_properties(test_transpile_driver PROPERTIES LABELS "transpiler")
 # tree.
 add_executable(test_matcher_qram_oos
     test_matcher_qram_oos.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_oos.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_qram_oos PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2784,7 +2721,7 @@ set_tests_properties(test_matcher_qram_oos PROPERTIES
 # MatchFinder + DiagnosticsEngine.
 add_executable(test_qint_implicit_warn
     test_qint_implicit_warn.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_implicit_warn.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_qint_implicit_warn PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2839,7 +2776,7 @@ set_tests_properties(test_qint_implicit_warn PROPERTIES
 # + DiagnosticsEngine, no DiagContext, no routine registry, no QUnit.
 add_executable(test_width_inference
     test_width_inference.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_width_inference PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2896,8 +2833,7 @@ set_tests_properties(test_width_inference PROPERTIES
 # load from the source tree.
 add_executable(test_matcher_qram_subscript
     test_matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_qram_subscript PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -2955,11 +2891,7 @@ set_tests_properties(test_matcher_qram_subscript PROPERTIES
 # dependency at this beat — width is the C2 emitter's concern).
 add_executable(test_matcher_qint_alias_subst
     test_matcher_qint_alias_subst.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
-    # sturm-7t85.1 (Beat G1): carrier-walk sibling TU. Required so the
-    # matcher's `typeloc_range_of` resolves `declarator_typeloc_range` at
-    # link time.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_qint_alias_subst PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3021,11 +2953,7 @@ set_tests_properties(test_matcher_qint_alias_subst PROPERTIES
 # threaded via STURM_QINT_ALIAS_SUBST_EMITTER_FIXTURES_DIR.
 add_executable(test_qint_alias_subst_emitter
     test_qint_alias_subst_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
-    # sturm-7t85.1 (Beat G1): carrier-walk sibling TU.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_qint_alias_subst_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3091,14 +3019,7 @@ set_tests_properties(test_qint_alias_subst_emitter PROPERTIES
 # STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR.
 add_executable(test_consumer_qint_alias_subst
     test_consumer_qint_alias_subst.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_subst_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qint_alias_subst.cpp
-    # sturm-7t85.1 (Beat G1): carrier-walk sibling TU.
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qint_alias_carrier_walk.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_consumer_qint_alias_subst PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3159,10 +3080,7 @@ set_tests_properties(test_consumer_qint_alias_subst PROPERTIES
 # transpiler/tests/fixtures/ threaded via STURM_QRAM_EMITTER_FIXTURES_DIR.
 add_executable(test_qram_emitter
     test_qram_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_qram_emitter PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3220,8 +3138,7 @@ set_tests_properties(test_qram_emitter PROPERTIES
 # compiled in.
 add_executable(test_matcher_qram_subscript_expr
     test_matcher_qram_subscript_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_qram_subscript_expr PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3278,9 +3195,7 @@ set_tests_properties(test_matcher_qram_subscript_expr PROPERTIES
 # in).
 add_executable(test_qram_emitter_expr
     test_qram_emitter_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_qram_emitter_expr PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3336,8 +3251,7 @@ set_tests_properties(test_qram_emitter_expr PROPERTIES
 # sources compiled in.
 add_executable(test_matcher_qram_subscript_assign
     test_matcher_qram_subscript_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_matcher_qram_subscript_assign PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3394,9 +3308,7 @@ set_tests_properties(test_matcher_qram_subscript_assign PROPERTIES
 # only `transpiler/src/*` sources compiled in).
 add_executable(test_qram_emitter_assign
     test_qram_emitter_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_qram_emitter_assign PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
@@ -3472,10 +3384,7 @@ set_source_files_properties(
 )
 add_executable(test_qram_e2e
     test_qram_e2e.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
@@ -3553,14 +3462,7 @@ set_tests_properties(test_qram_e2e PROPERTIES
 # example targets.
 add_executable(test_qram_e2e_real
     test_qram_e2e_real.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/qram_emitter_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_assign.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_qram_subscript_expr.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/reversible_attribute.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 target_include_directories(test_qram_e2e_real PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
