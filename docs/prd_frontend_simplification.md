@@ -271,9 +271,19 @@ Files touched:
     parameter.
 - `include/sturm/core/context.hpp`
   - `BackendContext::BackendContext` drops the `max_q` parameter.
-  - `kMaxClassicalQubits = 17u`, `classical_values[17]`, per-context
-    `super_mask`, `promotion_mask` — **kept as-is**, SIMULATE-only
-    bookkeeping (see Non-goals §3).
+  - **Post-PRD updates** (closed in 2026-05 cleanup pass):
+    - sturm-t2sk: `kMaxClassicalQubits = 17u` and `classical_values[17]`
+      have been replaced by a `std::vector<int> classical_values` that
+      grows on demand. The COUNT_ONLY / APPEND read path returns 0 for
+      indices past the high-water mark via
+      `BackendContext::get_classical_value(qubit)`; the SIMULATE write
+      path resizes via `BackendContext::set_classical_value(qubit, v)`.
+      Non-goal §3 entry for `classical_values[17]` no longer applies.
+    - sturm-7at0: per-context `super_mask` / `promotion_mask` widened
+      from `uint32_t` to `uint64_t`, matching the per-instance width
+      used by `qint_t<W>` and `qbool`. The clear-on-measure path in
+      `src/sturm/core/measure.cpp` was updated to `if (qubit < 64u)`
+      with `uint64_t{1}` shifts.
 - `src/sturm/core/context.cpp`
   - `sturm_backend_create` signature update.
 - `STURM_ANCILLA_CAPACITY` preprocessor macro: deleted from CMake and
@@ -369,10 +379,12 @@ OQ5. **Build flag → file rebuild semantics.** Changing
 
 To be filed as separate beads issues, not blocking this PRD:
 
-- Per-context `super_mask` / `promotion_mask` widening (currently
+- ~~Per-context `super_mask` / `promotion_mask` widening (currently
   `uint32_t` — silently truncates above qubit 32 in SIMULATE
-  bookkeeping paths).
-- `classical_values[17]` removal or dynamic widening.
+  bookkeeping paths).~~ **Closed by sturm-7at0** — widened to `uint64_t`.
+- ~~`classical_values[17]` removal or dynamic widening.~~
+  **Closed by sturm-t2sk** — replaced with `std::vector<int>` that
+  grows on demand; cap removed.
 - Misleading abort string `"max 17"` cleanup (the string is deleted
   along with the cap in §5.5, so this lands as part of this PRD; noted
   here for traceability with prior discussion).

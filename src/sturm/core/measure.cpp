@@ -83,16 +83,16 @@ static int simulate_measure(uint32_t qubit, BackendContext& ctx) {
     }
 
     // ── Step 5: Update classical value ────────────────────────────────────────
-    if (qubit < BackendContext::kMaxClassicalQubits) {
-        ctx.classical_values[qubit] = outcome;
-    }
+    // sturm-t2sk: the vector grows on demand; no cap to gate on.
+    ctx.set_classical_value(qubit, outcome);
 
     // ── Step 6: Clear super_mask and promotion_mask for measured qubit ────────
     // After collapse the qubit is in a definite computational basis state, so
     // it is no longer superposed and any pending promotion is resolved.
-    if (qubit < 32u) {
-        ctx.super_mask     &= ~(uint32_t{1} << qubit);
-        ctx.promotion_mask &= ~(uint32_t{1} << qubit);
+    // sturm-7at0: masks are now u64, so the guard moves from 32 to 64.
+    if (qubit < 64u) {
+        ctx.super_mask     &= ~(uint64_t{1} << qubit);
+        ctx.promotion_mask &= ~(uint64_t{1} << qubit);
     }
 
     return outcome;
@@ -105,11 +105,9 @@ int measure_qubit(uint32_t qubit, BackendContext& ctx) {
 
     case STURM_MODE_COUNT_ONLY:
     case STURM_MODE_APPEND:
-        // Deterministic placeholder: return the stored classical value.
-        if (qubit < BackendContext::kMaxClassicalQubits) {
-            return ctx.classical_values[qubit];
-        }
-        return 0;
+        // Deterministic placeholder: return the stored classical value
+        // (0 for any qubit index that has never been written — sturm-t2sk).
+        return ctx.get_classical_value(qubit);
 
     case STURM_MODE_SIMULATE:
         return simulate_measure(qubit, ctx);

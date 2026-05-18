@@ -20,6 +20,7 @@
 
 #include <cstdint>
 #include <memory>
+#include <vector>
 
 namespace sturm {
 
@@ -48,27 +49,40 @@ struct BackendContext {
     // TODO(backend): replaced with OrkanBridge* when M9 lands.
     void*         orkan_state_ptr{nullptr};
 
-    // Per-qubit classical values (one entry per physical qubit index, up to 17).
+    // Per-qubit classical values (one entry per physical qubit index).
     // Used by COUNT_ONLY and APPEND measurement paths to return the stored value
-    // without sampling the statevector.  Set to 0 at construction; updated by
-    // the SIMULATE measurement path after each sample so the classical value
-    // tracks the post-measurement computational basis state.
-    static constexpr uint32_t kMaxClassicalQubits = 17u;
-    int           classical_values[kMaxClassicalQubits]{};
+    // without sampling the statevector.  Empty at construction; grown on demand
+    // by set_classical_value() when the SIMULATE measurement path samples a
+    // qubit whose index is past the current high-water mark.  Reads via
+    // get_classical_value() return 0 for indices past the high-water mark.
+    //
+    // sturm-t2sk: dynamic widening (`std::vector<int>`) replaces the prior
+    // `classical_values[17]` static array. The PRD §5.5 cap is gone; SIMULATE
+    // memory cost is bounded by `2^n_qubits` long before this vector's growth
+    // becomes a concern.
+    std::vector<int> classical_values{};
 
     // Per-qubit superposition-tracking bitmask (bit i = qubit i).
     // Set by the frontend when a qubit enters superposition (e.g. after H).
     // Cleared by measure_qubit in SIMULATE mode after sampling + collapse.
     // TODO(backend): frontend qtypes will set bits here when M-future wires
     //                qubit state tracking through the context.
-    uint32_t      super_mask{0};
+    //
+    // sturm-7at0: widened from uint32_t to uint64_t. The per-instance
+    // super_mask on qint_t<W>/qbool is already uint64_t (dispatch.hpp
+    // assumes that width); the per-context mirror previously silently
+    // truncated when SIMULATE bookkeeping referenced qubits 32+. With u64
+    // the cap moves to 64, matching the per-instance width.
+    uint64_t      super_mask{0};
 
     // Per-qubit promotion bitmask (bit i = qubit i).
     // Set by the frontend when a qubit is promoted to a quantum type.
     // Cleared by measure_qubit in SIMULATE mode after sampling + collapse.
     // TODO(backend): frontend qtypes will set bits here when M-future wires
     //                qubit promotion tracking through the context.
-    uint32_t      promotion_mask{0};
+    //
+    // sturm-7at0: widened from uint32_t to uint64_t alongside super_mask.
+    uint64_t      promotion_mask{0};
 
     // M12: WHEN control stack — pushed by WHEN entry, popped on exit.
     // Readable by qbool operators without depending on WhenLift.
@@ -76,6 +90,24 @@ struct BackendContext {
 
     explicit BackendContext(sturm_mode_t m)
         : mode(m) {}
+
+    // ── Classical-value accessors (sturm-t2sk) ────────────────────────────────
+    //
+    // Grow the `classical_values` vector on demand so any qubit index can be
+    // recorded.  `set_classical_value(qubit, v)` resizes (filling with 0) if
+    // `qubit` is past the current high-water mark.  `get_classical_value(qubit)`
+    // returns 0 for indices past the current size — the COUNT_ONLY / APPEND
+    // measurement path's deterministic-placeholder contract.
+    void set_classical_value(uint32_t qubit, int value) {
+        if (qubit >= classical_values.size()) {
+            classical_values.resize(static_cast<std::size_t>(qubit) + 1u, 0);
+        }
+        classical_values[qubit] = value;
+    }
+
+    int get_classical_value(uint32_t qubit) const noexcept {
+        return qubit < classical_values.size() ? classical_values[qubit] : 0;
+    }
 };
 
 // ── set_mode / get_current_mode ───────────────────────────────────────────────

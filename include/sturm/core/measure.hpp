@@ -32,7 +32,9 @@ namespace sturm {
 // Measure physical qubit `qubit` according to the mode set in `ctx`.
 //
 // Parameters:
-//   qubit — physical qubit index; must be < BackendContext::kMaxClassicalQubits.
+//   qubit — physical qubit index.  Any non-negative index is accepted; the
+//           context's classical_values vector grows on demand to record the
+//           outcome (sturm-t2sk).
 //   ctx   — the active backend context.
 //
 // Returns 0 or 1 (the measurement outcome).

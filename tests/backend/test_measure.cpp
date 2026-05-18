@@ -72,8 +72,9 @@ struct ScopedCtx {
 
 static void test_count_only_returns_classical_0() {
     ScopedCtx sc(STURM_MODE_COUNT_ONLY);
-    // classical_values[0] defaults to 0.
-    sc.ctx->classical_values[0] = 0;
+    // get_classical_value returns 0 by default for any unwritten qubit
+    // (sturm-t2sk).
+    sc.ctx->set_classical_value(0u, 0);
     int result = sturm_measure(0u);
     CHECK(result == 0, "COUNT_ONLY: qubit with classical val 0 must return 0");
 }
@@ -82,7 +83,7 @@ static void test_count_only_returns_classical_0() {
 
 static void test_count_only_returns_classical_1() {
     ScopedCtx sc(STURM_MODE_COUNT_ONLY);
-    sc.ctx->classical_values[1] = 1;
+    sc.ctx->set_classical_value(1u, 1);
     int result = sturm_measure(1u);
     CHECK(result == 1, "COUNT_ONLY: qubit with classical val 1 must return 1");
 }
@@ -91,14 +92,14 @@ static void test_count_only_returns_classical_1() {
 
 static void test_append_deterministic_0() {
     ScopedCtx sc(STURM_MODE_APPEND);
-    sc.ctx->classical_values[0] = 0;
+    sc.ctx->set_classical_value(0u, 0);
     int r = sturm_measure(0u);
     CHECK(r == 0, "APPEND: returns classical value 0");
 }
 
 static void test_append_deterministic_1() {
     ScopedCtx sc(STURM_MODE_APPEND);
-    sc.ctx->classical_values[2] = 1;
+    sc.ctx->set_classical_value(2u, 1);
     int r = sturm_measure(2u);
     CHECK(r == 1, "APPEND: returns classical value 1");
 }
@@ -232,6 +233,47 @@ static void test_non_simulate_modes_leave_masks_untouched() {
     }
 }
 
+// ── Test 11: classical_values dynamic widening (sturm-t2sk) ───────────────────
+//
+// The pre-sturm-t2sk array was capped at 17 entries; a write at qubit ≥ 17
+// silently no-op'd. Confirm that the new vector-backed storage grows on demand
+// and that high-index qubits read back exactly what was written.
+
+static void test_classical_values_dynamic_widening() {
+    ScopedCtx sc(STURM_MODE_COUNT_ONLY);
+    // 17 was the old cap; 25 is comfortably past it. 63 exercises the
+    // top of the new u64 mask range as a stress check.
+    sc.ctx->set_classical_value(25u, 1);
+    sc.ctx->set_classical_value(63u, 1);
+    CHECK(sturm_measure(25u) == 1,
+          "sturm-t2sk: COUNT_ONLY must return stored value at qubit 25");
+    CHECK(sturm_measure(63u) == 1,
+          "sturm-t2sk: COUNT_ONLY must return stored value at qubit 63");
+    // Unwritten high index reads as 0 (placeholder contract).
+    CHECK(sturm_measure(40u) == 0,
+          "sturm-t2sk: COUNT_ONLY must return 0 for unwritten qubit index");
+}
+
+// ── Test 12: per-context mask widening to u64 (sturm-7at0) ────────────────────
+//
+// The pre-sturm-7at0 super_mask / promotion_mask were uint32_t; writes that set
+// bit ≥ 32 truncated. Confirm that the widened u64 mask can carry bits 32-63
+// across a non-SIMULATE measure call (which leaves the masks untouched per
+// test 10).
+
+static void test_per_context_mask_widening_u64() {
+    ScopedCtx sc(STURM_MODE_COUNT_ONLY);
+    const uint64_t hi_super     = uint64_t{1} << 35;
+    const uint64_t hi_promotion = uint64_t{1} << 40;
+    sc.ctx->super_mask     = hi_super;
+    sc.ctx->promotion_mask = hi_promotion;
+    sturm_measure(0u);  // non-SIMULATE: masks untouched
+    CHECK(sc.ctx->super_mask     == hi_super,
+          "sturm-7at0: super_mask must carry bit 35 across a measure call");
+    CHECK(sc.ctx->promotion_mask == hi_promotion,
+          "sturm-7at0: promotion_mask must carry bit 40 across a measure call");
+}
+
 // ── main ──────────────────────────────────────────────────────────────────────
 
 int main() {
@@ -267,6 +309,12 @@ int main() {
 
     std::printf("test_measure: non-SIMULATE modes leave masks untouched ...\n");
     test_non_simulate_modes_leave_masks_untouched();
+
+    std::printf("test_measure: classical_values dynamic widening (sturm-t2sk) ...\n");
+    test_classical_values_dynamic_widening();
+
+    std::printf("test_measure: per-context mask widening to u64 (sturm-7at0) ...\n");
+    test_per_context_mask_widening_u64();
 
     std::printf("PASS: all test_measure tests passed.\n");
     return 0;
