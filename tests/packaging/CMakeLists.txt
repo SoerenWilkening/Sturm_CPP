@@ -226,6 +226,27 @@ add_test(NAME test_umbrella_draw_svg COMMAND test_umbrella_draw_svg)
 set_tests_properties(test_umbrella_draw_svg PROPERTIES
     LABELS "packaging;frontend_simpl")
 
+# ── sturm-5soh — opt-in `sturm/draw_mermaid.h` packaging acceptance test ───
+# Mirrors test_umbrella_draw_svg / test_umbrella_draw_json. Pins that
+# `#include "sturm.h"` + `#include "sturm/draw_mermaid.h"` is sufficient to
+# reach `sturm::draw_mermaid` / `sturm::print_mermaid` and produce a
+# well-formed `graph LR` Mermaid envelope from the thread-local context.
+# The renderer body in `src/sturm/backend/draw_mermaid.cpp` is linked
+# directly (mirrors the sibling draw_svg / draw_json packaging tests'
+# posture of compiling the runtime sources rather than linking a separate
+# library), keeping linkage minimal: context.cpp + gate_kind.c +
+# draw_mermaid.cpp.
+add_executable(test_umbrella_draw_mermaid
+    test_umbrella_draw_mermaid.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_mermaid.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
+target_link_libraries(test_umbrella_draw_mermaid PRIVATE sturm)
+target_compile_features(test_umbrella_draw_mermaid PRIVATE cxx_std_20)
+add_test(NAME test_umbrella_draw_mermaid COMMAND test_umbrella_draw_mermaid)
+set_tests_properties(test_umbrella_draw_mermaid PROPERTIES
+    LABELS "packaging;frontend_simpl")
+
 # ── sturm-65rs.6 / B1 — qint resolution acceptance test ────────────────────
 # Pins the post-B1 type identity of `sturm::qint`: it IS sturm::frontend::qint
 # (PRD §4.2), and a LOCAL `using qint = sturm::qint_t<W>;` still resolves to
