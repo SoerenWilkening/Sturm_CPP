@@ -1,0 +1,22 @@
+// sturm-0tcv: entry_point attribute snapshot — gtest-filename
+// relaxation.
+//
+// Per PRD §5.4 (post-sturm-0tcv), the gtest filename probe applies
+// ONLY to the main-anchor trigger; the entry-point anchor is NOT
+// skipped on a `*gtest*.cpp` filename. The canonical use case is a
+// `[[sturm::entry_point]]`-flagged free helper inside a
+// `test_*_gtest.cpp` file that the GoogleTest TEST_F body calls.
+//
+// This fixture file is named `main_lifecycle_entry_point_gtest.cpp`
+// so the `gtest` substring triggers the main-anchor probe — but
+// the matcher's entry-point arm should still fire and rewrite
+// `helper()`. There is no `int main` in this TU so the main probe
+// has nothing to skip; the test gate is that the entry-point hit
+// still produces.
+#define STURM_UMBRELLA_INCLUDED 1
+
+[[clang::annotate("sturm::entry_point")]]
+void helper() {
+    int x = 1;
+    (void)x;
+}

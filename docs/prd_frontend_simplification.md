@@ -222,9 +222,24 @@ Build: `cmake -S . -B build` (mode defaults to `APPEND`); override with
 ### 5.4 — Transpiler auto-injection
 
 A new matcher `matcher_main_lifecycle` (in `transpiler/src/`) fires on
-the unique `int main(...)` `FunctionDecl` of any TU whose preprocessor
-state shows `sturm.h` was included (probe: `__has_include("sturm.h")`
-plus a sentinel macro the umbrella sets). It rewrites:
+either trigger below, in any TU whose preprocessor state shows
+`sturm.h` was included (probe: `__has_include("sturm.h")` plus a
+sentinel macro the umbrella sets):
+
+1. **Main trigger** — the unique `int main(...)` `FunctionDecl` of the
+   TU (original P7 / sturm-e3ru behaviour).
+
+2. **Entry-point trigger** (sturm-0tcv) — any `FunctionDecl` carrying
+   the `[[sturm::entry_point]]` attribute. The canonical attribute
+   carrier is `[[clang::annotate("sturm::entry_point")]]`; the
+   transpiler plugin also registers a `ParsedAttrInfo` so the short
+   form `[[sturm::entry_point]]` (CXX11 / C2x syntax) and
+   `__attribute__((sturm_entry_point))` (GNU syntax) are accepted
+   when the plugin is loaded into the host clang. Without the plugin,
+   the short form drops with `-Wunknown-attributes`; users must fall
+   back to the explicit `clang::annotate` spelling in that case.
+
+For the **Main trigger** the matcher rewrites:
 
 ```cpp
 int main(/* user-args */) {
@@ -248,11 +263,63 @@ int main(/* user-args */) {
 }
 ```
 
+For the **Entry-point trigger** the rewrite mirrors the Main trigger
+when the FunctionDecl returns an integral type — the return type
+spelled in the IIFE's trailing return type and in the `<rettype>
+__sturm_rc` capture matches the outer function's declared return type
+(e.g. `bool check_invariant()` produces a `bool __sturm_rc`). When
+the FunctionDecl returns `void`, the IIFE is invoked for side
+effects only and no return statement is emitted after the teardown:
+
+```cpp
+[[sturm::entry_point]] void library_fixture_setup() {
+    /* user-body */
+}
+```
+
+becomes
+
+```cpp
+[[sturm::entry_point]] void library_fixture_setup() {
+    sturm_backend_context_t* __sturm_ctx =
+        sturm_backend_create(STURM_MODE_DEFAULT);
+    sturm_set_thread_context(__sturm_ctx);
+    ([&]() -> void {
+        /* user-body */
+    })();
+    sturm_set_thread_context(nullptr);
+    sturm_backend_destroy(__sturm_ctx);
+}
+```
+
 Skip rewrite when:
 - The TU defines `STURM_NO_AUTO_LIFECYCLE` (escape hatch for tests,
-  libraries, demos that want the explicit form).
-- The TU does not transitively include `sturm.h`.
-- No `main` is defined in this TU.
+  libraries, demos that want the explicit form). Applies to both
+  triggers.
+- The TU does not transitively include `sturm.h`. Applies to both
+  triggers.
+- No `main` is defined in this TU **and** no FunctionDecl carries
+  `[[sturm::entry_point]]`.
+- (Main trigger only) The source file's filename contains `gtest` —
+  R3 mitigation, gtest provides its own `main` and would collide
+  with the auto-injection. The Entry-point trigger is **not** gated
+  by the gtest filename probe: the attribute is opt-in and the
+  canonical sturm-0tcv use case (annotating a free-function wrapper
+  called from a GoogleTest `TEST_F` body) lives inside files whose
+  names match the probe.
+
+Out-of-scope shapes for the Entry-point trigger:
+- **Member functions (`CXXMethodDecl`)** — including TEST_F bodies,
+  static class methods, and anything carrying an implicit `this`.
+  The IIFE's `[&]` capture cannot transparently see member names, so
+  the rewrite shape is undefined for methods. Users wrap the body
+  in a free function the method calls (the recommended idiom for
+  applying the attribute to a TEST_F body).
+- **Non-integral, non-`void` return types** — pointers, classes,
+  floats, template-dependent types. The matcher rejects these so
+  no malformed IIFE wrapper is emitted; users with such return
+  types fall back to the explicit `sturm_backend_create` /
+  `sturm_backend_destroy` lifecycle.
 
 ### 5.5 — Qubit cap removal
 
@@ -390,8 +457,15 @@ To be filed as separate beads issues, not blocking this PRD:
   here for traceability with prior discussion).
 - Renderer formats beyond ASCII (`sturm/draw_mermaid.h`,
   `sturm/draw_svg.h`, `sturm/draw_json.h`).
-- Auto-injection for non-`main` entry points
-  (`[[sturm::entry_point]]` attribute for libraries / test fixtures).
+- ~~Auto-injection for non-`main` entry points
+  (`[[sturm::entry_point]]` attribute for libraries / test fixtures).~~
+  **Closed by sturm-0tcv** — `matcher_main_lifecycle` extended to
+  fire on any `FunctionDecl` carrying `[[sturm::entry_point]]`
+  (canonical carrier: `[[clang::annotate("sturm::entry_point")]]`;
+  short form `[[sturm::entry_point]]` accepted when the transpiler
+  plugin is loaded into the host clang). See §5.4 for the updated
+  trigger set, rewrite shapes (void vs integral return), and the
+  out-of-scope envelope (member functions, non-integral returns).
 
 ## 8. Acceptance criteria
 

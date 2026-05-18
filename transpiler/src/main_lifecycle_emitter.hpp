@@ -1,39 +1,67 @@
-// main_lifecycle_emitter.hpp — Frontend simpl. P7 (sturm-e3ru) emitter
-// surface.
+// main_lifecycle_emitter.hpp — Frontend simpl. P7 (sturm-e3ru) +
+// sturm-0tcv (entry-point attribute extension) emitter surface.
 //
 // Plan §3 Phase 7 split target. Companion to
 // `matcher_main_lifecycle.{hpp,cpp}`. The matcher publishes one
-// `MainLifecycleHit` per matched main; this emitter turns each hit
-// into a single `QReplacement` over the body's CompoundStmt source
-// range (everything between `{` and `}` inclusive).
+// `MainLifecycleHit` per matched entry-point function (the unique
+// `int main(...)` of any TU OR any FunctionDecl carrying
+// `[[sturm::entry_point]]`); this emitter turns each hit into
+// per-hit `QReplacement`s over the body's CompoundStmt source range
+// (everything between `{` and `}` inclusive).
 //
-// Per-hit transformation (PRD §5.4 listing):
+// Per-hit transformation depends on `MainLifecycleHit::kind`:
 //
-//     int main(/* user-args */) {
-//         /* user-body */
-//     }
+//   * `Main` and `EntryPointReturn` — capture + return shape:
 //
-//   →
-//
-//     int main(/* user-args */) {
-//         sturm_backend_context_t* __sturm_ctx =
-//             sturm_backend_create(STURM_MODE_DEFAULT);
-//         sturm_set_thread_context(__sturm_ctx);
-//         int __sturm_rc = ([&]() -> int {
+//         <ret-type> fn(/* user-args */) {
 //             /* user-body */
-//         })();
-//         sturm_set_thread_context(nullptr);
-//         sturm_backend_destroy(__sturm_ctx);
-//         return __sturm_rc;
-//     }
+//         }
+//
+//       →
+//
+//         <ret-type> fn(/* user-args */) {
+//             sturm_backend_context_t* __sturm_ctx =
+//                 sturm_backend_create(STURM_MODE_DEFAULT);
+//             sturm_set_thread_context(__sturm_ctx);
+//             <ret-type> __sturm_rc = ([&]() -> <ret-type> {
+//                 /* user-body */
+//             })();
+//             sturm_set_thread_context(nullptr);
+//             sturm_backend_destroy(__sturm_ctx);
+//             return __sturm_rc;
+//         }
+//
+//     For `Main` the return type is always `int` (hardcoded); for
+//     `EntryPointReturn` the return type is derived from the
+//     FunctionDecl via `getReturnType()` and a PrintingPolicy spell.
+//
+//   * `EntryPointVoid` — fire-and-forget shape (used by library
+//     fixtures, GoogleTest TEST_F bodies, any non-result-producing
+//     entry point):
+//
+//         void fn(/* user-args */) {
+//             /* user-body */
+//         }
+//
+//       →
+//
+//         void fn(/* user-args */) {
+//             sturm_backend_context_t* __sturm_ctx =
+//                 sturm_backend_create(STURM_MODE_DEFAULT);
+//             sturm_set_thread_context(__sturm_ctx);
+//             ([&]() -> void {
+//                 /* user-body */
+//             })();
+//             sturm_set_thread_context(nullptr);
+//             sturm_backend_destroy(__sturm_ctx);
+//         }
 //
 // The emitter rewrites only the body's source range (open-brace
 // through close-brace, inclusive). The function declarator (return
-// type, name, parameter list) is left untouched — `argc` / `argv` /
-// `envp` are visible to the IIFE through the `[&]` capture clause
-// because the lambda lexically nests inside `main`'s body and C++'s
-// reference-capture semantics make all enclosing automatic variables
-// visible by reference.
+// type, name, parameter list) is left untouched — parameters
+// (`argc`, `argv`, fixture state, etc.) are visible to the IIFE
+// through the `[&]` capture clause because the lambda lexically
+// nests inside the function's body.
 //
 // Empty hit vector ⇒ no-op (matches the posture of every other
 // rewrite emitter in this directory).

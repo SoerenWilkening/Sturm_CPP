@@ -212,13 +212,19 @@ add_executable(sturm-transpile
     # PRD §3 non-goal). Linked here so the C3 consumer (sturm-65rs.10)
     # wiring resolves cleanly.
     src/qint_alias_subst_emitter.cpp
-    # sturm-e3ru (Frontend simpl. P7): main_lifecycle matcher + emitter.
-    # The matcher fires on the unique `int main(...)` FunctionDecl in TUs
-    # where the umbrella sentinel (STURM_UMBRELLA_INCLUDED) is defined
-    # and the escape hatch (STURM_NO_AUTO_LIFECYCLE) is not. The companion
-    # emitter rewrites main's body into the IIFE form (PRD §5.4 listing).
+    # sturm-e3ru (Frontend simpl. P7) + sturm-0tcv (entry-point attribute
+    # extension): main_lifecycle matcher + emitter. The matcher fires on
+    # (a) the unique `int main(...)` FunctionDecl in TUs where the
+    # umbrella sentinel (STURM_UMBRELLA_INCLUDED) is defined and the
+    # escape hatch (STURM_NO_AUTO_LIFECYCLE) is not, and (b) any
+    # FunctionDecl carrying the `[[sturm::entry_point]]` attribute.
+    # The companion emitter rewrites the body into the IIFE form
+    # (PRD §5.4 listing). `entry_point_attribute.cpp` exports the
+    # detection primitive `has_entry_point_attr` consumed by the
+    # matcher.
     src/matcher_main_lifecycle.cpp
     src/main_lifecycle_emitter.cpp
+    src/entry_point_attribute.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for
@@ -597,12 +603,22 @@ add_library(sturm-transpile-plugin SHARED
     # the main binary so the plugin-path consumer (same TranspileConsumer)
     # links the same emitter symbols at dlopen.
     src/qint_alias_subst_emitter.cpp
-    # sturm-e3ru (Frontend simpl. P7): main_lifecycle matcher + emitter.
-    # Mirror the main binary so the plugin-path consumer (same
-    # TranspileConsumer) registers and drains the matcher identically
-    # at dlopen.
+    # sturm-e3ru (Frontend simpl. P7) + sturm-0tcv (entry-point attribute
+    # extension): main_lifecycle matcher + emitter. Mirror the main
+    # binary so the plugin-path consumer (same TranspileConsumer)
+    # registers and drains the matcher identically at dlopen.
+    # `entry_point_parsed_attr_info.cpp` registers a Clang
+    # ParsedAttrInfo so the plain `[[sturm::entry_point]]` spelling
+    # is accepted alongside the canonical
+    # `[[clang::annotate("sturm::entry_point")]]` carrier; the plugin
+    # build is the only place where the ParsedAttrInfoRegistry is
+    # consumed (the standalone driver also benefits — both link the
+    # registration TU, but only the plugin path's host-clang ever
+    # sees the attribute syntax in user source).
     src/matcher_main_lifecycle.cpp
     src/main_lifecycle_emitter.cpp
+    src/entry_point_attribute.cpp
+    src/entry_point_parsed_attr_info.cpp
     src/source_map.cpp
     src/emitter.cpp
     # PM4-2: Registry implementation + Meyer's-singleton vector for

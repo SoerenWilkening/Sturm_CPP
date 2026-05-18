@@ -4960,3 +4960,59 @@ add_test(
 set_tests_properties(snapshot_main_lifecycle_gtest PROPERTIES
     LABELS "transpiler;main_lifecycle"
     REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+# ── sturm-0tcv: [[sturm::entry_point]] snapshot fixtures ──────────────────
+#
+# Three round-trip snapshot tests for the entry-point trigger of
+# matcher_main_lifecycle (PRD §5.4 post-sturm-0tcv):
+#
+#   1. _void: void-returning library fixture. Maps to
+#      MainLifecycleHitKind::EntryPointVoid — no `__sturm_rc` capture
+#      and no `return __sturm_rc;` after teardown.
+#
+#   2. _bool: bool-returning invariant check. Maps to
+#      MainLifecycleHitKind::EntryPointReturn — IIFE captures into
+#      `bool __sturm_rc` and the rewritten outer function ends with
+#      `return __sturm_rc;`.
+#
+#   3. _gtest: void-returning helper inside a `*gtest*.cpp` filename.
+#      Pins that the gtest filename probe does NOT skip entry-point
+#      hits (the probe applies only to the main-anchor trigger).
+#
+# All three reuse the standard run_snapshot.cmake driver (byte-level
+# compare against the .expected.cpp golden).
+add_test(
+    NAME snapshot_main_lifecycle_entry_point_void
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_entry_point_void.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_entry_point_void.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_entry_point_void
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_entry_point_void PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_main_lifecycle_entry_point_bool
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_entry_point_bool.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_entry_point_bool.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_entry_point_bool
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_entry_point_bool PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")
+
+add_test(
+    NAME snapshot_main_lifecycle_entry_point_gtest
+    COMMAND "${CMAKE_COMMAND}"
+            -DTRANSPILE_BIN=$<TARGET_FILE:sturm-transpile>
+            -DINPUT=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_entry_point_gtest.cpp
+            -DEXPECTED=${CMAKE_CURRENT_SOURCE_DIR}/fixtures/main_lifecycle_entry_point_gtest.expected.cpp
+            -DOUTPUT_DIR=${CMAKE_CURRENT_BINARY_DIR}/gen/main_lifecycle_entry_point_gtest
+            -P ${CMAKE_CURRENT_SOURCE_DIR}/run_snapshot.cmake)
+set_tests_properties(snapshot_main_lifecycle_entry_point_gtest PROPERTIES
+    LABELS "transpiler;main_lifecycle"
+    REQUIRED_FILES "$<TARGET_FILE:sturm-transpile>")

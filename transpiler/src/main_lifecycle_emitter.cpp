@@ -1,31 +1,39 @@
-// main_lifecycle_emitter.cpp — Frontend simpl. P7 (sturm-e3ru) emitter
-// implementation.
+// main_lifecycle_emitter.cpp — Frontend simpl. P7 (sturm-e3ru) +
+// sturm-0tcv (entry-point attribute extension) emitter implementation.
 //
 // Plan §3 Phase 7. See `main_lifecycle_emitter.hpp` for the per-hit
 // rewrite contract.
 //
 // Implementation strategy
 // -----------------------
-// The hit's FunctionDecl points at `int main(...)` with a
-// CompoundStmt body. We use the CompoundStmt's brace locations to
-// recover (a) the body-content source range — everything between
-// `{` and `}` exclusive — and (b) the full body source range
-// (`{` loc through `}` loc inclusive) which becomes the
-// `QReplacement::range`.
+// The hit's FunctionDecl points at an entry function (`main` or one
+// carrying `[[sturm::entry_point]]`) with a CompoundStmt body. We
+// use the CompoundStmt's brace locations to recover (a) the body-
+// content source range — everything between `{` and `}` exclusive —
+// and (b) the full body source range (`{` loc through `}` loc
+// inclusive) which becomes the `QReplacement::range`.
 //
-// The replacement text is assembled in three sections:
+// The replacement text is assembled per-hit based on the hit's
+// `kind`:
 //
-//   1. Pre-IIFE prologue — `{` plus the two backend-create lines.
-//   2. IIFE wrapper — the `[&]() -> int { <user-body-content> }()`
-//      block, with the user body substituted verbatim from
-//      Lexer-recovered source text.
-//   3. Post-IIFE epilogue — `set_thread_context(nullptr)`,
-//      `backend_destroy`, the `return __sturm_rc;`, and the
-//      closing `}` of main.
+//   - Main / EntryPointReturn: capture the IIFE result into an
+//     `int __sturm_rc` and emit `return __sturm_rc;` after the
+//     teardown. The IIFE's trailing return type is the same as the
+//     outer FunctionDecl's return type so implicit conversions stay
+//     out of the picture (for `Main` this is `int`; for
+//     `EntryPointReturn` this is whatever integral type the user
+//     declared).
 //
-// Source-text recovery uses `Lexer::getSourceText(CharSourceRange::
-// getCharRange(...))` so the text excludes the brace tokens
-// themselves.
+//   - EntryPointVoid: invoke the IIFE for side effects with a
+//     `void` trailing return type, and emit no return statement
+//     after the teardown — the outer function falls through to
+//     its implicit void return.
+//
+// Two surgical replacements instead of one whole-body replacement
+// so other matchers' QReplacement entries that target type tokens
+// inside the body compose with this emitter's prologue / epilogue
+// insertions (see the in-line comment below the open-brace
+// replacement for the rationale).
 
 #include "main_lifecycle_emitter.hpp"
 
@@ -33,6 +41,7 @@
 
 #include "clang/AST/Decl.h"
 #include "clang/AST/Stmt.h"
+#include "clang/AST/Type.h"
 #include "clang/Basic/LangOptions.h"
 #include "clang/Basic/SourceLocation.h"
 #include "clang/Basic/SourceManager.h"
@@ -49,6 +58,27 @@ namespace {
 
 using namespace clang;
 
+// Produce a printable text spelling of a FunctionDecl's return type
+// (used as the IIFE's trailing-return-type for entry-point hits).
+// We use the canonical type's `getAsString()` over a PrintingPolicy
+// so spelling stays in canonical form (no typedef expansions issues).
+//
+// For the `Main` case the type is always `int` so we hardcode rather
+// than re-derive — the legacy P7 code path emitted the literal "int"
+// trailing return type.
+std::string spell_return_type(const FunctionDecl& fn,
+                              const LangOptions& lang) {
+    const QualType rt = fn.getReturnType();
+    if (rt.isNull()) return "int";
+    PrintingPolicy policy(lang);
+    policy.SuppressTagKeyword = true;
+    policy.SuppressUnwrittenScope = true;
+    // Use desugared spelling so platform-specific typedefs
+    // (`int64_t`, `uint32_t`) render as canonical types (or stay
+    // typedef-spelled if Clang's printer chooses).
+    return rt.getAsString(policy);
+}
+
 } // namespace
 
 void emit_main_lifecycle_replacements(
@@ -58,7 +88,6 @@ void emit_main_lifecycle_replacements(
     std::vector<QReplacement>& replacements) {
     if (hits.empty()) return;
     (void)sm;
-    (void)lang;
     for (const auto& hit : hits) {
         if (hit.main_fn == nullptr) continue;
         const Stmt* body = hit.main_fn->getBody();
@@ -84,34 +113,78 @@ void emit_main_lifecycle_replacements(
         // failure mode the previous whole-body replace produced
         // (qram_demo emitted Rz stubs from the un-substituted alias
         // operator bodies instead of the proper QRAM gate stream).
-        //
-        // (1) Replace the open-brace `{` with the prologue text:
-        //     `{` plus the two backend-create lines plus the IIFE
-        //     opening `int __sturm_rc = ([&]() -> int {`. The
-        //     replacement re-emits the open-brace so the user body
-        //     remains lexically inside a CompoundStmt.
-        QReplacement open;
-        open.range = SourceRange(lbrace, lbrace);
-        open.replacement =
-            "{\n"
-            "    sturm_backend_context_t* __sturm_ctx = "
-            "sturm_backend_create(STURM_MODE_DEFAULT);\n"
-            "    sturm_set_thread_context(__sturm_ctx);\n"
-            "    int __sturm_rc = ([&]() -> int {";
-        replacements.push_back(std::move(open));
 
-        // (2) Replace the close-brace `}` with the epilogue text:
-        //     IIFE closing `})()` plus the teardown lines plus the
-        //     `return __sturm_rc;` plus the final `}` of `main`.
-        QReplacement close;
-        close.range = SourceRange(rbrace, rbrace);
-        close.replacement =
-            "})();\n"
-            "    sturm_set_thread_context(nullptr);\n"
-            "    sturm_backend_destroy(__sturm_ctx);\n"
-            "    return __sturm_rc;\n"
-            "}";
-        replacements.push_back(std::move(close));
+        switch (hit.kind) {
+        case MainLifecycleHitKind::Main:
+        case MainLifecycleHitKind::EntryPointReturn: {
+            // Capture + return shape. The IIFE's trailing return
+            // type spells the outer function's return type so the
+            // outer `return __sturm_rc;` stays well-typed under
+            // implicit conversions on the IIFE invocation site
+            // (e.g. `int` capture + `int` outer return = no
+            // conversion needed; `int64_t` outer return + `int`
+            // capture would need `static_cast<int64_t>`, but we
+            // emit the trailing type to match the outer so the
+            // capture variable's type is also `int64_t`).
+            const std::string ret_type =
+                (hit.kind == MainLifecycleHitKind::Main)
+                    ? "int"
+                    : spell_return_type(*hit.main_fn, lang);
+
+            // (1) Replace `{` with prologue + IIFE opener.
+            QReplacement open;
+            open.range = SourceRange(lbrace, lbrace);
+            open.replacement =
+                "{\n"
+                "    sturm_backend_context_t* __sturm_ctx = "
+                "sturm_backend_create(STURM_MODE_DEFAULT);\n"
+                "    sturm_set_thread_context(__sturm_ctx);\n"
+                "    " + ret_type + " __sturm_rc = ([&]() -> " +
+                ret_type + " {";
+            replacements.push_back(std::move(open));
+
+            // (2) Replace `}` with IIFE closer + teardown + return.
+            QReplacement close;
+            close.range = SourceRange(rbrace, rbrace);
+            close.replacement =
+                "})();\n"
+                "    sturm_set_thread_context(nullptr);\n"
+                "    sturm_backend_destroy(__sturm_ctx);\n"
+                "    return __sturm_rc;\n"
+                "}";
+            replacements.push_back(std::move(close));
+            break;
+        }
+        case MainLifecycleHitKind::EntryPointVoid: {
+            // Void-return shape. The IIFE has a `-> void` trailing
+            // return type, no result is captured, and the outer
+            // teardown emits no return statement — the outer
+            // function falls through to its implicit void return.
+            //
+            // (1) Replace `{` with prologue + IIFE opener.
+            QReplacement open;
+            open.range = SourceRange(lbrace, lbrace);
+            open.replacement =
+                "{\n"
+                "    sturm_backend_context_t* __sturm_ctx = "
+                "sturm_backend_create(STURM_MODE_DEFAULT);\n"
+                "    sturm_set_thread_context(__sturm_ctx);\n"
+                "    ([&]() -> void {";
+            replacements.push_back(std::move(open));
+
+            // (2) Replace `}` with IIFE closer + teardown.
+            //     No `return` — the outer function is void.
+            QReplacement close;
+            close.range = SourceRange(rbrace, rbrace);
+            close.replacement =
+                "})();\n"
+                "    sturm_set_thread_context(nullptr);\n"
+                "    sturm_backend_destroy(__sturm_ctx);\n"
+                "}";
+            replacements.push_back(std::move(close));
+            break;
+        }
+        }
     }
 }
 

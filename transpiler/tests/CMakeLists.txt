@@ -193,6 +193,170 @@ add_test(NAME test_reversible_attribute COMMAND test_reversible_attribute)
 set_tests_properties(test_reversible_attribute PROPERTIES
     LABELS "transpiler")
 
+# ── Unit test: entry_point_attribute (sturm-0tcv) ───────────────────────────
+# Pins the `has_entry_point_attr(const FunctionDecl*)` predicate that the
+# extended `matcher_main_lifecycle` consults to gate non-main entry-point
+# rewrites. Mirrors `test_reversible_attribute` linkage: only the small
+# detection TU is linked, driven via a direct ASTConsumer pipeline.
+add_executable(test_entry_point_attribute
+    test_entry_point_attribute.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+)
+target_include_directories(test_entry_point_attribute PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_entry_point_attribute PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_entry_point_attribute PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_ENTRY_POINT NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_entry_point_attribute PRIVATE
+    ${LLVM_DEFS_LIST_ENTRY_POINT})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_entry_point_attribute PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_entry_point_attribute PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_ENTRY_POINT support)
+    target_link_libraries(test_entry_point_attribute PRIVATE
+        ${LLVM_LIBS_ENTRY_POINT})
+endif()
+add_test(NAME test_entry_point_attribute COMMAND test_entry_point_attribute)
+set_tests_properties(test_entry_point_attribute PROPERTIES
+    LABELS "transpiler")
+
+# ── Unit test: matcher_main_lifecycle entry-point arm (sturm-0tcv) ──────────
+# Exercises the extension of `matcher_main_lifecycle` that fires on any
+# FunctionDecl carrying `[[sturm::entry_point]]`. Tests cover library
+# fixtures, GoogleTest TEST_F wrapping idioms, the void/integral return
+# split, macro gates, and the gtest-filename relaxation.
+add_executable(test_matcher_main_lifecycle_entry_point
+    test_matcher_main_lifecycle_entry_point.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+)
+target_include_directories(test_matcher_main_lifecycle_entry_point PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_matcher_main_lifecycle_entry_point
+        PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_matcher_main_lifecycle_entry_point PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_LIFECYCLE_EP NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_matcher_main_lifecycle_entry_point PRIVATE
+    ${LLVM_DEFS_LIST_LIFECYCLE_EP})
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_matcher_main_lifecycle_entry_point PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_matcher_main_lifecycle_entry_point PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_LIFECYCLE_EP support)
+    target_link_libraries(test_matcher_main_lifecycle_entry_point PRIVATE
+        ${LLVM_LIBS_LIFECYCLE_EP})
+endif()
+add_test(NAME test_matcher_main_lifecycle_entry_point
+         COMMAND test_matcher_main_lifecycle_entry_point)
+set_tests_properties(test_matcher_main_lifecycle_entry_point PROPERTIES
+    LABELS "transpiler")
+
+# ── Unit test: main_lifecycle_emitter entry-point arm (sturm-0tcv) ──────────
+# Exercises the per-hit emitter behaviour for EntryPointVoid /
+# EntryPointReturn / Main shapes. Drives the matcher + emitter together
+# and snapshots the rewritten source to assert on the IIFE-wrapping
+# substrings.
+add_executable(test_main_lifecycle_emitter_entry_point
+    test_main_lifecycle_emitter_entry_point.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/main_lifecycle_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
+)
+target_include_directories(test_main_lifecycle_emitter_entry_point PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src
+    ${LLVM_INCLUDE_DIRS}
+    ${CLANG_INCLUDE_DIRS}
+)
+if(NOT LLVM_ENABLE_RTTI)
+    target_compile_options(test_main_lifecycle_emitter_entry_point
+        PRIVATE -fno-rtti)
+endif()
+target_compile_features(test_main_lifecycle_emitter_entry_point PRIVATE cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_EMITTER_EP NATIVE_COMMAND
+    "${LLVM_DEFINITIONS}")
+target_compile_definitions(test_main_lifecycle_emitter_entry_point PRIVATE
+    ${LLVM_DEFS_LIST_EMITTER_EP}
+    STURM_ENTRY_POINT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(test_main_lifecycle_emitter_entry_point PRIVATE
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(test_main_lifecycle_emitter_entry_point PRIVATE
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_EMITTER_EP support)
+    target_link_libraries(test_main_lifecycle_emitter_entry_point PRIVATE
+        ${LLVM_LIBS_EMITTER_EP})
+endif()
+add_test(NAME test_main_lifecycle_emitter_entry_point
+         COMMAND test_main_lifecycle_emitter_entry_point)
+set_tests_properties(test_main_lifecycle_emitter_entry_point PROPERTIES
+    LABELS "transpiler")
+
 # ── Unit test: matcher_reversible_validate (P-C / sturm-z2e8.5) ─────────────
 # Phase P plan §2.1 P-C: pins the P9d validation pass that walks every
 # `[[sturm::reversible]]` routine body and rejects measurement, classical
@@ -1905,14 +2069,16 @@ add_executable(test_transpile_consumer
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/qir.cpp
-    # sturm-e3ru / Phase 7: TranspileConsumer registers the auto-injection
-    # matcher in its ctor and drains its hits via
+    # sturm-e3ru / Phase 7 + sturm-0tcv: TranspileConsumer registers the
+    # auto-injection matcher in its ctor and drains its hits via
     # `emit_main_lifecycle_replacements` in `HandleTranslationUnit`. Link
-    # both TUs so the consumer test binary resolves the symbols at link
-    # time. Mirrors the parallel block in `transpiler/CMakeLists.txt` for
-    # `sturm-transpile` and `sturm-transpile-plugin`.
+    # the matcher + emitter + entry-point-attribute TUs so the consumer
+    # test binary resolves the symbols at link time. Mirrors the parallel
+    # block in `transpiler/CMakeLists.txt` for `sturm-transpile` and
+    # `sturm-transpile-plugin`.
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/matcher_main_lifecycle.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/main_lifecycle_emitter.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/entry_point_attribute.cpp
 )
 target_include_directories(test_transpile_consumer PRIVATE
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
