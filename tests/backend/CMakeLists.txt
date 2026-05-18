@@ -110,6 +110,23 @@ set_source_files_properties(
 add_test(NAME test_draw_ascii_noarg COMMAND test_draw_ascii_noarg)
 set_tests_properties(test_draw_ascii_noarg PROPERTIES LABELS "backend")
 
+# ── sturm-a4we: debug-print JSON renderer ────────────────────────────────────
+# Mirrors the draw_ascii_noarg wiring above: header-only IR-taking overload
+# from include/sturm/backend/draw_json.hpp + no-arg entry points defined in
+# src/sturm/backend/draw_json.cpp.
+add_executable(test_draw_json
+    test_draw_json.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_json.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+)
+target_include_directories(test_draw_json PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_draw_json PRIVATE cxx_std_20)
+add_test(NAME test_draw_json COMMAND test_draw_json)
+set_tests_properties(test_draw_json PROPERTIES LABELS "backend")
+
 # ── M8: APPEND executor ──────────────────────────────────────────────────────
 add_executable(test_exec_append
     test_exec_append.cpp

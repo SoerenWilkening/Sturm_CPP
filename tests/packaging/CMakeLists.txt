@@ -183,6 +183,30 @@ add_test(NAME test_umbrella_qram COMMAND test_umbrella_qram)
 set_tests_properties(test_umbrella_qram PROPERTIES
     LABELS "packaging;frontend_simpl")
 
+# ── sturm-a4we — opt-in `sturm/draw_json.h` packaging acceptance test ──────
+# Mirrors test_umbrella_only / test_umbrella_qram. Pins that
+# `#include "sturm.h"` + `#include "sturm/draw_json.h"` is sufficient to
+# reach `sturm::draw_json` / `sturm::print_json` and produce balanced-brace
+# debug-print output from the thread-local context. The renderer body in
+# `src/sturm/backend/draw_json.cpp` is linked directly (mirrors
+# test_umbrella_only's posture of compiling the runtime sources rather
+# than linking a separate library), keeping linkage minimal:
+# context.cpp + gate_kind.c + draw_json.cpp.
+add_executable(test_umbrella_draw_json
+    test_umbrella_draw_json.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_json.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
+target_link_libraries(test_umbrella_draw_json PRIVATE sturm)
+target_compile_features(test_umbrella_draw_json PRIVATE cxx_std_20)
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11")
+add_test(NAME test_umbrella_draw_json COMMAND test_umbrella_draw_json)
+set_tests_properties(test_umbrella_draw_json PROPERTIES
+    LABELS "packaging;frontend_simpl")
+
 # ── sturm-65rs.6 / B1 — qint resolution acceptance test ────────────────────
 # Pins the post-B1 type identity of `sturm::qint`: it IS sturm::frontend::qint
 # (PRD §4.2), and a LOCAL `using qint = sturm::qint_t<W>;` still resolves to
