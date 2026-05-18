@@ -9,6 +9,22 @@
 
 cmake_minimum_required(VERSION 3.16)
 
+# sturm-bs8s: pull in the `sturm_use_transpile_pch(<target>)` helper that
+# opts a transpiler test executable into REUSE_FROM'ing the
+# `sturm-transpile` PCH. The helper applies the `-fPIC` flag (required to
+# match the producer's PIE state — sturm-2vbr) plus the
+# `target_precompile_headers(... REUSE_FROM sturm-transpile)` call. Each
+# test target that compiles heavy clang/llvm headers gets one
+# `sturm_use_transpile_pch(<t>)` line below; targets that do NOT touch
+# those headers (`test_transpile_io`, `test_transpile_fresh_names`,
+# `test_render_qint_typename`, `test_transpile_skip`,
+# `test_transpile_driver`, the subprocess-driven `pm4_*` smokes, the
+# `test_qint_alias_subst_e2e` / `test_sturm_gen_clean*` driver tests)
+# deliberately do NOT get the helper — adding the PCH to a sub-second
+# TU costs more in PCH read time than parsing the original source
+# saves.
+include(${CMAKE_SOURCE_DIR}/cmake/SturmTranspilePch.cmake)
+
 # Shared io helper sources, compiled into each test binary that needs them.
 set(STURM_TRANSPILE_IO_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
@@ -80,6 +96,14 @@ separate_arguments(LLVM_DEFS_LIST_QIR NATIVE_COMMAND "${LLVM_DEFINITIONS}")
 target_compile_definitions(test_transpile_qir PRIVATE ${LLVM_DEFS_LIST_QIR})
 add_test(NAME test_transpile_qir COMMAND test_transpile_qir)
 set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
+# sturm-bs8s: deliberately NO PCH here. test_transpile_qir compiles
+# without any explicit `target_link_libraries` (qir.hpp only pulls
+# clang/Basic/SourceLocation.h, whose ctor is inline-only). The PCH
+# pulls in <clang/ASTMatchers/ASTMatchers.h>, which triggers
+# template instantiations needing libclangASTMatchers / libclangAST
+# symbols at link time — symbols this binary deliberately does not
+# link. PCH read would force the cost of building + linking the full
+# LibTooling stack onto a sub-second test. Skip.
 
 # ── Unit test: DiagContext (PM3-0 + P-D) ────────────────────────────────────
 # Pins the DiagContext public surface: the `getOrRegister` cache plus every
@@ -128,6 +152,7 @@ endif()
 add_test(NAME test_transpile_diag_context COMMAND test_transpile_diag_context)
 set_tests_properties(test_transpile_diag_context PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_transpile_diag_context)
 
 # ── Unit test: reversible_attribute (P-A / sturm-z2e8.2) ─────────────────────
 # Phase P plan §2.1 P-A: pins `is_reversible(const FunctionDecl*)` for the
@@ -192,6 +217,7 @@ endif()
 add_test(NAME test_reversible_attribute COMMAND test_reversible_attribute)
 set_tests_properties(test_reversible_attribute PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_reversible_attribute)
 
 # ── Unit test: entry_point_attribute (sturm-0tcv) ───────────────────────────
 # Pins the `has_entry_point_attr(const FunctionDecl*)` predicate that the
@@ -244,6 +270,7 @@ endif()
 add_test(NAME test_entry_point_attribute COMMAND test_entry_point_attribute)
 set_tests_properties(test_entry_point_attribute PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_entry_point_attribute)
 
 # ── Unit test: matcher_main_lifecycle entry-point arm (sturm-0tcv) ──────────
 # Exercises the extension of `matcher_main_lifecycle` that fires on any
@@ -299,6 +326,7 @@ add_test(NAME test_matcher_main_lifecycle_entry_point
          COMMAND test_matcher_main_lifecycle_entry_point)
 set_tests_properties(test_matcher_main_lifecycle_entry_point PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_matcher_main_lifecycle_entry_point)
 
 # ── Unit test: main_lifecycle_emitter entry-point arm (sturm-0tcv) ──────────
 # Exercises the per-hit emitter behaviour for EntryPointVoid /
@@ -356,6 +384,7 @@ add_test(NAME test_main_lifecycle_emitter_entry_point
          COMMAND test_main_lifecycle_emitter_entry_point)
 set_tests_properties(test_main_lifecycle_emitter_entry_point PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_main_lifecycle_emitter_entry_point)
 
 # ── Unit test: matcher_reversible_validate (P-C / sturm-z2e8.5) ─────────────
 # Phase P plan §2.1 P-C: pins the P9d validation pass that walks every
@@ -427,6 +456,7 @@ add_test(NAME test_matcher_reversible_validate
     COMMAND test_matcher_reversible_validate)
 set_tests_properties(test_matcher_reversible_validate PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_matcher_reversible_validate)
 
 # ── Unit test: matcher_reversible_signature (Q-B / sturm-5kgu.3) ────────────
 # Phase Q plan §2.2 Q-B: pins the parameter-list signature enforcement
@@ -503,6 +533,7 @@ add_test(NAME test_matcher_reversible_signature
     COMMAND test_matcher_reversible_signature)
 set_tests_properties(test_matcher_reversible_signature PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_matcher_reversible_signature)
 
 # ── Unit test: synthesis_registry (P-B / sturm-z2e8.3) ──────────────────────
 # Phase P plan §2.1 P-B: pins the `SynthesisRegistry` container and its
@@ -557,6 +588,7 @@ endif()
 add_test(NAME test_synthesis_registry COMMAND test_synthesis_registry)
 set_tests_properties(test_synthesis_registry PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_synthesis_registry)
 
 # ── Unit test: return_to_out_param (Q-A / sturm-5kgu.2) ─────────────────────
 # Phase Q plan §2.2 Q-A: pins the out-param-twin source synthesis for
@@ -626,6 +658,7 @@ endif()
 add_test(NAME test_return_to_out_param COMMAND test_return_to_out_param)
 set_tests_properties(test_return_to_out_param PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_return_to_out_param)
 
 # ── Unit test: adjoint_emitter (R-1 / sturm-88d7.2) ─────────────────────────
 # Phase R plan §2.3 R-A: pins the straight-line adjoint emission that
@@ -702,6 +735,7 @@ endif()
 add_test(NAME test_adjoint_emitter COMMAND test_adjoint_emitter)
 set_tests_properties(test_adjoint_emitter PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_adjoint_emitter)
 
 # ── Unit test: auto_register_emitter (R-B / sturm-88d7.3) ───────────────────
 # Phase R plan §2.3 R-B: pins the TU-scope `STURM_REGISTER_ADJOINT(fn,
@@ -764,6 +798,7 @@ endif()
 add_test(NAME test_auto_register_emitter COMMAND test_auto_register_emitter)
 set_tests_properties(test_auto_register_emitter PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_auto_register_emitter)
 
 # ── Unit test: matcher_reversible_drive (R-C / sturm-88d7.4) ────────────────
 # Phase R plan §2.3 R-C: pins the top-level driver that orchestrates R-A
@@ -852,6 +887,7 @@ add_test(NAME test_matcher_reversible_drive
     COMMAND test_matcher_reversible_drive)
 set_tests_properties(test_matcher_reversible_drive PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_matcher_reversible_drive)
 
 # ── Unit test: loop_reversal (S-A / sturm-ha2k.2) ───────────────────────────
 # Phase S plan §2.4 S-A: pins the reversed-iteration adjoint loop-header
@@ -913,6 +949,7 @@ endif()
 add_test(NAME test_loop_reversal COMMAND test_loop_reversal)
 set_tests_properties(test_loop_reversal PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_loop_reversal)
 
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
@@ -989,6 +1026,7 @@ else()
 endif()
 add_test(NAME test_plugin_registry COMMAND test_plugin_registry)
 set_tests_properties(test_plugin_registry PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_plugin_registry)
 
 # ── Unit test: PM4-7 demo plugin ────────────────────────────────────────────
 # Exercises the PM4-7 demo plugin under `examples/plugin_demo/` end-to-end
@@ -1041,6 +1079,7 @@ else()
 endif()
 add_test(NAME test_plugin_demo COMMAND test_plugin_demo)
 set_tests_properties(test_plugin_demo PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_plugin_demo)
 
 # ── Unit test: PM4-6 dogfood migration (PB-1..PB-4) ─────────────────────────
 # Pins the post-migration Registry API contract for the four Phase B
@@ -1104,6 +1143,7 @@ else()
 endif()
 add_test(NAME test_pm4_dogfood_registry COMMAND test_pm4_dogfood_registry)
 set_tests_properties(test_pm4_dogfood_registry PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_pm4_dogfood_registry)
 
 # ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
 # Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
@@ -1167,6 +1207,7 @@ add_test(NAME test_transpile_uncompute_pass
          COMMAND test_transpile_uncompute_pass)
 set_tests_properties(test_transpile_uncompute_pass PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_transpile_uncompute_pass)
 
 # ── Unit test: PM5-4 alias footprint extractor ──────────────────────────────
 # Pins the `sturm::transpile::detail::footprint()` + `may_overlap()` API
@@ -1235,6 +1276,7 @@ else()
 endif()
 add_test(NAME test_alias_footprint COMMAND test_alias_footprint)
 set_tests_properties(test_alias_footprint PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_alias_footprint)
 
 # ── Unit test: PM5-7 peephole reorder matcher ───────────────────────────────
 # Pins `register_peephole_reorder_matcher` (PM5-5, exported from
@@ -1320,6 +1362,7 @@ add_test(NAME test_matcher_peephole_reorder
          COMMAND test_matcher_peephole_reorder)
 set_tests_properties(test_matcher_peephole_reorder PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_matcher_peephole_reorder)
 
 # ── Unit test: LO-2a lossy-op matcher (sturm-9254) ──────────────────────────
 # Unit test for `register_lossy_op_matcher`. Drives a real Clang tooling
@@ -1378,6 +1421,7 @@ add_test(NAME test_matcher_lossy_op
          COMMAND test_matcher_lossy_op)
 set_tests_properties(test_matcher_lossy_op PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_matcher_lossy_op)
 
 # ── Unit test: LO-2b lossy_rewrite_emitter (sturm-yxxa) ─────────────────────
 # Forward-only emitter consuming `LossyOpHit` records produced by LO-2a.
@@ -1431,6 +1475,7 @@ add_test(NAME test_lossy_rewrite_emitter
          COMMAND test_lossy_rewrite_emitter)
 set_tests_properties(test_lossy_rewrite_emitter PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_lossy_rewrite_emitter)
 
 # ── Unit test: LO-2c lossy_scope_exit_emitter (sturm-hbwr) ──────────────────
 # Cleanup-only emitter. Pairs LO-2a `LossyOpHit` with LO-2b `LossyEmission`
@@ -1487,6 +1532,7 @@ add_test(NAME test_lossy_scope_exit_emitter
          COMMAND test_lossy_scope_exit_emitter)
 set_tests_properties(test_lossy_scope_exit_emitter PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_lossy_scope_exit_emitter)
 
 # ── Unit test: LO-2e lossy_nested_rewrite (sturm-rry6) ──────────────────────
 # Depth-first rewrite for nested lossy ops. Drives the AST matcher + the
@@ -1542,6 +1588,7 @@ add_test(NAME test_lossy_nested_rewrite
          COMMAND test_lossy_nested_rewrite)
 set_tests_properties(test_lossy_nested_rewrite PROPERTIES
     LABELS "transpiler")
+sturm_use_transpile_pch(test_lossy_nested_rewrite)
 
 # ── Unit test: P5.1 matcher_modular_op (sturm-qzab.1) ──────────────────────
 # Beat 5.1 AddMod arm. Stand-alone matcher TU — writes `ModularOpHit`
@@ -1617,6 +1664,12 @@ add_test(NAME test_matcher_modular_op
          COMMAND test_matcher_modular_op)
 set_tests_properties(test_matcher_modular_op PROPERTIES
     LABELS "transpiler;modular-arith")
+# sturm-bs8s: STURM_MODULAR_POW is a per-source-file define here
+# (set_source_files_properties on matcher_modular_op.cpp +
+# matcher_modular_pow_mod.cpp), so the target-level compile_definitions
+# match the producer's. The PCH headers themselves do not reference
+# STURM_MODULAR_POW, so reuse stays consistent regardless of the flag.
+sturm_use_transpile_pch(test_matcher_modular_op)
 
 # ── Unit test: P5.1 modular_rewrite_emitter (sturm-qzab.1) ─────────────────
 # Beat 5.1 AddMod arm. Pure-string + AST-driven harness. Linkage matches
@@ -1685,6 +1738,9 @@ add_test(NAME test_modular_rewrite_emitter
          COMMAND test_modular_rewrite_emitter)
 set_tests_properties(test_modular_rewrite_emitter PROPERTIES
     LABELS "transpiler;modular-arith")
+# sturm-bs8s: STURM_MODULAR_POW is per-source-file, mirroring
+# test_matcher_modular_op above. PCH headers are STURM_MODULAR_POW-agnostic.
+sturm_use_transpile_pch(test_modular_rewrite_emitter)
 
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
@@ -1747,6 +1803,7 @@ else()
 endif()
 add_test(NAME test_transpile_emitter COMMAND test_transpile_emitter)
 set_tests_properties(test_transpile_emitter PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_transpile_emitter)
 
 # ── Unit test: M7 AST matcher ────────────────────────────────────────────────
 # This test drives the `register_or_matcher` helper through a real Clang
@@ -1899,6 +1956,7 @@ else()
 endif()
 add_test(NAME test_transpile_matcher COMMAND test_transpile_matcher)
 set_tests_properties(test_transpile_matcher PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_transpile_matcher)
 
 # ── Unit + integration test: M5 skip / idempotency ──────────────────────────
 # Pure string helpers plus a subprocess-driven round-trip over the two
@@ -2120,6 +2178,7 @@ else()
 endif()
 add_test(NAME test_transpile_consumer COMMAND test_transpile_consumer)
 set_tests_properties(test_transpile_consumer PROPERTIES LABELS "transpiler")
+sturm_use_transpile_pch(test_transpile_consumer)
 
 # ── Integration test: plugin load (PM1-3) ────────────────────────────────────
 # Shells out to the host clang++ with -fplugin=$<TARGET_FILE:...> against
@@ -2711,6 +2770,7 @@ else()
         ${LLVM_LIBS_QRAM_OOS})
 endif()
 add_test(NAME test_matcher_qram_oos COMMAND test_matcher_qram_oos)
+sturm_use_transpile_pch(test_matcher_qram_oos)
 set_tests_properties(test_matcher_qram_oos PROPERTIES
     LABELS "transpiler;qram")
 
@@ -2766,6 +2826,7 @@ else()
         ${LLVM_LIBS_QINT_WARN})
 endif()
 add_test(NAME test_qint_implicit_warn COMMAND test_qint_implicit_warn)
+sturm_use_transpile_pch(test_qint_implicit_warn)
 set_tests_properties(test_qint_implicit_warn PROPERTIES
     LABELS "transpiler;qram")
 
@@ -2820,6 +2881,7 @@ else()
         ${LLVM_LIBS_WIDTH_INF})
 endif()
 add_test(NAME test_width_inference COMMAND test_width_inference)
+sturm_use_transpile_pch(test_width_inference)
 set_tests_properties(test_width_inference PROPERTIES
     LABELS "transpiler;qram")
 
@@ -2879,6 +2941,7 @@ else()
 endif()
 add_test(NAME test_matcher_qram_subscript
          COMMAND test_matcher_qram_subscript)
+sturm_use_transpile_pch(test_matcher_qram_subscript)
 set_tests_properties(test_matcher_qram_subscript PROPERTIES
     LABELS "transpiler;qram")
 
@@ -2939,6 +3002,7 @@ else()
 endif()
 add_test(NAME test_matcher_qint_alias_subst
          COMMAND test_matcher_qint_alias_subst)
+sturm_use_transpile_pch(test_matcher_qint_alias_subst)
 set_tests_properties(test_matcher_qint_alias_subst PROPERTIES
     LABELS "transpiler;qac")
 
@@ -3006,6 +3070,7 @@ else()
 endif()
 add_test(NAME test_qint_alias_subst_emitter
          COMMAND test_qint_alias_subst_emitter)
+sturm_use_transpile_pch(test_qint_alias_subst_emitter)
 set_tests_properties(test_qint_alias_subst_emitter PROPERTIES
     LABELS "transpiler;qac")
 
@@ -3078,6 +3143,7 @@ else()
 endif()
 add_test(NAME test_consumer_qint_alias_subst
          COMMAND test_consumer_qint_alias_subst)
+sturm_use_transpile_pch(test_consumer_qint_alias_subst)
 set_tests_properties(test_consumer_qint_alias_subst PROPERTIES
     LABELS "transpiler;qac")
 
@@ -3140,6 +3206,7 @@ else()
 endif()
 add_test(NAME test_qram_emitter
          COMMAND test_qram_emitter)
+sturm_use_transpile_pch(test_qram_emitter)
 set_tests_properties(test_qram_emitter PROPERTIES
     LABELS "transpiler;qram")
 
@@ -3197,6 +3264,7 @@ else()
 endif()
 add_test(NAME test_matcher_qram_subscript_expr
          COMMAND test_matcher_qram_subscript_expr)
+sturm_use_transpile_pch(test_matcher_qram_subscript_expr)
 set_tests_properties(test_matcher_qram_subscript_expr PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
 
@@ -3254,6 +3322,7 @@ else()
         ${LLVM_LIBS_QRAM_EMIT_EXPR})
 endif()
 add_test(NAME test_qram_emitter_expr COMMAND test_qram_emitter_expr)
+sturm_use_transpile_pch(test_qram_emitter_expr)
 set_tests_properties(test_qram_emitter_expr PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
 
@@ -3311,6 +3380,7 @@ else()
 endif()
 add_test(NAME test_matcher_qram_subscript_assign
          COMMAND test_matcher_qram_subscript_assign)
+sturm_use_transpile_pch(test_matcher_qram_subscript_assign)
 set_tests_properties(test_matcher_qram_subscript_assign PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
 
@@ -3368,6 +3438,7 @@ else()
         ${LLVM_LIBS_QRAM_EMIT_ASSIGN})
 endif()
 add_test(NAME test_qram_emitter_assign COMMAND test_qram_emitter_assign)
+sturm_use_transpile_pch(test_qram_emitter_assign)
 set_tests_properties(test_qram_emitter_assign PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
 
@@ -3457,6 +3528,12 @@ endif()
 target_link_libraries(test_qram_e2e PRIVATE orkan_headers)
 add_test(NAME test_qram_e2e
          COMMAND test_qram_e2e)
+# sturm-bs8s: test_qram_e2e is a mixed C+C++ target (gate_kind.c is
+# linked in). target_precompile_headers(... REUSE_FROM ...) attempts to
+# create a per-language PCH on the consumer, but the producer
+# (sturm-transpile) only carries a C++ PCH. CMake hard-errors with
+# "Unable to resolve full path of PCH-header ... cmake_pch.h" because
+# the C side has no producer to reuse from. Skip the PCH here.
 set_tests_properties(test_qram_e2e PROPERTIES
     LABELS "transpiler;qram;qram-subscript")
 
@@ -3555,6 +3632,10 @@ if(STURM_FULL_TEST_SUITE)
     set_tests_properties(test_qram_e2e_real PROPERTIES
         LABELS "transpiler;qram;qram-subscript")
 endif()
+# sturm-bs8s: PCH reuse is applied unconditionally because the binary is
+# always built (only the ctest registration is gated). Building cheaper
+# is still a win even when the gate test is suppressed.
+sturm_use_transpile_pch(test_qram_e2e_real)
 
 # ── End-to-end alias erasure: test_qint_alias_subst_e2e (sturm-65rs.13 / E1) ─
 # Plan §14, PRD A5. Closes the qint-alias-completion epic by transpiling a

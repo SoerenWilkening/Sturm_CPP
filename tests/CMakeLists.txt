@@ -559,3 +559,38 @@ set_tests_properties(cmake_pch_pie_match PROPERTIES
     # transpiler subdirectory; reserve 2 slots to stay under the
     # project's `--parallel 6` cap.
     PROCESSORS 2)
+
+# ── sturm-bs8s — transpiler tests REUSE_FROM the sturm-transpile PCH ──────
+#
+# Pins the sturm-bs8s contract that transpiler test targets opt into the
+# sturm-transpile precompiled header via the `sturm_use_transpile_pch()`
+# helper (cmake/SturmTranspilePch.cmake). Without that opt-in the test
+# targets re-parse the ~20-header clang/llvm umbrella every TU, costing
+# ~7.7 s per heavy TU and ~3 minutes wall on a clean rebuild at
+# --parallel 6.
+#
+# The script asserts three contract clauses on a representative heavy
+# test target (`test_matcher_qint_alias_subst`):
+#   (1) The helper file `cmake/SturmTranspilePch.cmake` exists and
+#       defines `sturm_use_transpile_pch`.
+#   (2) The target's per-target CXX_FLAGS contain `-fPIC` (PIE-state
+#       match with the PCH producer per sturm-2vbr).
+#   (3) The target's `flags.make` contains a per-source-file PCH
+#       option line referencing `sturm-transpile.dir/cmake_pch.hxx` —
+#       i.e. REUSE_FROM is wired to the correct producer.
+#
+# Configure-only (no compilation), runs in ~30 s — same posture as the
+# sibling `cmake_pch_pie_match` test above.
+add_test(NAME cmake_pch_test_reuse
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_pch_test_reuse"
+        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+        "-DPARENT_CLANG_DIR=${Clang_DIR}"
+        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_pch_test_reuse.cmake"
+)
+set_tests_properties(cmake_pch_test_reuse PROPERTIES
+    LABELS "cmake;pch-test-reuse;transpiler"
+    PROCESSORS 2)
