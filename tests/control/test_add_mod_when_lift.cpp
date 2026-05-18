@@ -41,6 +41,18 @@
 // qbool from `active_control()`.  A purely classical-true outer would
 // short-circuit the WhenGuard before `active_control()` is set, defeating
 // the test's goal of exercising the `(outer & lt_flag_own)` AND-fold.
+//
+// sturm-a3e9: the WHEN-wrapped variant (which previously sized orkan
+// at n_orkan_when=22 → 4M-amplitude state vector) now runs through the
+// shared APPEND+classical-replay harness from tests/lib/
+// classical_replay.hpp.  Pool semantics and the lift's IR shape are
+// execution-mode-independent: the lift's `(outer & flag)` AND-fold,
+// `WHEN(tmp)` body, and `uncompute_and(tmp, ...)` all emit X / CX / CCX
+// records into ctx->ir under STURM_MODE_APPEND, just as they would
+// execute against amplitudes under STURM_MODE_SIMULATE.  Per-case cost
+// drops from O(2^n_orkan_when * |IR|) to O(|IR|), bringing wall-clock
+// from ~15 s to <1 s.  One SIMULATE smoke (bare path, (1+1) mod 3) is
+// retained for end-to-end statevector coverage of the bare lift branch.
 
 #define STURM_BACKEND_ENABLED 1
 #include "sturm/detail/lib/add_mod_dsl.hpp"
@@ -52,6 +64,10 @@
 #include "sturm/core/core.h"
 #include "sturm/core/qubit_pool.hpp"
 #include "sturm/backend/orkan_bridge.hpp"
+#include "sturm/backend/ir.hpp"
+#include "sturm/core/gate_kind.h"
+
+#include "../lib/classical_replay.hpp"  // sturm-a3e9: shared APPEND+replay helper
 
 #include <array>
 #include <cassert>
@@ -59,22 +75,22 @@
 #include <complex>
 #include <cstdint>
 #include <cstdio>
+#include <vector>
 
 static constexpr double kTol = 1e-9;
 static constexpr std::size_t W = 2;
-// Sized at the kMaxQubits=17 cap for the bare path; the WHEN-wrapped path
-// allocates one extra outer-control qubit and one lift ancilla per
-// controlled body, so it bypasses the cap via `orkan::allocate` directly.
-static constexpr uint32_t n_orkan      = 17u;
-static constexpr uint32_t n_orkan_when = 22u;
+// Bare SIMULATE smoke sizes orkan at the kMaxQubits=17 cap.  The
+// WHEN-wrapped path used to size orkan at 22 for the SIMULATE driver;
+// under sturm-a3e9 it runs through APPEND+replay and no longer needs an
+// orkan state vector.
+static constexpr uint32_t n_orkan = 17u;
 
 struct SimCtx {
     sturm::OrkanBridge bridge;
     sturm_backend_context_t* ctx;
     sturm_backend_context_t* prev;
-    SimCtx(uint32_t n_q, bool bypass) {
-        if (bypass) orkan::allocate(bridge.state(), n_q);
-        else        bridge.allocate(n_q);
+    explicit SimCtx(uint32_t n_q) {
+        bridge.allocate(n_q);
         ctx  = sturm_backend_create(STURM_MODE_SIMULATE);
         assert(ctx);
         ctx->orkan_state_ptr = &bridge;
@@ -119,62 +135,36 @@ static Reg make_reg(int base, uint32_t val, orkan::state_t& sv) {
     return r;
 }
 
-// Runs forward + adjoint round-trip on (a, b, n) under one of two modes:
-//   wrap_in_when=false  -> exercises the `else` branch of the lift
-//                          (WHEN(lt_flag_own)).
-//   wrap_in_when=true   -> wraps the calls in WHEN(c) with c carrying
-//                          super_mask=1 and value=1, so WhenGuard takes
-//                          the superposed branch and `active_control()`
-//                          returns &c — exercising the `if (outer)` lift
-//                          branch (`tmp = c & lt_flag_own`).
-static void run_case(uint32_t a_val, uint32_t b_val, uint32_t n_val,
-                     bool wrap_in_when) {
+// SIMULATE-mode bare-path smoke: exercises the `WHEN(lt_flag_own)` else
+// branch of the lift via the orkan state vector.  Retained as a single
+// SIMULATE witness for end-to-end statevector coverage; the WHEN-wrapped
+// cases (which used to drive a 22-qubit state vector per case) move to
+// APPEND+replay below.
+static void run_case_bare_sim(uint32_t a_val, uint32_t b_val, uint32_t n_val) {
     assert(a_val < n_val && "test precondition: a < n");
     assert(b_val < n_val && "test precondition: b < n");
     sturm::QubitPool::instance().reset_for_testing();
-    const uint32_t n_reg = 4u * W + (wrap_in_when ? 1u : 0u);
+    const uint32_t n_reg = 4u * W;
     int reserved[32];
     for (uint32_t k = 0; k < n_reg; ++k)
         reserved[k] = sturm::QubitPool::instance().allocate();
     const int pre_in_use = sturm::QubitPool::instance().in_use();
-    const uint32_t n_q = wrap_in_when ? n_orkan_when : n_orkan;
-    SimCtx sc{n_q, /*bypass=*/wrap_in_when};
+    SimCtx sc{n_orkan};
 
     Reg a = make_reg(0,         a_val, sc.sv());
     Reg b = make_reg(W,         b_val, sc.sv());
     Reg n = make_reg(2 * W,     n_val, sc.sv());
     Reg r = make_reg(3 * W,     0u,    sc.sv());
 
-    // Build the outer control `c` for the wrap branch.  Value=1 keeps the
-    // body live; super_mask=1 forces WhenGuard into the superposed branch
-    // so `active_control()` returns &c inside the lift.
-    sturm::qbool c_owner;
-    int c_idx = -1;
-    if (wrap_in_when) {
-        c_idx = 4 * W;  // qubit slot just above the four W-bit registers
-        orkan::apply_x(sc.sv(), static_cast<uint32_t>(c_idx));  // |1>
-        c_owner = sturm::qbool::make_non_owning(c_idx, /*val=*/1,
-                                                /*mask=*/1ULL);
-    }
-
     // ── Forward ─────────────────────────────────────────────────────────
-    if (wrap_in_when) {
-        WHEN(c_owner) {
-            sturm::lib_add_mod_dsl<sturm::BitProxy>(
-                a.bits.data(), b.bits.data(), n.bits.data(), W,
-                r.bits.data());
-        }
-    } else {
-        sturm::lib_add_mod_dsl<sturm::BitProxy>(
-            a.bits.data(), b.bits.data(), n.bits.data(), W,
-            r.bits.data());
-    }
+    sturm::lib_add_mod_dsl<sturm::BitProxy>(
+        a.bits.data(), b.bits.data(), n.bits.data(), W, r.bits.data());
 
     const uint32_t expect_r = (a_val + b_val) % n_val;
-    assert(read_reg(sc.sv(), a.qi.data(), W, n_q) == a_val && "fwd: a preserved");
-    assert(read_reg(sc.sv(), b.qi.data(), W, n_q) == b_val && "fwd: b preserved");
-    assert(read_reg(sc.sv(), n.qi.data(), W, n_q) == n_val && "fwd: n preserved");
-    assert(read_reg(sc.sv(), r.qi.data(), W, n_q) == expect_r
+    assert(read_reg(sc.sv(), a.qi.data(), W, n_orkan) == a_val && "fwd: a preserved");
+    assert(read_reg(sc.sv(), b.qi.data(), W, n_orkan) == b_val && "fwd: b preserved");
+    assert(read_reg(sc.sv(), n.qi.data(), W, n_orkan) == n_val && "fwd: n preserved");
+    assert(read_reg(sc.sv(), r.qi.data(), W, n_orkan) == expect_r
            && "fwd: r == (a+b) mod n");
 
     // ── Adjoint round-trip ──────────────────────────────────────────────
@@ -182,35 +172,159 @@ static void run_case(uint32_t a_val, uint32_t b_val, uint32_t n_val,
         sturm::invert<&sturm::lib_add_mod_dsl<sturm::BitProxy>>();
     static_assert(adj_ptr != nullptr,
                   "invert<&lib_add_mod_dsl<BitProxy>>() must resolve");
-    if (wrap_in_when) {
-        WHEN(c_owner) {
-            adj_ptr(a.bits.data(), b.bits.data(), n.bits.data(), W,
-                    r.bits.data());
-        }
-    } else {
-        adj_ptr(a.bits.data(), b.bits.data(), n.bits.data(), W,
-                r.bits.data());
+    adj_ptr(a.bits.data(), b.bits.data(), n.bits.data(), W, r.bits.data());
+
+    assert(read_reg(sc.sv(), a.qi.data(), W, n_orkan) == a_val && "adj: a preserved");
+    assert(read_reg(sc.sv(), b.qi.data(), W, n_orkan) == b_val && "adj: b preserved");
+    assert(read_reg(sc.sv(), n.qi.data(), W, n_orkan) == n_val && "adj: n preserved");
+    assert(read_reg(sc.sv(), r.qi.data(), W, n_orkan) == 0u && "adj: r returned to |0>");
+    assert(sturm::QubitPool::instance().in_use() == pre_in_use
+           && "bare-path lift: pool live-count returns to pre-call value");
+
+    for (uint32_t k = 0; k < n_reg; ++k)
+        sturm::QubitPool::instance().release(reserved[k]);
+}
+
+// ── APPEND+replay driver (sturm-a3e9) ────────────────────────────────────
+//
+// Runs forward + `invert<>()`-resolved adjoint inside a single
+// STURM_MODE_APPEND context, optionally wrapped in `WHEN(c_owner)` with
+// super_mask=1 so WhenGuard takes the superposed branch and pushes c onto
+// ctx->control_stack.  Under that push, the lift's `WhenGuard::
+// active_control()` returns &c, exercising the `(outer & lt_flag_own)`
+// AND-fold branch.  Replay the captured IR over a classical bit-vector
+// and assert:
+//   - r returns to |0> after the adjoint (round-trip),
+//   - a, b, n preserved across the full round-trip,
+//   - c preserved (when wrapped),
+//   - every ancilla bit returns to 0 (algorithm cleans up after itself),
+//   - QubitPool::in_use() returns to its pre-call value (LIFO drain).
+//
+// The lift's AND-fold + `WHEN(tmp)` body + `uncompute_and(tmp, ...)`
+// trailer all emit X / CX / CCX records — classical-reversible — so
+// `apply_gate_classical` (in classical_replay.hpp) is honest for the
+// full captured IR.
+static void run_case_replay(uint32_t a_val, uint32_t b_val, uint32_t n_val,
+                            bool wrap_in_when) {
+    assert(a_val < n_val && "test precondition: a < n");
+    assert(b_val < n_val && "test precondition: b < n");
+    sturm::QubitPool::instance().reset_for_testing();
+    const uint32_t n_reg = 4u * W + (wrap_in_when ? 1u : 0u);
+    int reserved[16];
+    for (uint32_t k = 0; k < n_reg; ++k)
+        reserved[k] = sturm::QubitPool::instance().allocate();
+    const int pre_in_use = sturm::QubitPool::instance().in_use();
+
+    // Build BitProxy / qbool views over the reserved indices.  No SimCtx,
+    // no orkan state vector: bit values live in the replay vector below.
+    const int a_base    = 0;
+    const int b_base    = static_cast<int>(W);
+    const int n_base    = static_cast<int>(2 * W);
+    const int r_base    = static_cast<int>(3 * W);
+    const int c_idx     = wrap_in_when ? static_cast<int>(4 * W) : -1;
+
+    sturm::qbool a_own[W], b_own[W], n_own[W], r_own[W];
+    sturm::BitProxy a_bits[W], b_bits[W], n_bits[W], r_bits[W];
+    for (std::size_t i = 0; i < W; ++i) {
+        a_own[i] = sturm::qbool::make_non_owning(a_base + static_cast<int>(i));
+        b_own[i] = sturm::qbool::make_non_owning(b_base + static_cast<int>(i));
+        n_own[i] = sturm::qbool::make_non_owning(n_base + static_cast<int>(i));
+        r_own[i] = sturm::qbool::make_non_owning(r_base + static_cast<int>(i));
+        a_bits[i] = sturm::BitProxy(a_own[i]);
+        b_bits[i] = sturm::BitProxy(b_own[i]);
+        n_bits[i] = sturm::BitProxy(n_own[i]);
+        r_bits[i] = sturm::BitProxy(r_own[i]);
     }
 
-    assert(read_reg(sc.sv(), a.qi.data(), W, n_q) == a_val && "adj: a preserved");
-    assert(read_reg(sc.sv(), b.qi.data(), W, n_q) == b_val && "adj: b preserved");
-    assert(read_reg(sc.sv(), n.qi.data(), W, n_q) == n_val && "adj: n preserved");
-    assert(read_reg(sc.sv(), r.qi.data(), W, n_q) == 0u && "adj: r returned to |0>");
+    // Outer control `c`: value=1 keeps the body live; super_mask=1 forces
+    // WhenGuard into the superposed branch so `active_control()` returns
+    // &c inside the lift, exercising the `(outer & lt_flag_own)` AND-fold.
+    sturm::qbool c_owner;
     if (wrap_in_when) {
-        assert(read_reg(sc.sv(), &c_idx, 1u, n_q) == 1u
-               && "adj: outer control c preserved");
+        c_owner = sturm::qbool::make_non_owning(c_idx, /*val=*/1,
+                                                /*mask=*/1ULL);
     }
+
+    sturm::test_helpers::AppendContext app;
+
+    // ── Forward ─────────────────────────────────────────────────────────
+    if (wrap_in_when) {
+        WHEN(c_owner) {
+            sturm::lib_add_mod_dsl<sturm::BitProxy>(
+                a_bits, b_bits, n_bits, W, r_bits);
+        }
+    } else {
+        sturm::lib_add_mod_dsl<sturm::BitProxy>(
+            a_bits, b_bits, n_bits, W, r_bits);
+    }
+
+    // ── Adjoint ─────────────────────────────────────────────────────────
+    constexpr auto adj_ptr =
+        sturm::invert<&sturm::lib_add_mod_dsl<sturm::BitProxy>>();
+    static_assert(adj_ptr != nullptr,
+                  "invert<&lib_add_mod_dsl<BitProxy>>() must resolve "
+                  "in trace harness too");
+    if (wrap_in_when) {
+        WHEN(c_owner) {
+            adj_ptr(a_bits, b_bits, n_bits, W, r_bits);
+        }
+    } else {
+        adj_ptr(a_bits, b_bits, n_bits, W, r_bits);
+    }
+
+    // Pool drain pin (inside AppendContext scope so the lift's transient
+    // ancillas are unambiguously released by the algorithm itself, not by
+    // RAII at scope exit).
     assert(sturm::QubitPool::instance().in_use() == pre_in_use
            && "lift: pool live-count returns to pre-call value "
               "(uncompute_and returned the lift ancilla LIFO)");
+
+    // Replay the captured IR over a classical bit-vector.
+    const int high_water = sturm::QubitPool::instance().high_water();
+    std::vector<uint8_t> bits(static_cast<std::size_t>(high_water), 0u);
+    for (std::size_t i = 0; i < W; ++i) {
+        if ((a_val >> i) & 1u) bits[static_cast<std::size_t>(a_base + i)] = 1u;
+        if ((b_val >> i) & 1u) bits[static_cast<std::size_t>(b_base + i)] = 1u;
+        if ((n_val >> i) & 1u) bits[static_cast<std::size_t>(n_base + i)] = 1u;
+        // r starts at |0>; ancillas start at |0>.
+    }
+    if (wrap_in_when) {
+        bits[static_cast<std::size_t>(c_idx)] = 1u;  // c starts at |1>
+    }
+    sturm::test_helpers::replay_ir(app.ctx()->ir, bits);
+
+    // Assertions over the replayed bit-vector.
+    auto read_qi_classical = [&](int base) {
+        uint32_t v = 0u;
+        for (std::size_t i = 0; i < W; ++i) {
+            if (bits[static_cast<std::size_t>(base + i)]) v |= (1u << i);
+        }
+        return v;
+    };
+    assert(read_qi_classical(a_base) == a_val && "replay: a preserved");
+    assert(read_qi_classical(b_base) == b_val && "replay: b preserved");
+    assert(read_qi_classical(n_base) == n_val && "replay: n preserved");
+    assert(read_qi_classical(r_base) == 0u
+           && "replay: r returned to |0> after adjoint");
+    if (wrap_in_when) {
+        assert(bits[static_cast<std::size_t>(c_idx)] == 1u
+               && "replay: outer control c preserved");
+    }
+    // All ancilla qubits beyond the reserved n_reg slots must return to 0.
+    for (std::size_t q = static_cast<std::size_t>(n_reg);
+         q < bits.size(); ++q) {
+        assert(bits[q] == 0u
+               && "replay: ancilla not cleaned across forward + adjoint");
+    }
 
     for (uint32_t k = 0; k < n_reg; ++k)
         sturm::QubitPool::instance().release(reserved[k]);
 }
 
 int main() {
-    std::printf("sturm-a3t4.2: depth-1 lift pattern in lib_add_mod_dsl "
-                "(W=%zu, with/without enclosing WHEN(c)):\n", W);
+    std::printf("sturm-a3t4.2/sturm-a3e9: depth-1 lift pattern in "
+                "lib_add_mod_dsl (W=%zu, with/without enclosing WHEN(c)):\n",
+                W);
 
     // Two operand triples cover the lt_flag=1 (add-back live) and
     // lt_flag=0 (no add-back) branches of the algorithm.  (1+1) mod 3 =
@@ -222,17 +336,25 @@ int main() {
         {2u, 2u, 3u},   // lt_flag=0 branch (s_old=4 >= 3)
     };
 
+    // SIMULATE bare-path smoke (one operand triple), retaining end-to-end
+    // statevector coverage of the bare lift branch.
+    run_case_bare_sim(cases[0].a, cases[0].b, cases[0].n);
+    std::printf("  PASS: SIMULATE bare WHEN(lt_flag_own) "
+                "(%u + %u) mod %u, forward+adjoint clean\n",
+                cases[0].a, cases[0].b, cases[0].n);
+
+    // APPEND+replay sweep: bare and WHEN-wrapped, both operand triples.
     for (const Triple& t : cases) {
-        run_case(t.a, t.b, t.n, /*wrap_in_when=*/false);
-        std::printf("  PASS: bare WHEN(lt_flag_own) "
+        run_case_replay(t.a, t.b, t.n, /*wrap_in_when=*/false);
+        std::printf("  PASS: replay bare WHEN(lt_flag_own) "
                     "(%u + %u) mod %u, forward+adjoint clean\n",
                     t.a, t.b, t.n);
-        run_case(t.a, t.b, t.n, /*wrap_in_when=*/true);
-        std::printf("  PASS: WHEN(c) wrapping -> lift via "
+        run_case_replay(t.a, t.b, t.n, /*wrap_in_when=*/true);
+        std::printf("  PASS: replay WHEN(c) wrapping -> lift via "
                     "(c & lt_flag_own), (%u + %u) mod %u\n",
                     t.a, t.b, t.n);
     }
 
-    std::printf("All sturm-a3t4.2 lift-pattern tests passed.\n");
+    std::printf("All sturm-a3t4.2/sturm-a3e9 lift-pattern tests passed.\n");
     return 0;
 }
