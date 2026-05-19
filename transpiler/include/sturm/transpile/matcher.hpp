@@ -41,11 +41,22 @@
 
 #include "sturm/transpile/qir.hpp"
 
-#include "clang/ASTMatchers/ASTMatchFinder.h"
-
+// sturm-k349: forward-declare `clang::ast_matchers::MatchFinder` rather
+// than pulling in the full `clang/ASTMatchers/ASTMatchFinder.h` umbrella
+// (which transitively drags ~6.6s of clang/ASTMatchers parse across this
+// header's 21 consumers per the sturm-pjtx -ftime-trace investigation).
+// Every register_*_matcher signature below takes MatchFinder strictly by
+// reference, so the forward declaration is sufficient at the type-check
+// level. Matcher .cpp TUs that need the full type for `addMatcher()` /
+// `bind()` call sites include `clang/ASTMatchers/ASTMatchFinder.h`
+// directly — most matcher_*.cpp files already do via
+// `matcher_common.hpp`'s using-declarations.
 namespace clang {
 class DiagnosticsEngine;
 class SourceManager;
+namespace ast_matchers {
+class MatchFinder;
+} // namespace ast_matchers
 } // namespace clang
 
 namespace sturm::transpile {
