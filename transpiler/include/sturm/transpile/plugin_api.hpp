@@ -25,10 +25,9 @@
 #include "sturm/transpile/qir.hpp"
 
 #include <functional>
+#include <memory>
 #include <string>
 #include <string_view>
-#include <unordered_map>
-#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -89,8 +88,12 @@ using UncomputeRenderFn = std::function<std::string(const QOperation& op)>;
 /// `src/plugin_registry.cpp` in PM4-2.
 class Registry {
 public:
-    Registry() = default;
-    ~Registry() = default;
+    // sturm-k2fj: ctor/dtor live out-of-line in plugin_registry.cpp because
+    // `Impl` is an incomplete type at this point (defined inside the .cpp).
+    // `std::unique_ptr<Impl>` only needs the complete type at ~Registry's
+    // call sites, which `=default`-on-.cpp localises to a single TU.
+    Registry();
+    ~Registry();
 
     // Non-copyable / non-movable: the host passes a reference across the
     // ABI; copy / move would silently break the assumption that every
@@ -153,16 +156,18 @@ public:
     std::vector<std::string> kind_ids() const;
 
 private:
-    // `register_matcher` and `register_op` share no key domain — a plugin
-    // may register a matcher named "foo" AND an op with `kind_id="foo"`
-    // without a collision. The two sets below are independent.
-    std::unordered_set<std::string> matcher_names_;
-    std::unordered_map<std::string, UncomputeRenderFn> render_fns_;
-
-    // Single vector drained by `invoke_all` in insertion order (§6
-    // ordering matters when two runtime-dlopen plugins compete for the
-    // same AST anchor).
-    std::vector<MatcherRegisterFn> matchers_;
+    // sturm-k2fj: pImpl. The collision-detection containers
+    // (`matcher_names_` as an unordered_set, `render_fns_` as an
+    // unordered_map) and the insertion-order drain vector all live in
+    // `Impl` so this header doesn't drag <unordered_set>/<unordered_map>
+    // (~8s aggregate parse across the 7 plugin_api.hpp consumers per
+    // the sturm-pjtx -ftime-trace investigation) into every TU.
+    // `register_matcher` and `register_op` share no key domain — a
+    // plugin may register a matcher named "foo" AND an op with
+    // `kind_id="foo"` without a collision. The two containers inside
+    // Impl are independent.
+    struct Impl;
+    std::unique_ptr<Impl> impl_;
 };
 
 /// Holds one link-time registration function registered via

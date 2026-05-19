@@ -61,18 +61,16 @@ struct DummyPlugin {
 } // namespace
 
 int main() {
-    // Confirm the Registry type is instantiable in a stack frame — its
-    // ctor is declared `= default` and must not silently acquire any
-    // unresolved dependency. We do NOT call any method: the method
-    // bodies live in PM4-2's `plugin_registry.cpp`, which is not
-    // linked into this compile-only smoke.
-    //
-    // Note: the Registry is non-copyable / non-movable, so we reach for
-    // it through a reference to a heap instance to stay valgrind-clean
-    // and avoid triggering any implicit copy in the return-value-
-    // optimization path.
-    auto* reg = new ::sturm::transpile::plugin::Registry{};
-    [[maybe_unused]] const ::sturm::transpile::plugin::Registry& r = *reg;
-    delete reg;
+    // sturm-k2fj: Registry's ctor + dtor are now declared in the header
+    // and DEFINED out-of-line in `plugin_registry.cpp` (pImpl, so the
+    // header doesn't drag <unordered_set>/<unordered_map> into every TU
+    // that includes it). Constructing a Registry on this TU's stack
+    // would therefore require linking `plugin_registry.cpp`, which the
+    // smoke deliberately avoids — see the file header above. Exercise
+    // the type at pointer level only; the typecheck still proves the
+    // header surface is well-formed (Registry, its non-copy/move
+    // deletions, and the pImpl unique_ptr all live behind the
+    // pointer).
+    [[maybe_unused]] ::sturm::transpile::plugin::Registry* reg_probe = nullptr;
     return 0;
 }

@@ -45,9 +45,29 @@
 #include <cstdlib>
 #include <string>
 #include <string_view>
+#include <unordered_map>
+#include <unordered_set>
 #include <utility>
 
 namespace sturm::transpile::plugin {
+
+// ── Registry::Impl (sturm-k2fj pImpl) ────────────────────────────────────────
+// Holds the unordered containers + insertion-order drain vector that used to
+// be direct private members of Registry. Lives entirely in this TU so the
+// public header (`plugin_api.hpp`) stays free of <unordered_set> /
+// <unordered_map>. The two sets are independent — see the comment above
+// Registry::register_matcher for the policy.
+struct Registry::Impl {
+    std::unordered_set<std::string> matcher_names;
+    std::unordered_map<std::string, UncomputeRenderFn> render_fns;
+    std::vector<MatcherRegisterFn> matchers;
+};
+
+// Out-of-line ctor/dtor so `std::unique_ptr<Impl>` can see the complete
+// Impl type. Inlining either into the header would force every consumer
+// to also see Impl's definition, defeating the pImpl.
+Registry::Registry() : impl_(std::make_unique<Impl>()) {}
+Registry::~Registry() = default;
 
 // ── Meyer's singleton ────────────────────────────────────────────────────────
 // Function-local `static` vector; lazy-constructed on the first call. Every
@@ -83,7 +103,7 @@ std::vector<LinkTimeRegisterFn>& runtime_registrars() {
 // a write-only log that `invoke_all` iterates.
 void Registry::register_matcher(std::string_view name, MatcherRegisterFn fn) {
     const std::string key(name);
-    if (matcher_names_.count(key) > 0) {
+    if (impl_->matcher_names.count(key) > 0) {
         std::fprintf(stderr,
                      "sturm-transpile plugin: duplicate matcher "
                      "registration for name '%s' (second registration "
@@ -91,8 +111,8 @@ void Registry::register_matcher(std::string_view name, MatcherRegisterFn fn) {
                      key.c_str());
         std::abort();
     }
-    matcher_names_.insert(key);
-    matchers_.push_back(std::move(fn));
+    impl_->matcher_names.insert(key);
+    impl_->matchers.push_back(std::move(fn));
 }
 
 // ── Registry::register_op ─────────────────────────────────────────────────────
@@ -105,15 +125,15 @@ void Registry::register_op(std::string_view kind_id,
                            MatcherRegisterFn fn,
                            UncomputeRenderFn render_fn) {
     const std::string key(kind_id);
-    if (render_fns_.count(key) > 0) {
+    if (impl_->render_fns.count(key) > 0) {
         std::fprintf(stderr,
                      "sturm-transpile plugin: duplicate op registration "
                      "for kind_id '%s' (second registration rejected)\n",
                      key.c_str());
         std::abort();
     }
-    render_fns_.emplace(key, std::move(render_fn));
-    matchers_.push_back(std::move(fn));
+    impl_->render_fns.emplace(key, std::move(render_fn));
+    impl_->matchers.push_back(std::move(fn));
 }
 
 // ── Registry::invoke_all ──────────────────────────────────────────────────────
@@ -125,7 +145,7 @@ void Registry::register_op(std::string_view kind_id,
 // "consumed" state to track.
 void Registry::invoke_all(clang::ast_matchers::MatchFinder& finder,
                           QUnit& unit) {
-    for (const auto& fn : matchers_) {
+    for (const auto& fn : impl_->matchers) {
         fn(finder, unit);
     }
 }
@@ -138,8 +158,8 @@ void Registry::invoke_all(clang::ast_matchers::MatchFinder& finder,
 // pointer never outlives its target.
 const UncomputeRenderFn* Registry::find_render_fn(
     std::string_view kind_id) const {
-    const auto it = render_fns_.find(std::string(kind_id));
-    if (it == render_fns_.end()) {
+    const auto it = impl_->render_fns.find(std::string(kind_id));
+    if (it == impl_->render_fns.end()) {
         return nullptr;
     }
     return &it->second;
@@ -155,8 +175,8 @@ const UncomputeRenderFn* Registry::find_render_fn(
 // copy of every key.
 std::vector<std::string> Registry::kind_ids() const {
     std::vector<std::string> out;
-    out.reserve(render_fns_.size());
-    for (const auto& [k, _] : render_fns_) {
+    out.reserve(impl_->render_fns.size());
+    for (const auto& [k, _] : impl_->render_fns) {
         out.push_back(k);
     }
     return out;
