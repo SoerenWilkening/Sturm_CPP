@@ -48,7 +48,6 @@
 #include "clang/Basic/SourceManager.h"
 #include "clang/Rewrite/Core/Rewriter.h"
 
-#include <filesystem>
 #include <string>
 #include <string_view>
 #include <vector>
