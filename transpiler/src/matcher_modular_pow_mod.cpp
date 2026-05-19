@@ -56,17 +56,17 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_modular_pow_mod_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
 
 // Resolve `W` in `qint_t<W>` off a VarDecl's type. Mirrors the helper
-// in `matcher_modular_op.cpp::extract_qint_width_from_vd`. Local copy
+// in `matcher_modular_op.cpp::extract_qint_width_from_vd_pow_mod`. Local copy
 // (rather than an exported helper) keeps the orchestrator TU's static
 // `namespace { ... }` posture intact — the helper has the same
 // "unique-per-TU; no ODR risk" shape used throughout the matcher pool.
-int extract_qint_width_from_vd(const VarDecl& vd) {
+int extract_qint_width_from_vd_pow_mod(const VarDecl& vd) {
     QualType qt = vd.getType().getCanonicalType();
     const auto* record = qt->getAsCXXRecordDecl();
     if (record == nullptr) return 0;
@@ -124,7 +124,7 @@ void populate_pow_mod_hit(const MatchFinder::MatchResult& r,
     if (const NamedDecl* nd = a->getDecl()) hit.a_name = nd->getNameAsString();
     if (const NamedDecl* nd = b->getDecl()) hit.b_name = nd->getNameAsString();
     if (const NamedDecl* nd = n->getDecl()) hit.n_name = nd->getNameAsString();
-    hit.result_width = extract_qint_width_from_vd(*var);
+    hit.result_width = extract_qint_width_from_vd_pow_mod(*var);
     hit.mod_expr = outer;
     hit.pow_call = pow;
     // `inner_op_expr` stays null for PowMod — the inner node is a
@@ -173,7 +173,7 @@ void populate_pow_mod_int_exp_hit(const MatchFinder::MatchResult& r,
     if (const NamedDecl* nd = a->getDecl()) hit.a_name = nd->getNameAsString();
     hit.b_name = b_text.str();
     if (const NamedDecl* nd = n->getDecl()) hit.n_name = nd->getNameAsString();
-    hit.result_width = extract_qint_width_from_vd(*var);
+    hit.result_width = extract_qint_width_from_vd_pow_mod(*var);
     hit.mod_expr = outer;
     hit.pow_call = pow;
     hit.result_var = var;
@@ -221,7 +221,7 @@ std::vector<std::unique_ptr<PowModIntExpCallback>>& pow_mod_int_exp_pool() {
 // constrain the call's return type to `qint_t` so a same-named `pow`
 // returning a non-qint type does NOT collapse into PowMod (mirrors
 // the AddMod / MulMod arms' qint guard on the inner DeclRefExpr).
-auto qint_dre(const char* binding) {
+auto qint_dre_pow_mod(const char* binding) {
     return declRefExpr(hasType(hasCanonicalType(hasDeclaration(
         cxxRecordDecl(hasName("qint_t"))))))
         .bind(binding);
@@ -233,15 +233,15 @@ auto pow_mod_pattern() {
         hasType(hasCanonicalType(hasDeclaration(
             cxxRecordDecl(hasName("qint_t"))))),
         argumentCountIs(2),
-        hasArgument(0, ignoringImplicit(qint_dre("a"))),
-        hasArgument(1, ignoringImplicit(qint_dre("b")))
+        hasArgument(0, ignoringImplicit(qint_dre_pow_mod("a"))),
+        hasArgument(1, ignoringImplicit(qint_dre_pow_mod("b")))
     ).bind("pow");
 
     auto outer_mod = cxxOperatorCallExpr(
         hasOverloadedOperatorName("%"),
         argumentCountIs(2),
         hasArgument(0, ignoringParenImpCasts(pow_call)),
-        hasArgument(1, ignoringImplicit(qint_dre("n")))
+        hasArgument(1, ignoringImplicit(qint_dre_pow_mod("n")))
     ).bind("outer");
 
     return varDecl(
@@ -256,7 +256,7 @@ auto pow_mod_pattern() {
 // Same outer shape as `pow_mod_pattern` (varDecl whose initializer is
 // `pow(qint, ?) % qint`) but the second argument of `pow` is bound as a
 // generic `Expr` rather than constrained to a qint `DeclRefExpr`. The
-// `unless(ignoringImplicit(qint_dre(...)))` guard structurally disjoins
+// `unless(ignoringImplicit(qint_dre_pow_mod(...)))` guard structurally disjoins
 // this arm from the qint-exponent arm above so a single site cannot
 // fire both — a `pow(qint, qint) % qint` site routes to the qint arm
 // (its arg1 IS a qint DRE), and a `pow(qint, 3LL) % qint` site routes
@@ -269,7 +269,7 @@ auto pow_mod_int_exp_pattern() {
         hasType(hasCanonicalType(hasDeclaration(
             cxxRecordDecl(hasName("qint_t"))))),
         argumentCountIs(2),
-        hasArgument(0, ignoringImplicit(qint_dre("a"))),
+        hasArgument(0, ignoringImplicit(qint_dre_pow_mod("a"))),
         hasArgument(1, expr(unless(ignoringImplicit(declRefExpr(
             hasType(hasCanonicalType(hasDeclaration(
                 cxxRecordDecl(hasName("qint_t"))))))))).bind("b_expr"))
@@ -279,7 +279,7 @@ auto pow_mod_int_exp_pattern() {
         hasOverloadedOperatorName("%"),
         argumentCountIs(2),
         hasArgument(0, ignoringParenImpCasts(pow_call)),
-        hasArgument(1, ignoringImplicit(qint_dre("n")))
+        hasArgument(1, ignoringImplicit(qint_dre_pow_mod("n")))
     ).bind("outer");
 
     return varDecl(
@@ -289,7 +289,8 @@ auto pow_mod_int_exp_pattern() {
     ).bind("var");
 }
 
-} // namespace
+} // namespace sturm_matcher_modular_pow_mod_anon_ns
+using namespace sturm_matcher_modular_pow_mod_anon_ns;
 
 void register_pow_mod_arm(clang::ast_matchers::MatchFinder& finder,
                           std::vector<ModularOpHit>& hits) {

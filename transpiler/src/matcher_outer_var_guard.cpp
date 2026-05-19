@@ -96,7 +96,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_outer_var_guard_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -463,7 +463,8 @@ void add_pattern(MatchFinder& finder, OuterVarGuardCallback* cb,
     finder.addMatcher(make_mutation_pattern(op_name), cb);
 }
 
-} // namespace
+} // namespace sturm_matcher_outer_var_guard_anon_ns
+using namespace sturm_matcher_outer_var_guard_anon_ns;
 
 void register_outer_var_guard_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit,

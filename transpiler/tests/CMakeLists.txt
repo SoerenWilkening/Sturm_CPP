@@ -248,6 +248,12 @@ else()
 endif()
 sturm_use_transpile_pch(sturm_transpile_test_core)
 
+# sturm-8vdv: unity-build the matcher_*.cpp set inside the shared test-core
+# library too. The 35 matcher TUs dominate cold compile time on test_bucket_*
+# binaries that link this library; bundling them into ~5 unity chunks via
+# BATCH_SIZE=8 mirrors the production driver / plugin treatment above.
+sturm_unity_matchers(sturm_transpile_test_core)
+
 # Shared io helper sources, compiled into each test binary that needs them.
 # Used by `test_transpile_io`, which deliberately does NOT link the
 # OBJECT library (it has no LLVM/Clang dependency and stays minimal).

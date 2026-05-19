@@ -71,7 +71,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_modular_compound_collapse_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -82,7 +82,7 @@ using namespace clang::ast_matchers;
 // types in a public header (the canonical-type / template-argument walk
 // is non-trivial). Keeping the duplicate is preferable to leaking AST
 // internals into the matcher_modular_op.hpp surface.
-int extract_qint_width_from_vd(const VarDecl& vd) {
+int extract_qint_width_from_vd_collapse(const VarDecl& vd) {
     QualType qt = vd.getType().getCanonicalType();
     const auto* record = qt->getAsCXXRecordDecl();
     if (record == nullptr) return 0;
@@ -150,7 +150,7 @@ const Stmt* next_sibling_of_var_decl(const VarDecl& var, ASTContext& ctx) {
 
 // qint-typed DeclRefExpr binding helper. Same canonical-type guard
 // matcher_modular_op.cpp uses for the in-initializer arms.
-auto qint_dre(const char* binding) {
+auto qint_dre_collapse(const char* binding) {
     return declRefExpr(hasType(hasCanonicalType(hasDeclaration(
         cxxRecordDecl(hasName("qint_t"))))))
         .bind(binding);
@@ -165,8 +165,8 @@ auto compound_collapse_pattern() {
     auto inner = cxxOperatorCallExpr(
         hasOverloadedOperatorName("+"),
         argumentCountIs(2),
-        hasArgument(0, ignoringImplicit(qint_dre("a"))),
-        hasArgument(1, ignoringImplicit(qint_dre("b")))
+        hasArgument(0, ignoringImplicit(qint_dre_collapse("a"))),
+        hasArgument(1, ignoringImplicit(qint_dre_collapse("b")))
     ).bind("inner");
 
     return varDecl(
@@ -259,7 +259,7 @@ public:
             hit.b_name = b_nd->getNameAsString();
         }
         hit.n_name = rhs_nd->getNameAsString();
-        hit.result_width = extract_qint_width_from_vd(*var);
+        hit.result_width = extract_qint_width_from_vd_collapse(*var);
         // mod_expr stays null on purpose — no outer `%` op-call exists
         // in the compound-collapsed shape. The mod_assign_call slot
         // tells the consumer drain "this is a beat-5.3 hit; extend the
@@ -282,7 +282,8 @@ compound_collapse_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_modular_compound_collapse_anon_ns
+using namespace sturm_matcher_modular_compound_collapse_anon_ns;
 
 void register_compound_collapse_addmod_arm(
     clang::ast_matchers::MatchFinder& finder,

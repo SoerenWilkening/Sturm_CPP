@@ -65,7 +65,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qint_compare_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -196,7 +196,8 @@ void register_compare(clang::ast_matchers::MatchFinder& finder,
     finder.addMatcher(make_compare_pattern(op_name), pool.back().get());
 }
 
-} // namespace
+} // namespace sturm_matcher_qint_compare_anon_ns
+using namespace sturm_matcher_qint_compare_anon_ns;
 
 void register_eq_compare_qint_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit) {

@@ -43,7 +43,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qint_const_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -139,7 +139,8 @@ void register_qint_const(clang::ast_matchers::MatchFinder& finder,
     finder.addMatcher(make_qint_const_pattern(op_name), pool.back().get());
 }
 
-} // namespace
+} // namespace sturm_matcher_qint_const_anon_ns
+using namespace sturm_matcher_qint_const_anon_ns;
 
 // PB-1. See matcher.hpp for the rationale behind the LHS canonical-type
 // peel and the CXXConstructExpr peel on the RHS; both are identical across

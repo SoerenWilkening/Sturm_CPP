@@ -228,7 +228,7 @@ DriveResult drive_reversible(
 
 // ── Phase T T-1 (sturm-xrob.2): consumer-side integration ──────────────────
 
-namespace {
+namespace sturm_matcher_reversible_drive_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -270,7 +270,8 @@ reversible_drive_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_reversible_drive_anon_ns
+using namespace sturm_matcher_reversible_drive_anon_ns;
 
 void register_reversible_drive_matcher(
     MatchFinder& finder,
@@ -294,7 +295,7 @@ void register_reversible_drive_matcher(
     finder.addMatcher(pattern, pool.back().get());
 }
 
-namespace {
+namespace sturm_matcher_reversible_drive_anon_ns {
 
 // Phase T T-2 (sturm-xrob.3): RecursiveASTVisitor that walks every
 // `CallExpr` in the TU looking for calls to `sturm::invert`. For each
@@ -567,7 +568,8 @@ SourceLocation end_of_file_loc(const FunctionDecl* fd,
     return sm.getLocForEndOfFile(fid);
 }
 
-} // namespace
+} // namespace sturm_matcher_reversible_drive_anon_ns
+using namespace sturm_matcher_reversible_drive_anon_ns;
 
 std::vector<const clang::FunctionDecl*>
 collect_invert_call_targets(clang::ASTContext& ctx) {

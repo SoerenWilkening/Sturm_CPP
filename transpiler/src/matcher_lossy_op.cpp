@@ -46,7 +46,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_lossy_op_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -152,7 +152,7 @@ using OrAssignCallback  = LossyOpCallback<LossyOpKind::OrAssign>;
 
 // Per-type unique_ptr pools so callbacks outlive MatchFinder runs.
 template <typename Cb>
-std::vector<std::unique_ptr<Cb>>& callback_pool() {
+std::vector<std::unique_ptr<Cb>>& lossy_op_callback_pool() {
     static std::vector<std::unique_ptr<Cb>> pool;
     return pool;
 }
@@ -180,12 +180,13 @@ template <typename Cb, typename OperatorName>
 void register_one(MatchFinder& finder,
                   std::vector<LossyOpHit>& hits,
                   OperatorName op_name) {
-    auto& pool = callback_pool<Cb>();
+    auto& pool = lossy_op_callback_pool<Cb>();
     pool.push_back(std::make_unique<Cb>(&hits));
     finder.addMatcher(make_lossy_pattern(op_name), pool.back().get());
 }
 
-} // namespace
+} // namespace sturm_matcher_lossy_op_anon_ns
+using namespace sturm_matcher_lossy_op_anon_ns;
 
 void register_lossy_op_matcher(MatchFinder& finder,
                                std::vector<LossyOpHit>& hits) {

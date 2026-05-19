@@ -75,7 +75,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_rotation_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -204,7 +204,8 @@ void register_rotation(clang::ast_matchers::MatchFinder& finder,
                       pool.back().get());
 }
 
-} // namespace
+} // namespace sturm_matcher_rotation_anon_ns
+using namespace sturm_matcher_rotation_anon_ns;
 
 // PN-2a. `q.theta() += d;` → THETA_ADD_ASSIGN_CONST.
 void register_theta_add_matcher(

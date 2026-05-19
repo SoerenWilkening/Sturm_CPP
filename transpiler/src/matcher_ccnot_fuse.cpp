@@ -72,7 +72,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_ccnot_fuse_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -354,7 +354,8 @@ std::vector<std::unique_ptr<CCNotFuseCallback>>& ccnot_fuse_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_ccnot_fuse_anon_ns
+using namespace sturm_matcher_ccnot_fuse_anon_ns;
 
 void register_ccnot_fuse_matcher(clang::ast_matchers::MatchFinder& finder,
                                  QUnit& unit) {

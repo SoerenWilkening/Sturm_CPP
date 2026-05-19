@@ -32,7 +32,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qint_implicit_warn_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -155,12 +155,13 @@ private:
 // Per-callback unique_ptr pool — outlives MatchFinder runs. Same posture
 // as `matcher_qram_oos.cpp::callback_pool` and `matcher_modular_op.cpp::
 // add_mod_pool`.
-std::vector<std::unique_ptr<WarnCallback>>& callback_pool() {
+std::vector<std::unique_ptr<WarnCallback>>& qint_implicit_warn_callback_pool() {
     static std::vector<std::unique_ptr<WarnCallback>> pool;
     return pool;
 }
 
-} // anonymous namespace
+} // namespace sturm_matcher_qint_implicit_warn_anon_ns
+using namespace sturm_matcher_qint_implicit_warn_anon_ns;
 
 void set_qint_implicit_measure_warning_enabled(bool on) {
     warning_gate() = on;
@@ -173,7 +174,7 @@ bool qint_implicit_measure_warning_enabled() {
 void register_qint_implicit_warn_matcher(
     clang::ast_matchers::MatchFinder& finder,
     clang::DiagnosticsEngine& diag) {
-    auto& pool = callback_pool();
+    auto& pool = qint_implicit_warn_callback_pool();
     pool.push_back(std::make_unique<WarnCallback>(&diag));
     // Anchor on every UserDefinedConversion ICE; the callback gates
     // on the conversion-function discriminator and the subscript

@@ -35,13 +35,13 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qram_subscript_assign_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
 
-// UDC discriminator -- mirrors matcher_qram_subscript.cpp::QintUdcFinder.
-class QintUdcFinder : public RecursiveASTVisitor<QintUdcFinder> {
+// UDC discriminator -- mirrors matcher_qram_subscript.cpp::QintUdcFinderAssign.
+class QintUdcFinderAssign : public RecursiveASTVisitor<QintUdcFinderAssign> {
 public:
     bool VisitImplicitCastExpr(ImplicitCastExpr* ice) {
         if (found_) return false;
@@ -65,15 +65,15 @@ private:
     const ImplicitCastExpr* found_ = nullptr;
 };
 
-bool index_has_qint_udc(const Expr* e) {
+bool index_has_qint_udc_assign(const Expr* e) {
     if (!e) return false;
-    QintUdcFinder f;
+    QintUdcFinderAssign f;
     f.TraverseStmt(const_cast<Expr*>(e));
     return f.find() != nullptr;
 }
 
 // Container-kind discrimination -- mirror C1.
-QramContainerKind discriminate_array_subscript(const ArraySubscriptExpr& e) {
+QramContainerKind discriminate_array_subscript_assign(const ArraySubscriptExpr& e) {
     const Expr* base = e.getBase();
     if (!base) return QramContainerKind::Pointer;
     QualType bt = base->IgnoreParenImpCasts()->getType();
@@ -82,8 +82,8 @@ QramContainerKind discriminate_array_subscript(const ArraySubscriptExpr& e) {
     return QramContainerKind::Pointer;
 }
 
-// Pointer-arm length recovery -- mirror C1::recover_pointer_length_text.
-std::string recover_pointer_length_text(const Expr* container) {
+// Pointer-arm length recovery -- mirror C1::recover_pointer_length_text_assign.
+std::string recover_pointer_length_text_assign(const Expr* container) {
     if (!container) return {};
     const Expr* base = container->IgnoreParenImpCasts();
     const auto* dre = llvm::dyn_cast_or_null<DeclRefExpr>(base);
@@ -108,7 +108,7 @@ std::string recover_pointer_length_text(const Expr* container) {
 }
 
 // Frontend qint type predicate -- mirrors C1's hasName("qint").
-bool expr_type_is_frontend_qint(const Expr* e) {
+bool expr_type_is_frontend_qint_assign(const Expr* e) {
     if (!e) return false;
     QualType qt = e->getType();
     if (qt.isNull()) return false;
@@ -262,19 +262,19 @@ std::optional<SubscriptTriple> subscript_triple_from_rhs(const Expr* rhs) {
     const Expr* peeled = peel_to_subscript(rhs);
     if (!peeled) return std::nullopt;
     if (const auto* ase = llvm::dyn_cast<ArraySubscriptExpr>(peeled)) {
-        if (!index_has_qint_udc(ase->getIdx())) return std::nullopt;
+        if (!index_has_qint_udc_assign(ase->getIdx())) return std::nullopt;
         SubscriptTriple t;
         t.subscript_expr = ase;
         t.container_expr = ase->getBase();
         t.index_expr     = ase->getIdx();
-        t.kind           = discriminate_array_subscript(*ase);
+        t.kind           = discriminate_array_subscript_assign(*ase);
         return t;
     }
     if (const auto* coe = llvm::dyn_cast<CXXOperatorCallExpr>(peeled)) {
         if (coe->getOperator() != OO_Subscript) return std::nullopt;
         if (coe->getNumArgs() != 2) return std::nullopt;
         const Expr* idx = coe->getArg(1);
-        if (!index_has_qint_udc(idx)) return std::nullopt;
+        if (!index_has_qint_udc_assign(idx)) return std::nullopt;
         SubscriptTriple t;
         t.subscript_expr = coe;
         t.container_expr = coe->getArg(0);
@@ -301,7 +301,7 @@ public:
         // Gate (1): LHS must be a frontend qint lvalue. Filters out
         // the OOS write shape `a[i] = b;` (LHS subscript yields the
         // backend element type, NOT frontend qint).
-        if (!expr_type_is_frontend_qint(lhs)) return;
+        if (!expr_type_is_frontend_qint_assign(lhs)) return;
         // Gate (2): RHS is exactly a subscript with qint-UDC index.
         auto triple = subscript_triple_from_rhs(rhs);
         if (!triple) return;
@@ -319,7 +319,7 @@ public:
             hit.W = kDefaultWidth;
         }
         if (hit.kind == QramContainerKind::Pointer) {
-            hit.length_text = recover_pointer_length_text(triple->container_expr);
+            hit.length_text = recover_pointer_length_text_assign(triple->container_expr);
         }
         hits_->push_back(hit);
     }
@@ -328,17 +328,18 @@ private:
 };
 
 template <class T>
-std::vector<std::unique_ptr<T>>& callback_pool() {
+std::vector<std::unique_ptr<T>>& qram_subscript_assign_callback_pool() {
     static std::vector<std::unique_ptr<T>> pool;
     return pool;
 }
 
-} // anonymous namespace
+} // namespace sturm_matcher_qram_subscript_assign_anon_ns
+using namespace sturm_matcher_qram_subscript_assign_anon_ns;
 
 void register_qram_subscript_assign_matcher(
     clang::ast_matchers::MatchFinder& finder,
     std::vector<QramSubscriptAssignHit>& hits) {
-    auto& pool = callback_pool<AssignCallback>();
+    auto& pool = qram_subscript_assign_callback_pool<AssignCallback>();
     pool.push_back(std::make_unique<AssignCallback>(&hits));
     // Anchor: every CXXOperatorCallExpr in the TU. The callback's
     // OO_Equal + LHS-type + RHS-shape gates filter to the bare

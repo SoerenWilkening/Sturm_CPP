@@ -54,7 +54,7 @@ std::string_view to_string(ReversibleRejectReason reason) {
     return {}; // unreachable for a well-formed enum
 }
 
-namespace {
+namespace sturm_matcher_reversible_validate_anon_ns {
 
 using namespace clang;
 
@@ -389,7 +389,8 @@ private:
     unsigned               diagnostics_fired_ = 0;
 };
 
-} // namespace
+} // namespace sturm_matcher_reversible_validate_anon_ns
+using namespace sturm_matcher_reversible_validate_anon_ns;
 
 // ── Public: entry point ─────────────────────────────────────────────
 

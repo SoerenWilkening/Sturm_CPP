@@ -103,7 +103,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_quantum_to_classical_cond_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -114,7 +114,7 @@ using namespace clang::ast_matchers;
 // qualifications so both `qbool` and `const qbool&` resolve to the same
 // CXXRecord; `qint_t<N>` is a ClassTemplateSpecializationDecl whose
 // `getName()` returns the template name `qint_t` (not `qint_t<1>`).
-bool is_quantum_record(QualType qt) {
+bool is_quantum_record_qtcc(QualType qt) {
     if (qt.isNull()) return false;
     QualType stripped = qt.getNonReferenceType().getUnqualifiedType();
     const CXXRecordDecl* rd = stripped->getAsCXXRecordDecl();
@@ -317,7 +317,7 @@ std::string extract_source_qbool_name(const Expr* src) {
     // matcher — that's not a quantum-to-classical collapse.
     const auto* vd = llvm::dyn_cast_or_null<VarDecl>(nd);
     if (!vd) return {};
-    if (!is_quantum_record(vd->getType())) return {};
+    if (!is_quantum_record_qtcc(vd->getType())) return {};
     return nd->getNameAsString();
 }
 
@@ -392,7 +392,8 @@ quantum_to_classical_cond_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_quantum_to_classical_cond_anon_ns
+using namespace sturm_matcher_quantum_to_classical_cond_anon_ns;
 
 void register_quantum_to_classical_cond_matcher(
     clang::ast_matchers::MatchFinder& finder,

@@ -59,7 +59,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_dropped_quantum_return_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -120,7 +120,8 @@ dropped_quantum_return_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_dropped_quantum_return_anon_ns
+using namespace sturm_matcher_dropped_quantum_return_anon_ns;
 
 void register_dropped_quantum_return_matcher(
     clang::ast_matchers::MatchFinder& finder,

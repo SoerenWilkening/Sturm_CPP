@@ -53,7 +53,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qint_alias_subst_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -100,9 +100,9 @@ SourceRange typeloc_range_of_cast(const CXXFunctionalCastExpr* ce) {
 // corresponding `QintAliasSubstMatch` field, and pushes onto the
 // caller's vector. A null TypeLoc range gates the publish (defensive).
 
-class VarDeclCallback : public MatchFinder::MatchCallback {
+class QintAliasSubstVarDeclCallback : public MatchFinder::MatchCallback {
 public:
-    explicit VarDeclCallback(std::vector<QintAliasSubstMatch>* out)
+    explicit QintAliasSubstVarDeclCallback(std::vector<QintAliasSubstMatch>* out)
         : out_(out) {}
     void run(const MatchFinder::MatchResult& r) override {
         const auto* vd = r.Nodes.getNodeAs<VarDecl>("vd");
@@ -195,10 +195,10 @@ private:
 };
 
 // Per-callback pools owned by function-local statics. Mirrors the
-// pattern in `matcher_qram_subscript.cpp::callback_pool<T>` so the
+// pattern in `matcher_qram_subscript.cpp::qint_alias_subst_callback_pool<T>` so the
 // finder's raw-pointer storage stays valid across the run.
 template <class T>
-std::vector<std::unique_ptr<T>>& callback_pool() {
+std::vector<std::unique_ptr<T>>& qint_alias_subst_callback_pool() {
     static std::vector<std::unique_ptr<T>> pool;
     return pool;
 }
@@ -233,7 +233,8 @@ auto frontend_qint_carrier() {
             hasDeclaration(frontend_qint_record()))))));
 }
 
-} // anonymous namespace
+} // namespace sturm_matcher_qint_alias_subst_anon_ns
+using namespace sturm_matcher_qint_alias_subst_anon_ns;
 
 void register_qint_alias_subst_matcher(
     clang::ast_matchers::MatchFinder& finder,
@@ -245,8 +246,8 @@ void register_qint_alias_subst_matcher(
     // exclude ParmVarDecl in the callback so the ParmVarDecl arm is
     // the single source of truth for parameters.
     {
-        auto& pool = callback_pool<VarDeclCallback>();
-        pool.push_back(std::make_unique<VarDeclCallback>(&matches));
+        auto& pool = qint_alias_subst_callback_pool<QintAliasSubstVarDeclCallback>();
+        pool.push_back(std::make_unique<QintAliasSubstVarDeclCallback>(&matches));
         finder.addMatcher(
             varDecl(hasType(frontend_qint_carrier())).bind("vd"),
             pool.back().get());
@@ -255,7 +256,7 @@ void register_qint_alias_subst_matcher(
     // (pmd) ParmVarDecl anchor — `void demo(sturm::frontend::qint p)`,
     // `void f(qint b[]);`, `void g(qint* q);`.
     {
-        auto& pool = callback_pool<ParmVarDeclCallback>();
+        auto& pool = qint_alias_subst_callback_pool<ParmVarDeclCallback>();
         pool.push_back(std::make_unique<ParmVarDeclCallback>(&matches));
         finder.addMatcher(
             parmVarDecl(hasType(frontend_qint_carrier())).bind("pmd"),
@@ -266,7 +267,7 @@ void register_qint_alias_subst_matcher(
     // plus carrier shapes `struct S { qint c[3]; };` and
     // `struct T { qint* d; };`.
     {
-        auto& pool = callback_pool<FieldDeclCallback>();
+        auto& pool = qint_alias_subst_callback_pool<FieldDeclCallback>();
         pool.push_back(std::make_unique<FieldDeclCallback>(&matches));
         finder.addMatcher(
             fieldDecl(hasType(frontend_qint_carrier())).bind("fd"),
@@ -275,7 +276,7 @@ void register_qint_alias_subst_matcher(
 
     // (fn) FunctionDecl anchor — return type is `sturm::frontend::qint`.
     {
-        auto& pool = callback_pool<FunctionDeclCallback>();
+        auto& pool = qint_alias_subst_callback_pool<FunctionDeclCallback>();
         pool.push_back(std::make_unique<FunctionDeclCallback>(&matches));
         finder.addMatcher(
             functionDecl(returns(hasCanonicalType(hasDeclaration(
@@ -285,7 +286,7 @@ void register_qint_alias_subst_matcher(
 
     // (cast) CXXFunctionalCastExpr anchor — `sturm::frontend::qint(0)`.
     {
-        auto& pool = callback_pool<FunctionalCastCallback>();
+        auto& pool = qint_alias_subst_callback_pool<FunctionalCastCallback>();
         pool.push_back(std::make_unique<FunctionalCastCallback>(&matches));
         finder.addMatcher(
             cxxFunctionalCastExpr(hasType(hasCanonicalType(hasDeclaration(

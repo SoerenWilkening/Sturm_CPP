@@ -144,7 +144,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_hoist_invariant_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -485,7 +485,8 @@ hoist_invariant_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_hoist_invariant_anon_ns
+using namespace sturm_matcher_hoist_invariant_anon_ns;
 
 void register_hoist_invariant_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit) {

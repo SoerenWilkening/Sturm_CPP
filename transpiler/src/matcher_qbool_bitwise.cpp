@@ -31,7 +31,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qbool_bitwise_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -227,7 +227,8 @@ std::vector<std::unique_ptr<XorCallback>>& xor_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_qbool_bitwise_anon_ns
+using namespace sturm_matcher_qbool_bitwise_anon_ns;
 
 void register_or_matcher(clang::ast_matchers::MatchFinder& finder,
                          QUnit& unit) {

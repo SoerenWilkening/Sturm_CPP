@@ -92,7 +92,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_when_operand_mutation_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -309,7 +309,8 @@ when_operand_mutation_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_when_operand_mutation_anon_ns
+using namespace sturm_matcher_when_operand_mutation_anon_ns;
 
 void register_when_operand_mutation_matcher(
     clang::ast_matchers::MatchFinder& finder,

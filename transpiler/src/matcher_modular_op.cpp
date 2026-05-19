@@ -73,7 +73,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_modular_op_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -255,7 +255,8 @@ auto binary_mod_pattern(const char* inner_op) {
     ).bind("var");
 }
 
-} // namespace
+} // namespace sturm_matcher_modular_op_anon_ns
+using namespace sturm_matcher_modular_op_anon_ns;
 
 void register_modular_op_matcher(clang::ast_matchers::MatchFinder& finder,
                                  std::vector<ModularOpHit>& hits) {

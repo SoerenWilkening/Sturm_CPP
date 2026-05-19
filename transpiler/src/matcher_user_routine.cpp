@@ -70,7 +70,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_user_routine_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -463,7 +463,8 @@ user_routine_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_user_routine_anon_ns
+using namespace sturm_matcher_user_routine_anon_ns;
 
 void register_user_routine_matcher(
     clang::ast_matchers::MatchFinder& finder,

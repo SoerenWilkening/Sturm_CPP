@@ -82,7 +82,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_dead_ancilla_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -225,7 +225,8 @@ dead_ancilla_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_dead_ancilla_anon_ns
+using namespace sturm_matcher_dead_ancilla_anon_ns;
 
 void register_dead_ancilla_matcher(clang::ast_matchers::MatchFinder& finder,
                                    QUnit& unit) {

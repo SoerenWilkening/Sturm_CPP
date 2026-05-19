@@ -72,7 +72,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_when_freevar_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -157,7 +157,8 @@ when_freevar_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_when_freevar_anon_ns
+using namespace sturm_matcher_when_freevar_anon_ns;
 
 void register_when_freevar_matcher(
     clang::ast_matchers::MatchFinder& finder,

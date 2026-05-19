@@ -42,7 +42,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qint_qint_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -138,7 +138,8 @@ void register_qint_qint(clang::ast_matchers::MatchFinder& finder,
     finder.addMatcher(make_qint_qint_pattern(op_name), pool.back().get());
 }
 
-} // namespace
+} // namespace sturm_matcher_qint_qint_anon_ns
+using namespace sturm_matcher_qint_qint_anon_ns;
 
 void register_add_assign_qint_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit) {

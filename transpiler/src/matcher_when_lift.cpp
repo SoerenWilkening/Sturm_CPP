@@ -105,7 +105,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_when_lift_anon_ns {
 
 // Test-only detection counter. Incremented by `WhenLiftCallback::run` on
 // every run that passes every guard and is NOT short-circuited by the
@@ -471,7 +471,8 @@ std::vector<std::unique_ptr<WhenLiftCallback>>& when_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_when_lift_anon_ns
+using namespace sturm_matcher_when_lift_anon_ns;
 
 void register_when_lift_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit) {

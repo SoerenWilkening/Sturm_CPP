@@ -89,7 +89,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_main_lifecycle_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -370,7 +370,8 @@ private:
     std::vector<MainLifecycleHit>* out_ = nullptr;
 };
 
-} // namespace
+} // namespace sturm_matcher_main_lifecycle_anon_ns
+using namespace sturm_matcher_main_lifecycle_anon_ns;
 
 // ── Public registration entrypoint ─────────────────────────────────────────
 

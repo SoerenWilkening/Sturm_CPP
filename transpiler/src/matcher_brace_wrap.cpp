@@ -116,7 +116,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_brace_wrap_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -369,7 +369,8 @@ std::vector<std::unique_ptr<BraceWrapCallback>>& brace_wrap_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_brace_wrap_anon_ns
+using namespace sturm_matcher_brace_wrap_anon_ns;
 
 void register_brace_wrap_matcher(clang::ast_matchers::MatchFinder& finder,
                                  QUnit& unit) {

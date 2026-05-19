@@ -101,6 +101,69 @@ if(STURM_UNITY_BUCKETS)
                    "not ODR-collide across members in the unity TU.")
 endif()
 
+# ── sturm-8vdv — unity-build the transpiler matcher_*.cpp set ────────────────
+# Followup from the sturm-pjtx -ftime-trace investigation: the 35
+# transpiler/src/matcher_*.cpp files dominate cold wall-time on
+# test_bucket_qram (~11m24s baseline / sturm-cxvo trimmed to ~6m14s by
+# pulling matcher_common.hpp into the PCH). At 6× parallelism the build
+# is still bound by the slowest individual matcher TU. Concatenating
+# the 35 matcher TUs into ~5 unity chunks (BATCH_SIZE=8) cuts the
+# parse-and-codegen cost ~5-7× by amortising libclang AST headers +
+# matcher_common.hpp's inline helpers across siblings.
+#
+# Wrapping: each matcher_<base>.cpp's inner `namespace { ... }` (inside
+# `namespace sturm::transpile { }`) was renamed to a uniquely-named
+# `namespace sturm_matcher_<base>_anon_ns { ... }` and a matching
+# `using namespace sturm_matcher_<base>_anon_ns;` was injected at
+# sturm::transpile scope so the public `register_*` functions below
+# the close still resolve helpers. This mirrors sturm-dmsp's wrap of
+# the bucketed test_*.cpp files — multiple `namespace { }` blocks in
+# a unity TU merge into one unnamed ns per C++20 [basic.namespace]/8,
+# so the rename to a unique outer ns is what makes file-local helpers
+# (e.g. `index_has_qint_udc` which is defined verbatim in three qram
+# subscript matcher TUs) collision-free under unity.
+#
+# Toggle OFF only when bisecting a unity-build induced collision in a
+# newly-added matcher TU.
+option(STURM_UNITY_MATCHERS
+    "Enable CMake unity builds on transpiler matcher_*.cpp files (\
+sturm-8vdv). Default ON since the matcher TUs were wrapped in unique \
+named namespaces `sturm_matcher_<base>_anon_ns`. Toggle OFF when \
+bisecting a unity-induced collision in a newly-added matcher TU."
+    ON)
+if(STURM_UNITY_MATCHERS)
+    message(STATUS "sturm: STURM_UNITY_MATCHERS=ON — transpiler matcher_*.cpp "
+                   "files batch into ~5 unity chunks "
+                   "(UNITY_BUILD_BATCH_SIZE=8). Each matcher_<base>.cpp's "
+                   "inner anon ns is wrapped in `sturm_matcher_<base>_anon_ns` "
+                   "so file-local helpers do not ODR-collide across siblings "
+                   "in the unity TU.")
+endif()
+
+# Helper: enable UNITY_BUILD on <target> for its matcher_*.cpp sources
+# only. Marks every non-matcher source with SKIP_UNITY_BUILD_INCLUSION
+# so the BATCH mode bundles ONLY the matcher TUs into unity chunks.
+# Inspect via build/<target>.dir/Unity/unity_*.cxx after configure.
+function(sturm_unity_matchers target)
+    if(NOT STURM_UNITY_MATCHERS)
+        return()
+    endif()
+    set_target_properties(${target} PROPERTIES
+        UNITY_BUILD ON
+        UNITY_BUILD_BATCH_SIZE 8)
+    get_target_property(_srcs ${target} SOURCES)
+    if(NOT _srcs)
+        return()
+    endif()
+    foreach(_src IN LISTS _srcs)
+        get_filename_component(_name "${_src}" NAME)
+        if(NOT _name MATCHES "^matcher_.*\\.cpp$")
+            set_source_files_properties(${_src} TARGET_DIRECTORY ${target}
+                PROPERTIES SKIP_UNITY_BUILD_INCLUSION TRUE)
+        endif()
+    endforeach()
+endfunction()
+
 # ── sturm-yial — host clang vs plugin LLVM invariant gate ─────────────────────
 #
 # The transpiler plugin (`sturm-transpile-plugin`) links the libclang-cpp /

@@ -59,7 +59,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qram_subscript_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -252,9 +252,9 @@ private:
 
 // Per-callback pools owned by function-local statics — outlive the
 // MatchFinder run. Mirrors `matcher_modular_op.cpp::add_mod_pool` and
-// `matcher_qram_oos.cpp::callback_pool<T>`.
+// `matcher_qram_oos.cpp::qram_subscript_callback_pool<T>`.
 template <class T>
-std::vector<std::unique_ptr<T>>& callback_pool() {
+std::vector<std::unique_ptr<T>>& qram_subscript_callback_pool() {
     static std::vector<std::unique_ptr<T>> pool;
     return pool;
 }
@@ -279,20 +279,21 @@ auto build_pattern(SubscriptMatcher subscript) {
     ).bind("var");
 }
 
-} // anonymous namespace
+} // namespace sturm_matcher_qram_subscript_anon_ns
+using namespace sturm_matcher_qram_subscript_anon_ns;
 
 void register_qram_subscript_matcher(
     clang::ast_matchers::MatchFinder& finder,
     std::vector<QramSubscriptHit>& hits) {
     {
-        auto& pool = callback_pool<StdArrayCallback>();
+        auto& pool = qram_subscript_callback_pool<StdArrayCallback>();
         pool.push_back(std::make_unique<StdArrayCallback>(&hits));
         finder.addMatcher(build_pattern(cxxOperatorCallExpr(
             hasOverloadedOperatorName("[]")).bind("subscript")),
             pool.back().get());
     }
     {
-        auto& pool = callback_pool<ArraySubscriptCallback>();
+        auto& pool = qram_subscript_callback_pool<ArraySubscriptCallback>();
         pool.push_back(std::make_unique<ArraySubscriptCallback>(&hits));
         finder.addMatcher(
             build_pattern(arraySubscriptExpr().bind("subscript")),

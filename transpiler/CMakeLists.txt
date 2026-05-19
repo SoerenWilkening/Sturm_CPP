@@ -787,6 +787,17 @@ if(STURM_USE_PCH)
     target_precompile_headers(sturm-transpile-plugin REUSE_FROM sturm-transpile)
 endif()
 
+# ── sturm-8vdv — unity-build the matcher_*.cpp set on the driver + plugin ─────
+# Wraps the 35 matcher TUs into ~5 unity chunks (BATCH_SIZE=8) so libclang
+# AST headers + matcher_common.hpp's inline helpers are parsed once per chunk
+# instead of 35 times. Per-source pruning (`SKIP_UNITY_BUILD_INCLUSION TRUE`
+# on every non-matcher .cpp) keeps the transpiler driver / plugin TUs that
+# do NOT share matcher_common.hpp's blast-radius — `transpile_consumer.cpp`,
+# `qir.cpp`, the emitter TUs, etc. — out of the unity batches.
+# The helper is declared in the top-level CMakeLists.txt.
+sturm_unity_matchers(sturm-transpile)
+sturm_unity_matchers(sturm-transpile-plugin)
+
 # ── Namespaced aliases (sturm-vr0v.1 / E5.M1) ─────────────────────────────────
 # Expose the two transpiler targets under their `sturm::` namespace so
 # `cmake/SturmTranspile.cmake` can reference them via

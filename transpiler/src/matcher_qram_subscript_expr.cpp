@@ -25,7 +25,7 @@
 //     the emitter pivots on for in-place rewrite.
 //   - W: B1's `infer_width()` (single source of truth).
 //   - length_text: pointer-arm sibling-parameter heuristic, identical
-//     to C1's `recover_pointer_length_text`.
+//     to C1's `recover_pointer_length_text_expr`.
 //
 // Disjointness vs C1 (the immediate-initializer gate)
 // ---------------------------------------------------
@@ -60,13 +60,13 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qram_subscript_expr_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
 
-// ── UDC discriminator (mirrors matcher_qram_subscript.cpp::QintUdcFinder) ──
-class QintUdcFinder : public RecursiveASTVisitor<QintUdcFinder> {
+// ── UDC discriminator (mirrors matcher_qram_subscript.cpp::QintUdcFinderExpr) ──
+class QintUdcFinderExpr : public RecursiveASTVisitor<QintUdcFinderExpr> {
 public:
     bool VisitImplicitCastExpr(ImplicitCastExpr* ice) {
         if (found_) return false;
@@ -92,15 +92,15 @@ private:
     const ImplicitCastExpr* found_ = nullptr;
 };
 
-bool index_has_qint_udc(const Expr* e) {
+bool index_has_qint_udc_expr(const Expr* e) {
     if (!e) return false;
-    QintUdcFinder f;
+    QintUdcFinderExpr f;
     f.TraverseStmt(const_cast<Expr*>(e));
     return f.find() != nullptr;
 }
 
 // ── Container-kind discrimination (mirror C1) ──────────────────────────────
-QramContainerKind discriminate_array_subscript(
+QramContainerKind discriminate_array_subscript_expr(
     const ArraySubscriptExpr& e) {
     const Expr* base = e.getBase();
     if (!base) return QramContainerKind::Pointer;
@@ -110,8 +110,8 @@ QramContainerKind discriminate_array_subscript(
     return QramContainerKind::Pointer;
 }
 
-// ── Pointer-arm length recovery (mirror C1::recover_pointer_length_text) ───
-std::string recover_pointer_length_text(const Expr* container) {
+// ── Pointer-arm length recovery (mirror C1::recover_pointer_length_text_expr) ───
+std::string recover_pointer_length_text_expr(const Expr* container) {
     if (!container) return {};
     const Expr* base = container->IgnoreParenImpCasts();
     const auto* dre = llvm::dyn_cast_or_null<DeclRefExpr>(base);
@@ -187,10 +187,10 @@ public:
     bool VisitArraySubscriptExpr(ArraySubscriptExpr* e) {
         if (!e) return true;
         const Expr* idx = e->getIdx();
-        if (!index_has_qint_udc(idx)) return true;
+        if (!index_has_qint_udc_expr(idx)) return true;
         if (is_immediate_init(vd_, e)) return true;  // C1's case
         publish(e, e->getBase(), idx,
-                discriminate_array_subscript(*e));
+                discriminate_array_subscript_expr(*e));
         return true;
     }
 
@@ -201,7 +201,7 @@ public:
         const Expr* container = e->getArg(0);
         const Expr* index     = e->getArg(1);
         if (!container || !index) return true;
-        if (!index_has_qint_udc(index)) return true;
+        if (!index_has_qint_udc_expr(index)) return true;
         if (is_immediate_init(vd_, e)) return true;  // C1's case
         publish(e, container, index, QramContainerKind::StdArray);
         return true;
@@ -224,7 +224,7 @@ private:
         InferContext ctx{};
         hit.W = vd_ ? infer_width(*vd_, ctx) : ctx.default_width;
         if (kind == QramContainerKind::Pointer) {
-            hit.length_text = recover_pointer_length_text(container);
+            hit.length_text = recover_pointer_length_text_expr(container);
         }
         hits_->push_back(hit);
     }
@@ -251,17 +251,18 @@ private:
 };
 
 template <class T>
-std::vector<std::unique_ptr<T>>& callback_pool() {
+std::vector<std::unique_ptr<T>>& qram_subscript_expr_callback_pool() {
     static std::vector<std::unique_ptr<T>> pool;
     return pool;
 }
 
-} // anonymous namespace
+} // namespace sturm_matcher_qram_subscript_expr_anon_ns
+using namespace sturm_matcher_qram_subscript_expr_anon_ns;
 
 void register_qram_subscript_expr_matcher(
     clang::ast_matchers::MatchFinder& finder,
     std::vector<QramSubscriptExprHit>& hits) {
-    auto& pool = callback_pool<VarDeclCallback>();
+    auto& pool = qram_subscript_expr_callback_pool<VarDeclCallback>();
     pool.push_back(std::make_unique<VarDeclCallback>(&hits));
     // Anchor: every VarDecl of frontend `qint` carrying an initializer.
     // The initializer-walk decides per-subscript publication.

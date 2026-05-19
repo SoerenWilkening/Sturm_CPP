@@ -116,7 +116,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qbool_prep_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -355,7 +355,8 @@ auto qbool_guard() {
         cxxRecordDecl(hasName("qbool"))));
 }
 
-} // namespace
+} // namespace sturm_matcher_qbool_prep_anon_ns
+using namespace sturm_matcher_qbool_prep_anon_ns;
 
 void register_qbool_prep_matcher(
     clang::ast_matchers::MatchFinder& finder,

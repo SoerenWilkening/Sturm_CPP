@@ -168,7 +168,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_peephole_reorder_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -214,7 +214,7 @@ bool b_kind_is_reorderable(QOpKind kind) {
 
 // Walker that builds a raw-encoding → Stmt* lookup table for every
 // Stmt whose begin loc OR LBracLoc is a candidate QScope open_brace
-// key. Mirrors `ScopeAnchorIndex` in matcher_hoist_invariant.cpp
+// key. Mirrors `ScopeAnchorIndexPeephole` in matcher_hoist_invariant.cpp
 // verbatim (one local walker per TU), so the reorder matcher can
 // recover the scope anchor Stmt from a QScope's `open_brace` raw
 // encoding without re-walking the AST per scope.
@@ -225,8 +225,8 @@ bool b_kind_is_reorderable(QOpKind kind) {
 // the entire TU and the table is O(N) on size). Mirroring the shape
 // locally keeps the PM5 TU self-contained and avoids a header
 // refactor. A future consolidation issue could promote it.
-class ScopeAnchorIndex
-    : public clang::RecursiveASTVisitor<ScopeAnchorIndex> {
+class ScopeAnchorIndexPeephole
+    : public clang::RecursiveASTVisitor<ScopeAnchorIndexPeephole> {
 public:
     bool VisitCompoundStmt(clang::CompoundStmt* cs) {
         if (!cs) return true;
@@ -397,7 +397,7 @@ public:
 
         // Build the scope-anchor lookup table once. Single AST walk —
         // avoids redoing the walk per QScope.
-        ScopeAnchorIndex index;
+        ScopeAnchorIndexPeephole index;
         index.TraverseAST(ctx);
 
         // Iterate every QScope in source order. We index by position
@@ -695,7 +695,8 @@ peephole_reorder_callback_pool() {
     return pool;
 }
 
-} // namespace
+} // namespace sturm_matcher_peephole_reorder_anon_ns
+using namespace sturm_matcher_peephole_reorder_anon_ns;
 
 void register_peephole_reorder_matcher(
     clang::ast_matchers::MatchFinder& finder, QUnit& unit) {

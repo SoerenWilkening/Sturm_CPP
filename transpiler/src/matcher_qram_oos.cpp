@@ -9,7 +9,7 @@
 // `qint c = a[i] + d;` (now H4 territory); see `is_h4_handled_init_context`.
 //
 // sturm-u9ge.6 (Beat H1): the existing-target callback skips bare
-// `b = a[i];` (now H1 territory); see `expr_type_is_frontend_qint`.
+// `b = a[i];` (now H1 territory); see `expr_type_is_frontend_qint_oos`.
 
 #include "matcher_qram_oos.hpp"
 
@@ -34,7 +34,7 @@
 
 namespace sturm::transpile {
 
-namespace {
+namespace sturm_matcher_qram_oos_anon_ns {
 
 using namespace clang;
 using namespace clang::ast_matchers;
@@ -124,7 +124,7 @@ bool is_compound_assign_op(OverloadedOperatorKind k) {
 // to gate the existing-target callback below: when caller has already
 // confirmed RHS is a bare UDC-subscript and LHS is NOT a subscript,
 // adding this LHS-type check is sufficient to delegate to H1.
-bool expr_type_is_frontend_qint(const Expr* e) {
+bool expr_type_is_frontend_qint_oos(const Expr* e) {
     QualType qt = e->getType();
     if (qt.isNull()) return false;
     const Type* t = qt.getCanonicalType().getTypePtrOrNull();
@@ -147,7 +147,7 @@ public:
         if (!expr_is_qint_udc_subscript(op->getArg(1))) return;
         if (expr_is_qint_udc_subscript(op->getArg(0))) return;
         // sturm-u9ge.6 (Beat H1): bare `b = a[i];` is H1's; skip.
-        if (expr_type_is_frontend_qint(op->getArg(0))) return;
+        if (expr_type_is_frontend_qint_oos(op->getArg(0))) return;
         const unsigned id = get_diag_id(
             *diag_, cached_id_,
             "STURM: out-of-scope QRAM-subscript shape "
@@ -273,12 +273,13 @@ private:
 // Per-callback unique_ptr pool — outlives MatchFinder runs. Same
 // posture as `matcher_modular_op.cpp::add_mod_pool`.
 template <class T>
-std::vector<std::unique_ptr<T>>& callback_pool() {
+std::vector<std::unique_ptr<T>>& qram_oos_callback_pool() {
     static std::vector<std::unique_ptr<T>> pool;
     return pool;
 }
 
-} // anonymous namespace
+} // namespace sturm_matcher_qram_oos_anon_ns
+using namespace sturm_matcher_qram_oos_anon_ns;
 
 void register_qram_oos_matcher(
     clang::ast_matchers::MatchFinder& finder,
@@ -293,22 +294,22 @@ void register_qram_oos_matcher(
     auto pattern = cxxOperatorCallExpr().bind("op");
 
     {
-        auto& pool = callback_pool<ExistingTargetCallback>();
+        auto& pool = qram_oos_callback_pool<ExistingTargetCallback>();
         pool.push_back(std::make_unique<ExistingTargetCallback>(&diag));
         finder.addMatcher(pattern, pool.back().get());
     }
     {
-        auto& pool = callback_pool<WriteCallback>();
+        auto& pool = qram_oos_callback_pool<WriteCallback>();
         pool.push_back(std::make_unique<WriteCallback>(&diag));
         finder.addMatcher(pattern, pool.back().get());
     }
     {
-        auto& pool = callback_pool<RmwCallback>();
+        auto& pool = qram_oos_callback_pool<RmwCallback>();
         pool.push_back(std::make_unique<RmwCallback>(&diag));
         finder.addMatcher(pattern, pool.back().get());
     }
     {
-        auto& pool = callback_pool<ExpressionPositionCallback>();
+        auto& pool = qram_oos_callback_pool<ExpressionPositionCallback>();
         pool.push_back(std::make_unique<ExpressionPositionCallback>(&diag));
         finder.addMatcher(pattern, pool.back().get());
     }
