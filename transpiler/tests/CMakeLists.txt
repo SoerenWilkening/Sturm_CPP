@@ -1517,9 +1517,16 @@ unset(_t)
 # Bundles the entire QRAM-via-array-subscript epic (C1 / H1 / H4 matchers
 # + emitters + oos + e2e). The bucket pulls in a small set of runtime
 # sources so `test_qram_e2e`'s in-process counter-/circuit-sink dispatch
-# resolves at link time; the legacy `gate_kind.c` C TU means PCH reuse
-# is NOT applied to this bucket (mixed C/C++ targets cannot REUSE_FROM
-# a C++-only PCH per sturm-bs8s).
+# resolves at link time.
+#
+# sturm-18zc: the legacy mixed-C+C++ posture (gate_kind.c in the source
+# list) blocked `REUSE_FROM sturm-transpile` per sturm-bs8s. The carve-
+# out at the top-level `sturm_gate_kind` OBJECT lib flips this bucket
+# into a pure C++ consumer that REUSE_FROMs the driver's PCH and
+# inherits the sturm-cxvo matcher_common.hpp coverage. Cold-build cost
+# on the three test_bucket_qram Unity TUs drops accordingly (each was
+# re-parsing the clang/ASTMatchers + matcher_common.hpp set from
+# scratch at ~28s/TU per the sturm-pjtx -ftime-trace investigation).
 #
 # Members (logical ctest entries):
 #   test_matcher_qram_subscript          (C1 matcher / fixture-driven)
@@ -1533,12 +1540,6 @@ unset(_t)
 #   test_qram_e2e_real                   (sturm-ddgo prod-headers gate;
 #                                         ctest entry registered only under
 #                                         STURM_FULL_TEST_SUITE — see below)
-enable_language(C)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
 add_executable(test_bucket_qram
     test_matcher_qram_subscript.cpp
     test_matcher_qram_subscript_assign.cpp
@@ -1554,7 +1555,6 @@ add_executable(test_bucket_qram
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
@@ -1576,10 +1576,19 @@ if(STURM_CLANG_LIBCXX_INCLUDE_DIR)
     target_compile_definitions(test_bucket_qram PRIVATE
         STURM_CLANG_LIBCXX_INCLUDE_DIR="${STURM_CLANG_LIBCXX_INCLUDE_DIR}")
 endif()
-target_link_libraries(test_bucket_qram PRIVATE orkan_headers)
-# sturm-bs8s: mixed C+C++ target — gate_kind.c is linked in, but the
-# transpiler's REUSE_FROM PCH is C++-only. CMake hard-errors when a
-# mixed-language consumer attempts PCH reuse. Skip PCH for this bucket.
+target_link_libraries(test_bucket_qram PRIVATE
+    orkan_headers
+    # sturm-18zc: gate_kind.c carved into the top-level `sturm_gate_kind`
+    # OBJECT lib so this bucket can stay pure C++ and REUSE_FROM the
+    # transpiler driver's PCH below.
+    sturm_gate_kind)
+# sturm-18zc: now that gate_kind.c is carved out, this bucket is pure
+# C++ and can REUSE_FROM the transpiler driver's PCH. The CMake hard-
+# error on mixed-language consumers (sturm-bs8s) no longer applies.
+# Cold-build saving: the three test_bucket_qram Unity TUs each save
+# ~28s of clang/ASTMatchers + matcher_common.hpp parsing per the
+# sturm-pjtx -ftime-trace investigation (~85s aggregate).
+sturm_use_transpile_pch(test_bucket_qram)
 foreach(_t IN ITEMS
         test_matcher_qram_subscript
         test_qram_emitter

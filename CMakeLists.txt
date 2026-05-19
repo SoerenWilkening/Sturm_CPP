@@ -395,6 +395,32 @@ configure_file(
     "${CMAKE_BINARY_DIR}/include/sturm/version.hpp"
     @ONLY)
 
+# ── sturm-18zc — shared OBJECT lib for gate_kind.c ───────────────────────────
+# `src/sturm/core/gate_kind.c` is the one C TU in the project — every test
+# binary that needs the gate-info table inlined it directly in its source
+# list. For `test_bucket_qram` the resulting mixed C+C++ target blocks PCH
+# reuse from the transpiler driver (CMake hard-errors when a mixed-language
+# consumer attempts `target_precompile_headers REUSE_FROM` on a C++-only
+# PCH — sturm-bs8s). The carve-out flips test_bucket_qram into a pure C++
+# consumer that REUSE_FROMs `sturm-transpile`'s PCH and inherits the
+# matcher_common.hpp coverage from sturm-cxvo.
+#
+# Defined at top-level (mirroring sturm-x4iq / sturm-grhw) so any
+# subdirectory can `target_link_libraries(... PRIVATE sturm_gate_kind)`
+# without re-declaring the source file or its `-std=c11` build flag.
+# Source-file property must live in the same directory scope as the
+# add_library() call — CMake source-file properties are dir-scoped per
+# the documented behaviour.
+set_source_files_properties(
+    "${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c"
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+add_library(sturm_gate_kind OBJECT
+    "${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c")
+target_include_directories(sturm_gate_kind PUBLIC
+    "${CMAKE_SOURCE_DIR}/include")
+
 # ── Transpiler glue helper (M10) ──────────────────────────────────────────────
 # Define the add_quantum_executable() function for downstream consumers.
 # Every STURM build routes quantum sources through sturm-transpile; there is
