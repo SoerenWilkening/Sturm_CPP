@@ -2,7 +2,7 @@
 
 **Status:** Backlog. No implementation planned. File child bd issues when a concrete use case motivates tackling any of these five.
 
-**Source:** Carried forward from bd issue `sturm-spv8` (P4) and the Phase T completion blockquote in `docs/roadmap_transpiler_post_mvp.md` (2026-04-24).
+**Source:** Carried forward from bd issue `sturm-spv8` (P4, closed 2026-04-24) when Phase T (epic `sturm-xrob`) wrapped.
 
 **Baseline at deferral:** Phase T closed green with 314/314 CTests passing (0 failed) under `ctest --parallel 6`. Every `[[clang::annotate("sturm::reversible")]]` forward that P-C / Q-B accept and R-A / R-B / S-A can emit for now gets an auto-synthesised adjoint sibling through the transpiler's normal pipeline, with no user-side `STURM_REGISTER_ADJOINT` call required. The five items below are the remaining shape-envelope gaps.
 
@@ -17,8 +17,8 @@ Self-calls inside a `[[clang::annotate("sturm::reversible")]]` forward.
 **Required work.** Either a fixed-point emission strategy, or an explicit base-case contract.
 
 **References.**
-- Plan §0 Q4 (follow-up epic bucket).
-- Roadmap notes at lines 1485–1486, 1836–1837, 2102, 2301 in `docs/roadmap_transpiler_post_mvp.md`.
+- `transpiler/src/matcher_reversible_validate.hpp` — recursive self-calls are short-circuited as "out of scope" (search for "recursive call to the forward being validated").
+- Phase T epic: bd `sturm-xrob` (CLOSED 2026-04-24).
 
 ---
 
@@ -26,14 +26,12 @@ Self-calls inside a `[[clang::annotate("sturm::reversible")]]` forward.
 
 Forward defined in one translation unit, `sturm::invert(&fn)` call site in another.
 
-**Current behaviour.** PI-1's invert-call scanner + T-2's three-condition gate (PRD §9 Q2) operate at end-of-TU; a cross-TU invert call cannot see the forward's annotation at synth time.
+**Current behaviour.** The PI-1 invert-call scanner and the three-condition synth gate both operate at end-of-TU; a cross-TU invert call cannot see the forward's annotation at synth time.
 
 **Required work.** Either a link-time synthesis pass, an export/import manifest, or forcing all reversible forwards into headers with inline semantics.
 
 **References.**
-- PRD §9 (locked decisions around reversibility scope).
-- Plan §9 follow-up bucket.
-- Roadmap notes at lines 1489–1492, 1838, 2103 in `docs/roadmap_transpiler_post_mvp.md`.
+- Phase T epic: bd `sturm-xrob` (CLOSED 2026-04-24).
 
 ---
 
@@ -50,8 +48,7 @@ Class methods annotated reversible.
 **Required work.** Extend the matcher pipeline to recognise `CXXMethodDecl` / `CXXMemberCallExpr`, thread `this` through twin synth and adjoint emission, and decide how to name/register member adjoints.
 
 **References.**
-- Plan §9 follow-up bucket.
-- Roadmap note at line 1492 in `docs/roadmap_transpiler_post_mvp.md`.
+- Phase T epic: bd `sturm-xrob` (CLOSED 2026-04-24).
 
 ---
 
@@ -64,8 +61,7 @@ Template-dependent reversible forwards (e.g., `template<int N> void fn(qint<N>&)
 **Required work.** Either lazy instantiation-time synthesis, or eager all-instantiations synthesis (with the associated combinatorial cost).
 
 **References.**
-- Plan §9 follow-up bucket.
-- Roadmap notes around line 1534 (template survival through Q-A) and line 2301 in `docs/roadmap_transpiler_post_mvp.md`.
+- Phase T epic: bd `sturm-xrob` (CLOSED 2026-04-24).
 
 ---
 
@@ -105,34 +101,10 @@ This is a deliberate boundary, not a deferral — it does not belong on the list
 
 ## Cross-references
 
-- **Roadmap:** `docs/roadmap_transpiler_post_mvp.md` — Phase T completion blockquote (2026-04-24 entry) is the authoritative deferral list.
-- **Closed epic:** bd `sturm-xrob` (Phase T — Transpiler integration of automatic adjoint synthesis).
+- **Closed epic:** bd `sturm-xrob` (Phase T — Transpiler integration of automatic adjoint synthesis, closed 2026-04-24).
 - **Tracker issue:** bd `sturm-spv8` (this document is its materialised form).
 
----
-
-## Cross-check: modular-arithmetic PRD §7 (sturm-6ov3.4 / 2026-04-26)
-
-Plan `docs/plan_modular_arithmetic.md` §9.1 #6 instructs us to cross-
-check `docs/prd_modular_arithmetic.md` PRD §7 (non-goals / explicitly
-deferred) against this list and surface any deferred item that
-interacts with reversibility.
-
-**Result of the review.** None of the five PRD §7 deferrals introduces
-a reversibility deferral. For the record:
-
-| PRD §7 item | Reversibility impact |
-|---|---|
-| `qint_mod<N>` type wrapper | Pure type-system sugar over `qint_t<W>`; the underlying primitives (`lib_*_mod_dsl`) and their adjoints (`__lib_*_mod_dsl_adj`) are unchanged. |
-| Per-region modular flag scope | Build-time vs. region-time toggle of the same `pow %` rewrite; the rewrite target (`lib_pow_mod_dsl`) is reversible by construction (Phase 3 / sturm-pp7m). |
-| Compound modular assigns | Sugar over the existing free functions; lowering goes through the same reversible primitives. |
-| Modular subtraction / negation | Lowers to `add_mod(a, n - b, n)`, which is the same reversible primitive. |
-| Precondition-checking debug mode | Inserts reversible `compare(a, n)` guards (already a reversible primitive); does not change the modular ops themselves. |
-
-No items interact with the five reversibility deferrals listed above
-(recursion, cross-TU synthesis, member functions, templates, free-
-function predicates inside `WHEN(...)`). Re-run this cross-check if a
-new entry lands in PRD §7 of `prd_modular_arithmetic`.
+> **Historical note (2026-04-26):** A prior cross-check against the modular-arithmetic PRD §7 (non-goals) confirmed that none of its five entries — `qint_mod<N>` wrapper, per-region modular flag scope, compound modular assigns, modular subtraction/negation, precondition-checking debug mode — interact with the five reversibility deferrals above. The modular-arith PRD/plan have since been pruned (commit `7a86606`, 2026-04-27); the conclusion stands as documented in bd `sturm-6ov3.4`.
 
 ---
 
@@ -141,5 +113,5 @@ new entry lands in PRD §7 of `prd_modular_arithmetic`.
 When a concrete use case lands:
 
 1. Open a new bd issue for the specific deferral (recursion / cross-TU / member / template / WHEN free-call predicate).
-2. Link it to the roadmap entry and to this document.
+2. Link it to this document (and to the Phase T epic `sturm-xrob` for historical context).
 3. Update this file's entry for that deferral once work is scoped (move status from **Backlog** → **Scoped (bd issue <id>)** → remove once closed).
