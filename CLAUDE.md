@@ -69,17 +69,37 @@ bd close <id>         # Complete work
 
 ## Build & Test
 
+**First-time setup (per machine / container):** install ccache + ninja and
+write the PCH-safe sloppiness config. Idempotent — rerun anytime.
+
+```bash
+bash tools/setup_dev_env.sh
+```
+
+Then configure with the **Ninja** generator (incremental dependency scanning
+on this tree's ~1500 .o files is ~10× faster than GNU Make). The top-level
+CMake auto-wires `ccache` as `CMAKE_<LANG>_COMPILER_LAUNCHER` when it is on
+PATH (gated by `STURM_USE_CCACHE`, default ON; sturm-q2eb).
+
 ```bash
 # Configure (macOS / Homebrew LLVM 17). The host-clang invariant below
 # requires CMAKE_CXX_COMPILER and LLVM_DIR to come from the SAME LLVM
 # install — see "Host-clang invariant" below.
-cmake -S . -B build \
+cmake -S . -B build -G Ninja \
     -DCMAKE_CXX_COMPILER=/usr/local/opt/llvm@17/bin/clang++ \
     -DLLVM_DIR=/usr/local/opt/llvm@17/lib/cmake/llvm \
     -DClang_DIR=/usr/local/opt/llvm@17/lib/cmake/clang
 cmake --build build --parallel 6
 ctest --test-dir build --parallel 6 --output-on-failure
 ```
+
+On the Linux agent container substitute `/usr/lib/llvm-17/` for the
+compiler/cmake-package prefixes above.
+
+**Why this matters:** without ccache + Ninja the agent's iterative build
+loop ran ~30 min per cycle; the user mandated a <2 min incremental cap.
+If you must run an uncached baseline (e.g. measuring a regression), pass
+`-DSTURM_USE_CCACHE=OFF` to skip the launcher wiring.
 
 ### Host-clang invariant (sturm-yial)
 

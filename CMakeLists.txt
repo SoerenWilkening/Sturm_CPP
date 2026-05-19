@@ -1,6 +1,46 @@
 cmake_minimum_required(VERSION 3.16)
 project(STURM VERSION 0.1.2 LANGUAGES CXX C)
 
+# ── sturm-q2eb — ccache compiler launcher ────────────────────────────────────
+# Wire ccache (when found on PATH) as the CXX/C compiler launcher. ccache
+# transparently hashes (compile-flags, preprocessed source, compiler version)
+# and serves the cached .o on a hit. On the same agent's iterative build loop
+# this drops a full clean rebuild from ~30 min to a few minutes on warm cache,
+# and a no-source-change reconfigure to seconds.
+#
+# Defaults
+#   STURM_USE_CCACHE=ON (default): use ccache iff `find_program(ccache)`
+#                                  succeeds. Missing ccache is silent — the
+#                                  build falls back to plain compiler invokes.
+#   STURM_USE_CCACHE=OFF        : skip the wiring entirely.
+#
+# PCH sloppiness — sturm-bs8s/cxrn rely on `target_precompile_headers` for the
+# transpiler driver + plugin + tests. clang embeds compile-time defines and
+# `__DATE__/__TIME__` macros into the PCH; without explicit sloppiness ccache
+# would invalidate the PCH cache on every rebuild and the PCH win evaporates.
+# The setup script (tools/setup_dev_env.sh) writes the matching keys into
+# ~/.config/ccache/ccache.conf so the same setting is honored on agent
+# container resets without depending on per-shell env vars.
+option(STURM_USE_CCACHE
+    "Wire ccache as the CXX/C compiler launcher when present (default ON). Set OFF to force unwrapped compiler invokes (e.g. when measuring uncached baseline wall time)."
+    ON)
+if(STURM_USE_CCACHE)
+    find_program(CCACHE_PROGRAM ccache)
+    if(CCACHE_PROGRAM)
+        message(STATUS "sturm: ccache found at ${CCACHE_PROGRAM} — wiring as "
+                       "CMAKE_<LANG>_COMPILER_LAUNCHER (STURM_USE_CCACHE=ON)")
+        set(CMAKE_C_COMPILER_LAUNCHER   "${CCACHE_PROGRAM}"
+            CACHE STRING "C compiler launcher (set by STURM_USE_CCACHE)" FORCE)
+        set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
+            CACHE STRING "C++ compiler launcher (set by STURM_USE_CCACHE)" FORCE)
+    else()
+        message(STATUS "sturm: ccache not found on PATH — STURM_USE_CCACHE=ON "
+                       "is a no-op. Install via tools/setup_dev_env.sh "
+                       "(`apt install ccache` on the agent container, "
+                       "`brew install ccache` on macOS).")
+    endif()
+endif()
+
 # ── sturm-yial — host clang vs plugin LLVM invariant gate ─────────────────────
 #
 # The transpiler plugin (`sturm-transpile-plugin`) links the libclang-cpp /
