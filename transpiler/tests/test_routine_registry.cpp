@@ -42,6 +42,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_routine_registry_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -337,7 +339,10 @@ template <> struct adjoint_of<decltype(&::only_fwd)> {
 
 } // namespace
 
+}  // namespace sturm_test_routine_registry_ns
+
 void run_routine_registry_tests() {
+    using namespace sturm_test_routine_registry_ns;
     test_registry_api_basic_contract();
     test_registry_single_pair();
     test_registry_extra_pair_in_user_src();

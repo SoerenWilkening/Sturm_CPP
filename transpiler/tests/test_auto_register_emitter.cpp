@@ -55,6 +55,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_auto_register_emitter_ns {
+
 using sturm::transpile::AutoRegisterRejectReason;
 using sturm::transpile::AutoRegisterResult;
 using sturm::transpile::emit_auto_registration;
@@ -449,7 +451,12 @@ void test_emitted_line_parses_against_runtime_header() {
 
 } // namespace
 
+}  // namespace sturm_test_auto_register_emitter_ns
+
 int run_test_auto_register_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_auto_register_emitter_ns;
+    using sturm_test_auto_register_emitter_ns::tests_run;
+    using sturm_test_auto_register_emitter_ns::tests_pass;
     // (1) Pure-string API golden comparisons.
     test_string_api_canonical_pair();
     test_string_api_short_name();

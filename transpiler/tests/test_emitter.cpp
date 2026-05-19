@@ -55,6 +55,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_emitter_ns {
+
 namespace fs = std::filesystem;
 using namespace sturm::transpile;
 
@@ -1082,7 +1084,12 @@ static void test_format_line_directive_honors_user_line_pragma() {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
+}  // namespace sturm_test_emitter_ns
+
 int run_test_transpile_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_emitter_ns;
+    using sturm_test_emitter_ns::tests_run;
+    using sturm_test_emitter_ns::tests_pass;
     test_golden_snapshot();
     test_idempotency_skip_detection();
     test_multiple_ops_lifo_in_output();

@@ -20,6 +20,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_qram_subscript_expr_ns {
+
 using namespace sturm::transpile;
 
 static int tests_run  = 0;
@@ -271,7 +273,12 @@ static void test_coexist_with_c1_shape() {
     CHECK_EQ_INT(hits.size(), 1);
 }
 
+}  // namespace sturm_test_matcher_qram_subscript_expr_ns
+
 int run_test_matcher_qram_subscript_expr(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_qram_subscript_expr_ns;
+    using sturm_test_matcher_qram_subscript_expr_ns::tests_run;
+    using sturm_test_matcher_qram_subscript_expr_ns::tests_pass;
     test_std_array_positive();
     test_c_array_positive();
     test_pointer_positive();

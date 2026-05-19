@@ -18,6 +18,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_when_lift_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -192,7 +194,10 @@ void test_pf_when_direct_materialize_call_no_match() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_when_lift_ns
+
 void run_when_lift_tests() {
+    using namespace sturm_test_matcher_when_lift_ns;
     test_pf_when_compound_detects_once();
     test_pf_when_named_passthrough_short_circuits();
     test_pf_when_not_lifts_once();

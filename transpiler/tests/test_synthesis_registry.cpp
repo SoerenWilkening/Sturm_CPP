@@ -58,13 +58,17 @@
 #include <cstdint>
 #include <string>
 
+// Forward declaration must stay at file scope so it resolves to ::clang::FunctionDecl
+// rather than sturm_test_synthesis_registry_ns::clang::FunctionDecl in unity builds.
+namespace clang { class FunctionDecl; }
+
+namespace sturm_test_synthesis_registry_ns {
+
 using sturm::transpile::RoutineRegistry;
 using sturm::transpile::SynthesisEntry;
 using sturm::transpile::SynthesisRegistry;
 using sturm::transpile::SynthesisStatus;
 using sturm::transpile::to_string;
-
-namespace clang { class FunctionDecl; }
 
 // ── Test harness ────────────────────────────────────────────────────────────
 //
@@ -470,7 +474,12 @@ void test_multiple_entries_independent_state() {
 
 } // namespace
 
+}  // namespace sturm_test_synthesis_registry_ns
+
 int run_test_synthesis_registry(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_synthesis_registry_ns;
+    using sturm_test_synthesis_registry_ns::tests_run;
+    using sturm_test_synthesis_registry_ns::tests_pass;
     test_insert_creates_pending_entry();
     test_re_insert_is_idempotent();
     test_setters_round_trip_fields();

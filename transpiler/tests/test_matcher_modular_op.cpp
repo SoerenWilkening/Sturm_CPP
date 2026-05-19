@@ -54,6 +54,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_modular_op_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -869,7 +871,10 @@ void test_pow_mod_int_exponent_does_not_double_with_qint_exponent_under_flag_on(
 
 } // namespace
 
+}  // namespace sturm_test_matcher_modular_op_ns
+
 int run_test_matcher_modular_op(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_modular_op_ns;
     test_basic_add_mod_match();
     test_distinct_widths_resolve();
     test_bare_modulus_does_not_match();

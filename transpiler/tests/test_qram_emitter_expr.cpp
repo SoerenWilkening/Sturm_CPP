@@ -23,6 +23,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_qram_emitter_expr_ns {
+
 using namespace sturm::transpile;
 
 static int tests_run = 0, tests_pass = 0;
@@ -280,7 +282,10 @@ void test_bare_c1_shape_untouched() {
 
 } // anonymous namespace
 
+}  // namespace sturm_test_qram_emitter_expr_ns
+
 int run_test_qram_emitter_expr(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_qram_emitter_expr_ns;
     test_text_std_array_with_width();
     test_text_c_array_with_width();
     test_text_pointer_with_length();

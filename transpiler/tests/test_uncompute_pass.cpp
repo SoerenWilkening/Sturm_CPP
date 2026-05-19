@@ -38,6 +38,8 @@
 #include <string>
 #include <vector>
 
+namespace sturm_test_uncompute_pass_ns {
+
 using namespace sturm::transpile;
 
 // ── Test harness ──────────────────────────────────────────────────────────────
@@ -2203,7 +2205,12 @@ static void test_external_cleanup_interleaves_with_internal_lifo() {
     CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(scope.close_brace));
 }
 
+}  // namespace sturm_test_uncompute_pass_ns
+
 int run_test_transpile_uncompute_pass(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_uncompute_pass_ns;
+    using sturm_test_uncompute_pass_ns::tests_run;
+    using sturm_test_uncompute_pass_ns::tests_pass;
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
     test_two_scopes_each_one_op();

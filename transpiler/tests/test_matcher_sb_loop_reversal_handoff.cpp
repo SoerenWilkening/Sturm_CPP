@@ -44,6 +44,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_sb_loop_reversal_handoff_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -227,7 +229,10 @@ void test_sb_reversible_while_loop_falls_back_to_ph3() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_sb_loop_reversal_handoff_ns
+
 void run_sb_loop_reversal_handoff_tests() {
+    using namespace sturm_test_matcher_sb_loop_reversal_handoff_ns;
     test_sb_non_reversible_for_loop_preserves_ph3_behaviour();
     test_sb_reversible_for_loop_routes_to_loop_reversal();
     test_sb_reversible_while_loop_falls_back_to_ph3();

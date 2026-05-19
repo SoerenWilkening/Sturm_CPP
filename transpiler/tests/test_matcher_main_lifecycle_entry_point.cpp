@@ -50,6 +50,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_main_lifecycle_entry_point_ns {
+
 using sturm::transpile::MainLifecycleHit;
 using sturm::transpile::MainLifecycleHitKind;
 using sturm::transpile::register_main_lifecycle_matcher;
@@ -422,7 +424,12 @@ void typoed() {}
     CHECK_EQ_INT(hits.size(), 0);
 }
 
+}  // namespace sturm_test_matcher_main_lifecycle_entry_point_ns
+
 int run_test_matcher_main_lifecycle_entry_point(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_main_lifecycle_entry_point_ns;
+    using sturm_test_matcher_main_lifecycle_entry_point_ns::tests_run;
+    using sturm_test_matcher_main_lifecycle_entry_point_ns::tests_pass;
     test_library_fixture_void_hit();
     test_googletest_method_rejected();
     test_googletest_wrapping_idiom();

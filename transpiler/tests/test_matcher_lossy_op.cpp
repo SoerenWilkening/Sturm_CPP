@@ -24,6 +24,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_lossy_op_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -196,7 +198,10 @@ void test_enclosing_block_tracks_inner_scope() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_lossy_op_ns
+
 int run_test_matcher_lossy_op(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_lossy_op_ns;
     test_one_lossy(LossyOpKind::MulAssign, "*=");
     test_one_lossy(LossyOpKind::DivAssign, "/=");
     test_one_lossy(LossyOpKind::ModAssign, "%=");

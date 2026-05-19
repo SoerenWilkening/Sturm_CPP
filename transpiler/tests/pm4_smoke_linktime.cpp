@@ -79,6 +79,8 @@
 #include <cstdlib>
 #include <string>
 
+namespace sturm_pm4_smoke_linktime_ns {
+
 using ::sturm::transpile::QOperation;
 using ::sturm::transpile::QValueRef;
 using ::sturm::transpile::plugin::Registry;
@@ -231,7 +233,12 @@ static void test_drain_into_fresh_registry_is_idempotent() {
     }
 }
 
+}  // namespace sturm_pm4_smoke_linktime_ns
+
 int main() {
+    using namespace sturm_pm4_smoke_linktime_ns;
+    using sturm_pm4_smoke_linktime_ns::tests_run;
+    using sturm_pm4_smoke_linktime_ns::tests_pass;
     test_registrars_has_at_least_one_entry();
     test_drain_registrars_populates_demo_renderer();
     test_drained_renderer_emits_expected_uncompute_text();

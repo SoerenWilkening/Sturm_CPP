@@ -43,6 +43,8 @@
 #include <string>
 #include <vector>
 
+namespace sturm_test_plugin_registry_ns {
+
 using sturm::transpile::QUnit;
 using sturm::transpile::plugin::Registry;
 using sturm::transpile::plugin::registrars;
@@ -287,7 +289,12 @@ static void test_drain_registrars_invokes_each_fn() {
     CHECK(times_called >= 1);
 }
 
+}  // namespace sturm_test_plugin_registry_ns
+
 int run_test_plugin_registry(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_plugin_registry_ns;
+    using sturm_test_plugin_registry_ns::tests_run;
+    using sturm_test_plugin_registry_ns::tests_pass;
     test_register_matcher_duplicate_name_aborts();
     test_register_op_duplicate_kind_id_aborts();
     test_matcher_name_and_kind_id_are_disjoint_namespaces();

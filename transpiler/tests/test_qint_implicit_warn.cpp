@@ -19,6 +19,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_qint_implicit_warn_ns {
+
 using namespace sturm::transpile;
 
 static int tests_run  = 0;
@@ -185,7 +187,12 @@ static void test_suppressed_by_default() {
     CHECK_EQ_INT(r.warnings, 0);
 }
 
+}  // namespace sturm_test_qint_implicit_warn_ns
+
 int run_test_qint_implicit_warn(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_qint_implicit_warn_ns;
+    using sturm_test_qint_implicit_warn_ns::tests_run;
+    using sturm_test_qint_implicit_warn_ns::tests_pass;
     test_positive_int_var_init();
     test_positive_vector_ctor_arg();
     test_positive_for_loop_bound();

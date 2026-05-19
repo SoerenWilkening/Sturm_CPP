@@ -30,6 +30,8 @@
 #include <unordered_set>
 #include <vector>
 
+namespace sturm_test_consumer_qint_alias_subst_ns {
+
 using namespace sturm::transpile;
 
 #ifndef STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR
@@ -190,7 +192,10 @@ void test_matcher_qint_alias_subst_no_overlap() {
 
 } // anonymous namespace
 
+}  // namespace sturm_test_consumer_qint_alias_subst_ns
+
 int run_test_consumer_qint_alias_subst(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_consumer_qint_alias_subst_ns;
     test_overlap_fixture_round_trip();
     test_matcher_qint_alias_subst_no_overlap();
     std::fprintf(stderr,

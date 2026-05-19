@@ -44,6 +44,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_pm2_compound_line_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -300,6 +302,9 @@ void run_pm2_compound_line_tests_impl() {
 
 // Declared in test_matcher_harness.hpp so the dispatcher in
 // test_matcher.cpp can call us.
+}  // namespace sturm_test_matcher_pm2_compound_line_ns
+
 void run_pm2_compound_line_tests() {
+    using namespace sturm_test_matcher_pm2_compound_line_ns;
     run_pm2_compound_line_tests_impl();
 }

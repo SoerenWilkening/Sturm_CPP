@@ -75,6 +75,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_matcher_reversible_signature_ns {
+
 using sturm::transpile::DiagContext;
 using sturm::transpile::ReversibleSigRejectReason;
 using sturm::transpile::ReversibleSignatureResult;
@@ -712,7 +714,12 @@ static void test_to_string_enum_spellings() {
 
 // ── main ───────────────────────────────────────────────────────────
 
+}  // namespace sturm_test_matcher_reversible_signature_ns
+
 int run_test_matcher_reversible_signature(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_reversible_signature_ns;
+    using sturm_test_matcher_reversible_signature_ns::tests_run;
+    using sturm_test_matcher_reversible_signature_ns::tests_pass;
     // Happy paths.
     test_happy_path_non_const_ref();
     test_happy_path_const_ref_not_mutated();

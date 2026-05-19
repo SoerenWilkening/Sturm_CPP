@@ -47,6 +47,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_loop_reversal_ns {
+
 using sturm::transpile::LoopRejectReason;
 using sturm::transpile::LoopReversalResult;
 using sturm::transpile::reverse_for_header;
@@ -521,7 +523,12 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
+}  // namespace sturm_test_loop_reversal_ns
+
 int run_test_loop_reversal(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_loop_reversal_ns;
+    using sturm_test_loop_reversal_ns::tests_run;
+    using sturm_test_loop_reversal_ns::tests_pass;
     // Reject-gate.
     test_null_stmt_rejects();
     test_missing_clause_rejects();

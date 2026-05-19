@@ -39,6 +39,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_qram_e2e_ns {
+
 using sturm::transpile::emit_qram_rewrites;
 using sturm::transpile::QramSubscriptHit;
 using sturm::transpile::register_qram_subscript_matcher;
@@ -288,7 +290,10 @@ void exercise_circuit() {
 
 }  // namespace
 
+}  // namespace sturm_test_qram_e2e_ns
+
 int run_test_qram_e2e(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_qram_e2e_ns;
     check_pipeline("StdArray", kBodyStdArray);
     check_pipeline("CArray",   kBodyCArray);
     check_pipeline("Pointer",  kBodyPointer);

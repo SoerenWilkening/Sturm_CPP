@@ -17,6 +17,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_lossy_nested_rewrite_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -178,7 +180,10 @@ void test_emit_defensive_empty() {
 
 } // namespace
 
+}  // namespace sturm_test_lossy_nested_rewrite_ns
+
 int run_test_lossy_nested_rewrite(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_lossy_nested_rewrite_ns;
     test_matches_mul_and();
     test_does_not_match_bare();
     test_lo2a_does_not_match_nested();

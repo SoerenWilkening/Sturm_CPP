@@ -28,6 +28,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_qram_emitter_ns {
+
 using namespace sturm::transpile;
 
 #ifndef STURM_QRAM_EMITTER_FIXTURES_DIR
@@ -279,7 +281,12 @@ void test_fixture_pointer() {
 
 } // anonymous namespace
 
+}  // namespace sturm_test_qram_emitter_ns
+
 int run_test_qram_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_qram_emitter_ns;
+    using sturm_test_qram_emitter_ns::tests_run;
+    using sturm_test_qram_emitter_ns::tests_pass;
     test_text_std_array_with_width();
     test_text_std_array_without_width();
     test_text_c_array_with_width();

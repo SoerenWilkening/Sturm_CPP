@@ -61,6 +61,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_pm2_hoist_line_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -468,6 +470,9 @@ void run_pm2_hoist_line_tests_impl() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_pm2_hoist_line_ns
+
 void run_pm2_hoist_line_tests() {
+    using namespace sturm_test_matcher_pm2_hoist_line_ns;
     run_pm2_hoist_line_tests_impl();
 }

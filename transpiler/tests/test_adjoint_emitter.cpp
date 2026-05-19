@@ -63,6 +63,8 @@
 #include <string>
 #include <vector>
 
+namespace sturm_test_adjoint_emitter_ns {
+
 using sturm::transpile::AdjointEmissionResult;
 using sturm::transpile::AdjointRejectReason;
 using sturm::transpile::emit_adjoint_body;
@@ -661,7 +663,12 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
+}  // namespace sturm_test_adjoint_emitter_ns
+
 int run_test_adjoint_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_adjoint_emitter_ns;
+    using sturm_test_adjoint_emitter_ns::tests_run;
+    using sturm_test_adjoint_emitter_ns::tests_pass;
     // (1) Reverse-order + shape coverage.
     test_reverse_order_on_three_statement_body();
     test_single_statement_body();

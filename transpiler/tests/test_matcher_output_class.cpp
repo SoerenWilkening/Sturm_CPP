@@ -60,6 +60,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_matcher_output_class_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -464,7 +466,10 @@ void caller() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_output_class_ns
+
 void run_output_class_tests() {
+    using namespace sturm_test_matcher_output_class_ns;
     test_oc_intermediate_same_scope();
     test_oc_intermediate_outer_via_nested_block();
     test_oc_final_function_parameter();

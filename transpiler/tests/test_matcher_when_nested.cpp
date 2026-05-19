@@ -21,6 +21,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_when_nested_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -167,7 +169,10 @@ void test_pg_when_nested_siblings_tolerated() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_when_nested_ns
+
 void run_when_nested_tests() {
+    using namespace sturm_test_matcher_when_nested_ns;
     test_pg_when_nested_named_depth2_detects_once();
     test_pg_when_nested_named_depth3_detects_twice();
     test_pg_when_nested_compound_inner_rejected();

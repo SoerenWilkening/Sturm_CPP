@@ -35,6 +35,8 @@
 #include <sstream>
 #include <string>
 
+namespace sturm_test_transpile_consumer_ns {
+
 namespace fs = std::filesystem;
 
 static int tests_run = 0;
@@ -266,7 +268,12 @@ static void test_plugin_mode() {
     CHECK(!fs::exists(unexpected));
 }
 
+}  // namespace sturm_test_transpile_consumer_ns
+
 int run_test_transpile_consumer(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_transpile_consumer_ns;
+    using sturm_test_transpile_consumer_ns::tests_run;
+    using sturm_test_transpile_consumer_ns::tests_pass;
     test_standalone_file_mode();
     test_plugin_mode();
 

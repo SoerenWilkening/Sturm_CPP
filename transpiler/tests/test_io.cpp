@@ -23,6 +23,8 @@
 #include <string>
 #include <string_view>
 
+namespace sturm_test_io_ns {
+
 namespace fs = std::filesystem;
 using namespace sturm::transpile;
 
@@ -110,7 +112,12 @@ static void test_read_file_missing_returns_false() {
     CHECK(got.empty());
 }
 
+}  // namespace sturm_test_io_ns
+
 int main() {
+    using namespace sturm_test_io_ns;
+    using sturm_test_io_ns::tests_run;
+    using sturm_test_io_ns::tests_pass;
     test_resolve_relative_input();
     test_resolve_basename_only();
     test_resolve_absolute_input_uses_basename();

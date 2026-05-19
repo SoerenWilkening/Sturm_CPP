@@ -19,6 +19,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_lossy_rewrite_emitter_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -234,7 +236,10 @@ void test_empty_rhs() {
 
 } // namespace
 
+}  // namespace sturm_test_lossy_rewrite_emitter_ns
+
 int run_test_lossy_rewrite_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_lossy_rewrite_emitter_ns;
     test_mul();
     test_and();
     test_or();

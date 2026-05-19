@@ -67,6 +67,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_loop_invariant_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -550,7 +552,10 @@ void test_li_invalid_decl_loc() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_loop_invariant_ns
+
 void run_loop_invariant_tests() {
+    using namespace sturm_test_matcher_loop_invariant_ns;
     test_li_outer_no_writes();
     test_li_outer_xor_assign_write_disqualifies();
     test_li_outer_plain_assign_write_disqualifies();

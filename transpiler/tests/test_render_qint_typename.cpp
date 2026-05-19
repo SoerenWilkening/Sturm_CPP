@@ -15,6 +15,8 @@
 #include <cstdio>
 #include <string>
 
+namespace sturm_test_render_qint_typename_ns {
+
 using sturm::transpile::render_qint_typename;
 
 // ── Test harness ──────────────────────────────────────────────────────────────
@@ -42,7 +44,12 @@ static void test_render_width_64() {
     CHECK(render_qint_typename(64) == "sturm::qint_t<64>");
 }
 
+}  // namespace sturm_test_render_qint_typename_ns
+
 int main() {
+    using namespace sturm_test_render_qint_typename_ns;
+    using sturm_test_render_qint_typename_ns::tests_run;
+    using sturm_test_render_qint_typename_ns::tests_pass;
     test_render_width_8();
     test_render_width_32();
     test_render_width_64();

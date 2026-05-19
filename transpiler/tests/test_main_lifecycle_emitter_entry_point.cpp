@@ -43,6 +43,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_main_lifecycle_emitter_entry_point_ns {
+
 using sturm::transpile::MainLifecycleHit;
 using sturm::transpile::MainLifecycleHitKind;
 using sturm::transpile::QReplacement;
@@ -378,7 +380,12 @@ void test_fixture_gtest_wrapping() {
 
 #endif // STURM_ENTRY_POINT_FIXTURES_DIR
 
+}  // namespace sturm_test_main_lifecycle_emitter_entry_point_ns
+
 int run_test_main_lifecycle_emitter_entry_point(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_main_lifecycle_emitter_entry_point_ns;
+    using sturm_test_main_lifecycle_emitter_entry_point_ns::tests_run;
+    using sturm_test_main_lifecycle_emitter_entry_point_ns::tests_pass;
     test_void_entry_point_emits_no_return();
     test_integral_entry_point_emits_return();
     test_main_kind_backward_compat();

@@ -53,6 +53,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_qram_e2e_real_ns {
+
 using sturm::transpile::QramSubscriptHit;
 using sturm::transpile::QramSubscriptAssignHit;
 using sturm::transpile::QramSubscriptExprHit;
@@ -298,7 +300,10 @@ void test_h4_real() {
 
 }  // namespace
 
+}  // namespace sturm_test_qram_e2e_real_ns
+
 int run_test_qram_e2e_real(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_qram_e2e_real_ns;
     test_c1_real();
     test_h1_real();
     test_h4_real();

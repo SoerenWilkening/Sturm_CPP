@@ -47,6 +47,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_matcher_user_routine_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -455,7 +457,10 @@ void caller() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_user_routine_ns
+
 void run_user_routine_tests() {
+    using namespace sturm_test_matcher_user_routine_ns;
     test_user_routine_two_outputs();
     test_user_routine_mixed_io();
     test_user_routine_classical_scalar();

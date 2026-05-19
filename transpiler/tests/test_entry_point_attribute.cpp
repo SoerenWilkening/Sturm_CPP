@@ -43,6 +43,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_entry_point_attribute_ns {
+
 using sturm::transpile::has_entry_point_attr;
 using sturm::transpile::kEntryPointAttrAnnotation;
 
@@ -356,7 +358,12 @@ void user() {
 
 } // namespace
 
+}  // namespace sturm_test_entry_point_attribute_ns
+
 int run_test_entry_point_attribute(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_entry_point_attribute_ns;
+    using sturm_test_entry_point_attribute_ns::tests_run;
+    using sturm_test_entry_point_attribute_ns::tests_pass;
     test_recognizes_on_plain_fn();
     test_null_decl_returns_false();
     test_annotation_constant_value();

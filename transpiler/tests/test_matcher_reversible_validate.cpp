@@ -67,6 +67,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_matcher_reversible_validate_ns {
+
 using sturm::transpile::DiagContext;
 using sturm::transpile::ReversibleRejectReason;
 using sturm::transpile::ReversibleValidationResult;
@@ -860,7 +862,12 @@ static void test_to_string_enum_spellings() {
 
 // ── main ────────────────────────────────────────────────────────────
 
+}  // namespace sturm_test_matcher_reversible_validate_ns
+
 int run_test_matcher_reversible_validate(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_reversible_validate_ns;
+    using sturm_test_matcher_reversible_validate_ns::tests_run;
+    using sturm_test_matcher_reversible_validate_ns::tests_pass;
     // Happy path.
     test_happy_path_clean_body_passes();
     // Silent rejects.

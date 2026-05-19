@@ -36,6 +36,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_ccnot_fuse_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -507,7 +509,10 @@ void test_integration_compound_matcher_does_not_double_fire() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_ccnot_fuse_ns
+
 void run_ccnot_fuse_tests() {
+    using namespace sturm_test_matcher_ccnot_fuse_ns;
     test_fuse_canonical_pair();
     test_fuse_arbitrary_tmp_name();
     test_reject_two_readers();

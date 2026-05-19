@@ -41,6 +41,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_hoist_invariant_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -377,7 +379,10 @@ void test_hoist_anchors_have_correct_ordering() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_hoist_invariant_ns
+
 void run_hoist_invariant_tests() {
+    using namespace sturm_test_matcher_hoist_invariant_ns;
     test_hoist_basic_for_or_invariant();
     test_hoist_reject_non_invariant_operand();
     test_hoist_reject_non_loop_scope();

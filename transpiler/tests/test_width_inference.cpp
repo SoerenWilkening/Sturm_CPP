@@ -24,6 +24,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_width_inference_ns {
+
 using namespace sturm::transpile;
 
 static int tests_run  = 0;
@@ -282,7 +284,12 @@ static void test_null_diag_safe() {
     CHECK_EQ_INT(infer_width(*vd, ctx), kDefaultWidth);
 }
 
+}  // namespace sturm_test_width_inference_ns
+
 int run_test_width_inference(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_width_inference_ns;
+    using sturm_test_width_inference_ns::tests_run;
+    using sturm_test_width_inference_ns::tests_pass;
     test_rule1_annotation_reserved();
     test_rule2_rhs_driven();
     test_rule3_default();

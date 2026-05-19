@@ -90,15 +90,15 @@ endif()
 # the unity TU makes about its members; rare static/anon-namespace name
 # clashes are still possible in helper code).
 option(STURM_UNITY_BUCKETS
-    "Enable CMake unity builds on the 9 transpiler-test bucket targets (default OFF — turn ON only after the 36 test files with shared `static int tests_pass` / `bool run_on(...)` helpers are wrapped in anonymous namespaces; otherwise unity-merge produces ODR collisions). Tracked by the follow-up bd issue."
-    OFF)
+    "Enable CMake unity builds on the 9 transpiler-test bucket targets (default ON since sturm-dmsp wrapped every bucketed test_*.cpp in a unique named namespace `sturm_<stem>_ns`; multiple `namespace { }` blocks in a unity TU merge into one unnamed ns and ODR-collide, so the wrap MUST be a uniquely-named outer ns — anonymous nesting inside is fine for internal linkage). Toggle OFF only when bisecting a unity-build induced symbol collision in a new test member."
+    ON)
 if(STURM_UNITY_BUCKETS)
     message(STATUS "sturm: STURM_UNITY_BUCKETS=ON — transpiler-test buckets "
                    "will compile as 1-2 unity TUs per bucket "
-                   "(UNITY_BUILD_BATCH_SIZE=8). Make sure the test "
-                   "helpers in transpiler/tests/test_*.cpp have been "
-                   "wrapped in anonymous namespaces; see the follow-up "
-                   "bd issue for the migration plan.")
+                   "(UNITY_BUILD_BATCH_SIZE=8). Each bucketed test_*.cpp "
+                   "is wrapped in a unique `namespace sturm_<stem>_ns { }` "
+                   "so file-local helpers (tests_pass / run_on / etc.) do "
+                   "not ODR-collide across members in the unity TU.")
 endif()
 
 # ── sturm-yial — host clang vs plugin LLVM invariant gate ─────────────────────

@@ -28,6 +28,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_mvp_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -243,7 +245,10 @@ void test_stmt_range_round_trip() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_mvp_ns
+
 void run_mvp_tests() {
+    using namespace sturm_test_matcher_mvp_ns;
     test_positive_single_or();
     test_negative_and_operator();
     test_negative_wrong_result_type();

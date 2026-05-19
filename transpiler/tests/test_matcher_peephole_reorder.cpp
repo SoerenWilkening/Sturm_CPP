@@ -96,6 +96,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_matcher_peephole_reorder_ns {
+
 using namespace sturm::transpile;
 
 // ── Test harness (local; keeps this TU self-contained) ────────────────────
@@ -1757,7 +1759,12 @@ void demo_few(qbool a, qbool b, qbool y) {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_peephole_reorder_ns
+
 int run_test_matcher_peephole_reorder(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_peephole_reorder_ns;
+    using sturm_test_matcher_peephole_reorder_ns::tests_run;
+    using sturm_test_matcher_peephole_reorder_ns::tests_pass;
     // (1) Positive — disjoint qbool between A and C.
     test_reorder_fires_disjoint_qbool();
     // (2) Positive — disjoint qint-flavoured operand between A and C.

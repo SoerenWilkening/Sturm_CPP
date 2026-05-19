@@ -33,6 +33,8 @@
 #include <string>
 #include <string_view>
 
+namespace sturm_test_diag_context_ns {
+
 using sturm::transpile::DiagContext;
 
 // ── Test harness ────────────────────────────────────────────────────
@@ -229,7 +231,12 @@ static void test_report_reversible_sig_multi_return_fires_error() {
 
 // ── main ────────────────────────────────────────────────────────────
 
+}  // namespace sturm_test_diag_context_ns
+
 int run_test_transpile_diag_context(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_diag_context_ns;
+    using sturm_test_diag_context_ns::tests_run;
+    using sturm_test_diag_context_ns::tests_pass;
     test_getOrRegister_cache_returns_same_id_for_same_key();
     test_getOrRegister_different_levels_different_ids();
 

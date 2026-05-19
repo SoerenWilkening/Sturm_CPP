@@ -15,6 +15,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_qint_qint_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -187,7 +189,10 @@ void test_pc_negative_classical_rhs_no_match() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_qint_qint_ns
+
 void run_qint_qint_tests() {
+    using namespace sturm_test_matcher_qint_qint_ns;
     test_pc_add_assign_qint_binds_rhs_ident();
     test_pc_sub_assign_qint_binds_rhs_ident();
     test_pc_mul_assign_qint_binds_rhs_ident();

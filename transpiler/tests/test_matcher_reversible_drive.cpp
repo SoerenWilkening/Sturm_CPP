@@ -66,6 +66,8 @@
 #include <utility>
 #include <vector>
 
+namespace sturm_test_matcher_reversible_drive_ns {
+
 using sturm::transpile::collect_invert_call_targets;
 using sturm::transpile::DiagContext;
 using sturm::transpile::drive_reversible;
@@ -1013,7 +1015,12 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_reversible_drive_ns
+
 int run_test_matcher_reversible_drive(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_reversible_drive_ns;
+    using sturm_test_matcher_reversible_drive_ns::tests_run;
+    using sturm_test_matcher_reversible_drive_ns::tests_pass;
     // (1) Happy path.
     test_happy_path_populates_registry();
 

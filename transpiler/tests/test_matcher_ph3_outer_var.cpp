@@ -30,6 +30,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_ph3_outer_var_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -274,7 +276,10 @@ void test_ph3_mixed_inner_intermediate_and_outer_mutation() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_ph3_outer_var_ns
+
 void run_ph3_outer_var_tests() {
+    using namespace sturm_test_matcher_ph3_outer_var_ns;
     test_ph3_outer_xor_inside_for_is_flagged();
     test_ph3_outer_xor_inside_while_is_flagged();
     test_ph3_outer_xor_inside_if_is_flagged();

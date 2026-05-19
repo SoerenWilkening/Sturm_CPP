@@ -51,6 +51,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_reversible_attribute_ns {
+
 using sturm::transpile::is_reversible;
 using sturm::transpile::kReversibleAttrAnnotation;
 
@@ -433,7 +435,12 @@ void spec<double>(double) {}  // explicit spec WITHOUT the attribute
 
 } // namespace
 
+}  // namespace sturm_test_reversible_attribute_ns
+
 int run_test_reversible_attribute(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_reversible_attribute_ns;
+    using sturm_test_reversible_attribute_ns::tests_run;
+    using sturm_test_reversible_attribute_ns::tests_pass;
     test_recognizes_sturm_reversible_on_plain_fn();
     test_null_decl_returns_false();
     test_annotation_constant_value();

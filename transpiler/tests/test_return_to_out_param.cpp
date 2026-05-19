@@ -60,6 +60,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_return_to_out_param_ns {
+
 using sturm::transpile::synthesize_out_param_twin;
 using sturm::transpile::to_string;
 using sturm::transpile::TwinRejectReason;
@@ -413,7 +415,12 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
+}  // namespace sturm_test_return_to_out_param_ns
+
 int run_test_return_to_out_param(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_return_to_out_param_ns;
+    using sturm_test_return_to_out_param_ns::tests_run;
+    using sturm_test_return_to_out_param_ns::tests_pass;
     test_fixture_1_marked_prd_canonical();
     test_fixture_2_join_qbool_or();
     test_fixture_3_echo_const_qint_ref();

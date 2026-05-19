@@ -48,6 +48,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_pm4_dogfood_registry_ns {
+
 using sturm::transpile::QOperation;
 using sturm::transpile::QOpKind;
 using sturm::transpile::QUnit;
@@ -240,7 +242,12 @@ static void test_operand_text_matches_source() {
     }
 }
 
+}  // namespace sturm_test_pm4_dogfood_registry_ns
+
 int run_test_pm4_dogfood_registry(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_pm4_dogfood_registry_ns;
+    using sturm_test_pm4_dogfood_registry_ns::tests_run;
+    using sturm_test_pm4_dogfood_registry_ns::tests_pass;
     test_registrars_populated_by_static_init();
     test_drain_registers_four_pb_matchers();
     test_operand_text_matches_source();

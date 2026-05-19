@@ -62,6 +62,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_reader_count_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -503,7 +505,10 @@ void demo(qbool a, qbool b, qbool x) {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_reader_count_ns
+
 void run_reader_count_tests() {
+    using namespace sturm_test_matcher_reader_count_ns;
     test_rc_single_reader();
     test_rc_zero_readers();
     test_rc_two_readers();

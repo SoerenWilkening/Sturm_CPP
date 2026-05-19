@@ -20,6 +20,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_ph1_scope_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -154,7 +156,10 @@ void test_ph1_braced_when_not_misidentified() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_ph1_scope_ns
+
 void run_ph1_scope_tests() {
+    using namespace sturm_test_matcher_ph1_scope_ns;
     test_ph1_braced_for_body();
     test_ph1_braceless_for_body();
     test_ph1_braced_if_then();

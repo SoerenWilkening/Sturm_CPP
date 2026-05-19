@@ -36,6 +36,8 @@
 #include <string>
 #include <vector>
 
+namespace sturm_test_qir_ns {
+
 using namespace sturm::transpile;
 
 // ── Test harness ──────────────────────────────────────────────────────────────
@@ -1012,7 +1014,12 @@ static void test_dump_is_stable_across_calls() {
     CHECK_EQ_STR(a, b);
 }
 
+}  // namespace sturm_test_qir_ns
+
 int main() {
+    using namespace sturm_test_qir_ns;
+    using sturm_test_qir_ns::tests_run;
+    using sturm_test_qir_ns::tests_pass;
     test_qvalueref_equality_same();
     test_qvalueref_inequality_name();
     test_qvalueref_inequality_loc();

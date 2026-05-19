@@ -9,7 +9,12 @@
 
 #include <cstdio>
 
+namespace sturm_test_matcher_ns {
+
+}  // namespace sturm_test_matcher_ns
+
 int run_test_transpile_matcher(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_ns;
     run_mvp_tests();
     run_qint_const_tests();
     run_qint_qint_tests();

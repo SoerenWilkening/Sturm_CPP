@@ -46,6 +46,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_dead_ancilla_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -433,7 +435,10 @@ void test_integration_not_matcher_early_returns() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_dead_ancilla_ns
+
 void run_dead_ancilla_tests() {
+    using namespace sturm_test_matcher_dead_ancilla_ns;
     test_dead_ancilla_or_basic();
     test_dead_ancilla_and_basic();
     test_dead_ancilla_xor_basic();

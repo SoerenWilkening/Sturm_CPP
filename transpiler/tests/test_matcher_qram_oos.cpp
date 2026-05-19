@@ -18,6 +18,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_qram_oos_ns {
+
 using namespace sturm::transpile;
 
 static int tests_run = 0, tests_pass = 0;
@@ -278,7 +280,10 @@ static void test_fixture_expression_position() {
 
 #endif // STURM_QRAM_OOS_FIXTURES_DIR
 
+}  // namespace sturm_test_matcher_qram_oos_ns
+
 int run_test_matcher_qram_oos(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_matcher_qram_oos_ns;
     test_existing_target_larger_expr_basic();
     test_h1_bare_does_not_fire_oos();
     test_write_basic();

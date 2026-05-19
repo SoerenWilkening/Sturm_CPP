@@ -25,6 +25,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_lossy_scope_exit_emitter_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -379,7 +381,10 @@ void test_nested_block_inside_main_emits_cleanup() {
 
 } // namespace
 
+}  // namespace sturm_test_lossy_scope_exit_emitter_ns
+
 int run_test_lossy_scope_exit_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_lossy_scope_exit_emitter_ns;
     test_cleanup_mul();
     test_cleanup_and();
     test_cleanup_or();

@@ -50,6 +50,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_scope_kind_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -477,7 +479,10 @@ void test_sk_null_anchor() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_scope_kind_ns
+
 void run_scope_kind_tests() {
+    using namespace sturm_test_matcher_scope_kind_ns;
     test_sk_function_body();
     test_sk_braced_for_body();
     test_sk_braceless_for_body();

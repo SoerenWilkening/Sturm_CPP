@@ -19,6 +19,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_qint_compare_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -267,7 +269,10 @@ void test_pd_six_ops_same_scope_hit_all_kinds() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_qint_compare_ns
+
 void run_qint_compare_tests() {
+    using namespace sturm_test_matcher_qint_compare_ns;
     test_pd_eq_compare_qint_binds_both_operands();
     test_pd_ne_compare_qint_binds_both_operands();
     test_pd_lt_compare_qint_binds_both_operands();

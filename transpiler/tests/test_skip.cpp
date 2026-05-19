@@ -35,6 +35,8 @@
 #include <string_view>
 #include <utility>
 
+namespace sturm_test_skip_ns {
+
 namespace fs = std::filesystem;
 using namespace sturm::transpile;
 
@@ -238,7 +240,12 @@ static void test_driver_already_generated_fixture() {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
+}  // namespace sturm_test_skip_ns
+
 int main() {
+    using namespace sturm_test_skip_ns;
+    using sturm_test_skip_ns::tests_run;
+    using sturm_test_skip_ns::tests_pass;
     test_header_format();
     test_header_path_passthrough();
 

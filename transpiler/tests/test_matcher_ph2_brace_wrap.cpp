@@ -26,6 +26,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_ph2_brace_wrap_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -212,7 +214,10 @@ void test_ph2_nested_braceless_fors_both_wrapped() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_ph2_brace_wrap_ns
+
 void run_ph2_brace_wrap_tests() {
+    using namespace sturm_test_matcher_ph2_brace_wrap_ns;
     test_ph2_braceless_for_body_is_wrapped();
     test_ph2_braceless_while_body_is_wrapped();
     test_ph2_braceless_if_then_body_is_wrapped();

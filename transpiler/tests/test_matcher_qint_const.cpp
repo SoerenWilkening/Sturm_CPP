@@ -17,6 +17,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_qint_const_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -169,7 +171,10 @@ void test_pb_negative_qint_qint_form_no_match() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_qint_const_ns
+
 void run_qint_const_tests() {
+    using namespace sturm_test_matcher_qint_const_ns;
     test_pb_add_assign_const_binds_literal();
     test_pb_sub_assign_const_binds_literal();
     test_pb_mul_assign_const_binds_literal();

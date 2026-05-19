@@ -28,6 +28,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_pn_rotation_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -293,7 +295,10 @@ void demo(other::Other x) {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_pn_rotation_ns
+
 void run_pn_rotation_tests() {
+    using namespace sturm_test_matcher_pn_rotation_ns;
     test_pn_theta_add_binds_literal();
     test_pn_theta_sub_binds_literal();
     test_pn_phi_add_binds_literal();

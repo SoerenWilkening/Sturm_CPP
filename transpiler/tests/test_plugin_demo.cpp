@@ -50,6 +50,8 @@
 #include <cstdlib>
 #include <string>
 
+namespace sturm_test_plugin_demo_ns {
+
 using ::sturm::transpile::QOperation;
 using ::sturm::transpile::QValueRef;
 using ::sturm::transpile::plugin::Registry;
@@ -189,7 +191,12 @@ static void test_render_fn_preserves_nontrivial_operand_name() {
     CHECK(rendered == expected);
 }
 
+}  // namespace sturm_test_plugin_demo_ns
+
 int run_test_plugin_demo(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_plugin_demo_ns;
+    using sturm_test_plugin_demo_ns::tests_run;
+    using sturm_test_plugin_demo_ns::tests_pass;
     test_register_plugin_v1_registers_render_fn();
     test_render_fn_output_matches_expected();
     test_render_fn_empty_on_empty_result_name();

@@ -33,6 +33,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_modular_rewrite_emitter_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -379,7 +381,10 @@ void test_ast_driven_pow_mod_emits_full_rewrite() {
 
 } // namespace
 
+}  // namespace sturm_test_modular_rewrite_emitter_ns
+
 int run_test_modular_rewrite_emitter(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_modular_rewrite_emitter_ns;
     test_add_mod_text_with_width();
     test_add_mod_text_without_width();
     test_add_mod_does_not_consume_alloc_slot();

@@ -60,6 +60,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_alias_footprint_ns {
+
 using namespace sturm::transpile;
 using sturm::transpile::detail::QubitFootprint;
 using sturm::transpile::detail::footprint;
@@ -806,7 +808,12 @@ void demo(qbool a) {
 
 } // namespace
 
+}  // namespace sturm_test_alias_footprint_ns
+
 int run_test_alias_footprint(int /*argc*/, char** /*argv*/) {
+    using namespace sturm_test_alias_footprint_ns;
+    using sturm_test_alias_footprint_ns::tests_run;
+    using sturm_test_alias_footprint_ns::tests_pass;
     test_footprint_bare_qbool();
     test_footprint_bare_qint_widths();
     test_footprint_bitproxy_const_in_range();

@@ -37,6 +37,8 @@
 #include <cstdio>
 #include <string>
 
+namespace sturm_test_fresh_names_ns {
+
 using sturm::transpile::FreshNameAllocator;
 
 // ── Test harness ──────────────────────────────────────────────────────────────
@@ -159,7 +161,12 @@ static void test_next_and_next_ctrl_are_independent() {
     CHECK(b.next()      == "__stu_t1");
 }
 
+}  // namespace sturm_test_fresh_names_ns
+
 int main() {
+    using namespace sturm_test_fresh_names_ns;
+    using sturm_test_fresh_names_ns::tests_run;
+    using sturm_test_fresh_names_ns::tests_pass;
     test_first_three_allocations();
     test_second_instance_starts_fresh();
     test_return_type_is_std_string();

@@ -29,6 +29,8 @@
 #include <string_view>
 #include <vector>
 
+namespace sturm_test_matcher_pn5_qbool_prep_ns {
+
 using namespace sturm::transpile;
 
 namespace {
@@ -265,7 +267,10 @@ void test_pn5_qbool_prep_top_level_prep_mixed_with_when_is_flagged_once() {
 
 } // namespace
 
+}  // namespace sturm_test_matcher_pn5_qbool_prep_ns
+
 void run_pn5_qbool_prep_tests() {
+    using namespace sturm_test_matcher_pn5_qbool_prep_ns;
     test_pn5_qbool_prep_inside_when_is_flagged();
     test_pn5_qbool_prep_with_variable_double_inside_when_is_flagged();
     test_pn5_qbool_prep_with_literal_zero_inside_when_is_flagged();

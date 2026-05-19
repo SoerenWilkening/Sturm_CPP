@@ -24,6 +24,8 @@
 #include <string>
 #include <string_view>
 
+namespace sturm_test_driver_ns {
+
 namespace fs = std::filesystem;
 
 #ifndef STURM_TRANSPILE_BIN
@@ -633,7 +635,12 @@ static void test_pm1_6_skip_marker_honored_under_dump() {
     CHECK(read_file_contents(dump) == payload);
 }
 
+}  // namespace sturm_test_driver_ns
+
 int main() {
+    using namespace sturm_test_driver_ns;
+    using sturm_test_driver_ns::tests_run;
+    using sturm_test_driver_ns::tests_pass;
     test_version_flag_exits_zero();
     test_plain_source_gets_header();
     test_already_generated_passes_through_verbatim();
