@@ -128,6 +128,7 @@ consumers should follow the install + consume flow above instead.
 
 - [docs/public_api.md](docs/public_api.md) — authoritative list of public symbols reachable through `<sturm/sturm.hpp>` (`qint`, `qbool`, `WHEN`, modular arithmetic, `invert<>`, `STURM_REGISTER_ADJOINT`, version macros).
 - [docs/getting_started.md](docs/getting_started.md) — install + standalone-consumer walkthrough.
+- [docs/algorithm_authors_guide.md](docs/algorithm_authors_guide.md) — single-file handoff for downstream algorithm authors (and LLM agents): types, operations, `WHEN`, adjoint synthesis, footguns, algorithm-shaped recipes (Grover / Shor / QPE / QFT). Read this end-to-end before writing STURM code in a consumer repo.
 - [docs/01_principles.md](docs/01_principles.md) — core design principles (write-forward-only, compile-time uncompute, ancilla discipline).
 - [docs/roadmap_transpiler_post_mvp.md](docs/roadmap_transpiler_post_mvp.md) — phase-by-phase completion log for phases A through L.
 
