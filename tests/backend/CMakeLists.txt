@@ -834,66 +834,61 @@ set(M19_SOURCES
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
 
+# sturm-x4iq: shared OBJECT library so the 7-file M19 source set is compiled
+# once per build rather than once per test executable. Without this, 33 test
+# binaries each rebuilt the same 7 TUs (231 redundant compile nodes); ccache
+# absorbed the duplicate work on warm builds but ninja still scheduled them
+# all and a cold build paid the full cost. The PUBLIC usage requirements
+# below (include dirs, STURM_BACKEND_ENABLED, orkan_headers link) propagate
+# transitively to any executable that links sturm_backend_runtime, which is
+# why the per-test duplicates are dropped at each callsite.
+add_library(sturm_backend_runtime OBJECT ${M19_SOURCES})
+target_include_directories(sturm_backend_runtime PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(sturm_backend_runtime PUBLIC cxx_std_20)
+target_compile_definitions(sturm_backend_runtime PUBLIC
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(sturm_backend_runtime PUBLIC orkan_headers)
+# gate_kind.c's LANGUAGE=C / COMPILE_FLAGS=-std=c11 are already set by
+# existing directory-scoped set_source_files_properties calls earlier in
+# this CMakeLists.txt; those apply to every compilation of gate_kind.c in
+# this directory, including the one inside sturm_backend_runtime.
+
 # test_qint_add_e2e — operator+= and operator-= emit gates + correct arithmetic
 add_executable(test_qint_add_e2e
     test_qint_add_e2e.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_qint_add_e2e PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_qint_add_e2e PRIVATE cxx_std_20)
-target_compile_definitions(test_qint_add_e2e PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qint_add_e2e PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_qint_add_e2e PRIVATE sturm_backend_runtime)
 add_test(NAME test_qint_add_e2e COMMAND test_qint_add_e2e)
 set_tests_properties(test_qint_add_e2e PROPERTIES LABELS "backend")
 
 # test_qint_mul_e2e — operator*= emits gates + 2-bit multiply correctness
 add_executable(test_qint_mul_e2e
     test_qint_mul_e2e.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_qint_mul_e2e PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_qint_mul_e2e PRIVATE cxx_std_20)
-target_compile_definitions(test_qint_mul_e2e PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qint_mul_e2e PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_qint_mul_e2e PRIVATE sturm_backend_runtime)
 add_test(NAME test_qint_mul_e2e COMMAND test_qint_mul_e2e)
 set_tests_properties(test_qint_mul_e2e PROPERTIES LABELS "backend")
 
 # test_qint_compare_e2e — comparison operators return correct qbool + emit gates
 add_executable(test_qint_compare_e2e
     test_qint_compare_e2e.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_qint_compare_e2e PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_qint_compare_e2e PRIVATE cxx_std_20)
-target_compile_definitions(test_qint_compare_e2e PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qint_compare_e2e PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_qint_compare_e2e PRIVATE sturm_backend_runtime)
 add_test(NAME test_qint_compare_e2e COMMAND test_qint_compare_e2e)
 set_tests_properties(test_qint_compare_e2e PROPERTIES LABELS "backend")
 
@@ -907,21 +902,12 @@ set_tests_properties(test_qint_compare_e2e PROPERTIES LABELS "backend")
 # test_qint_bitwise_e2e — bitwise operators (&=, |=, ^=) emit correct gate counts
 add_executable(test_qint_bitwise_e2e
     test_qint_bitwise_e2e.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_qint_bitwise_e2e PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_qint_bitwise_e2e PRIVATE cxx_std_20)
-target_compile_definitions(test_qint_bitwise_e2e PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qint_bitwise_e2e PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_qint_bitwise_e2e PRIVATE sturm_backend_runtime)
 add_test(NAME test_qint_bitwise_e2e COMMAND test_qint_bitwise_e2e)
 set_tests_properties(test_qint_bitwise_e2e PROPERTIES LABELS "backend")
 
@@ -932,21 +918,12 @@ set_tests_properties(test_qint_bitwise_e2e PROPERTIES LABELS "backend")
 # must preserve (replacement for the h5it registry-snapshot tests).
 add_executable(test_lossy_ancilla_cleaned
     test_lossy_ancilla_cleaned.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_lossy_ancilla_cleaned PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_lossy_ancilla_cleaned PRIVATE cxx_std_20)
-target_compile_definitions(test_lossy_ancilla_cleaned PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_lossy_ancilla_cleaned PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_lossy_ancilla_cleaned PRIVATE sturm_backend_runtime)
 add_test(NAME test_lossy_ancilla_cleaned COMMAND test_lossy_ancilla_cleaned)
 set_tests_properties(test_lossy_ancilla_cleaned
     PROPERTIES LABELS "backend;lossy-reversibility")
@@ -957,21 +934,12 @@ set_tests_properties(test_lossy_ancilla_cleaned
 # invariant (mirrors LO-0.5 / sturm-qoq0).
 add_executable(test_mul_div_upperw_clean
     test_mul_div_upperw_clean.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_mul_div_upperw_clean PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_mul_div_upperw_clean PRIVATE cxx_std_20)
-target_compile_definitions(test_mul_div_upperw_clean PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_mul_div_upperw_clean PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_mul_div_upperw_clean PRIVATE sturm_backend_runtime)
 add_test(NAME test_mul_div_upperw_clean COMMAND test_mul_div_upperw_clean)
 set_tests_properties(test_mul_div_upperw_clean
     PROPERTIES LABELS "backend;lossy-reversibility")
@@ -979,21 +947,12 @@ set_tests_properties(test_mul_div_upperw_clean
 # sturm-h5it.1 — Regression baseline for non-lossy WHEN ops (^=, +=, -=)
 add_executable(test_when_inplace_nonlossy
     test_when_inplace_nonlossy.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_when_inplace_nonlossy PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_when_inplace_nonlossy PRIVATE cxx_std_20)
-target_compile_definitions(test_when_inplace_nonlossy PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_inplace_nonlossy PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_when_inplace_nonlossy PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_inplace_nonlossy COMMAND test_when_inplace_nonlossy)
 set_tests_properties(test_when_inplace_nonlossy PROPERTIES LABELS "backend;h5it")
 
@@ -1029,21 +988,12 @@ add_test(NAME test_no_v2_namespace COMMAND test_no_v2_namespace)
 # test_e2e_arithmetic — (a+5)*b exercises ADD + MUL + gate count
 add_executable(test_e2e_arithmetic
     test_e2e_arithmetic.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_e2e_arithmetic PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_e2e_arithmetic PRIVATE cxx_std_20)
-target_compile_definitions(test_e2e_arithmetic PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_e2e_arithmetic PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_e2e_arithmetic PRIVATE sturm_backend_runtime)
 add_test(NAME test_e2e_arithmetic COMMAND test_e2e_arithmetic)
 set_tests_properties(test_e2e_arithmetic PROPERTIES LABELS "backend")
 
@@ -1057,21 +1007,12 @@ set_tests_properties(test_e2e_arithmetic PROPERTIES LABELS "backend")
 # test_e2e_all_modes — same program in COUNT_ONLY, APPEND, SIMULATE
 add_executable(test_e2e_all_modes
     test_e2e_all_modes.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_e2e_all_modes PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_e2e_all_modes PRIVATE cxx_std_20)
-target_compile_definitions(test_e2e_all_modes PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_e2e_all_modes PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_e2e_all_modes PRIVATE sturm_backend_runtime)
 add_test(NAME test_e2e_all_modes COMMAND test_e2e_all_modes)
 set_tests_properties(test_e2e_all_modes PROPERTIES LABELS "backend")
 
@@ -1094,21 +1035,12 @@ set_tests_properties(test_no_v2_namespace PROPERTIES LABELS "backend")
 # EXPECTED TO FAIL until sturm-6qo wires free operators through compound assigns.
 add_executable(test_free_op_simulate
     test_free_op_simulate.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_free_op_simulate PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_free_op_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_free_op_simulate PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_free_op_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_free_op_simulate PRIVATE sturm_backend_runtime)
 add_test(NAME test_free_op_simulate COMMAND test_free_op_simulate)
 set_tests_properties(test_free_op_simulate PROPERTIES LABELS "backend")
 
@@ -1117,21 +1049,12 @@ set_tests_properties(test_free_op_simulate PROPERTIES LABELS "backend")
 # Each operator has its own test function for individual failure visibility.
 add_executable(test_free_op_gate_emission
     test_free_op_gate_emission.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_free_op_gate_emission PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_free_op_gate_emission PRIVATE cxx_std_20)
-target_compile_definitions(test_free_op_gate_emission PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_free_op_gate_emission PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_free_op_gate_emission PRIVATE sturm_backend_runtime)
 add_test(NAME test_free_op_gate_emission COMMAND test_free_op_gate_emission)
 set_tests_properties(test_free_op_gate_emission PROPERTIES LABELS "backend")
 
@@ -1140,21 +1063,12 @@ set_tests_properties(test_free_op_gate_emission PROPERTIES LABELS "backend")
 # EXPECTED TO PASS on current code (compound-assigns are wired to DSL library).
 add_executable(test_compound_assign_simulate
     test_compound_assign_simulate.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_compound_assign_simulate PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_compound_assign_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_compound_assign_simulate PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_compound_assign_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_compound_assign_simulate PRIVATE sturm_backend_runtime)
 add_test(NAME test_compound_assign_simulate COMMAND test_compound_assign_simulate)
 set_tests_properties(test_compound_assign_simulate PROPERTIES LABELS "backend")
 
@@ -1164,21 +1078,12 @@ set_tests_properties(test_compound_assign_simulate PROPERTIES LABELS "backend")
 # DSL library, which routes through execute_gate.
 add_executable(test_compound_assign_gate_emission
     test_compound_assign_gate_emission.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_compound_assign_gate_emission PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_compound_assign_gate_emission PRIVATE cxx_std_20)
-target_compile_definitions(test_compound_assign_gate_emission PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_compound_assign_gate_emission PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_compound_assign_gate_emission PRIVATE sturm_backend_runtime)
 add_test(NAME test_compound_assign_gate_emission COMMAND test_compound_assign_gate_emission)
 set_tests_properties(test_compound_assign_gate_emission PROPERTIES LABELS "backend")
 
@@ -1187,42 +1092,24 @@ set_tests_properties(test_compound_assign_gate_emission PROPERTIES LABELS "backe
 # Shifts are implemented as qubit relabeling (zero gates).
 add_executable(test_shift_simulate
     test_shift_simulate.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_shift_simulate PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_shift_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_shift_simulate PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_shift_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_shift_simulate PRIVATE sturm_backend_runtime)
 add_test(NAME test_shift_simulate COMMAND test_shift_simulate)
 set_tests_properties(test_shift_simulate PROPERTIES LABELS "backend")
 
 # ── sturm-s0h: Bitwise NOT (~) operator on qint — COUNT_ONLY + SIMULATE ──────
 add_executable(test_bitwise_not_operator
     test_bitwise_not_operator.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_bitwise_not_operator PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_bitwise_not_operator PRIVATE cxx_std_20)
-target_compile_definitions(test_bitwise_not_operator PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_bitwise_not_operator PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_bitwise_not_operator PRIVATE sturm_backend_runtime)
 add_test(NAME test_bitwise_not_operator COMMAND test_bitwise_not_operator)
 set_tests_properties(test_bitwise_not_operator PROPERTIES LABELS "backend")
 
@@ -1230,21 +1117,12 @@ set_tests_properties(test_bitwise_not_operator PROPERTIES LABELS "backend")
 # Verifies statevector correctness for all 4 forms: &=, |=, & (free), | (free).
 add_executable(test_bitwise_and_or_simulate
     test_bitwise_and_or_simulate.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_bitwise_and_or_simulate PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_bitwise_and_or_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_bitwise_and_or_simulate PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_bitwise_and_or_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_bitwise_and_or_simulate PRIVATE sturm_backend_runtime)
 add_test(NAME test_bitwise_and_or_simulate COMMAND test_bitwise_and_or_simulate)
 set_tests_properties(test_bitwise_and_or_simulate PROPERTIES LABELS "backend")
 
@@ -1310,21 +1188,12 @@ set_tests_properties(test_when_control_stack_bridge PROPERTIES LABELS "backend")
 # Includes both COUNT_ONLY (gate_count checks) and SIMULATE (statevector) tests.
 add_executable(test_lifted_primitives
     test_lifted_primitives.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_lifted_primitives PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_lifted_primitives PRIVATE cxx_std_20)
-target_compile_definitions(test_lifted_primitives PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_lifted_primitives PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_lifted_primitives PRIVATE sturm_backend_runtime)
 add_test(NAME test_lifted_primitives COMMAND test_lifted_primitives)
 set_tests_properties(test_lifted_primitives PROPERTIES LABELS "backend")
 
@@ -1334,21 +1203,12 @@ set_tests_properties(test_lifted_primitives PROPERTIES LABELS "backend")
 # the sink path otherwise.
 add_executable(test_phi_theta_backend
     test_phi_theta_backend.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_phi_theta_backend PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_phi_theta_backend PRIVATE cxx_std_20)
-target_compile_definitions(test_phi_theta_backend PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_phi_theta_backend PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_phi_theta_backend PRIVATE sturm_backend_runtime)
 add_test(NAME test_phi_theta_backend COMMAND test_phi_theta_backend)
 set_tests_properties(test_phi_theta_backend PROPERTIES LABELS "backend")
 
@@ -1366,37 +1226,24 @@ set_tests_properties(test_when_arith_promotion PROPERTIES LABELS "backend")
 # ── M1: BitProxy struct + operator bodies (per-bit lazy WHEN promotion) ──────
 add_executable(test_bitproxy_when_promotion
     test_bitproxy_when_promotion.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_bitproxy_when_promotion PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_bitproxy_when_promotion PRIVATE cxx_std_20)
-target_compile_definitions(test_bitproxy_when_promotion PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_bitproxy_when_promotion PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_bitproxy_when_promotion PRIVATE sturm_backend_runtime)
 add_test(NAME test_bitproxy_when_promotion COMMAND test_bitproxy_when_promotion)
 set_tests_properties(test_bitproxy_when_promotion PROPERTIES LABELS "backend")
 
 # ── sturm-51wc: per-bit phi()/theta() proxies on BitProxy (RZ/RY) ────────────
 add_executable(test_bit_proxy_phi_theta
     test_bit_proxy_phi_theta.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_bit_proxy_phi_theta PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_bit_proxy_phi_theta PRIVATE cxx_std_20)
-target_compile_definitions(test_bit_proxy_phi_theta PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_bit_proxy_phi_theta PRIVATE orkan_headers)
+target_link_libraries(test_bit_proxy_phi_theta PRIVATE sturm_backend_runtime)
 add_test(NAME test_bit_proxy_phi_theta COMMAND test_bit_proxy_phi_theta)
 set_tests_properties(test_bit_proxy_phi_theta PROPERTIES LABELS "backend")
 
@@ -1434,84 +1281,48 @@ set_tests_properties(test_m8_template_dsl PROPERTIES LABELS "backend")
 # ── M13: WHEN + shift operators fast-path bypass ────────────────────────────
 add_executable(test_when_shift_promotion
     test_when_shift_promotion.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_when_shift_promotion PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_when_shift_promotion PRIVATE cxx_std_20)
-target_compile_definitions(test_when_shift_promotion PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_shift_promotion PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_when_shift_promotion PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_shift_promotion COMMAND test_when_shift_promotion)
 set_tests_properties(test_when_shift_promotion PROPERTIES LABELS "backend")
 
 # ── M12: copy_register only copies quantum bits ──────────────────────────────
 add_executable(test_copy_register_quantum_only
     test_copy_register_quantum_only.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_copy_register_quantum_only PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_copy_register_quantum_only PRIVATE cxx_std_20)
-target_compile_definitions(test_copy_register_quantum_only PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_copy_register_quantum_only PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_copy_register_quantum_only PRIVATE sturm_backend_runtime)
 add_test(NAME test_copy_register_quantum_only COMMAND test_copy_register_quantum_only)
 set_tests_properties(test_copy_register_quantum_only PROPERTIES LABELS "backend")
 
 # ── M18: Final PRD acceptance tests ──────────────────────────────────────────
 add_executable(test_acceptance_prd
     test_acceptance_prd.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_acceptance_prd PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_acceptance_prd PRIVATE cxx_std_20)
-target_compile_definitions(test_acceptance_prd PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_acceptance_prd PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_acceptance_prd PRIVATE sturm_backend_runtime)
 add_test(NAME test_acceptance_prd COMMAND test_acceptance_prd)
 set_tests_properties(test_acceptance_prd PROPERTIES LABELS "backend")
 
 # ── M4: Free bitwise operators with -1 qubit indices (sturm-5hy) ─────────────
 add_executable(test_free_bitwise_neg1_qubits
     test_free_bitwise_neg1_qubits.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_free_bitwise_neg1_qubits PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_free_bitwise_neg1_qubits PRIVATE cxx_std_20)
-target_compile_definitions(test_free_bitwise_neg1_qubits PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_free_bitwise_neg1_qubits PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_free_bitwise_neg1_qubits PRIVATE sturm_backend_runtime)
 add_test(NAME test_free_bitwise_neg1_qubits COMMAND test_free_bitwise_neg1_qubits)
 set_tests_properties(test_free_bitwise_neg1_qubits PROPERTIES LABELS "backend")
 
@@ -1520,48 +1331,36 @@ set_tests_properties(test_free_bitwise_neg1_qubits PROPERTIES LABELS "backend")
 # quantum and the other is classical.  Also regression: both-classical => 0 gates.
 add_executable(test_free_arith_mixed_fastpath
     test_free_arith_mixed_fastpath.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_free_arith_mixed_fastpath PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_free_arith_mixed_fastpath PRIVATE cxx_std_20)
-target_compile_definitions(test_free_arith_mixed_fastpath PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_free_arith_mixed_fastpath PRIVATE orkan_headers)
+target_link_libraries(test_free_arith_mixed_fastpath PRIVATE sturm_backend_runtime)
 add_test(NAME test_free_arith_mixed_fastpath COMMAND test_free_arith_mixed_fastpath)
 set_tests_properties(test_free_arith_mixed_fastpath PROPERTIES LABELS "backend")
 
 # sturm-ieb M2: compound-assign arithmetic mixed quantum/classical fast-path
 add_executable(test_compound_arith_mixed_fastpath
     test_compound_arith_mixed_fastpath.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_compound_arith_mixed_fastpath PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_compound_arith_mixed_fastpath PRIVATE cxx_std_20)
-target_compile_definitions(test_compound_arith_mixed_fastpath PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_compound_arith_mixed_fastpath PRIVATE orkan_headers)
+target_link_libraries(test_compound_arith_mixed_fastpath PRIVATE sturm_backend_runtime)
 add_test(NAME test_compound_arith_mixed_fastpath COMMAND test_compound_arith_mixed_fastpath)
 set_tests_properties(test_compound_arith_mixed_fastpath PROPERTIES LABELS "backend")
 
 # sturm-fbt M1: compound-assign bitwise mixed quantum/classical fast-path
 add_executable(test_compound_bitwise_mixed_fastpath
     test_compound_bitwise_mixed_fastpath.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_compound_bitwise_mixed_fastpath PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_compound_bitwise_mixed_fastpath PRIVATE cxx_std_20)
-target_compile_definitions(test_compound_bitwise_mixed_fastpath PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_compound_bitwise_mixed_fastpath PRIVATE orkan_headers)
+target_link_libraries(test_compound_bitwise_mixed_fastpath PRIVATE sturm_backend_runtime)
 add_test(NAME test_compound_bitwise_mixed_fastpath COMMAND test_compound_bitwise_mixed_fastpath)
 set_tests_properties(test_compound_bitwise_mixed_fastpath PROPERTIES LABELS "backend")
 
@@ -1577,16 +1376,12 @@ set_tests_properties(test_compound_bitwise_mixed_fastpath PROPERTIES LABELS "bac
 #   AC8: Regression: both-classical still zero gates
 add_executable(test_mixed_quantum_classical
     test_mixed_quantum_classical.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_mixed_quantum_classical PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_mixed_quantum_classical PRIVATE cxx_std_20)
-target_compile_definitions(test_mixed_quantum_classical PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_mixed_quantum_classical PRIVATE orkan_headers)
+target_link_libraries(test_mixed_quantum_classical PRIVATE sturm_backend_runtime)
 add_test(NAME test_mixed_quantum_classical COMMAND test_mixed_quantum_classical)
 set_tests_properties(test_mixed_quantum_classical PROPERTIES LABELS "backend")
 
@@ -1596,16 +1391,12 @@ set_tests_properties(test_mixed_quantum_classical PROPERTIES LABELS "backend")
 # lvalue regression.
 add_executable(test_when_bool_expr
     test_when_bool_expr.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_when_bool_expr PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_when_bool_expr PRIVATE cxx_std_20)
-target_compile_definitions(test_when_bool_expr PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_bool_expr PRIVATE orkan_headers)
+target_link_libraries(test_when_bool_expr PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_bool_expr COMMAND test_when_bool_expr)
 set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")
 
@@ -1621,21 +1412,12 @@ set_tests_properties(test_when_bool_expr PROPERTIES LABELS "backend")
 # constituent primitives directly.
 add_executable(test_when_lossy_gate_equiv
     test_when_lossy_gate_equiv.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_when_lossy_gate_equiv PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_when_lossy_gate_equiv PRIVATE cxx_std_20)
-target_compile_definitions(test_when_lossy_gate_equiv PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_lossy_gate_equiv PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_when_lossy_gate_equiv PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_lossy_gate_equiv COMMAND test_when_lossy_gate_equiv)
 set_tests_properties(test_when_lossy_gate_equiv
     PROPERTIES LABELS "backend;lossy-reversibility")
@@ -1644,16 +1426,12 @@ set_tests_properties(test_when_lossy_gate_equiv
 # lossy compound assignments (replaces tests/test_when_scope_garbage_consume.cpp).
 add_executable(test_when_lossy_reversibility
     test_when_lossy_reversibility.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_when_lossy_reversibility PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_when_lossy_reversibility PRIVATE cxx_std_20)
-target_compile_definitions(test_when_lossy_reversibility PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_lossy_reversibility PRIVATE orkan_headers)
+target_link_libraries(test_when_lossy_reversibility PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_lossy_reversibility COMMAND test_when_lossy_reversibility)
 set_tests_properties(test_when_lossy_reversibility
     PROPERTIES LABELS "backend;lossy-reversibility")
@@ -1662,16 +1440,12 @@ set_tests_properties(test_when_lossy_reversibility
 # compound assignments (extends sturm-0j3a's `&=`-only coverage).
 add_executable(test_when_lossy_gate_equiv_full
     test_when_lossy_gate_equiv_full.cpp
-    ${M19_SOURCES}
 )
 target_include_directories(test_when_lossy_gate_equiv_full PRIVATE
     ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_when_lossy_gate_equiv_full PRIVATE cxx_std_20)
-target_compile_definitions(test_when_lossy_gate_equiv_full PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_lossy_gate_equiv_full PRIVATE orkan_headers)
+target_link_libraries(test_when_lossy_gate_equiv_full PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_lossy_gate_equiv_full COMMAND test_when_lossy_gate_equiv_full)
 set_tests_properties(test_when_lossy_gate_equiv_full
     PROPERTIES LABELS "backend;lossy-reversibility")
