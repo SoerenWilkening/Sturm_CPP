@@ -25,13 +25,25 @@ cmake_minimum_required(VERSION 3.16)
 # saves.
 include(${CMAKE_SOURCE_DIR}/cmake/SturmTranspilePch.cmake)
 
-# ── sturm-hbwo: shared OBJECT library for transpiler/src TUs ─────────────────
+# ── sturm-ximr: shared test-only SHARED library for transpiler/src TUs ─────
 # Bundles every `transpiler/src/*.cpp` that is safe to link into every
-# test target (per the sturm-sfkt audit) into a single OBJECT library.
-# Each consumer test executable replaces its per-target enumeration of
-# `${CMAKE_CURRENT_SOURCE_DIR}/../src/*.cpp` files with
-# `$<TARGET_OBJECTS:sturm_transpile_test_objs>`, eliminating the
-# ~150 redundant compiles documented in sturm-sfkt and sturm-hbwo.
+# test target (per the sturm-sfkt audit) into a single SHARED library.
+# Each consumer test executable links it via
+# `target_link_libraries(<t> PRIVATE sturm_transpile_test_core)` instead
+# of pulling the .o's inline through `$<TARGET_OBJECTS:...>`. The
+# library PUBLIC-links libclang-cpp / libLLVM so the consumer's own
+# test TUs (which call Clang APIs directly) get those symbols
+# transitively; bucket binaries shrink from ~30 MB to a few hundred KB
+# and one .dylib gets loaded once at process start instead of N times
+# of static integration into N bucket binaries.
+#
+# Prior steps:
+#   - sturm-hbwo (commit 66289cc): collected the 67 TUs into an OBJECT
+#     library. Removed ~150 duplicate compiles but each bucket still
+#     statically integrated the same .o's.
+#   - sturm-ximr (this issue): promotes that OBJECT lib to SHARED.
+#     Compile cost identical to sturm-hbwo; link cost drops because the
+#     67 TUs now resolve via one .so dep on the consumer's link line.
 #
 # Members (67 TUs)
 # ----------------
@@ -74,20 +86,40 @@ include(${CMAKE_SOURCE_DIR}/cmake/SturmTranspilePch.cmake)
 # -fno-rtti when LLVM_ENABLE_RTTI is off. PCH reuse via
 # `sturm_use_transpile_pch` (mirroring sturm-bs8s' helper) applies
 # `-fPIC` and `target_precompile_headers(... REUSE_FROM sturm-transpile)`.
+# Include dirs, c++20, and LLVM_DEFINITIONS are exported PUBLIC so the
+# consumer-side test TUs (compiled against the same Clang headers) see
+# the same configuration; -fno-rtti and STURM_MODULAR_POW are PRIVATE
+# (this .so's compile concern only — consumer TUs that need them set
+# them themselves via `sturm_define_bucket_target`).
+#
+# Symbol visibility
+# -----------------
+# Default visibility: every test-callable symbol (matchers, emitters,
+# AST visitors, RewriterRegistry entries) must be reachable from
+# outside the .so. The transpiler does not annotate its internal C++
+# APIs with `__attribute__((visibility("default")))`, so we rely on
+# the GCC/Clang default-visibility behaviour rather than mounting a
+# 67-TU audit. No `dynamic_cast` on transpiler-defined types exists
+# in tests/ or src/ (verified at sturm-ximr implementation time), so
+# RTTI export is moot.
 #
 # STURM_MODULAR_POW propagation
 # -----------------------------
 # Two TUs (`matcher_modular_op.cpp` + `matcher_modular_pow_mod.cpp`)
-# carry `#ifdef STURM_MODULAR_POW` blocks. Today the define is added
-# per-source via `set_source_files_properties` on the two test targets
-# that need it. With the OBJECT library the source compile is owned by
-# this target, so we apply the define at target scope when
-# `STURM_MODULAR_POW=ON`. The 65 other TUs do not reference the macro;
-# propagating it is observationally a no-op for them. The
-# `cmake_modular_pow_flag` ctest buckets compile_commands entries by
-# the source `file:` path (matches `/transpiler/src/`), so the
-# OBJECT-library compiles register as driver hits, not stray hits.
-add_library(sturm_transpile_test_objs OBJECT
+# carry `#ifdef STURM_MODULAR_POW` blocks. We apply the define at
+# target scope when `STURM_MODULAR_POW=ON`. The 65 other TUs do not
+# reference the macro; propagating it is observationally a no-op for
+# them. The `cmake_modular_pow_flag` ctest buckets compile_commands
+# entries by the source `file:` path (matches `/transpiler/src/`), so
+# the test-core compiles register as driver hits, not stray hits.
+#
+# Install
+# -------
+# Test-only artifact. The target deliberately omits any `install(TARGETS
+# ...)` rule, so neither `cmake --install` nor a packager will ever
+# emit `libsturm_transpile_test_core.{so,dylib}` outside the build
+# tree.
+add_library(sturm_transpile_test_core SHARED
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/adjoint_emitter.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/alias.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/auto_register_emitter.cpp
@@ -156,24 +188,65 @@ add_library(sturm_transpile_test_objs OBJECT
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/when_freevar_readset.cpp
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/width_inference.cpp
 )
-target_include_directories(sturm_transpile_test_objs PUBLIC
+# POSITION_INDEPENDENT_CODE is implied for SHARED libraries on every
+# platform we ship, but make it explicit so a future reader does not
+# have to chase the CMake default. sturm-2vbr pins the producer-side
+# `-fPIC`; this property keeps the consumer-side .so PIE-compatible.
+set_target_properties(sturm_transpile_test_core PROPERTIES
+    POSITION_INDEPENDENT_CODE ON)
+target_include_directories(sturm_transpile_test_core PUBLIC
     ${CMAKE_CURRENT_SOURCE_DIR}/../include
     ${CMAKE_CURRENT_SOURCE_DIR}/../src
     ${LLVM_INCLUDE_DIRS}
     ${CLANG_INCLUDE_DIRS}
 )
-target_compile_features(sturm_transpile_test_objs PUBLIC cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_OBJ NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(sturm_transpile_test_objs PUBLIC
-    ${LLVM_DEFS_LIST_OBJ})
+target_compile_features(sturm_transpile_test_core PUBLIC cxx_std_20)
+separate_arguments(LLVM_DEFS_LIST_CORE NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+target_compile_definitions(sturm_transpile_test_core PUBLIC
+    ${LLVM_DEFS_LIST_CORE})
 if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(sturm_transpile_test_objs PRIVATE -fno-rtti)
+    target_compile_options(sturm_transpile_test_core PRIVATE -fno-rtti)
 endif()
 if(STURM_MODULAR_POW)
-    target_compile_definitions(sturm_transpile_test_objs PRIVATE
+    target_compile_definitions(sturm_transpile_test_core PRIVATE
         STURM_MODULAR_POW)
 endif()
-sturm_use_transpile_pch(sturm_transpile_test_objs)
+# sturm-ximr: PUBLIC-link libclang-cpp + libLLVM (shared) or the
+# per-component LibTooling archives (fallback) so the test-core .so is
+# self-contained at dlopen time AND so the consumer bucket binaries
+# inherit the LLVM symbol surface transitively. The bucket binaries'
+# own test TUs call Clang APIs directly (e.g. `runToolOnCodeWithArgs`,
+# `MatchFinder` ctors) — those references resolve against the
+# transitive PUBLIC dep instead of a per-bucket repeat of the linkage.
+# Same shape sturm-transpile-plugin uses (transpiler/CMakeLists.txt:
+# 673-696), keeping the test build aligned with the production plugin
+# build.
+if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+    target_link_libraries(sturm_transpile_test_core PUBLIC
+        ${STURM_LIBCLANG_CPP}
+        ${STURM_LIBLLVM}
+    )
+else()
+    target_link_libraries(sturm_transpile_test_core PUBLIC
+        clangTooling
+        clangASTMatchers
+        clangFrontend
+        clangRewrite
+        clangBasic
+        clangAST
+        clangLex
+        clangSerialization
+        clangDriver
+        clangParse
+        clangSema
+        clangAnalysis
+        clangEdit
+    )
+    llvm_map_components_to_libnames(LLVM_LIBS_TEST_CORE support)
+    target_link_libraries(sturm_transpile_test_core PUBLIC
+        ${LLVM_LIBS_TEST_CORE})
+endif()
+sturm_use_transpile_pch(sturm_transpile_test_core)
 
 # Shared io helper sources, compiled into each test binary that needs them.
 # Used by `test_transpile_io`, which deliberately does NOT link the
@@ -214,30 +287,12 @@ macro(sturm_define_bucket_target target)
     target_compile_features(${target} PRIVATE cxx_std_20)
     separate_arguments(_sturm_bucket_defs NATIVE_COMMAND "${LLVM_DEFINITIONS}")
     target_compile_definitions(${target} PRIVATE ${_sturm_bucket_defs})
-    if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-        target_link_libraries(${target} PRIVATE
-            ${STURM_LIBCLANG_CPP}
-            ${STURM_LIBLLVM}
-        )
-    else()
-        target_link_libraries(${target} PRIVATE
-            clangTooling
-            clangASTMatchers
-            clangFrontend
-            clangRewrite
-            clangBasic
-            clangAST
-            clangLex
-            clangSerialization
-            clangDriver
-            clangParse
-            clangSema
-            clangAnalysis
-            clangEdit
-        )
-        llvm_map_components_to_libnames(_sturm_bucket_llvm_libs support)
-        target_link_libraries(${target} PRIVATE ${_sturm_bucket_llvm_libs})
-    endif()
+    # sturm-ximr: link the shared `sturm_transpile_test_core` library.
+    # It PUBLIC-links libclang-cpp+libLLVM (or the per-component LibTooling
+    # archives in the fallback path), so the bucket's own test TUs inherit
+    # the LLVM symbol surface transitively — no per-bucket repeat of the
+    # shared-vs-static linkage split.
+    target_link_libraries(${target} PRIVATE sturm_transpile_test_core)
 endmacro()
 
 # ── Unit test: io helpers ─────────────────────────────────────────────────────
@@ -368,7 +423,6 @@ add_executable(test_bucket_main_lifecycle
     test_matcher_main_lifecycle_entry_point.cpp
     test_main_lifecycle_emitter_entry_point.cpp
     bucket_dispatchers/test_bucket_main_lifecycle_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_main_lifecycle)
 target_compile_definitions(test_bucket_main_lifecycle PRIVATE
@@ -407,10 +461,10 @@ unset(_t)
 # Bundles the Phase P/Q/R/S reversibility / synthesis tests, plus the
 # small attribute predicates (`reversible_attribute`,
 # `entry_point_attribute`). All ten members consume the shared
-# `sturm_transpile_test_objs` OBJECT library — their per-target source
-# lists collapsed to the shared OBJECT library after sturm-hbwo
-# (commit 66289cc), so bucketing them eliminates the per-test link
-# cost without changing the compile-time surface.
+# `sturm_transpile_test_core` SHARED library — their per-target source
+# lists collapsed to the shared library after sturm-hbwo
+# (commit 66289cc) / sturm-ximr, so bucketing them eliminates the
+# per-test link cost without changing the compile-time surface.
 #
 #   test_matcher_reversible_drive    (R-C / sturm-88d7.4)
 #   test_matcher_reversible_validate (P-C / sturm-z2e8.5)
@@ -435,7 +489,6 @@ add_executable(test_bucket_reversible
     test_loop_reversal.cpp
     test_entry_point_attribute.cpp
     bucket_dispatchers/test_bucket_reversible_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_reversible)
 target_compile_definitions(test_bucket_reversible PRIVATE
@@ -509,7 +562,6 @@ add_executable(test_bucket_plugin
     test_pm4_dogfood_registry.cpp
     ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
     bucket_dispatchers/test_bucket_plugin_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_plugin)
 sturm_use_transpile_pch(test_bucket_plugin)
@@ -617,7 +669,6 @@ add_executable(test_bucket_lossy
     test_lossy_scope_exit_emitter.cpp
     test_lossy_nested_rewrite.cpp
     bucket_dispatchers/test_bucket_lossy_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_lossy)
 sturm_use_transpile_pch(test_bucket_lossy)
@@ -643,7 +694,6 @@ add_executable(test_bucket_modular
     test_matcher_modular_op.cpp
     test_modular_rewrite_emitter.cpp
     bucket_dispatchers/test_bucket_modular_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_modular)
 if(STURM_MODULAR_POW)
@@ -682,7 +732,6 @@ add_executable(test_bucket_pipeline
     test_qint_implicit_warn.cpp
     test_matcher_peephole_reorder.cpp
     bucket_dispatchers/test_bucket_pipeline_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_pipeline)
 sturm_use_transpile_pch(test_bucket_pipeline)
@@ -794,7 +843,6 @@ add_executable(test_bucket_transpile_full
     # PM1-1: TranspileConsumer EmissionMode boundary.
     test_transpile_consumer.cpp
     bucket_dispatchers/test_bucket_transpile_full_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_transpile_full)
 sturm_use_transpile_pch(test_bucket_transpile_full)
@@ -1395,7 +1443,6 @@ add_executable(test_bucket_qint_alias
     test_qint_alias_subst_emitter.cpp
     test_consumer_qint_alias_subst.cpp
     bucket_dispatchers/test_bucket_qint_alias_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
 sturm_define_bucket_target(test_bucket_qint_alias)
 target_compile_definitions(test_bucket_qint_alias PRIVATE
@@ -1484,7 +1531,6 @@ add_executable(test_bucket_qram
     test_qram_e2e.cpp
     test_qram_e2e_real.cpp
     bucket_dispatchers/test_bucket_qram_main.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
