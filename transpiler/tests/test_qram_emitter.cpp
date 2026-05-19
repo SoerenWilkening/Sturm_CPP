@@ -279,7 +279,7 @@ void test_fixture_pointer() {
 
 } // anonymous namespace
 
-int main() {
+int run_test_qram_emitter(int /*argc*/, char** /*argv*/) {
     test_text_std_array_with_width();
     test_text_std_array_without_width();
     test_text_c_array_with_width();

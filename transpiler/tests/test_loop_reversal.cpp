@@ -521,7 +521,7 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
-int main() {
+int run_test_loop_reversal(int /*argc*/, char** /*argv*/) {
     // Reject-gate.
     test_null_stmt_rejects();
     test_missing_clause_rejects();

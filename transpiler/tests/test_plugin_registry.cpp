@@ -287,7 +287,7 @@ static void test_drain_registrars_invokes_each_fn() {
     CHECK(times_called >= 1);
 }
 
-int main() {
+int run_test_plugin_registry(int /*argc*/, char** /*argv*/) {
     test_register_matcher_duplicate_name_aborts();
     test_register_op_duplicate_kind_id_aborts();
     test_matcher_name_and_kind_id_are_disjoint_namespaces();

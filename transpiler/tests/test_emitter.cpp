@@ -1082,7 +1082,7 @@ static void test_format_line_directive_honors_user_line_pragma() {
 
 // ── Entry point ──────────────────────────────────────────────────────────────
 
-int main() {
+int run_test_transpile_emitter(int /*argc*/, char** /*argv*/) {
     test_golden_snapshot();
     test_idempotency_skip_detection();
     test_multiple_ops_lifo_in_output();

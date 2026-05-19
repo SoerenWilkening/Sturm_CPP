@@ -661,7 +661,7 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
-int main() {
+int run_test_adjoint_emitter(int /*argc*/, char** /*argv*/) {
     // (1) Reverse-order + shape coverage.
     test_reverse_order_on_three_statement_body();
     test_single_statement_body();

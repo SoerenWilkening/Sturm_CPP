@@ -388,7 +388,7 @@ void nothing() {}
 
 // ── (B) Silent rejects ─────────────────────────────────────────────
 
-void test_null_fd_silent_reject() {
+static void test_null_fd_silent_reject() {
     // Null input is a caller bug; the validator defends against it
     // with a silent reject (no diagnostic fires).
     DiagHarness h;
@@ -403,7 +403,7 @@ void test_null_fd_silent_reject() {
     CHECK(ran);
 }
 
-void test_non_reversible_silent_reject() {
+static void test_non_reversible_silent_reject() {
     // A forward without `[[sturm::reversible]]` is not a synthesis
     // candidate — the validator silently rejects it. No diagnostic
     // fires even on a signature that would otherwise trip Q-B.
@@ -693,7 +693,7 @@ void bad(qbool& r, qbool x) {
 
 // ── (G) to_string spellings ────────────────────────────────────────
 
-void test_to_string_enum_spellings() {
+static void test_to_string_enum_spellings() {
     // Pin the human-readable spellings. Tests compare against these
     // strings.
     CHECK(to_string(ReversibleSigRejectReason::None) ==
@@ -712,7 +712,7 @@ void test_to_string_enum_spellings() {
 
 // ── main ───────────────────────────────────────────────────────────
 
-int main() {
+int run_test_matcher_reversible_signature(int /*argc*/, char** /*argv*/) {
     // Happy paths.
     test_happy_path_non_const_ref();
     test_happy_path_const_ref_not_mutated();

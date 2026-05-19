@@ -234,7 +234,7 @@ void test_empty_rhs() {
 
 } // namespace
 
-int main() {
+int run_test_lossy_rewrite_emitter(int /*argc*/, char** /*argv*/) {
     test_mul();
     test_and();
     test_or();

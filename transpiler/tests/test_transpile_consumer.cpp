@@ -266,7 +266,7 @@ static void test_plugin_mode() {
     CHECK(!fs::exists(unexpected));
 }
 
-int main() {
+int run_test_transpile_consumer(int /*argc*/, char** /*argv*/) {
     test_standalone_file_mode();
     test_plugin_mode();
 

@@ -806,7 +806,7 @@ void demo(qbool a) {
 
 } // namespace
 
-int main() {
+int run_test_alias_footprint(int /*argc*/, char** /*argv*/) {
     test_footprint_bare_qbool();
     test_footprint_bare_qint_widths();
     test_footprint_bitproxy_const_in_range();

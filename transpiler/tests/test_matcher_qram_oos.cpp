@@ -278,7 +278,7 @@ static void test_fixture_expression_position() {
 
 #endif // STURM_QRAM_OOS_FIXTURES_DIR
 
-int main() {
+int run_test_matcher_qram_oos(int /*argc*/, char** /*argv*/) {
     test_existing_target_larger_expr_basic();
     test_h1_bare_does_not_fire_oos();
     test_write_basic();

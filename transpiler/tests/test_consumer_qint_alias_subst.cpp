@@ -190,7 +190,7 @@ void test_matcher_qint_alias_subst_no_overlap() {
 
 } // anonymous namespace
 
-int main() {
+int run_test_consumer_qint_alias_subst(int /*argc*/, char** /*argv*/) {
     test_overlap_fixture_round_trip();
     test_matcher_qint_alias_subst_no_overlap();
     std::fprintf(stderr,

@@ -271,7 +271,7 @@ static void test_coexist_with_c1_shape() {
     CHECK_EQ_INT(hits.size(), 1);
 }
 
-int main() {
+int run_test_matcher_qram_subscript_expr(int /*argc*/, char** /*argv*/) {
     test_std_array_positive();
     test_c_array_positive();
     test_pointer_positive();

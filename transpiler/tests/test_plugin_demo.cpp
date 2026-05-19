@@ -189,7 +189,7 @@ static void test_render_fn_preserves_nontrivial_operand_name() {
     CHECK(rendered == expected);
 }
 
-int main() {
+int run_test_plugin_demo(int /*argc*/, char** /*argv*/) {
     test_register_plugin_v1_registers_render_fn();
     test_render_fn_output_matches_expected();
     test_render_fn_empty_on_empty_result_name();

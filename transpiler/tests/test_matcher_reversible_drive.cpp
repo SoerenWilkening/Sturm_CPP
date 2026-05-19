@@ -1013,7 +1013,7 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
-int main() {
+int run_test_matcher_reversible_drive(int /*argc*/, char** /*argv*/) {
     // (1) Happy path.
     test_happy_path_populates_registry();
 

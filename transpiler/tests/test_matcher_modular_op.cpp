@@ -869,7 +869,7 @@ void test_pow_mod_int_exponent_does_not_double_with_qint_exponent_under_flag_on(
 
 } // namespace
 
-int main() {
+int run_test_matcher_modular_op(int /*argc*/, char** /*argv*/) {
     test_basic_add_mod_match();
     test_distinct_widths_resolve();
     test_bare_modulus_does_not_match();

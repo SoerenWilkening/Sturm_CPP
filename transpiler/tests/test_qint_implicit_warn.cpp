@@ -185,7 +185,7 @@ static void test_suppressed_by_default() {
     CHECK_EQ_INT(r.warnings, 0);
 }
 
-int main() {
+int run_test_qint_implicit_warn(int /*argc*/, char** /*argv*/) {
     test_positive_int_var_init();
     test_positive_vector_ctor_arg();
     test_positive_for_loop_bound();

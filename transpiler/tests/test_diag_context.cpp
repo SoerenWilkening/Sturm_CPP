@@ -229,7 +229,7 @@ static void test_report_reversible_sig_multi_return_fires_error() {
 
 // ── main ────────────────────────────────────────────────────────────
 
-int main() {
+int run_test_transpile_diag_context(int /*argc*/, char** /*argv*/) {
     test_getOrRegister_cache_returns_same_id_for_same_key();
     test_getOrRegister_different_levels_different_ids();
 

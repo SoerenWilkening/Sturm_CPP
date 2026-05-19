@@ -1757,7 +1757,7 @@ void demo_few(qbool a, qbool b, qbool y) {
 
 } // namespace
 
-int main() {
+int run_test_matcher_peephole_reorder(int /*argc*/, char** /*argv*/) {
     // (1) Positive — disjoint qbool between A and C.
     test_reorder_fires_disjoint_qbool();
     // (2) Positive — disjoint qint-flavoured operand between A and C.

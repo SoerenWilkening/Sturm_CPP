@@ -284,7 +284,7 @@ void test_fixture_carray_typedef() {
 
 } // anonymous namespace
 
-int main() {
+int run_test_qint_alias_subst_emitter(int /*argc*/, char** /*argv*/) {
     test_text_var_decl_width_32();
     test_text_var_decl_width_8();
     test_text_var_decl_width_64();

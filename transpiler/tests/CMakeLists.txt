@@ -182,6 +182,64 @@ set(STURM_TRANSPILE_IO_SOURCES
     ${CMAKE_CURRENT_SOURCE_DIR}/../src/io.cpp
 )
 
+# ── sturm-r8xu: helper macro for bucket targets ───────────────────────────────
+# Bundles ~10 per-family bucket binaries (`test_bucket_<family>`) that
+# combine multiple logical ctest entries into a single link target.
+# Eliminates 70+ s of duplicate `-j6` link work on the shared-libclang
+# configure (sturm-vug6 measurement). Each member's `int main()` was
+# renamed to `int run_<test_name>(int argc, char** argv)`; a per-bucket
+# dispatcher (`bucket_dispatchers/test_bucket_<family>_main.cpp`)
+# selects the right entry point based on `argv[1]`. ctest registration
+# stays 1:1 — one `add_test(NAME <member> COMMAND $<TARGET_FILE:test_
+# bucket_<family>> <member>)` per logical test — so failure isolation
+# and `ctest --parallel 6` granularity are unchanged.
+#
+# This macro wires the common compile/link configuration every existing
+# per-member test target carries today: include dirs, `cxx_std_20`,
+# `LLVM_DEFINITIONS`, the `-fno-rtti` opt-in, the shared-vs-static
+# libclang-cpp/libLLVM split (with the full LibTooling component
+# fallback) and PCH reuse via `sturm_use_transpile_pch`. Per-bucket
+# extras (extra source files, fixture-dir compile defs, extra link
+# deps, PCH opt-out) are applied inline at each bucket's call site.
+macro(sturm_define_bucket_target target)
+    target_include_directories(${target} PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/../include
+        ${CMAKE_CURRENT_SOURCE_DIR}/../src
+        ${LLVM_INCLUDE_DIRS}
+        ${CLANG_INCLUDE_DIRS}
+    )
+    if(NOT LLVM_ENABLE_RTTI)
+        target_compile_options(${target} PRIVATE -fno-rtti)
+    endif()
+    target_compile_features(${target} PRIVATE cxx_std_20)
+    separate_arguments(_sturm_bucket_defs NATIVE_COMMAND "${LLVM_DEFINITIONS}")
+    target_compile_definitions(${target} PRIVATE ${_sturm_bucket_defs})
+    if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
+        target_link_libraries(${target} PRIVATE
+            ${STURM_LIBCLANG_CPP}
+            ${STURM_LIBLLVM}
+        )
+    else()
+        target_link_libraries(${target} PRIVATE
+            clangTooling
+            clangASTMatchers
+            clangFrontend
+            clangRewrite
+            clangBasic
+            clangAST
+            clangLex
+            clangSerialization
+            clangDriver
+            clangParse
+            clangSema
+            clangAnalysis
+            clangEdit
+        )
+        llvm_map_components_to_libnames(_sturm_bucket_llvm_libs support)
+        target_link_libraries(${target} PRIVATE ${_sturm_bucket_llvm_libs})
+    endif()
+endmacro()
+
 # ── Unit test: io helpers ─────────────────────────────────────────────────────
 add_executable(test_transpile_io
     test_io.cpp
@@ -271,57 +329,8 @@ set_tests_properties(test_transpile_qir PROPERTIES LABELS "transpiler")
 # sturm-z2e8.4 / P-D extends the `report_*` family with five
 # reversible-synthesis diagnostics; the test's `test_report_reversible_*`
 # cases pin each new method as firing exactly one Error-severity report.
-add_executable(test_transpile_diag_context
-    test_diag_context.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_transpile_diag_context PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_transpile_diag_context PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_transpile_diag_context PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_DIAG NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_transpile_diag_context PRIVATE
-    ${LLVM_DEFS_LIST_DIAG})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_transpile_diag_context PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    # sturm-hbwo: this test now links the shared
-    # `sturm_transpile_test_objs` OBJECT library, which carries the
-    # full transpiler/src TU set. The static fallback therefore needs
-    # the complete LibTooling component stack (not just clangBasic) so
-    # the OBJECT library's transitive references resolve at link time.
-    target_link_libraries(test_transpile_diag_context PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_DIAG support)
-    target_link_libraries(test_transpile_diag_context PRIVATE
-        ${LLVM_LIBS_DIAG})
-endif()
-add_test(NAME test_transpile_diag_context COMMAND test_transpile_diag_context)
-set_tests_properties(test_transpile_diag_context PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_transpile_diag_context)
+# sturm-r8xu: bucketed into `test_bucket_pipeline` (defined below
+# alongside the other pipeline-misc tests).
 
 # ── Unit test: reversible_attribute (P-A / sturm-z2e8.2) ─────────────────────
 # Phase P plan §2.1 P-A: pins `is_reversible(const FunctionDecl*)` for the
@@ -340,217 +349,39 @@ sturm_use_transpile_pch(test_transpile_diag_context)
 # linked from the transpiler side — the predicate is a free function
 # over a decl and has no dependency on the matcher pool, the synthesis
 # registry (P-B), or the diag context (P-D).
-add_executable(test_reversible_attribute
-    test_reversible_attribute.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_reversible_attribute PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_reversible_attribute PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_reversible_attribute PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_REVERSIBLE NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_reversible_attribute PRIVATE
-    ${LLVM_DEFS_LIST_REVERSIBLE})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_reversible_attribute PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_reversible_attribute PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_REVERSIBLE support)
-    target_link_libraries(test_reversible_attribute PRIVATE
-        ${LLVM_LIBS_REVERSIBLE})
-endif()
-add_test(NAME test_reversible_attribute COMMAND test_reversible_attribute)
-set_tests_properties(test_reversible_attribute PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_reversible_attribute)
-
-# ── Unit test: entry_point_attribute (sturm-0tcv) ───────────────────────────
-# Pins the `has_entry_point_attr(const FunctionDecl*)` predicate that the
-# extended `matcher_main_lifecycle` consults to gate non-main entry-point
-# rewrites. Mirrors `test_reversible_attribute` linkage: only the small
-# detection TU is linked, driven via a direct ASTConsumer pipeline.
-add_executable(test_entry_point_attribute
-    test_entry_point_attribute.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_entry_point_attribute PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_entry_point_attribute PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_entry_point_attribute PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_ENTRY_POINT NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_entry_point_attribute PRIVATE
-    ${LLVM_DEFS_LIST_ENTRY_POINT})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_entry_point_attribute PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_entry_point_attribute PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_ENTRY_POINT support)
-    target_link_libraries(test_entry_point_attribute PRIVATE
-        ${LLVM_LIBS_ENTRY_POINT})
-endif()
-add_test(NAME test_entry_point_attribute COMMAND test_entry_point_attribute)
-set_tests_properties(test_entry_point_attribute PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_entry_point_attribute)
+# sturm-r8xu: bucketed into `test_bucket_reversible` (defined further
+# below alongside the other Phase P/Q/R/S reversibility tests).
 
 # ── Unit test: matcher_main_lifecycle entry-point arm (sturm-0tcv) ──────────
 # Exercises the extension of `matcher_main_lifecycle` that fires on any
 # FunctionDecl carrying `[[sturm::entry_point]]`. Tests cover library
 # fixtures, GoogleTest TEST_F wrapping idioms, the void/integral return
 # split, macro gates, and the gtest-filename relaxation.
-add_executable(test_matcher_main_lifecycle_entry_point
+# ── sturm-r8xu: test_bucket_main_lifecycle ────────────────────────────────
+# Bundles the sturm-0tcv main_lifecycle / entry_point arm tests:
+#   test_matcher_main_lifecycle_entry_point  (matcher arm)
+#   test_main_lifecycle_emitter_entry_point  (emitter arm)
+# The emitter test reads on-disk fixtures via STURM_ENTRY_POINT_FIXTURES_DIR;
+# the macro is applied at bucket-target scope (only test_main_lifecycle_
+# emitter_entry_point.cpp references it; the other bucket member ignores it).
+add_executable(test_bucket_main_lifecycle
     test_matcher_main_lifecycle_entry_point.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_main_lifecycle_entry_point PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_main_lifecycle_entry_point
-        PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_main_lifecycle_entry_point PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_LIFECYCLE_EP NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_main_lifecycle_entry_point PRIVATE
-    ${LLVM_DEFS_LIST_LIFECYCLE_EP})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_main_lifecycle_entry_point PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_main_lifecycle_entry_point PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_LIFECYCLE_EP support)
-    target_link_libraries(test_matcher_main_lifecycle_entry_point PRIVATE
-        ${LLVM_LIBS_LIFECYCLE_EP})
-endif()
-add_test(NAME test_matcher_main_lifecycle_entry_point
-         COMMAND test_matcher_main_lifecycle_entry_point)
-set_tests_properties(test_matcher_main_lifecycle_entry_point PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_matcher_main_lifecycle_entry_point)
-
-# ── Unit test: main_lifecycle_emitter entry-point arm (sturm-0tcv) ──────────
-# Exercises the per-hit emitter behaviour for EntryPointVoid /
-# EntryPointReturn / Main shapes. Drives the matcher + emitter together
-# and snapshots the rewritten source to assert on the IIFE-wrapping
-# substrings.
-add_executable(test_main_lifecycle_emitter_entry_point
     test_main_lifecycle_emitter_entry_point.cpp
+    bucket_dispatchers/test_bucket_main_lifecycle_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_main_lifecycle_emitter_entry_point PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_main_lifecycle_emitter_entry_point
-        PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_main_lifecycle_emitter_entry_point PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_EMITTER_EP NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_main_lifecycle_emitter_entry_point PRIVATE
-    ${LLVM_DEFS_LIST_EMITTER_EP}
+sturm_define_bucket_target(test_bucket_main_lifecycle)
+target_compile_definitions(test_bucket_main_lifecycle PRIVATE
     STURM_ENTRY_POINT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_main_lifecycle_emitter_entry_point PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_main_lifecycle_emitter_entry_point PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_EMITTER_EP support)
-    target_link_libraries(test_main_lifecycle_emitter_entry_point PRIVATE
-        ${LLVM_LIBS_EMITTER_EP})
-endif()
-add_test(NAME test_main_lifecycle_emitter_entry_point
-         COMMAND test_main_lifecycle_emitter_entry_point)
-set_tests_properties(test_main_lifecycle_emitter_entry_point PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_main_lifecycle_emitter_entry_point)
+sturm_use_transpile_pch(test_bucket_main_lifecycle)
+foreach(_t IN ITEMS
+        test_matcher_main_lifecycle_entry_point
+        test_main_lifecycle_emitter_entry_point)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_main_lifecycle> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler")
+endforeach()
+unset(_t)
 
 # ── Unit test: matcher_reversible_validate (P-C / sturm-z2e8.5) ─────────────
 # Phase P plan §2.1 P-C: pins the P9d validation pass that walks every
@@ -572,529 +403,60 @@ sturm_use_transpile_pch(test_main_lifecycle_emitter_entry_point)
 # `report_reversible_*` surface. Shared libclang-cpp + libLLVM when
 # available, fallback to the per-component archives otherwise — same
 # shape every other direct-ASTConsumer test in this file uses.
-add_executable(test_matcher_reversible_validate
-    test_matcher_reversible_validate.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_reversible_validate PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_reversible_validate PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_reversible_validate PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_REV_VALIDATE NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_reversible_validate PRIVATE
-    ${LLVM_DEFS_LIST_REV_VALIDATE})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_reversible_validate PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_reversible_validate PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_REV_VALIDATE support)
-    target_link_libraries(test_matcher_reversible_validate PRIVATE
-        ${LLVM_LIBS_REV_VALIDATE})
-endif()
-add_test(NAME test_matcher_reversible_validate
-    COMMAND test_matcher_reversible_validate)
-set_tests_properties(test_matcher_reversible_validate PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_matcher_reversible_validate)
-
-# ── Unit test: matcher_reversible_signature (Q-B / sturm-5kgu.3) ────────────
-# Phase Q plan §2.2 Q-B: pins the parameter-list signature enforcement
-# pass for `[[sturm::reversible]]` forwards. The matcher rejects three
-# classes per PRD §5.3 / §9 P9b:
-#   1. PointerParam         — `qbool*` / `qint*` pointer-to-quantum.
-#   2. ValueParamMutated    — non-const by-value quantum parameter
-#                             mutated in the body.
-#   3. ConstRefParamMutated — `const`-qualified reference-to-quantum
-#                             parameter mutated in the body.
-# Each reject fires through the Phase P-D `DiagContext`
-# `report_reversible_*_param*` family added by sturm-5kgu.3.
+# ── sturm-r8xu: test_bucket_reversible ────────────────────────────────────
+# Bundles the Phase P/Q/R/S reversibility / synthesis tests, plus the
+# small attribute predicates (`reversible_attribute`,
+# `entry_point_attribute`). All ten members consume the shared
+# `sturm_transpile_test_objs` OBJECT library — their per-target source
+# lists collapsed to the shared OBJECT library after sturm-hbwo
+# (commit 66289cc), so bucketing them eliminates the per-test link
+# cost without changing the compile-time surface.
 #
-# The test compiles small C++ snippets via `runToolOnCodeWithArgs`,
-# locates the named reversible forward, wraps a `DiagnosticsEngine`
-# that is fronted by a counting consumer (mirrors
-# `test_matcher_reversible_validate.cpp`), wraps it in a `DiagContext`,
-# and invokes `validate_reversible_signature`. Each rejection reason
-# is exercised with its own happy / negative pair.
-#
-# Linkage pulls in `matcher_reversible_signature.cpp` (the module
-# under test) plus its read-side dependencies:
-# `reversible_attribute.cpp` for `is_reversible`, and
-# `diag_context.cpp` for the `report_reversible_*_param*` surface.
-# Shared libclang-cpp + libLLVM when available, fallback to the
-# per-component archives otherwise — same shape every other direct-
-# ASTConsumer test in this file uses.
-add_executable(test_matcher_reversible_signature
-    test_matcher_reversible_signature.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_reversible_signature PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_reversible_signature PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_reversible_signature PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_REV_SIG NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_reversible_signature PRIVATE
-    ${LLVM_DEFS_LIST_REV_SIG})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_reversible_signature PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_reversible_signature PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_REV_SIG support)
-    target_link_libraries(test_matcher_reversible_signature PRIVATE
-        ${LLVM_LIBS_REV_SIG})
-endif()
-add_test(NAME test_matcher_reversible_signature
-    COMMAND test_matcher_reversible_signature)
-set_tests_properties(test_matcher_reversible_signature PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_matcher_reversible_signature)
-
-# ── Unit test: synthesis_registry (P-B / sturm-z2e8.3) ──────────────────────
-# Phase P plan §2.1 P-B: pins the `SynthesisRegistry` container and its
-# bridge to `RoutineRegistry` (PRD §9 Q2 — hand-registered adjoint wins).
-# The registry is a pure data structure (no AST matcher binds to it), so
-# the test is a standalone unit exerciser: it feeds synthetic
-# `const clang::FunctionDecl*` pointers into the map, asserts on
-# insert/lookup round-trip, conflict detection against `RoutineRegistry`,
-# deterministic iteration order across insertions, and the null-FD
-# guard on every public method.
-#
-# No LibTooling is required — the registry never dereferences its
-# keys. Linkage mirrors `test_transpile_diag_context` (the other
-# AST-free direct test): pull in `synthesis_registry.cpp` and
-# `routine_registry.cpp` from the transpiler source tree, link the
-# minimum LLVM / Clang needed to satisfy any transitive symbols, and
-# register under the `transpiler` ctest label.
-add_executable(test_synthesis_registry
-    test_synthesis_registry.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_synthesis_registry PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_synthesis_registry PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_synthesis_registry PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_SYN_REG NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_synthesis_registry PRIVATE
-    ${LLVM_DEFS_LIST_SYN_REG})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_synthesis_registry PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    # sturm-hbwo: bumped to the full LibTooling stack because the
-    # OBJECT library this test now links carries transitive
-    # references (matchers / consumer / rewriter) that the previous
-    # minimal `clangASTMatchers + clangBasic + clangAST` set cannot
-    # resolve on a static-only LLVM install.
-    target_link_libraries(test_synthesis_registry PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_SYN_REG support)
-    target_link_libraries(test_synthesis_registry PRIVATE
-        ${LLVM_LIBS_SYN_REG})
-endif()
-add_test(NAME test_synthesis_registry COMMAND test_synthesis_registry)
-set_tests_properties(test_synthesis_registry PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_synthesis_registry)
-
-# ── Unit test: return_to_out_param (Q-A / sturm-5kgu.2) ─────────────────────
-# Phase Q plan §2.2 Q-A: pins the out-param-twin source synthesis for
-# reversible forwards whose body is a single `return <expr>;`. The tests
-# run four positive fixtures (`return_to_out_param_{1..4}.cpp`) through
-# `runToolOnCodeWithArgs`, locate the named forward FunctionDecl, invoke
-# `synthesize_out_param_twin`, and compare the produced source text
-# byte-for-byte against the sibling `.expected.cpp` golden file. Negative
-# reject paths (NotReversible, non-quantum return, multi-statement body,
-# forward declaration, null decl) are exercised inline without a fixture.
-#
-# Fixture directory is threaded in via STURM_RETURN_TO_OUT_PARAM_FIXTURES_DIR
-# so the test reads goldens straight from the source tree — mirrors the
-# `STURM_TRANSPILE_FIXTURES_DIR` pattern used by `test_transpile_skip`.
-#
-# Linkage pulls in `return_to_out_param.cpp` (the module under test) plus
-# `reversible_attribute.cpp` (the `is_reversible` predicate Q-A consults
-# on every input). Shared libclang-cpp + libLLVM when available, fallback
-# to the per-component archives otherwise, same shape every other direct-
-# ASTConsumer test in this file uses.
-add_executable(test_return_to_out_param
-    test_return_to_out_param.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_return_to_out_param PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_return_to_out_param PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_return_to_out_param PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_R2OP NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_return_to_out_param PRIVATE
-    ${LLVM_DEFS_LIST_R2OP}
-    STURM_RETURN_TO_OUT_PARAM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_return_to_out_param PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_return_to_out_param PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_R2OP support)
-    target_link_libraries(test_return_to_out_param PRIVATE
-        ${LLVM_LIBS_R2OP})
-endif()
-add_test(NAME test_return_to_out_param COMMAND test_return_to_out_param)
-set_tests_properties(test_return_to_out_param PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_return_to_out_param)
-
-# ── Unit test: adjoint_emitter (R-1 / sturm-88d7.2) ─────────────────────────
-# Phase R plan §2.3 R-A: pins the straight-line adjoint emission that
-# walks a validated + normalized reversible forward body in reverse
-# statement order and produces a sibling `__<fn>_adj` function. The
-# tests hand-build `QOperation` vectors (no LibTooling needed for the
-# pure-string entry point) and also exercise `emit_adjoint_for_decl`
-# on a handful of `runToolOnCodeWithArgs` snippets to pin FD-based
-# reject paths.
-#
-# Linkage pulls in `adjoint_emitter.cpp` (module under test) plus the
-# dependencies it calls directly: `uncompute_pass.cpp` for
-# `render_uncompute`, `reversible_attribute.cpp` for `is_reversible`,
-# `plugin_registry.cpp` for the plugin::Registry destructor symbol
-# referenced via `plugin_api.hpp`, and `qir.cpp` for the `QValueRef`
-# equality operator referenced transitively from `qir.hpp`. Shared
-# libclang-cpp + libLLVM when available, fallback to per-component
-# archives otherwise — same shape every other direct-ASTConsumer
-# test in this file uses.
-add_executable(test_adjoint_emitter
-    test_adjoint_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_adjoint_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_adjoint_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_adjoint_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_ADJ_EMIT NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_adjoint_emitter PRIVATE
-    ${LLVM_DEFS_LIST_ADJ_EMIT})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_adjoint_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_adjoint_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_ADJ_EMIT support)
-    target_link_libraries(test_adjoint_emitter PRIVATE
-        ${LLVM_LIBS_ADJ_EMIT})
-endif()
-add_test(NAME test_adjoint_emitter COMMAND test_adjoint_emitter)
-set_tests_properties(test_adjoint_emitter PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_adjoint_emitter)
-
-# ── Unit test: auto_register_emitter (R-B / sturm-88d7.3) ───────────────────
-# Phase R plan §2.3 R-B: pins the TU-scope `STURM_REGISTER_ADJOINT(fn,
-# __fn_adj);` line emitted after each synthesized adjoint so PI-1's
-# matcher (which consumes hand-written `STURM_REGISTER_ADJOINT(fn,
-# adj)` invocations) picks up the synthesised pair on the second
-# transpile pass. The tests exercise the pure-string API via direct
-# golden comparisons and the FD-based API via `runToolOnCodeWithArgs`
-# snippets — same harness shape `test_adjoint_emitter` uses.
-#
-# Linkage pulls in `auto_register_emitter.cpp` (module under test) plus
-# `reversible_attribute.cpp` (the `is_reversible` predicate R-B
-# consults on every FD-based input). Shared libclang-cpp + libLLVM
-# when available, fallback to per-component archives otherwise — same
-# shape every other direct-ASTConsumer test in this file uses.
-add_executable(test_auto_register_emitter
-    test_auto_register_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_auto_register_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_auto_register_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_auto_register_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_AUTO_REG NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_auto_register_emitter PRIVATE
-    ${LLVM_DEFS_LIST_AUTO_REG})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_auto_register_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_auto_register_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_AUTO_REG support)
-    target_link_libraries(test_auto_register_emitter PRIVATE
-        ${LLVM_LIBS_AUTO_REG})
-endif()
-add_test(NAME test_auto_register_emitter COMMAND test_auto_register_emitter)
-set_tests_properties(test_auto_register_emitter PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_auto_register_emitter)
-
-# ── Unit test: matcher_reversible_drive (R-C / sturm-88d7.4) ────────────────
-# Phase R plan §2.3 R-C: pins the top-level driver that orchestrates R-A
-# (`emit_adjoint_for_decl`) + R-B (`emit_auto_registration_for_decl`) for
-# each `[[sturm::reversible]]` forward that passes P-C validation and
-# Q-B constness. P-C (sturm-z2e8.5) and Q-B (sturm-5kgu.3) are NOT yet
-# landed; the driver accepts swappable validator hooks so today's tests
-# can drive happy / rejection / no-op paths with stand-in lambdas. The
-# tests compile small C++ snippets via `runToolOnCodeWithArgs`, locate
-# the relevant `FunctionDecl`, seed a `SynthesisRegistry` +
-# `RoutineRegistry` by hand, and invoke `drive_reversible`.
-#
-# Linkage pulls in `matcher_reversible_drive.cpp` (module under test)
-# plus every emitter / registry / renderer the driver calls:
-# `adjoint_emitter.cpp` for R-A, `auto_register_emitter.cpp` for R-B,
-# `synthesis_registry.cpp` for the per-forward book-keeping,
-# `uncompute_pass.cpp` for `render_uncompute` (R-A's per-op
-# dispatch), `reversible_attribute.cpp` for the `is_reversible`
-# predicate, `plugin_registry.cpp` for the `plugin::Registry`
-# destructor symbol referenced via `plugin_api.hpp`, and `qir.cpp`
-# for the `QValueRef` equality operator referenced transitively
-# from `qir.hpp`. Shared libclang-cpp + libLLVM when available,
-# fallback to per-component archives otherwise — same shape every
-# other direct-ASTConsumer test in this file uses.
-add_executable(test_matcher_reversible_drive
+#   test_matcher_reversible_drive    (R-C / sturm-88d7.4)
+#   test_matcher_reversible_validate (P-C / sturm-z2e8.5)
+#   test_matcher_reversible_signature(Q-B / sturm-5kgu.3)
+#   test_synthesis_registry          (P-B / sturm-z2e8.3)
+#   test_return_to_out_param         (Q-A / sturm-5kgu.2 — needs
+#                                     STURM_RETURN_TO_OUT_PARAM_FIXTURES_DIR)
+#   test_adjoint_emitter             (R-A / sturm-88d7.2)
+#   test_auto_register_emitter       (R-B / sturm-88d7.3)
+#   test_reversible_attribute        (P-A / sturm-z2e8.2)
+#   test_loop_reversal               (S-A / sturm-ha2k.2)
+#   test_entry_point_attribute       (sturm-0tcv)
+add_executable(test_bucket_reversible
     test_matcher_reversible_drive.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_reversible_drive PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_reversible_drive PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_reversible_drive PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_REV_DRIVE NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_reversible_drive PRIVATE
-    ${LLVM_DEFS_LIST_REV_DRIVE})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_reversible_drive PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_reversible_drive PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_REV_DRIVE support)
-    target_link_libraries(test_matcher_reversible_drive PRIVATE
-        ${LLVM_LIBS_REV_DRIVE})
-endif()
-add_test(NAME test_matcher_reversible_drive
-    COMMAND test_matcher_reversible_drive)
-set_tests_properties(test_matcher_reversible_drive PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_matcher_reversible_drive)
-
-# ── Unit test: loop_reversal (S-A / sturm-ha2k.2) ───────────────────────────
-# Phase S plan §2.4 S-A: pins the reversed-iteration adjoint loop-header
-# synthesis for `[[sturm::reversible]]` routines. The tests compile small
-# C++ snippets via `runToolOnCodeWithArgs`, locate the first ForStmt
-# inside a named enclosing function, and invoke `reverse_for_header`;
-# stride 1 / 2 / negative cases assert the exact emitted header text,
-# and the zero-stride / non-canonical cases assert the matching
-# `LoopRejectReason`.
-#
-# Linkage pulls in `loop_reversal.cpp` (module under test). The module
-# only depends on Clang's public AST + Lexer API (no other STURM
-# translation units are needed). Shared libclang-cpp + libLLVM when
-# available, fallback to per-component archives otherwise — same shape
-# every other direct-ASTConsumer test in this file uses.
-add_executable(test_loop_reversal
+    test_matcher_reversible_validate.cpp
+    test_matcher_reversible_signature.cpp
+    test_synthesis_registry.cpp
+    test_return_to_out_param.cpp
+    test_adjoint_emitter.cpp
+    test_auto_register_emitter.cpp
+    test_reversible_attribute.cpp
     test_loop_reversal.cpp
+    test_entry_point_attribute.cpp
+    bucket_dispatchers/test_bucket_reversible_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_loop_reversal PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_loop_reversal PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_loop_reversal PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_LOOP_REV NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_loop_reversal PRIVATE
-    ${LLVM_DEFS_LIST_LOOP_REV})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_loop_reversal PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_loop_reversal PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_LOOP_REV support)
-    target_link_libraries(test_loop_reversal PRIVATE
-        ${LLVM_LIBS_LOOP_REV})
-endif()
-add_test(NAME test_loop_reversal COMMAND test_loop_reversal)
-set_tests_properties(test_loop_reversal PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_loop_reversal)
+sturm_define_bucket_target(test_bucket_reversible)
+target_compile_definitions(test_bucket_reversible PRIVATE
+    STURM_RETURN_TO_OUT_PARAM_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+sturm_use_transpile_pch(test_bucket_reversible)
+foreach(_t IN ITEMS
+        test_matcher_reversible_drive
+        test_matcher_reversible_validate
+        test_matcher_reversible_signature
+        test_synthesis_registry
+        test_return_to_out_param
+        test_adjoint_emitter
+        test_auto_register_emitter
+        test_reversible_attribute
+        test_loop_reversal
+        test_entry_point_attribute)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_reversible> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler")
+endforeach()
+unset(_t)
 
 # ── Compile-only smoke: PM4-1 plugin_api.hpp ────────────────────────────────
 # The PM4-1 public plugin surface lands as a pure header; the Registry
@@ -1133,187 +495,33 @@ set_tests_properties(test_plugin_api_compile PROPERTIES LABELS "transpiler")
 # child terminates on SIGABRT). The test links `plugin_registry.cpp` and
 # drags in `clangASTMatchers` because `invoke_all` takes a `MatchFinder&`
 # whose ctor/dtor live in that library.
-add_executable(test_plugin_registry
-    test_plugin_registry.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_plugin_registry PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_plugin_registry PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_plugin_registry PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_PLUGIN_REG NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_plugin_registry PRIVATE
-    ${LLVM_DEFS_LIST_PLUGIN_REG})
-# MatchFinder's ctor/dtor live in libclangASTMatchers; the test itself
-# only needs the minimum to construct + destruct one, but sturm-hbwo
-# pulls in the full `sturm_transpile_test_objs` OBJECT library, whose
-# transitive matcher / consumer / rewriter references demand the
-# complete LibTooling component stack on a static-only LLVM install.
-# Mirror the shared-vs-static split used elsewhere in this file.
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_plugin_registry PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_plugin_registry PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN_REG support)
-    target_link_libraries(test_plugin_registry PRIVATE
-        ${LLVM_LIBS_PLUGIN_REG})
-endif()
-add_test(NAME test_plugin_registry COMMAND test_plugin_registry)
-set_tests_properties(test_plugin_registry PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_plugin_registry)
-
-# ── Unit test: PM4-7 demo plugin ────────────────────────────────────────────
-# Exercises the PM4-7 demo plugin under `examples/plugin_demo/` end-to-end
-# via its `sturm_register_plugin_v1` entry point. The plugin's TU is
-# compiled directly into the test binary (no dlopen hop — PM4-4's
-# `load=<path>` is not merged yet, and per the PM4-7 issue the deliverable
-# is the Registry API contract, not the runtime-load wiring). The test
-# verifies `register_op` stores the render_fn under `"pm4.demo.tag"`,
-# `find_render_fn` returns it, and the renderer emits the exact text
-# `"    pm4_demo_tag_inverse(<q>);\n"` for a hand-built `QOperation`.
-#
-# Linkage mirrors test_plugin_registry: pulls in plugin_registry.cpp for
-# the Registry method bodies and qir.cpp for the QOperation / QValueRef
-# symbols referenced from the test's sample-op construction.
-add_executable(test_plugin_demo
+# ── sturm-r8xu: test_bucket_plugin ────────────────────────────────────────
+# Bundles the in-process plugin Registry / demo / dogfood tests:
+#   test_plugin_demo             (PM4-7 demo plugin contract)
+#   test_plugin_registry         (PM4-2 Registry + StaticRegistrar)
+#   test_pm4_dogfood_registry    (PM4-6 PB-1..PB-4 migration pin)
+# The demo test also compiles in examples/plugin_demo/plugin_demo.cpp
+# (the example plugin TU) so its `sturm_register_plugin_v1` entry point
+# resolves at link time.
+add_executable(test_bucket_plugin
     test_plugin_demo.cpp
-    ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_plugin_demo PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_plugin_demo PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_plugin_demo PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_PLUGIN_DEMO NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_plugin_demo PRIVATE
-    ${LLVM_DEFS_LIST_PLUGIN_DEMO})
-# Same clangBasic link line as test_plugin_registry: SourceLocation's
-# ctor/dtor live in libclangBasic even though the symbol is opaque at
-# the QOperation level. Wrapped in the shared-vs-static switch every
-# transpiler-adjacent test target uses.
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_plugin_demo PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    # sturm-hbwo: bumped to the full LibTooling stack because the
-    # `sturm_transpile_test_objs` OBJECT library this test now links
-    # carries transitive references that the previous minimal
-    # `clangBasic` set cannot resolve on a static-only LLVM install.
-    target_link_libraries(test_plugin_demo PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_PLUGIN_DEMO support)
-    target_link_libraries(test_plugin_demo PRIVATE
-        ${LLVM_LIBS_PLUGIN_DEMO})
-endif()
-add_test(NAME test_plugin_demo COMMAND test_plugin_demo)
-set_tests_properties(test_plugin_demo PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_plugin_demo)
-
-# ── Unit test: PM4-6 dogfood migration (PB-1..PB-4) ─────────────────────────
-# Pins the post-migration Registry API contract for the four Phase B
-# qint_t compound-assign matchers (ADD/SUB/MUL/DIV_ASSIGN_CONST). The
-# test binary links `matcher_qint_const.cpp` so its STURM_REGISTER_PLUGIN
-# static-init fires during process startup, populating the Meyer's-
-# singleton `registrars()` vector. The test drains that vector into a
-# fresh `Registry`, runs `invoke_all` against a real `MatchFinder`, and
-# asserts that four PB QOperations land in the QUnit with the identical
-# QOpKind values pre- and post-migration.
-#
-# Linkage mirrors test_transpile_matcher (for runToolOnCodeWithArgs) plus
-# plugin_registry.cpp for the Registry + Meyer's-singleton bodies. The
-# in-tree source file set is the minimum the PB matchers transitively
-# need: matcher_qint_const.cpp itself, qir.cpp for the IR types, and
-# plugin_registry.cpp for the Registry methods.
-add_executable(test_pm4_dogfood_registry
+    test_plugin_registry.cpp
     test_pm4_dogfood_registry.cpp
+    ${CMAKE_SOURCE_DIR}/examples/plugin_demo/plugin_demo.cpp
+    bucket_dispatchers/test_bucket_plugin_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_pm4_dogfood_registry PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_pm4_dogfood_registry PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_pm4_dogfood_registry PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_PM4_DOGFOOD NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_pm4_dogfood_registry PRIVATE
-    ${LLVM_DEFS_LIST_PM4_DOGFOOD})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_pm4_dogfood_registry PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_pm4_dogfood_registry PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_PM4_DOGFOOD support)
-    target_link_libraries(test_pm4_dogfood_registry PRIVATE
-        ${LLVM_LIBS_PM4_DOGFOOD})
-endif()
-add_test(NAME test_pm4_dogfood_registry COMMAND test_pm4_dogfood_registry)
-set_tests_properties(test_pm4_dogfood_registry PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_pm4_dogfood_registry)
+sturm_define_bucket_target(test_bucket_plugin)
+sturm_use_transpile_pch(test_bucket_plugin)
+foreach(_t IN ITEMS
+        test_plugin_demo
+        test_plugin_registry
+        test_pm4_dogfood_registry)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_plugin> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler")
+endforeach()
+unset(_t)
 
 # ── Unit test: M8 uncompute synthesis pass ──────────────────────────────────
 # Like the M6 QIR test, M8 uses only clang::SourceLocation — an opaque 32-bit
@@ -1322,64 +530,7 @@ sturm_use_transpile_pch(test_pm4_dogfood_registry)
 # test is constructed by hand. This is the whole reason M8 is separate from
 # M7 and M9: ordering regressions can be pinpointed without a compiler in the
 # loop.
-add_executable(test_transpile_uncompute_pass
-    test_uncompute_pass.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_transpile_uncompute_pass PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_transpile_uncompute_pass PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_transpile_uncompute_pass PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_UNCOMPUTE NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_transpile_uncompute_pass PRIVATE
-    ${LLVM_DEFS_LIST_UNCOMPUTE})
-# PM2-3: `uncompute_pass.cpp` now calls into `format_line_directive` (from
-# `source_map.cpp`), which in turn reaches `clang::SourceManager::isIn
-# MainFile` / `getPresumedLoc` from `libclangBasic`. The helper is
-# gated on `sm != nullptr` so every hand-built test case in this file
-# avoids the actual call, but the symbols still need to resolve at link
-# time. Pull in `libclangBasic` (and the `llvm::DisableABIBreakingChecks`
-# weak symbol it references) via the shared-vs-static path mirrored from
-# every other transpiler test target.
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_transpile_uncompute_pass PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    # sturm-hbwo: bumped to the full LibTooling stack because the
-    # `sturm_transpile_test_objs` OBJECT library this test now links
-    # carries transitive references that the previous minimal
-    # `clangBasic` set cannot resolve on a static-only LLVM install.
-    target_link_libraries(test_transpile_uncompute_pass PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_UNCOMPUTE support)
-    target_link_libraries(test_transpile_uncompute_pass PRIVATE
-        ${LLVM_LIBS_UNCOMPUTE})
-endif()
-add_test(NAME test_transpile_uncompute_pass
-         COMMAND test_transpile_uncompute_pass)
-set_tests_properties(test_transpile_uncompute_pass PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_transpile_uncompute_pass)
+# sturm-r8xu: bucketed into `test_bucket_pipeline` (defined below).
 
 # ── Unit test: PM5-4 alias footprint extractor ──────────────────────────────
 # Pins the `sturm::transpile::detail::footprint()` + `may_overlap()` API
@@ -1404,50 +555,7 @@ sturm_use_transpile_pch(test_transpile_uncompute_pass)
 # fallback to the static per-component archives otherwise. `alias.cpp`
 # is the only project source we link — the test does not touch the
 # Registry, the matcher TUs, or the uncompute pass.
-add_executable(test_alias_footprint
-    test_alias_footprint.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_alias_footprint PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_alias_footprint PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_alias_footprint PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_ALIAS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_alias_footprint PRIVATE
-    ${LLVM_DEFS_LIST_ALIAS})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_alias_footprint PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_alias_footprint PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_ALIAS support)
-    target_link_libraries(test_alias_footprint PRIVATE ${LLVM_LIBS_ALIAS})
-endif()
-add_test(NAME test_alias_footprint COMMAND test_alias_footprint)
-set_tests_properties(test_alias_footprint PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_alias_footprint)
+# sturm-r8xu: bucketed into `test_bucket_pipeline` (defined below).
 
 # ── Unit test: PM5-7 peephole reorder matcher ───────────────────────────────
 # Pins `register_peephole_reorder_matcher` (PM5-5, exported from
@@ -1484,53 +592,7 @@ sturm_use_transpile_pch(test_alias_footprint)
 # when available, fallback to the static per-component archives
 # otherwise. We link `matcher_peephole_reorder.cpp` + `alias.cpp` +
 # `source_map.cpp` (for format_line_directive) + `qir.cpp`.
-add_executable(test_matcher_peephole_reorder
-    test_matcher_peephole_reorder.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_peephole_reorder PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_peephole_reorder PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_peephole_reorder PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_REORDER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_peephole_reorder PRIVATE
-    ${LLVM_DEFS_LIST_REORDER})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_peephole_reorder PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_peephole_reorder PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_REORDER support)
-    target_link_libraries(test_matcher_peephole_reorder PRIVATE
-        ${LLVM_LIBS_REORDER})
-endif()
-add_test(NAME test_matcher_peephole_reorder
-         COMMAND test_matcher_peephole_reorder)
-set_tests_properties(test_matcher_peephole_reorder PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_matcher_peephole_reorder)
+# sturm-r8xu: bucketed into `test_bucket_pipeline` (defined below).
 
 # ── Unit test: LO-2a lossy-op matcher (sturm-9254) ──────────────────────────
 # Unit test for `register_lossy_op_matcher`. Drives a real Clang tooling
@@ -1543,415 +605,154 @@ sturm_use_transpile_pch(test_matcher_peephole_reorder)
 # `LossyOpHit` records into a caller-owned vector. Link only the matcher
 # TU itself; no transitive matcher-common deps (the .hpp is header-only)
 # and no qir.cpp (no QUnit mutation).
-add_executable(test_matcher_lossy_op
+# ── sturm-r8xu: test_bucket_lossy ──────────────────────────────────────────
+# Bundles the LO-2 lossy-rewrite family unit tests:
+#   test_matcher_lossy_op          (LO-2a / sturm-9254 matcher)
+#   test_lossy_rewrite_emitter     (LO-2b / sturm-yxxa forward emitter)
+#   test_lossy_scope_exit_emitter  (LO-2c / sturm-hbwr cleanup emitter)
+#   test_lossy_nested_rewrite      (LO-2e / sturm-rry6 nested rewrite)
+add_executable(test_bucket_lossy
     test_matcher_lossy_op.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_lossy_op PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_lossy_op PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_lossy_op PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_LOSSY_OP NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_lossy_op PRIVATE
-    ${LLVM_DEFS_LIST_LOSSY_OP})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_lossy_op PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_lossy_op PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_OP support)
-    target_link_libraries(test_matcher_lossy_op PRIVATE
-        ${LLVM_LIBS_LOSSY_OP})
-endif()
-add_test(NAME test_matcher_lossy_op
-         COMMAND test_matcher_lossy_op)
-set_tests_properties(test_matcher_lossy_op PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_matcher_lossy_op)
-
-# ── Unit test: LO-2b lossy_rewrite_emitter (sturm-yxxa) ─────────────────────
-# Forward-only emitter consuming `LossyOpHit` records produced by LO-2a.
-# Mirrors the matcher_lossy_op linkage: pure-string AST-driven harness, no
-# QUnit / Rewriter dependency. Links the matcher_lossy_op TU because the
-# AST-driven half of the test runs the matcher to produce live hits.
-add_executable(test_lossy_rewrite_emitter
     test_lossy_rewrite_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_lossy_rewrite_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_lossy_rewrite_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_lossy_rewrite_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_LOSSY_EMIT NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_lossy_rewrite_emitter PRIVATE
-    ${LLVM_DEFS_LIST_LOSSY_EMIT})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_lossy_rewrite_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_lossy_rewrite_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_EMIT support)
-    target_link_libraries(test_lossy_rewrite_emitter PRIVATE
-        ${LLVM_LIBS_LOSSY_EMIT})
-endif()
-add_test(NAME test_lossy_rewrite_emitter
-         COMMAND test_lossy_rewrite_emitter)
-set_tests_properties(test_lossy_rewrite_emitter PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_lossy_rewrite_emitter)
-
-# ── Unit test: LO-2c lossy_scope_exit_emitter (sturm-hbwr) ──────────────────
-# Cleanup-only emitter. Pairs LO-2a `LossyOpHit` with LO-2b `LossyEmission`
-# to produce the §2.3 scope-exit `swap + invert` cleanup in LIFO order per
-# enclosing CompoundStmt. Linkage matches the LO-2b test: pure-string AST-
-# driven harness, no QUnit / Rewriter dependency. Links the LO-2a matcher
-# TU AND the LO-2b emitter TU because the AST-driven half of the test runs
-# both to produce live hits + matching forward emissions.
-add_executable(test_lossy_scope_exit_emitter
     test_lossy_scope_exit_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_lossy_scope_exit_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_lossy_scope_exit_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_lossy_scope_exit_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_LOSSY_SCOPE NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_lossy_scope_exit_emitter PRIVATE
-    ${LLVM_DEFS_LIST_LOSSY_SCOPE})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_lossy_scope_exit_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_lossy_scope_exit_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_SCOPE support)
-    target_link_libraries(test_lossy_scope_exit_emitter PRIVATE
-        ${LLVM_LIBS_LOSSY_SCOPE})
-endif()
-add_test(NAME test_lossy_scope_exit_emitter
-         COMMAND test_lossy_scope_exit_emitter)
-set_tests_properties(test_lossy_scope_exit_emitter PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_lossy_scope_exit_emitter)
-
-# ── Unit test: LO-2e lossy_nested_rewrite (sturm-rry6) ──────────────────────
-# Depth-first rewrite for nested lossy ops. Drives the AST matcher + the
-# combined inner-then-outer forward / outer-then-inner cleanup emitter. Links
-# the LO-2a/2b/2c TUs so the AST harness reuses LO-2a's matcher to verify
-# disjointness and `emit_nested_lossy` reuses the LO-2b/2c text emitters.
-add_executable(test_lossy_nested_rewrite
     test_lossy_nested_rewrite.cpp
+    bucket_dispatchers/test_bucket_lossy_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_lossy_nested_rewrite PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_lossy_nested_rewrite PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_lossy_nested_rewrite PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_LOSSY_NESTED NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_lossy_nested_rewrite PRIVATE
-    ${LLVM_DEFS_LIST_LOSSY_NESTED})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_lossy_nested_rewrite PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_lossy_nested_rewrite PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_LOSSY_NESTED support)
-    target_link_libraries(test_lossy_nested_rewrite PRIVATE
-        ${LLVM_LIBS_LOSSY_NESTED})
-endif()
-add_test(NAME test_lossy_nested_rewrite
-         COMMAND test_lossy_nested_rewrite)
-set_tests_properties(test_lossy_nested_rewrite PROPERTIES
-    LABELS "transpiler")
-sturm_use_transpile_pch(test_lossy_nested_rewrite)
+sturm_define_bucket_target(test_bucket_lossy)
+sturm_use_transpile_pch(test_bucket_lossy)
+foreach(_t IN ITEMS
+        test_matcher_lossy_op
+        test_lossy_rewrite_emitter
+        test_lossy_scope_exit_emitter
+        test_lossy_nested_rewrite)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_lossy> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler")
+endforeach()
+unset(_t)
 
-# ── Unit test: P5.1 matcher_modular_op (sturm-qzab.1) ──────────────────────
-# Beat 5.1 AddMod arm. Stand-alone matcher TU — writes `ModularOpHit`
-# records into a caller-owned vector. Mirrors `test_matcher_lossy_op`'s
-# linkage; no QUnit / Rewriter dependency.
-add_executable(test_matcher_modular_op
+# ── sturm-r8xu: test_bucket_modular ────────────────────────────────────────
+# Bundles the P5 modular-arith matcher + emitter unit tests:
+#   test_matcher_modular_op       (sturm-qzab.1 Beat 5.1 AddMod matcher)
+#   test_modular_rewrite_emitter  (sturm-qzab.1 Beat 5.1 AddMod emitter)
+# Both files key the same `STURM_TEST_MODULAR_POW_ON` macro under
+# `STURM_MODULAR_POW=ON`, so the define is added at bucket-target scope
+# (mirrors the per-target wiring the original individual targets carried).
+add_executable(test_bucket_modular
     test_matcher_modular_op.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_modular_op PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_modular_op PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_modular_op PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_MOD_OP NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_modular_op PRIVATE
-    ${LLVM_DEFS_LIST_MOD_OP})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_modular_op PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_modular_op PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_MOD_OP support)
-    target_link_libraries(test_matcher_modular_op PRIVATE
-        ${LLVM_LIBS_MOD_OP})
-endif()
-if(STURM_MODULAR_POW)
-    # sturm-qzab.5 (P5 beat 5.5): under the top-level STURM_MODULAR_POW=ON
-    # configure, the test executable must exercise the matcher's flag-on
-    # PowMod arm. The flag-on tests are guarded by the test-only macro
-    # `STURM_TEST_MODULAR_POW_ON` (distinct from the production
-    # `STURM_MODULAR_POW` so the `cmake_modular_pow_flag` ctest's
-    # compile_commands.json scan does not false-positive on the test TU).
-    #
-    # sturm-hbwo: previously a `set_source_files_properties(... TARGET_
-    # DIRECTORY test_matcher_modular_op PROPERTIES COMPILE_DEFINITIONS
-    # STURM_MODULAR_POW)` line added the define per-source on this
-    # target's recompile of `matcher_modular_op.cpp` /
-    # `matcher_modular_pow_mod.cpp`. With the OBJECT-library
-    # consolidation the source compile is owned by
-    # `sturm_transpile_test_objs`, which propagates STURM_MODULAR_POW at
-    # target scope under the same `if(STURM_MODULAR_POW)` gate — see
-    # the OBJECT library definition near the top of this file. The
-    # per-source `set_source_files_properties` block is therefore no
-    # longer needed; only the test-target `STURM_TEST_MODULAR_POW_ON`
-    # macro remains.
-    target_compile_definitions(test_matcher_modular_op PRIVATE
-        STURM_TEST_MODULAR_POW_ON)
-endif()
-add_test(NAME test_matcher_modular_op
-         COMMAND test_matcher_modular_op)
-set_tests_properties(test_matcher_modular_op PROPERTIES
-    LABELS "transpiler;modular-arith")
-# sturm-bs8s: STURM_MODULAR_POW is applied at target scope on the
-# `sturm_transpile_test_objs` OBJECT library (sturm-hbwo). PCH headers
-# do not reference STURM_MODULAR_POW so REUSE_FROM stays consistent.
-sturm_use_transpile_pch(test_matcher_modular_op)
-
-# ── Unit test: P5.1 modular_rewrite_emitter (sturm-qzab.1) ─────────────────
-# Beat 5.1 AddMod arm. Pure-string + AST-driven harness. Linkage matches
-# the matcher test; links the matcher TU because the AST-driven half
-# of the test runs the matcher to produce live hits.
-add_executable(test_modular_rewrite_emitter
     test_modular_rewrite_emitter.cpp
+    bucket_dispatchers/test_bucket_modular_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_modular_rewrite_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_modular_rewrite_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_modular_rewrite_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_MOD_EMIT NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_modular_rewrite_emitter PRIVATE
-    ${LLVM_DEFS_LIST_MOD_EMIT})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_modular_rewrite_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_modular_rewrite_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_MOD_EMIT support)
-    target_link_libraries(test_modular_rewrite_emitter PRIVATE
-        ${LLVM_LIBS_MOD_EMIT})
-endif()
+sturm_define_bucket_target(test_bucket_modular)
 if(STURM_MODULAR_POW)
-    # sturm-qzab.5 (P5 beat 5.5): mirror the matcher-test wiring so the
-    # AST-driven PowMod emission path is exercised under the flag-on
-    # configure. The flag-on tests are guarded by the test-only macro
-    # `STURM_TEST_MODULAR_POW_ON`; see the corresponding block above
-    # (test_matcher_modular_op) for the rationale on the
-    # STURM_MODULAR_POW vs STURM_TEST_MODULAR_POW_ON split. sturm-hbwo
-    # moved the production STURM_MODULAR_POW define onto the
-    # `sturm_transpile_test_objs` OBJECT library so the per-source
-    # `set_source_files_properties` block previously here is no longer
-    # needed.
-    target_compile_definitions(test_modular_rewrite_emitter PRIVATE
+    target_compile_definitions(test_bucket_modular PRIVATE
         STURM_TEST_MODULAR_POW_ON)
 endif()
-add_test(NAME test_modular_rewrite_emitter
-         COMMAND test_modular_rewrite_emitter)
-set_tests_properties(test_modular_rewrite_emitter PROPERTIES
-    LABELS "transpiler;modular-arith")
-# sturm-bs8s: STURM_MODULAR_POW is applied at target scope on the
-# `sturm_transpile_test_objs` OBJECT library (sturm-hbwo). PCH headers
-# do not reference STURM_MODULAR_POW so REUSE_FROM stays consistent.
-sturm_use_transpile_pch(test_modular_rewrite_emitter)
+sturm_use_transpile_pch(test_bucket_modular)
+foreach(_t IN ITEMS test_matcher_modular_op test_modular_rewrite_emitter)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_modular> ${_t})
+    set_tests_properties(${_t} PROPERTIES
+        LABELS "transpiler;modular-arith")
+endforeach()
+unset(_t)
+
+# ── sturm-r8xu: test_bucket_pipeline ──────────────────────────────────────
+# Bundles the pipeline-misc unit tests:
+#   test_transpile_emitter        (M9 C++ emitter)
+#   test_transpile_uncompute_pass (M8 uncompute synthesis pass)
+#   test_alias_footprint          (PM5-4 footprint + may_overlap)
+#   test_width_inference          (sturm-u9ge.11 / Beat B1)
+#   test_transpile_diag_context   (PM3-0 + P-D DiagContext)
+#   test_qint_implicit_warn       (sturm-u9ge.14 / Beat F1)
+#   test_matcher_peephole_reorder (PM5-7)
+#
+# The label set differs across members (most are `transpiler`; the
+# B1/F1 pair carry the legacy `transpiler;qram` set the original
+# individual targets registered under). Each `add_test` carries its
+# own labels below.
+add_executable(test_bucket_pipeline
+    test_emitter.cpp
+    test_uncompute_pass.cpp
+    test_alias_footprint.cpp
+    test_width_inference.cpp
+    test_diag_context.cpp
+    test_qint_implicit_warn.cpp
+    test_matcher_peephole_reorder.cpp
+    bucket_dispatchers/test_bucket_pipeline_main.cpp
+    $<TARGET_OBJECTS:sturm_transpile_test_objs>
+)
+sturm_define_bucket_target(test_bucket_pipeline)
+sturm_use_transpile_pch(test_bucket_pipeline)
+foreach(_t IN ITEMS
+        test_transpile_emitter
+        test_transpile_uncompute_pass
+        test_alias_footprint
+        test_transpile_diag_context
+        test_matcher_peephole_reorder)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_pipeline> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler")
+endforeach()
+foreach(_t IN ITEMS
+        test_width_inference
+        test_qint_implicit_warn)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_pipeline> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler;qram")
+endforeach()
+unset(_t)
 
 # ── Unit test: M9 C++ emitter ────────────────────────────────────────────────
 # The emitter test invokes a real Clang SourceManager + Rewriter so it
 # mirrors the matcher test's linkage: shared libclang-cpp + libLLVM when
 # available, fallback to the static per-component archives otherwise.
-add_executable(test_transpile_emitter
-    test_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_transpile_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_transpile_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_transpile_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_EMITTER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_transpile_emitter PRIVATE
-    ${LLVM_DEFS_LIST_EMITTER})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_transpile_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_transpile_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_EMITTER support)
-    target_link_libraries(test_transpile_emitter PRIVATE ${LLVM_LIBS_EMITTER})
-endif()
-add_test(NAME test_transpile_emitter COMMAND test_transpile_emitter)
-set_tests_properties(test_transpile_emitter PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_transpile_emitter)
+# sturm-r8xu: bucketed into `test_bucket_pipeline` (defined above).
 
 # ── Unit test: M7 AST matcher ────────────────────────────────────────────────
 # This test drives the `register_or_matcher` helper through a real Clang
 # tooling invocation (runToolOnCodeWithArgs). It therefore needs to link
 # against the same LibTooling components as sturm-transpile itself.
-add_executable(test_transpile_matcher
+# sturm-r8xu: bucketed into `test_bucket_transpile_full` (defined below).
+
+# ── Unit + integration test: M5 skip / idempotency ──────────────────────────
+# Pure string helpers plus a subprocess-driven round-trip over the two
+# fixtures in tests/fixtures/. The subprocess leg reuses the same
+# STURM_TRANSPILE_BIN macro the driver test does; the fixtures directory
+# is threaded in as STURM_TRANSPILE_FIXTURES_DIR so the test can find the
+# source-tree fixtures without guessing build-tree paths.
+add_executable(test_transpile_skip
+    test_skip.cpp
+    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
+)
+target_include_directories(test_transpile_skip PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/../include
+)
+target_compile_features(test_transpile_skip PRIVATE cxx_std_20)
+target_compile_definitions(test_transpile_skip PRIVATE
+    STURM_TRANSPILE_BIN="$<TARGET_FILE:sturm-transpile>"
+    STURM_TRANSPILE_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+)
+add_dependencies(test_transpile_skip sturm-transpile)
+add_test(NAME test_transpile_skip COMMAND test_transpile_skip)
+set_tests_properties(test_transpile_skip PROPERTIES LABELS "transpiler")
+
+# ── Unit test: shared TranspileConsumer (PM1-1) ─────────────────────────────
+# The PM1-1 extraction pulls TranspileConsumer + its matcher registration
+# pool out of main.cpp. This test pins the new EmissionMode boundary:
+# StandaloneFile writes a headered file to disk; Plugin stashes the
+# rewritten buffer on the consumer without touching disk or prepending
+# the M5 sentinel.
+# ── sturm-r8xu: test_bucket_transpile_full ────────────────────────────────
+# Bundles the two "mega" transpiler tests:
+#   test_transpile_matcher   (M7 / sturm-65rs matcher pool — multi-source)
+#   test_transpile_consumer  (PM1-1 TranspileConsumer EmissionMode boundary)
+# The matcher test compiles 22+ sub-source files alongside its dispatcher
+# (test_matcher.cpp); they all stay inside the bucket so the harness
+# entry-point dispatch remains intact.
+add_executable(test_bucket_transpile_full
     test_matcher.cpp
     test_matcher_harness.cpp
     test_matcher_mvp.cpp
@@ -1990,132 +791,19 @@ add_executable(test_transpile_matcher
     # pointing at the ORIGINAL in-loop stmt_range.getBegin() location,
     # NOT the hoist_to_override target (post-loop close brace).
     test_matcher_pm2_hoist_line.cpp
-    # sturm-hbwo: the long enumeration of `transpiler/src/*.cpp` TUs
-    # previously inlined here is now provided by the shared
-    # `sturm_transpile_test_objs` OBJECT library defined at the top
-    # of this file.
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_transpile_matcher PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_transpile_matcher PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_transpile_matcher PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_MATCHER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_transpile_matcher PRIVATE
-    ${LLVM_DEFS_LIST_MATCHER})
-# Mirror the main binary's shared-vs-static LLVM link discipline so we do
-# not double-register cl::opt tables (see the comment in the main CMake).
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_transpile_matcher PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_transpile_matcher PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_MATCHER support)
-    target_link_libraries(test_transpile_matcher PRIVATE ${LLVM_LIBS_MATCHER})
-endif()
-add_test(NAME test_transpile_matcher COMMAND test_transpile_matcher)
-set_tests_properties(test_transpile_matcher PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_transpile_matcher)
-
-# ── Unit + integration test: M5 skip / idempotency ──────────────────────────
-# Pure string helpers plus a subprocess-driven round-trip over the two
-# fixtures in tests/fixtures/. The subprocess leg reuses the same
-# STURM_TRANSPILE_BIN macro the driver test does; the fixtures directory
-# is threaded in as STURM_TRANSPILE_FIXTURES_DIR so the test can find the
-# source-tree fixtures without guessing build-tree paths.
-add_executable(test_transpile_skip
-    test_skip.cpp
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src/skip.cpp
-)
-target_include_directories(test_transpile_skip PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-)
-target_compile_features(test_transpile_skip PRIVATE cxx_std_20)
-target_compile_definitions(test_transpile_skip PRIVATE
-    STURM_TRANSPILE_BIN="$<TARGET_FILE:sturm-transpile>"
-    STURM_TRANSPILE_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-add_dependencies(test_transpile_skip sturm-transpile)
-add_test(NAME test_transpile_skip COMMAND test_transpile_skip)
-set_tests_properties(test_transpile_skip PROPERTIES LABELS "transpiler")
-
-# ── Unit test: shared TranspileConsumer (PM1-1) ─────────────────────────────
-# The PM1-1 extraction pulls TranspileConsumer + its matcher registration
-# pool out of main.cpp. This test pins the new EmissionMode boundary:
-# StandaloneFile writes a headered file to disk; Plugin stashes the
-# rewritten buffer on the consumer without touching disk or prepending
-# the M5 sentinel.
-add_executable(test_transpile_consumer
+    # PM1-1: TranspileConsumer EmissionMode boundary.
     test_transpile_consumer.cpp
-    # sturm-hbwo: the long enumeration of `transpiler/src/*.cpp` TUs
-    # previously inlined here is now provided by the shared
-    # `sturm_transpile_test_objs` OBJECT library defined at the top
-    # of this file.
+    bucket_dispatchers/test_bucket_transpile_full_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_transpile_consumer PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_transpile_consumer PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_transpile_consumer PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_CONSUMER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_transpile_consumer PRIVATE
-    ${LLVM_DEFS_LIST_CONSUMER})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_transpile_consumer PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_transpile_consumer PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_CONSUMER support)
-    target_link_libraries(test_transpile_consumer PRIVATE
-        ${LLVM_LIBS_CONSUMER})
-endif()
-add_test(NAME test_transpile_consumer COMMAND test_transpile_consumer)
-set_tests_properties(test_transpile_consumer PROPERTIES LABELS "transpiler")
-sturm_use_transpile_pch(test_transpile_consumer)
+sturm_define_bucket_target(test_bucket_transpile_full)
+sturm_use_transpile_pch(test_bucket_transpile_full)
+foreach(_t IN ITEMS test_transpile_matcher test_transpile_consumer)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_transpile_full> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler")
+endforeach()
+unset(_t)
 
 # ── Integration test: plugin load (PM1-3) ────────────────────────────────────
 # Shells out to the host clang++ with -fplugin=$<TARGET_FILE:...> against
@@ -2662,54 +1350,7 @@ set_tests_properties(test_transpile_driver PROPERTIES LABELS "transpiler")
 # routine registry, no QUnit). Fixture inputs are threaded via
 # STURM_QRAM_OOS_FIXTURES_DIR so the four golden cases load from the source
 # tree.
-add_executable(test_matcher_qram_oos
-    test_matcher_qram_oos.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_qram_oos PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_qram_oos PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_qram_oos PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_OOS NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_qram_oos PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_OOS}
-    STURM_QRAM_OOS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_qram_oos PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_qram_oos PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_OOS support)
-    target_link_libraries(test_matcher_qram_oos PRIVATE
-        ${LLVM_LIBS_QRAM_OOS})
-endif()
-add_test(NAME test_matcher_qram_oos COMMAND test_matcher_qram_oos)
-sturm_use_transpile_pch(test_matcher_qram_oos)
-set_tests_properties(test_matcher_qram_oos PROPERTIES
-    LABELS "transpiler;qram")
+# sturm-r8xu: bucketed into `test_bucket_qram` (defined below).
 
 # ── Unit test: qint_implicit_warn (sturm-u9ge.14 / Beat F1) ──────────────────
 # Plan §9 / F1; PRD §10.1 / M7. The matcher under test fires a
@@ -2719,108 +1360,8 @@ set_tests_properties(test_matcher_qram_oos PROPERTIES
 # flag). Linkage mirrors test_matcher_qram_oos: the production TU is the
 # only `transpiler/src/*` source compiled in — it depends only on Clang's
 # MatchFinder + DiagnosticsEngine.
-add_executable(test_qint_implicit_warn
-    test_qint_implicit_warn.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_qint_implicit_warn PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qint_implicit_warn PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qint_implicit_warn PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QINT_WARN NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qint_implicit_warn PRIVATE
-    ${LLVM_DEFS_LIST_QINT_WARN}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qint_implicit_warn PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qint_implicit_warn PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QINT_WARN support)
-    target_link_libraries(test_qint_implicit_warn PRIVATE
-        ${LLVM_LIBS_QINT_WARN})
-endif()
-add_test(NAME test_qint_implicit_warn COMMAND test_qint_implicit_warn)
-sturm_use_transpile_pch(test_qint_implicit_warn)
-set_tests_properties(test_qint_implicit_warn PROPERTIES
-    LABELS "transpiler;qram")
-
-# ── Unit test: width_inference (sturm-u9ge.11 / Beat B1) ──────────────────────
-# Plan §5 / B1; PRD §6 + §11.3 (D0c). The module under test decides the
-# backend `qint_t<W>` width for a frontend `qint` VarDecl via three
-# rules in strict order (annotation reserved → RHS-driven → default 32).
-# Linkage mirrors test_matcher_qram_oos: the production TU is the only
-# `transpiler/src/*` source compiled in — it depends only on Clang's AST
-# + DiagnosticsEngine, no DiagContext, no routine registry, no QUnit.
-add_executable(test_width_inference
-    test_width_inference.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_width_inference PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_width_inference PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_width_inference PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_WIDTH_INF NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_width_inference PRIVATE
-    ${LLVM_DEFS_LIST_WIDTH_INF}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_width_inference PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_width_inference PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_WIDTH_INF support)
-    target_link_libraries(test_width_inference PRIVATE
-        ${LLVM_LIBS_WIDTH_INF})
-endif()
-add_test(NAME test_width_inference COMMAND test_width_inference)
-sturm_use_transpile_pch(test_width_inference)
-set_tests_properties(test_width_inference PROPERTIES
-    LABELS "transpiler;qram")
+# sturm-r8xu: test_qint_implicit_warn and test_width_inference bucketed
+# into `test_bucket_pipeline` (defined below).
 
 # ── Unit test: matcher_qram_subscript (sturm-u9ge.12 / Beat C1) ───────────────
 # Plan §6 / C1; PRD §7 / M3. The matcher under test recognises exactly the
@@ -2831,55 +1372,7 @@ set_tests_properties(test_width_inference PROPERTIES
 # compiled in. Fixture inputs are threaded via
 # STURM_QRAM_SUBSCRIPT_FIXTURES_DIR so the three positive golden cases
 # load from the source tree.
-add_executable(test_matcher_qram_subscript
-    test_matcher_qram_subscript.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_qram_subscript PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_qram_subscript PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_qram_subscript PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_SUBSCRIPT NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_qram_subscript PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_SUBSCRIPT}
-    STURM_QRAM_SUBSCRIPT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_qram_subscript PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_qram_subscript PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_SUBSCRIPT support)
-    target_link_libraries(test_matcher_qram_subscript PRIVATE
-        ${LLVM_LIBS_QRAM_SUBSCRIPT})
-endif()
-add_test(NAME test_matcher_qram_subscript
-         COMMAND test_matcher_qram_subscript)
-sturm_use_transpile_pch(test_matcher_qram_subscript)
-set_tests_properties(test_matcher_qram_subscript PROPERTIES
-    LABELS "transpiler;qram")
+# sturm-r8xu: bucketed into `test_bucket_qram` (defined below).
 
 # ── Unit test: matcher_qint_alias_subst (sturm-65rs.8 / Beat C1) ─────────────
 # Plan §9 / C1; PRD §4.3 match anchors. The matcher under test recognises
@@ -2889,184 +1382,35 @@ set_tests_properties(test_matcher_qram_subscript PROPERTIES
 # the only `transpiler/src/*` source compiled in is
 # `matcher_qint_alias_subst.cpp` (the matcher has no width-inference
 # dependency at this beat — width is the C2 emitter's concern).
-add_executable(test_matcher_qint_alias_subst
+# ── sturm-r8xu: test_bucket_qint_alias ────────────────────────────────────
+# Bundles the qint-alias erasure C1 / C2 / C3 family:
+#   test_matcher_qint_alias_subst   (sturm-65rs.8 / Beat C1)
+#   test_qint_alias_subst_emitter   (sturm-65rs.9 / Beat C2 — fixture-driven)
+#   test_consumer_qint_alias_subst  (sturm-65rs.10 / Beat C3 — fixture-driven)
+# Fixture-dir defines for the two fixture-driven members are applied at
+# bucket-target scope; the third member's TU ignores macros it does not
+# `#ifdef`/`#define`-test on.
+add_executable(test_bucket_qint_alias
     test_matcher_qint_alias_subst.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_qint_alias_subst PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_qint_alias_subst PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_qint_alias_subst PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QINT_ALIAS_SUBST NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_qint_alias_subst PRIVATE
-    ${LLVM_DEFS_LIST_QINT_ALIAS_SUBST})
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_qint_alias_subst PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_qint_alias_subst PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QINT_ALIAS_SUBST support)
-    target_link_libraries(test_matcher_qint_alias_subst PRIVATE
-        ${LLVM_LIBS_QINT_ALIAS_SUBST})
-endif()
-add_test(NAME test_matcher_qint_alias_subst
-         COMMAND test_matcher_qint_alias_subst)
-sturm_use_transpile_pch(test_matcher_qint_alias_subst)
-set_tests_properties(test_matcher_qint_alias_subst PROPERTIES
-    LABELS "transpiler;qac")
-
-# ── Unit test: qint_alias_subst_emitter (sturm-65rs.9 / Beat C2) ────────────
-# Plan §10 / C2; PRD §4.3 rewrite shape. The emitter under test consumes
-# `QintAliasSubstMatch`es from C1 and rewrites every
-# `sturm::frontend::qint` type spelling to `sturm::qint_t<W>`. Width
-# routes through the existing `infer_width(VarDecl, InferContext)` for
-# VarDecls; ParmVarDecl / FieldDecl / FunctionDecl-return /
-# FunctionalCast all use `kDefaultWidth = 32` per PRD §3 non-goal.
-#
-# Linkage mirrors test_qram_emitter: the production TUs
-# (qint_alias_subst_emitter.cpp + matcher_qint_alias_subst.cpp +
-# width_inference.cpp) are the only `transpiler/src/*` sources compiled
-# in. Fixture inputs / expected files live at transpiler/tests/fixtures/
-# threaded via STURM_QINT_ALIAS_SUBST_EMITTER_FIXTURES_DIR.
-add_executable(test_qint_alias_subst_emitter
     test_qint_alias_subst_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_qint_alias_subst_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qint_alias_subst_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qint_alias_subst_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QINT_ALIAS_SUBST_EM NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qint_alias_subst_emitter PRIVATE
-    ${LLVM_DEFS_LIST_QINT_ALIAS_SUBST_EM}
-    STURM_QINT_ALIAS_SUBST_EMITTER_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qint_alias_subst_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qint_alias_subst_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QINT_ALIAS_SUBST_EM support)
-    target_link_libraries(test_qint_alias_subst_emitter PRIVATE
-        ${LLVM_LIBS_QINT_ALIAS_SUBST_EM})
-endif()
-add_test(NAME test_qint_alias_subst_emitter
-         COMMAND test_qint_alias_subst_emitter)
-sturm_use_transpile_pch(test_qint_alias_subst_emitter)
-set_tests_properties(test_qint_alias_subst_emitter PROPERTIES
-    LABELS "transpiler;qac")
-
-# ── Unit test: consumer_qint_alias_subst (sturm-65rs.10 / Beat C3) ──────────
-# Plan §11 / C3; PRD §4.3 co-existence with the QRAM-subscript C1
-# matcher / R2 single-VarDecl-single-rewrite invariant. Pins the C3
-# consumer's claimed-decls overlap guard via a fixture containing both
-# `qint b = a[i];` (QRAM C1) and `sturm::frontend::qint x;`
-# (alias-subst). After the consumer drains both pipelines, `b` is
-# rewritten ONLY by the QRAM emitter and `x` is rewritten ONLY by the
-# alias-subst emitter — neither double-rewritten.
-#
-# Linkage compiles in the production TUs both pipelines need:
-# qint_alias_subst_emitter.cpp + matcher_qint_alias_subst.cpp +
-# qram_emitter.cpp + matcher_qram_subscript.cpp + width_inference.cpp +
-# reversible_attribute.cpp. Fixture inputs/expected files live at
-# transpiler/tests/fixtures/ threaded via
-# STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR.
-add_executable(test_consumer_qint_alias_subst
     test_consumer_qint_alias_subst.cpp
+    bucket_dispatchers/test_bucket_qint_alias_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
 )
-target_include_directories(test_consumer_qint_alias_subst PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_consumer_qint_alias_subst PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_consumer_qint_alias_subst PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_CONSUMER_QAS NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_consumer_qint_alias_subst PRIVATE
-    ${LLVM_DEFS_LIST_CONSUMER_QAS}
-    STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_consumer_qint_alias_subst PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_consumer_qint_alias_subst PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_CONSUMER_QAS support)
-    target_link_libraries(test_consumer_qint_alias_subst PRIVATE
-        ${LLVM_LIBS_CONSUMER_QAS})
-endif()
-add_test(NAME test_consumer_qint_alias_subst
-         COMMAND test_consumer_qint_alias_subst)
-sturm_use_transpile_pch(test_consumer_qint_alias_subst)
-set_tests_properties(test_consumer_qint_alias_subst PROPERTIES
-    LABELS "transpiler;qac")
+sturm_define_bucket_target(test_bucket_qint_alias)
+target_compile_definitions(test_bucket_qint_alias PRIVATE
+    STURM_QINT_ALIAS_SUBST_EMITTER_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    STURM_CONSUMER_QINT_ALIAS_SUBST_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures")
+sturm_use_transpile_pch(test_bucket_qint_alias)
+foreach(_t IN ITEMS
+        test_matcher_qint_alias_subst
+        test_qint_alias_subst_emitter
+        test_consumer_qint_alias_subst)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_qint_alias> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler;qac")
+endforeach()
+unset(_t)
 
 # ── Unit test: qram_emitter (sturm-u9ge.15 / Beat D2) ────────────────────────
 # Plan §7 / D2; PRD §8 / M4. The emitter under test consumes
@@ -3078,281 +1422,8 @@ set_tests_properties(test_consumer_qint_alias_subst PROPERTIES
 # + reversible_attribute.cpp) are the only `transpiler/src/*` sources
 # compiled in. Fixture inputs / expected files live at
 # transpiler/tests/fixtures/ threaded via STURM_QRAM_EMITTER_FIXTURES_DIR.
-add_executable(test_qram_emitter
-    test_qram_emitter.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_qram_emitter PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qram_emitter PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qram_emitter PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_EMITTER NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qram_emitter PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_EMITTER}
-    STURM_QRAM_EMITTER_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qram_emitter PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qram_emitter PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_EMITTER support)
-    target_link_libraries(test_qram_emitter PRIVATE
-        ${LLVM_LIBS_QRAM_EMITTER})
-endif()
-add_test(NAME test_qram_emitter
-         COMMAND test_qram_emitter)
-sturm_use_transpile_pch(test_qram_emitter)
-set_tests_properties(test_qram_emitter PROPERTIES
-    LABELS "transpiler;qram")
-
-# ── Unit test: matcher_qram_subscript_expr (sturm-u9ge.9 / Beat H4) ──────────
-# Plan §11 (post-v1 backlog) / Beat H4; PRD §9 row 4. The matcher under
-# test recognises the expression-position QRAM-read shape
-# `qint c = a[i] + d;` (and other binary-op shapes that wrap `a[i]`)
-# at VarDecl-init position. Linkage mirrors test_matcher_qram_subscript:
-# the production TUs (matcher_qram_subscript_expr.cpp + width_inference.cpp
-# for B1's infer_width call) are the only `transpiler/src/*` sources
-# compiled in.
-add_executable(test_matcher_qram_subscript_expr
-    test_matcher_qram_subscript_expr.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_qram_subscript_expr PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_qram_subscript_expr PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_qram_subscript_expr PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_SUB_EXPR NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_qram_subscript_expr PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_SUB_EXPR}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_qram_subscript_expr PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_qram_subscript_expr PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_SUB_EXPR support)
-    target_link_libraries(test_matcher_qram_subscript_expr PRIVATE
-        ${LLVM_LIBS_QRAM_SUB_EXPR})
-endif()
-add_test(NAME test_matcher_qram_subscript_expr
-         COMMAND test_matcher_qram_subscript_expr)
-sturm_use_transpile_pch(test_matcher_qram_subscript_expr)
-set_tests_properties(test_matcher_qram_subscript_expr PROPERTIES
-    LABELS "transpiler;qram;qram-subscript")
-
-# ── Unit test: qram_emitter_expr (sturm-u9ge.9 / Beat H4) ────────────────────
-# Plan §11 (post-v1 backlog) / Beat H4; PRD §9 row 4. The emitter under
-# test consumes `QramSubscriptExprHit`s from the H4 matcher and produces
-# a three-part rewrite: pre-call ancilla extract + in-place subscript
-# replacement + post-call uncompute. Linkage mirrors test_qram_emitter
-# (qram_emitter_expr.cpp + matcher_qram_subscript_expr.cpp +
-# width_inference.cpp are the only `transpiler/src/*` sources compiled
-# in).
-add_executable(test_qram_emitter_expr
-    test_qram_emitter_expr.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_qram_emitter_expr PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qram_emitter_expr PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qram_emitter_expr PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_EMIT_EXPR NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qram_emitter_expr PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_EMIT_EXPR}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qram_emitter_expr PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qram_emitter_expr PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_EMIT_EXPR support)
-    target_link_libraries(test_qram_emitter_expr PRIVATE
-        ${LLVM_LIBS_QRAM_EMIT_EXPR})
-endif()
-add_test(NAME test_qram_emitter_expr COMMAND test_qram_emitter_expr)
-sturm_use_transpile_pch(test_qram_emitter_expr)
-set_tests_properties(test_qram_emitter_expr PROPERTIES
-    LABELS "transpiler;qram;qram-subscript")
-
-# ── Unit test: matcher_qram_subscript_assign (sturm-u9ge.6 / Beat H1) ────────
-# Plan §11 (post-v1 backlog) / Beat H1; PRD §9 row 1. The matcher under
-# test recognises the existing-target QRAM-read shape `b = a[i];` where
-# `b` is a pre-existing frontend `qint` variable. Linkage mirrors
-# test_matcher_qram_subscript: the production TUs
-# (matcher_qram_subscript_assign.cpp + width_inference.cpp for B1's
-# infer_width / element-width helpers) are the only `transpiler/src/*`
-# sources compiled in.
-add_executable(test_matcher_qram_subscript_assign
-    test_matcher_qram_subscript_assign.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_matcher_qram_subscript_assign PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_matcher_qram_subscript_assign PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_matcher_qram_subscript_assign PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_SUB_ASSIGN NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_matcher_qram_subscript_assign PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_SUB_ASSIGN}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_matcher_qram_subscript_assign PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_matcher_qram_subscript_assign PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_SUB_ASSIGN support)
-    target_link_libraries(test_matcher_qram_subscript_assign PRIVATE
-        ${LLVM_LIBS_QRAM_SUB_ASSIGN})
-endif()
-add_test(NAME test_matcher_qram_subscript_assign
-         COMMAND test_matcher_qram_subscript_assign)
-sturm_use_transpile_pch(test_matcher_qram_subscript_assign)
-set_tests_properties(test_matcher_qram_subscript_assign PROPERTIES
-    LABELS "transpiler;qram;qram-subscript")
-
-# ── Unit test: qram_emitter_assign (sturm-u9ge.6 / Beat H1) ──────────────────
-# Plan §11 (post-v1 backlog) / Beat H1; PRD §9 row 1. The emitter under
-# test consumes `QramSubscriptAssignHit`s from the H1 matcher and
-# produces a two-statement rewrite per hit: pre-assign uncompute of
-# old target + forward QRAM_read into target. Linkage mirrors
-# test_qram_emitter_expr (qram_emitter_assign.cpp +
-# matcher_qram_subscript_assign.cpp + width_inference.cpp are the
-# only `transpiler/src/*` sources compiled in).
-add_executable(test_qram_emitter_assign
-    test_qram_emitter_assign.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_qram_emitter_assign PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qram_emitter_assign PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qram_emitter_assign PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_EMIT_ASSIGN NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qram_emitter_assign PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_EMIT_ASSIGN}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qram_emitter_assign PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qram_emitter_assign PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_EMIT_ASSIGN support)
-    target_link_libraries(test_qram_emitter_assign PRIVATE
-        ${LLVM_LIBS_QRAM_EMIT_ASSIGN})
-endif()
-add_test(NAME test_qram_emitter_assign COMMAND test_qram_emitter_assign)
-sturm_use_transpile_pch(test_qram_emitter_assign)
-set_tests_properties(test_qram_emitter_assign PROPERTIES
-    LABELS "transpiler;qram;qram-subscript")
+# sturm-r8xu: bucketed into `test_bucket_qram` (defined below alongside
+# the test_qram_e2e* end-to-end gates).
 
 # ── End-to-end gate: test_qram_e2e (sturm-u9ge.17 / Beat G1) ─────────────────
 # Plan §10 / G1; PRD §5 (post-transpile safety net), §8 (M4 emission),
@@ -3376,14 +1447,43 @@ set_tests_properties(test_qram_emitter_assign PROPERTIES
 # uncompute_api). Linking those sources keeps the existing test passing
 # under counter-mode and circuit-mode sinks; the umbrella `qram_read`
 # counter contract from PRD §11.2.7 is preserved at the dispatcher.
+# ── sturm-r8xu: test_bucket_qram ──────────────────────────────────────────
+# Bundles the entire QRAM-via-array-subscript epic (C1 / H1 / H4 matchers
+# + emitters + oos + e2e). The bucket pulls in a small set of runtime
+# sources so `test_qram_e2e`'s in-process counter-/circuit-sink dispatch
+# resolves at link time; the legacy `gate_kind.c` C TU means PCH reuse
+# is NOT applied to this bucket (mixed C/C++ targets cannot REUSE_FROM
+# a C++-only PCH per sturm-bs8s).
+#
+# Members (logical ctest entries):
+#   test_matcher_qram_subscript          (C1 matcher / fixture-driven)
+#   test_matcher_qram_subscript_assign   (H1 matcher)
+#   test_matcher_qram_subscript_expr     (H4 matcher)
+#   test_qram_emitter                    (D2 emitter / fixture-driven)
+#   test_qram_emitter_assign             (H1 emitter)
+#   test_qram_emitter_expr               (H4 emitter)
+#   test_matcher_qram_oos                (E1 OOS matcher / fixture-driven)
+#   test_qram_e2e                        (G1 end-to-end stub gate)
+#   test_qram_e2e_real                   (sturm-ddgo prod-headers gate;
+#                                         ctest entry registered only under
+#                                         STURM_FULL_TEST_SUITE — see below)
 enable_language(C)
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     PROPERTIES LANGUAGE C
                COMPILE_FLAGS "-std=c11"
 )
-add_executable(test_qram_e2e
+add_executable(test_bucket_qram
+    test_matcher_qram_subscript.cpp
+    test_matcher_qram_subscript_assign.cpp
+    test_matcher_qram_subscript_expr.cpp
+    test_qram_emitter.cpp
+    test_qram_emitter_assign.cpp
+    test_qram_emitter_expr.cpp
+    test_matcher_qram_oos.cpp
     test_qram_e2e.cpp
+    test_qram_e2e_real.cpp
+    bucket_dispatchers/test_bucket_qram_main.cpp
     $<TARGET_OBJECTS:sturm_transpile_test_objs>
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
@@ -3394,150 +1494,57 @@ add_executable(test_qram_e2e
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
 )
-target_include_directories(test_qram_e2e PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${CMAKE_SOURCE_DIR}/include
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qram_e2e PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qram_e2e PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_E2E NATIVE_COMMAND "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qram_e2e PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_E2E}
-)
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qram_e2e PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qram_e2e PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_E2E support)
-    target_link_libraries(test_qram_e2e PRIVATE
-        ${LLVM_LIBS_QRAM_E2E})
-endif()
-target_link_libraries(test_qram_e2e PRIVATE orkan_headers)
-add_test(NAME test_qram_e2e
-         COMMAND test_qram_e2e)
-# sturm-bs8s: test_qram_e2e is a mixed C+C++ target (gate_kind.c is
-# linked in). target_precompile_headers(... REUSE_FROM ...) attempts to
-# create a per-language PCH on the consumer, but the producer
-# (sturm-transpile) only carries a C++ PCH. CMake hard-errors with
-# "Unable to resolve full path of PCH-header ... cmake_pch.h" because
-# the C side has no producer to reuse from. Skip the PCH here.
-set_tests_properties(test_qram_e2e PROPERTIES
-    LABELS "transpiler;qram;qram-subscript")
-
-# ── End-to-end gate vs. PRODUCTION headers: test_qram_e2e_real ────────────
-# sturm-ddgo: companion to test_qram_e2e — the latter exercises the C1 /
-# H1 / H4 + emitter pipelines against a hermetic stub; this binary
-# transpiles the same shapes against the production headers
-# (real `<array>` + real `qint_alias.hpp` + real `qint_core.hpp`).
-# The gap between the stub's `template <int W>` qint_t and the
-# production `template <std::size_t W>` qint_t — plus the extra
-# `MaterializeTemporaryExpr` / `CXXBindTemporaryExpr` /
-# `CXXConstructExpr` layers Clang emits when the production qint lacks
-# a direct `qint& operator=(const qint_t<W>&)` overload — was the
-# AST-shape gap sturm-ddgo closes. The `STURM_INCLUDE_DIR` /
-# `STURM_VENDOR_DIR` defines steer LibTooling at the production
-# headers in the same way `add_quantum_executable` does for the
-# example targets.
-add_executable(test_qram_e2e_real
-    test_qram_e2e_real.cpp
-    $<TARGET_OBJECTS:sturm_transpile_test_objs>
-)
-target_include_directories(test_qram_e2e_real PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/../include
-    ${CMAKE_CURRENT_SOURCE_DIR}/../src
-    ${CMAKE_SOURCE_DIR}/include
-    ${LLVM_INCLUDE_DIRS}
-    ${CLANG_INCLUDE_DIRS}
-)
-if(NOT LLVM_ENABLE_RTTI)
-    target_compile_options(test_qram_e2e_real PRIVATE -fno-rtti)
-endif()
-target_compile_features(test_qram_e2e_real PRIVATE cxx_std_20)
-separate_arguments(LLVM_DEFS_LIST_QRAM_E2E_REAL NATIVE_COMMAND
-    "${LLVM_DEFINITIONS}")
-target_compile_definitions(test_qram_e2e_real PRIVATE
-    ${LLVM_DEFS_LIST_QRAM_E2E_REAL}
+sturm_define_bucket_target(test_bucket_qram)
+target_include_directories(test_bucket_qram PRIVATE
+    ${CMAKE_SOURCE_DIR}/include)
+target_compile_definitions(test_bucket_qram PRIVATE
+    STURM_QRAM_SUBSCRIPT_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    STURM_QRAM_EMITTER_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    STURM_QRAM_OOS_FIXTURES_DIR="${CMAKE_CURRENT_SOURCE_DIR}/fixtures"
+    # sturm-ddgo (test_qram_e2e_real): production-header steering defines.
+    # Only test_qram_e2e_real.cpp references these; benign for the others.
     STURM_INCLUDE_DIR="${CMAKE_SOURCE_DIR}/include"
     STURM_VENDOR_DIR="${CMAKE_SOURCE_DIR}/vendor"
-    # sturm-fbeb: the test calls `runToolOnCodeWithArgs` directly — no
-    # `sturm-transpile` shell-out, so the `transpiler/src/main.cpp`
-    # ArgumentsAdjuster (`-resource-dir` + `-nostdinc++ -cxx-isystem`
-    # plumbing) does NOT apply. Forward the same two defines the driver
-    # bakes in (parent `transpiler/CMakeLists.txt`) so the test source
-    # can prepend the same args manually. Without `-resource-dir` the
-    # libTooling parse fails at `<stdarg.h>` against MacOSX26.sdk's
-    # `_va_list.h`; without the libc++ override, parsing the SDK's
-    # libc++ headers (Clang >=19 builtins) under our libclang-17 parser
-    # explodes before any matcher fires.
     STURM_CLANG_RESOURCE_DIR="${STURM_CLANG_RESOURCE_DIR}"
 )
-# `STURM_CLANG_LIBCXX_INCLUDE_DIR` is only meaningful when the LLVM
-# install actually ships bundled libc++ headers. Mirror the parent
-# `EXISTS` gate so a stripped Linux install with no bundled libc++
-# degrades to the previous behaviour (no override needed there because
-# the system libc++ is what the parser was built against).
 if(STURM_CLANG_LIBCXX_INCLUDE_DIR)
-    target_compile_definitions(test_qram_e2e_real PRIVATE
+    target_compile_definitions(test_bucket_qram PRIVATE
         STURM_CLANG_LIBCXX_INCLUDE_DIR="${STURM_CLANG_LIBCXX_INCLUDE_DIR}")
 endif()
-if(STURM_LIBCLANG_CPP AND STURM_LIBLLVM)
-    target_link_libraries(test_qram_e2e_real PRIVATE
-        ${STURM_LIBCLANG_CPP}
-        ${STURM_LIBLLVM}
-    )
-else()
-    target_link_libraries(test_qram_e2e_real PRIVATE
-        clangTooling
-        clangASTMatchers
-        clangFrontend
-        clangRewrite
-        clangBasic
-        clangAST
-        clangLex
-        clangSerialization
-        clangDriver
-        clangParse
-        clangSema
-        clangAnalysis
-        clangEdit
-    )
-    llvm_map_components_to_libnames(LLVM_LIBS_QRAM_E2E_REAL support)
-    target_link_libraries(test_qram_e2e_real PRIVATE
-        ${LLVM_LIBS_QRAM_E2E_REAL})
-endif()
-# sturm-eksf: gated behind STURM_FULL_TEST_SUITE.
+target_link_libraries(test_bucket_qram PRIVATE orkan_headers)
+# sturm-bs8s: mixed C+C++ target — gate_kind.c is linked in, but the
+# transpiler's REUSE_FROM PCH is C++-only. CMake hard-errors when a
+# mixed-language consumer attempts PCH reuse. Skip PCH for this bucket.
+foreach(_t IN ITEMS
+        test_matcher_qram_subscript
+        test_qram_emitter
+        test_matcher_qram_oos)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_qram> ${_t})
+    set_tests_properties(${_t} PROPERTIES LABELS "transpiler;qram")
+endforeach()
+foreach(_t IN ITEMS
+        test_matcher_qram_subscript_assign
+        test_matcher_qram_subscript_expr
+        test_qram_emitter_assign
+        test_qram_emitter_expr
+        test_qram_e2e)
+    add_test(NAME ${_t}
+        COMMAND $<TARGET_FILE:test_bucket_qram> ${_t})
+    set_tests_properties(${_t} PROPERTIES
+        LABELS "transpiler;qram;qram-subscript")
+endforeach()
+# sturm-eksf: test_qram_e2e_real ctest registration is gated behind
+# STURM_FULL_TEST_SUITE. The binary always links (it shares the bucket
+# target) so the build cost stays paid; only the ctest entry is gated
+# per the original sturm-eksf posture.
 if(STURM_FULL_TEST_SUITE)
     add_test(NAME test_qram_e2e_real
-             COMMAND test_qram_e2e_real)
+        COMMAND $<TARGET_FILE:test_bucket_qram> test_qram_e2e_real)
     set_tests_properties(test_qram_e2e_real PROPERTIES
         LABELS "transpiler;qram;qram-subscript")
 endif()
-# sturm-bs8s: PCH reuse is applied unconditionally because the binary is
-# always built (only the ctest registration is gated). Building cheaper
-# is still a win even when the gate test is suppressed.
-sturm_use_transpile_pch(test_qram_e2e_real)
+unset(_t)
 
 # ── End-to-end alias erasure: test_qint_alias_subst_e2e (sturm-65rs.13 / E1) ─
 # Plan §14, PRD A5. Closes the qint-alias-completion epic by transpiling a

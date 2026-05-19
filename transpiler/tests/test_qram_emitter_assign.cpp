@@ -273,7 +273,7 @@ void test_bare_c1_shape_untouched() {
 
 } // anonymous namespace
 
-int main() {
+int run_test_qram_emitter_assign(int /*argc*/, char** /*argv*/) {
     test_text_std_array_with_width();
     test_text_c_array_with_width();
     test_text_pointer_with_length();

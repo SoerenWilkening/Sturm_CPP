@@ -422,7 +422,7 @@ void typoed() {}
     CHECK_EQ_INT(hits.size(), 0);
 }
 
-int main() {
+int run_test_matcher_main_lifecycle_entry_point(int /*argc*/, char** /*argv*/) {
     test_library_fixture_void_hit();
     test_googletest_method_rejected();
     test_googletest_wrapping_idiom();

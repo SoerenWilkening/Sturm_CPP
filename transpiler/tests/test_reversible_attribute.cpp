@@ -433,7 +433,7 @@ void spec<double>(double) {}  // explicit spec WITHOUT the attribute
 
 } // namespace
 
-int main() {
+int run_test_reversible_attribute(int /*argc*/, char** /*argv*/) {
     test_recognizes_sturm_reversible_on_plain_fn();
     test_null_decl_returns_false();
     test_annotation_constant_value();

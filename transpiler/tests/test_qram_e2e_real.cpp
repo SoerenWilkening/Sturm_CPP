@@ -298,7 +298,7 @@ void test_h4_real() {
 
 }  // namespace
 
-int main() {
+int run_test_qram_e2e_real(int /*argc*/, char** /*argv*/) {
     test_c1_real();
     test_h1_real();
     test_h4_real();

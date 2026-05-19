@@ -356,7 +356,7 @@ void user() {
 
 } // namespace
 
-int main() {
+int run_test_entry_point_attribute(int /*argc*/, char** /*argv*/) {
     test_recognizes_on_plain_fn();
     test_null_decl_returns_false();
     test_annotation_constant_value();

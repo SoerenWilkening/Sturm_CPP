@@ -288,7 +288,7 @@ void exercise_circuit() {
 
 }  // namespace
 
-int main() {
+int run_test_qram_e2e(int /*argc*/, char** /*argv*/) {
     check_pipeline("StdArray", kBodyStdArray);
     check_pipeline("CArray",   kBodyCArray);
     check_pipeline("Pointer",  kBodyPointer);

@@ -2203,7 +2203,7 @@ static void test_external_cleanup_interleaves_with_internal_lifo() {
     CHECK_EQ_SIZE(raw(ins[1].insert_before), raw(scope.close_brace));
 }
 
-int main() {
+int run_test_transpile_uncompute_pass(int /*argc*/, char** /*argv*/) {
     test_single_op_one_insertion();
     test_two_ops_lifo_order();
     test_two_scopes_each_one_op();

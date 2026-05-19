@@ -449,7 +449,7 @@ void test_emitted_line_parses_against_runtime_header() {
 
 } // namespace
 
-int main() {
+int run_test_auto_register_emitter(int /*argc*/, char** /*argv*/) {
     // (1) Pure-string API golden comparisons.
     test_string_api_canonical_pair();
     test_string_api_short_name();

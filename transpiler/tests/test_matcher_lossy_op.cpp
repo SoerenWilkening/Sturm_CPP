@@ -196,7 +196,7 @@ void test_enclosing_block_tracks_inner_scope() {
 
 } // namespace
 
-int main() {
+int run_test_matcher_lossy_op(int /*argc*/, char** /*argv*/) {
     test_one_lossy(LossyOpKind::MulAssign, "*=");
     test_one_lossy(LossyOpKind::DivAssign, "/=");
     test_one_lossy(LossyOpKind::ModAssign, "%=");

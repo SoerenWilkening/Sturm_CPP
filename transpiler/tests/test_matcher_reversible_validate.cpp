@@ -290,7 +290,7 @@ void oracle(qbool& r, qbool a) {
 
 // ── (B) Null / attribute / no-body silent rejects ───────────────────
 
-void test_null_fd_silent_reject() {
+static void test_null_fd_silent_reject() {
     // Null input is a caller bug; the validator defends against it
     // with a silent reject (no diagnostic fires). Mirrors R-A / R-B
     // null-FD contracts.
@@ -311,7 +311,7 @@ void test_null_fd_silent_reject() {
     CHECK(ran);
 }
 
-void test_non_reversible_silent_reject() {
+static void test_non_reversible_silent_reject() {
     // A forward without `[[sturm::reversible]]` is not a synthesis
     // candidate — the validator silently rejects it. No diagnostic
     // fires. Mirrors `is_reversible`'s opt-in contract.
@@ -835,7 +835,7 @@ void two_bad(qbool& r, qbool a) {
     CHECK(ran);
 }
 
-void test_to_string_enum_spellings() {
+static void test_to_string_enum_spellings() {
     // Pin the human-readable spellings. Tests compare against
     // these strings.
     CHECK(to_string(ReversibleRejectReason::None) ==
@@ -860,7 +860,7 @@ void test_to_string_enum_spellings() {
 
 // ── main ────────────────────────────────────────────────────────────
 
-int main() {
+int run_test_matcher_reversible_validate(int /*argc*/, char** /*argv*/) {
     // Happy path.
     test_happy_path_clean_body_passes();
     // Silent rejects.

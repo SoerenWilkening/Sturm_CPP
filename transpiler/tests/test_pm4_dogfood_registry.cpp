@@ -240,7 +240,7 @@ static void test_operand_text_matches_source() {
     }
 }
 
-int main() {
+int run_test_pm4_dogfood_registry(int /*argc*/, char** /*argv*/) {
     test_registrars_populated_by_static_init();
     test_drain_registers_four_pb_matchers();
     test_operand_text_matches_source();

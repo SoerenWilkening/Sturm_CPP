@@ -470,7 +470,7 @@ void test_multiple_entries_independent_state() {
 
 } // namespace
 
-int main() {
+int run_test_synthesis_registry(int /*argc*/, char** /*argv*/) {
     test_insert_creates_pending_entry();
     test_re_insert_is_idempotent();
     test_setters_round_trip_fields();

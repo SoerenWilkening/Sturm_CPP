@@ -279,7 +279,7 @@ static void test_fixture_pointer() {
 
 #endif // STURM_QRAM_SUBSCRIPT_FIXTURES_DIR
 
-int main() {
+int run_test_matcher_qram_subscript(int /*argc*/, char** /*argv*/) {
     test_std_array_positive();
     test_c_array_positive();
     test_pointer_positive();

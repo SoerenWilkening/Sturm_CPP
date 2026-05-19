@@ -413,7 +413,7 @@ void test_reason_to_string_stable() {
 
 } // namespace
 
-int main() {
+int run_test_return_to_out_param(int /*argc*/, char** /*argv*/) {
     test_fixture_1_marked_prd_canonical();
     test_fixture_2_join_qbool_or();
     test_fixture_3_echo_const_qint_ref();

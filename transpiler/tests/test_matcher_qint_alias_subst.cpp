@@ -453,7 +453,7 @@ static void test_typedef_carrier_no_match() {
     CHECK_EQ_INT(matches.size(), 0);
 }
 
-int main() {
+int run_test_matcher_qint_alias_subst(int /*argc*/, char** /*argv*/) {
     test_var_decl_positive();
     test_parm_var_decl_positive();
     test_field_decl_positive();

@@ -122,12 +122,12 @@ if(NOT _rc EQUAL 0)
 endif()
 
 # ── Locate the representative heavy test target ──────────────────────────
-# `test_matcher_qint_alias_subst` is the binary whose per-TU compile time
-# was measured in the issue's experiment (12.10s -> 4.44s). The target
-# lives at:
-#   <build>/transpiler/tests/CMakeFiles/test_matcher_qint_alias_subst.dir
+# `test_bucket_qint_alias` is the bucket target (sturm-r8xu) that carries
+# the matcher_qint_alias_subst member test the issue's experiment measured
+# (12.10s -> 4.44s per-TU pre-bucket). After bucketing the binary lives at:
+#   <build>/transpiler/tests/CMakeFiles/test_bucket_qint_alias.dir
 set(_target_dir
-    "${_build_dir}/transpiler/tests/CMakeFiles/test_matcher_qint_alias_subst.dir")
+    "${_build_dir}/transpiler/tests/CMakeFiles/test_bucket_qint_alias.dir")
 if(NOT IS_DIRECTORY "${_target_dir}")
     message(FATAL_ERROR
         "cmake_pch_test_reuse: representative target dir missing at "
@@ -157,7 +157,7 @@ string(REGEX REPLACE "[ \t]+" ";" _target_tokens "${_target_flags}")
 list(FIND _target_tokens "-fPIC" _target_pic_idx)
 if(_target_pic_idx EQUAL -1)
     message(FATAL_ERROR
-        "cmake_pch_test_reuse: target `test_matcher_qint_alias_subst` does "
+        "cmake_pch_test_reuse: target `test_bucket_qint_alias` does "
         "NOT carry -fPIC in its per-target CXX_FLAGS. The `sturm-transpile` "
         "PCH was built with -fPIC; without -fPIC on the consumer, clang "
         "rejects the PCH with `is pie differs in PCH file vs. current "

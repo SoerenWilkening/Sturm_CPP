@@ -379,7 +379,7 @@ void test_nested_block_inside_main_emits_cleanup() {
 
 } // namespace
 
-int main() {
+int run_test_lossy_scope_exit_emitter(int /*argc*/, char** /*argv*/) {
     test_cleanup_mul();
     test_cleanup_and();
     test_cleanup_or();

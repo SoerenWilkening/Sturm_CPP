@@ -378,7 +378,7 @@ void test_fixture_gtest_wrapping() {
 
 #endif // STURM_ENTRY_POINT_FIXTURES_DIR
 
-int main() {
+int run_test_main_lifecycle_emitter_entry_point(int /*argc*/, char** /*argv*/) {
     test_void_entry_point_emits_no_return();
     test_integral_entry_point_emits_return();
     test_main_kind_backward_compat();
