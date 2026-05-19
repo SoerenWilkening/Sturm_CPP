@@ -1,6 +1,12 @@
 # PRD — QRAM backend gate emission (QROM path, v1)
 
-**Status.** Implemented, 2026-05-03.
+**Status.** Implemented, 2026-05-03. **Superseded by
+[`prd_qram_backend_bb.md`](../prd_qram_backend_bb.md), 2026-05-19.**
+The naive sequential XOR-fanout body described in §4 will be removed
+as part of the bucket-brigade epic (hard replace per the v2 PRD §11
+B6). Retained here for historical context and to preserve the §2 G1–G5
+contract that v2 inherits verbatim for the QROM path while extending
+it to qreg.
 **Predecessors.** `docs/archive/prd_qram_subscript.md` (frontend epic
 `sturm-u9ge`, closed) and `docs/archive/plan_qram_subscript.md` (its
 beat plan, closed). Those documents pin the user-visible shape

@@ -1,9 +1,12 @@
 # Implementation Plan: Frontend Simplification
 
 - **Date:** 2026-05-07
-- **Status:** Draft (pending user approval)
+- **Status:** Draft (pending user approval). **Archived 2026-05-19**
+  alongside its PRD — all P1–P9 phases have landed (see
+  `archive/prd_frontend_simplification.md` Status line). Moved to
+  `docs/archive/impl_plan_frontend_simplification.md`.
 - **Owner:** Soren Wilkening
-- **Drives:** `docs/prd_frontend_simplification.md`
+- **Drives:** `docs/archive/prd_frontend_simplification.md`
 - **Approach:** modular, test-driven, every implementation file ≤ 300 LOC.
 
 ## 0. Working agreements

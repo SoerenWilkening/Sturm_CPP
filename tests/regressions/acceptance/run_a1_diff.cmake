@@ -22,7 +22,7 @@
 # source-of-truth listing fails this gate loud.
 #
 # Inputs (passed via -D from `add_test`):
-#   PRD_PATH       — absolute path to docs/prd_frontend_simplification.md
+#   PRD_PATH       — absolute path to docs/archive/prd_frontend_simplification.md
 #   DEMO_PATH      — absolute path to examples/qram_demo.cpp
 
 cmake_minimum_required(VERSION 3.16)

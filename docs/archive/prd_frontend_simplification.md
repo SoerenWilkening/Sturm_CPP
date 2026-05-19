@@ -4,6 +4,13 @@
 - **Status:** Implemented (sturm-f8ib / Phase 9 — all seven acceptance
   gates A1–A7 wired in `tests/regressions/test_acceptance_gates.cmake`
   and green in clean `-DSTURM_FULL_TEST_SUITE=ON` build, 2026-05-08).
+  **Archived 2026-05-19** — all P1–P9 work has landed and the
+  acceptance gates remain green. Moved to
+  `docs/archive/prd_frontend_simplification.md`; cross-references in
+  `docs/qram_user_intro.md`, `docs/getting_started.md`,
+  `docs/public_api.md`, and
+  `tests/regressions/test_acceptance_gates.cmake` updated to the new
+  path.
 - **Owner:** Soren Wilkening
 - **Supersedes:** none (additive — earlier work landed in `docs/archive/prd_qint_alias_completion.md`)
 

@@ -1,7 +1,7 @@
 # STURM Public API
 
 **Status:** v2 (2026-05-07). Updated for the
-[`prd_frontend_simplification.md`](prd_frontend_simplification.md)
+[`archive/prd_frontend_simplification.md`](archive/prd_frontend_simplification.md)
 umbrella + opt-in feature headers.
 **Scope tag:** `packaging-export`.
 **Companion doc:** [`transpiler_emit_targets.md`](transpiler_emit_targets.md).

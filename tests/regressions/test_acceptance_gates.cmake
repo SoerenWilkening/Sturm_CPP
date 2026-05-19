@@ -35,7 +35,7 @@ _acc_delegate(acceptance_A1_byte_identical test_qram_demo_byte_identical)
 # to match the demo, option (a) in the issue NOTES).
 add_test(NAME acceptance_A1_textual_diff
     COMMAND "${CMAKE_COMMAND}"
-            "-DPRD_PATH=${CMAKE_SOURCE_DIR}/docs/prd_frontend_simplification.md"
+            "-DPRD_PATH=${CMAKE_SOURCE_DIR}/docs/archive/prd_frontend_simplification.md"
             "-DDEMO_PATH=${CMAKE_SOURCE_DIR}/examples/qram_demo.cpp"
             -P "${_acc_dir}/run_a1_diff.cmake")
 set_tests_properties(acceptance_A1_textual_diff PROPERTIES

@@ -1,7 +1,7 @@
 # Getting Started with STURM
 
 **Status:** v2 (2026-05-07). Updated for the
-[`prd_frontend_simplification.md`](prd_frontend_simplification.md)
+[`archive/prd_frontend_simplification.md`](archive/prd_frontend_simplification.md)
 umbrella + auto-injected lifecycle.
 **Scope tag:** `packaging-export`.
 **Companion doc:** [`public_api.md`](public_api.md).
@@ -178,7 +178,7 @@ the open follow-ups live in
   user-facing introduction to QRAM: the `qint b = a[i];` shape, the
   supported / unsupported container shapes, and the full version of the
   measurement-footgun explanation.
-- Read [`docs/prd_frontend_simplification.md`](prd_frontend_simplification.md)
+- Read [`docs/archive/prd_frontend_simplification.md`](archive/prd_frontend_simplification.md)
   for the design rationale behind the umbrella + auto-injected
   lifecycle (G1–G6, A1–A7).
 - Anything not on the public-API list — including everything reachable

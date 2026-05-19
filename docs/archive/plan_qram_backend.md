@@ -1,6 +1,10 @@
 # Implementation Plan — QRAM backend gate emission (QROM path, v1)
 
-**Status.** Draft, 2026-05-03.
+**Status.** Draft, 2026-05-03. **Superseded by
+[`prd_qram_backend_bb.md`](../prd_qram_backend_bb.md) §11 milestones,
+2026-05-19.** The beats B1–B5 captured here describe the now-superseded
+naive sweep landing; v2 hard-replaces the implementation with a
+bucket-brigade DSL helper and a new beat plan.
 **Tracks.** `docs/prd_qram_backend.md` §9 milestones B1–B5.
 **Predecessors.** `docs/archive/prd_qram_subscript.md` (frontend epic
 `sturm-u9ge`, closed) and its beat plan `docs/archive/plan_qram_subscript.md`.

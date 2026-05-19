@@ -4,7 +4,7 @@
 [`sturm-u9ge`](archive/prd_qram_subscript.md), the closed backend
 epic `sturm-2w6h` ([`prd_qram_backend.md`](prd_qram_backend.md),
 [`plan_qram_backend.md`](plan_qram_backend.md)), and the frontend
-simplification PRD [`prd_frontend_simplification.md`](prd_frontend_simplification.md).
+simplification PRD [`archive/prd_frontend_simplification.md`](archive/prd_frontend_simplification.md).
 
 **Audience.** Advanced users writing reversible / quantum routines who
 want to read a `qint` element of a container indexed by another `qint`
@@ -382,7 +382,7 @@ anything; the post-transpile `qint_t<W>::operator int64_t()` is
 - [`archive/plan_qram_subscript.md`](archive/plan_qram_subscript.md) —
   the closed frontend beat plan; H1–H4 are the four out-of-scope
   shape follow-ups (§2.2 above).
-- [`prd_frontend_simplification.md`](prd_frontend_simplification.md) —
+- [`archive/prd_frontend_simplification.md`](archive/prd_frontend_simplification.md) —
   the umbrella header (§5.1), opt-in feature headers (§5.2), and the
   auto-injected lifecycle (§5.4).
 - [`01_principles.md`](01_principles.md) — P2 (measurement is
