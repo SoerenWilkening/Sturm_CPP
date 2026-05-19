@@ -1,16 +1,31 @@
 cmake_minimum_required(VERSION 3.16)
 enable_language(C)
 
-# ── Example: qint OR + ASCII circuit drawing ────────────────────────────────
-# Routed through sturm-transpile via the add_quantum_executable() helper
-# (see cmake/SturmTranspile.cmake).
-add_quantum_executable(example_or_circuit
-    or_circuit.cpp
-)
-
-# Runtime implementation sources are not candidates for the transpiler;
-# attach them after target creation so they bypass the transpile step.
-target_sources(example_or_circuit PRIVATE
+# ── sturm-grhw: shared OBJECT library for the 19 example targets ────────────
+# Every example in this directory pulls in the same backend / runtime / draw
+# source set as its runtime implementation. Without this lib the 19
+# `add_quantum_executable()` callsites each re-listed the 9-file set on a
+# `target_sources(<example> PRIVATE ...)` line (171 redundant compile
+# nodes), and a cold build had ninja schedule every duplicate even though
+# ccache could absorb the work on warm runs. Mirrors the precedent set by
+# `sturm_backend_runtime` in `tests/backend/CMakeLists.txt` (sturm-x4iq)
+# and the transpiler-test-core lib (sturm-ximr). The PUBLIC usage
+# requirements below (include dirs, STURM_BACKEND_ENABLED, orkan_headers
+# link) propagate transitively to every example that links
+# sturm_examples_runtime, which is why the per-example duplicates are
+# dropped at each callsite.
+#
+# Sources are deliberately NOT candidates for the transpiler — they are
+# runtime implementation TUs, not user-facing quantum sources — so they
+# live OFF the `add_quantum_executable()` source list and ON this
+# OBJECT lib instead.
+#
+# `example_qram_demo` carries TWO extra runtime TUs
+# (`core/control_stack.cpp` for WHEN-lifted CXs the QROM body emits, and
+# `qram/qram_read.cpp` for the `sturm::QRAM_read` entry-point); those
+# stay per-target via `target_sources()`. Every other example links the
+# OBJECT lib unchanged.
+set(EXAMPLES_SHARED_SOURCES
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
@@ -21,12 +36,39 @@ target_sources(example_or_circuit PRIVATE
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
 )
-target_link_libraries(example_or_circuit PRIVATE orkan_headers)
+
+# gate_kind.c needs C11 for bool/_Bool. Directory-scoped property applies
+# to every compilation of gate_kind.c in this directory, including the one
+# inside sturm_examples_runtime — matches the precedent in
+# tests/backend/CMakeLists.txt (sturm-x4iq comment block).
 set_source_files_properties(
     ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     PROPERTIES LANGUAGE C
                COMPILE_FLAGS "-std=c11"
 )
+
+add_library(sturm_examples_runtime OBJECT ${EXAMPLES_SHARED_SOURCES})
+target_include_directories(sturm_examples_runtime PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(sturm_examples_runtime PUBLIC cxx_std_20)
+# STURM_BACKEND_ENABLED is also set PRIVATE on every example target by
+# `add_quantum_executable()` (see cmake/SturmTranspile.cmake:306), but the
+# runtime TUs in this OBJECT lib also need the macro at their own compile
+# time — propagate via PUBLIC so the per-example targets see it via the
+# usage requirements as well.
+target_compile_definitions(sturm_examples_runtime PUBLIC
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(sturm_examples_runtime PUBLIC orkan_headers)
+
+# ── Example: qint OR + ASCII circuit drawing ────────────────────────────────
+# Routed through sturm-transpile via the add_quantum_executable() helper
+# (see cmake/SturmTranspile.cmake).
+add_quantum_executable(example_or_circuit
+    or_circuit.cpp
+)
+target_link_libraries(example_or_circuit PRIVATE sturm_examples_runtime)
 
 # ── Example: qint constant-arithmetic compound-assigns (Phase B) ────────────
 # Routed through sturm-transpile so each `a += 3; a -= 3; a *= 3; a /= 3;`
@@ -35,18 +77,7 @@ set_source_files_properties(
 add_quantum_executable(example_constant_arith
     constant_arith.cpp
 )
-target_sources(example_constant_arith PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_constant_arith PRIVATE orkan_headers)
+target_link_libraries(example_constant_arith PRIVATE sturm_examples_runtime)
 
 # ── Example: qint qint-qint compound-assigns (Phase C) ──────────────────────
 # Routed through sturm-transpile so each `a += b; a -= b; a *= b; a /= b;
@@ -56,18 +87,7 @@ target_link_libraries(example_constant_arith PRIVATE orkan_headers)
 add_quantum_executable(example_qint_arith
     qint_arith.cpp
 )
-target_sources(example_qint_arith PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_qint_arith PRIVATE orkan_headers)
+target_link_libraries(example_qint_arith PRIVATE sturm_examples_runtime)
 
 # ── Example: qint qint-qint comparison operators (Phase D) ─────────────────
 # Routed through sturm-transpile so each `qbool c_xx = a OP b;` VarDecl
@@ -78,18 +98,7 @@ target_link_libraries(example_qint_arith PRIVATE orkan_headers)
 add_quantum_executable(example_comparison
     comparison.cpp
 )
-target_sources(example_comparison PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_comparison PRIVATE orkan_headers)
+target_link_libraries(example_comparison PRIVATE sturm_examples_runtime)
 
 # ── Example: compound qbool expressions (Phase E) ──────────────────────────
 # Routed through sturm-transpile so the compound `qbool r = (b | c) & d;`
@@ -102,18 +111,7 @@ target_link_libraries(example_comparison PRIVATE orkan_headers)
 add_quantum_executable(example_compound_expression
     compound_expression.cpp
 )
-target_sources(example_compound_expression PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_compound_expression PRIVATE orkan_headers)
+target_link_libraries(example_compound_expression PRIVATE sturm_examples_runtime)
 
 # ── Example: compound-`WHEN` integration (Phase F) ──────────────────────────
 # Routed through sturm-transpile so the `WHEN((b | c) & d) { ... }` macro
@@ -128,18 +126,7 @@ target_link_libraries(example_compound_expression PRIVATE orkan_headers)
 add_quantum_executable(example_when_integration
     when_integration.cpp
 )
-target_sources(example_when_integration PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_when_integration PRIVATE orkan_headers)
+target_link_libraries(example_when_integration PRIVATE sturm_examples_runtime)
 
 # ── Example: named-named nested `WHEN` AND-fold (Phase G) ───────────────────
 # Routed through sturm-transpile so each `WHEN(outer) { WHEN(inner) { ... } }`
@@ -158,18 +145,7 @@ target_link_libraries(example_when_integration PRIVATE orkan_headers)
 add_quantum_executable(example_nested_when
     nested_when.cpp
 )
-target_sources(example_nested_when PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_nested_when PRIVATE orkan_headers)
+target_link_libraries(example_nested_when PRIVATE sturm_examples_runtime)
 
 # ── Example: classical control flow around quantum ops (Phase H) ───────────
 # Routed through sturm-transpile so each `qbool <var> = a | b;` inside a
@@ -191,18 +167,7 @@ target_link_libraries(example_nested_when PRIVATE orkan_headers)
 add_quantum_executable(example_control_flow
     control_flow.cpp
 )
-target_sources(example_control_flow PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_control_flow PRIVATE orkan_headers)
+target_link_libraries(example_control_flow PRIVATE sturm_examples_runtime)
 
 # ── Example: user-defined routine + STURM_REGISTER_ADJOINT demo (Phase I) ───
 # Routed through sturm-transpile so every `callExpr` to a forward routine
@@ -221,18 +186,7 @@ target_link_libraries(example_control_flow PRIVATE orkan_headers)
 add_quantum_executable(example_user_routine
     user_routine.cpp
 )
-target_sources(example_user_routine PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_user_routine PRIVATE orkan_headers)
+target_link_libraries(example_user_routine PRIVATE sturm_examples_runtime)
 
 # ── Example: combined Phase A + B + C demo ──────────────────────────────────
 # Routed through sturm-transpile so every forward pattern from all three
@@ -242,18 +196,7 @@ target_link_libraries(example_user_routine PRIVATE orkan_headers)
 add_quantum_executable(example_phase_abc_demo
     phase_abc_demo.cpp
 )
-target_sources(example_phase_abc_demo PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_phase_abc_demo PRIVATE orkan_headers)
+target_link_libraries(example_phase_abc_demo PRIVATE sturm_examples_runtime)
 
 # ── Example: zero-ancilla fusion peephole demo (Phase J PJ-1) ───────────────
 # Routed through sturm-transpile so the adjacent pair
@@ -275,18 +218,7 @@ target_link_libraries(example_phase_abc_demo PRIVATE orkan_headers)
 add_quantum_executable(example_zero_ancilla_fusion
     zero_ancilla_fusion.cpp
 )
-target_sources(example_zero_ancilla_fusion PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_zero_ancilla_fusion PRIVATE orkan_headers)
+target_link_libraries(example_zero_ancilla_fusion PRIVATE sturm_examples_runtime)
 
 # ── Example: dead-ancilla elimination demo (Phase J PJ-4) ───────────────────
 # Routed through sturm-transpile so every `qbool t = <qbool-operand bitwise
@@ -306,18 +238,7 @@ target_link_libraries(example_zero_ancilla_fusion PRIVATE orkan_headers)
 add_quantum_executable(example_dead_ancilla
     dead_ancilla.cpp
 )
-target_sources(example_dead_ancilla PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_dead_ancilla PRIVATE orkan_headers)
+target_link_libraries(example_dead_ancilla PRIVATE sturm_examples_runtime)
 
 # ── Example: uncompute-hoisting demo (Phase J PJ-3) ─────────────────────────
 # Routed through sturm-transpile so a `qbool t = a | b;` VarDecl inside a
@@ -343,18 +264,7 @@ target_link_libraries(example_dead_ancilla PRIVATE orkan_headers)
 add_quantum_executable(example_uncompute_hoisting
     uncompute_hoisting.cpp
 )
-target_sources(example_uncompute_hoisting PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_uncompute_hoisting PRIVATE orkan_headers)
+target_link_libraries(example_uncompute_hoisting PRIVATE sturm_examples_runtime)
 
 # ── Example: peephole gate reordering demo (Phase M PM5) ────────────────────
 # Routed through sturm-transpile so the canonical PM5 triple-shape source
@@ -381,18 +291,7 @@ target_link_libraries(example_uncompute_hoisting PRIVATE orkan_headers)
 add_quantum_executable(example_peephole_reorder
     peephole_reorder.cpp
 )
-target_sources(example_peephole_reorder PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_peephole_reorder PRIVATE orkan_headers)
+target_link_libraries(example_peephole_reorder PRIVATE sturm_examples_runtime)
 
 # ── Example: Phase N rotation compound-assigns (P5 items 2 & 3) ────────────
 # Routed through sturm-transpile so each of the four rotation compound-
@@ -419,18 +318,7 @@ target_link_libraries(example_peephole_reorder PRIVATE orkan_headers)
 add_quantum_executable(example_rotations
     rotations.cpp
 )
-target_sources(example_rotations PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_rotations PRIVATE orkan_headers)
+target_link_libraries(example_rotations PRIVATE sturm_examples_runtime)
 
 # ── Example: Phase M PM1-8 in-memory transpile tutorial ─────────────────────
 # Three-phase composition demo that exercises Phase E (compound
@@ -452,18 +340,7 @@ target_link_libraries(example_rotations PRIVATE orkan_headers)
 add_quantum_executable(example_in_memory_transpile
     in_memory_transpile.cpp
 )
-target_sources(example_in_memory_transpile PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)
+target_link_libraries(example_in_memory_transpile PRIVATE sturm_examples_runtime)
 
 # ── Example: LO-2 single-multiplication end-to-end demo ────────────────────
 # Source has one `a *= b;` over qint_t<2> with both operands auto-promoted
@@ -475,18 +352,7 @@ target_link_libraries(example_in_memory_transpile PRIVATE orkan_headers)
 add_quantum_executable(example_mul_demo
     mul_demo.cpp
 )
-target_sources(example_mul_demo PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_mul_demo PRIVATE orkan_headers)
+target_link_libraries(example_mul_demo PRIVATE sturm_examples_runtime)
 
 # ── Example: QRAM (QROM path) backend demo (sturm-2w6h v1) ─────────────────
 # Calls the runtime `sturm::QRAM_read` entry-point directly against a
@@ -505,20 +371,17 @@ target_link_libraries(example_mul_demo PRIVATE orkan_headers)
 add_quantum_executable(example_qram_demo
     qram_demo.cpp
 )
+# example_qram_demo pulls in the standard sturm_examples_runtime backend
+# set, plus two extras NOT shared with the other 18 examples:
+#   * core/control_stack.cpp — WHEN-lifted CXs the QROM body emits
+#     (PRD §4 paragraph 4).
+#   * qram/qram_read.cpp     — the `sturm::QRAM_read` runtime entry-point
+#     this example calls directly.
 target_sources(example_qram_demo PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
 )
-target_link_libraries(example_qram_demo PRIVATE orkan_headers)
+target_link_libraries(example_qram_demo PRIVATE sturm_examples_runtime)
 
 # ── Example: explicit-lifecycle escape-hatch demo (sturm-yggr / Phase 8) ───
 # Routed through sturm-transpile but the source defines
@@ -533,18 +396,7 @@ target_link_libraries(example_qram_demo PRIVATE orkan_headers)
 add_quantum_executable(example_explicit_lifecycle
     explicit_lifecycle.cpp
 )
-target_sources(example_explicit_lifecycle PRIVATE
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-)
-target_link_libraries(example_explicit_lifecycle PRIVATE orkan_headers)
+target_link_libraries(example_explicit_lifecycle PRIVATE sturm_examples_runtime)
 
 # ── PM4-7: demo plugin exercising the PM4-1 / PM4-2 extension surface ───────
 # Builds `sturm-pm4-demo-plugin` as a MODULE shared library. The plugin is
