@@ -8,6 +8,9 @@
 #                    scanning than GNU Make on this tree's ~1500 .o files).
 #   - ccache       : compiler-output cache (warm-cache full rebuild drops
 #                    from ~30 min to a few minutes).
+#   - mold (Linux) : drop-in replacement for ld; 2-5x faster link, helps
+#                    most on the 9 transpiler-test bucket binaries that
+#                    each pull in libclang-cpp at link time.
 #
 # It also writes ccache's `~/.config/ccache/ccache.conf` with the sloppiness
 # settings required for PCH cache hits (clang embeds __DATE__/__TIME__ and
@@ -54,15 +57,23 @@ case "$(uname -s)" in
         ;;
 esac
 
-# ── Install ccache + ninja ───────────────────────────────────────────────────
-have_ccache=0; have_ninja=0
+# ── Install ccache + ninja + mold (Linux only) ───────────────────────────────
+# mold is Linux-only — Apple's ld64 already outperforms gold/ld on Mach-O,
+# and the STURM build does not currently ship a Mac-equivalent fast linker
+# story. The CMake gate (STURM_USE_MOLD) auto-skips on Darwin.
+have_ccache=0; have_ninja=0; have_mold=0
 command -v ccache >/dev/null 2>&1 && have_ccache=1
 command -v ninja  >/dev/null 2>&1 && have_ninja=1
-
-if [[ $have_ccache -eq 1 && $have_ninja -eq 1 ]]; then
-    log "ccache + ninja already installed ($(ccache --version | head -1); ninja $(ninja --version))."
+if [[ "$PLATFORM" == "linux" ]]; then
+    command -v mold >/dev/null 2>&1 && have_mold=1
 else
-    log "Installing missing tooling (ccache=$have_ccache, ninja=$have_ninja) for $PLATFORM..."
+    have_mold=1  # vacuously "satisfied" on macOS — gate not exercised
+fi
+
+if [[ $have_ccache -eq 1 && $have_ninja -eq 1 && $have_mold -eq 1 ]]; then
+    log "All build tooling present ($(ccache --version | head -1); ninja $(ninja --version)$([[ "$PLATFORM" == "linux" ]] && echo "; $(mold --version 2>&1 | head -1)" || echo ""))"
+else
+    log "Installing missing tooling (ccache=$have_ccache, ninja=$have_ninja, mold=$have_mold) for $PLATFORM..."
     case "$PLATFORM" in
         linux)
             if [[ $EUID -ne 0 ]] && command -v sudo >/dev/null 2>&1; then
@@ -71,7 +82,7 @@ else
                 SUDO=
             fi
             $SUDO apt-get update -qq
-            $SUDO apt-get install -y --no-install-recommends ccache ninja-build
+            $SUDO apt-get install -y --no-install-recommends ccache ninja-build mold
             ;;
         mac)
             packages=()

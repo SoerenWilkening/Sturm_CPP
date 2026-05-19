@@ -41,6 +41,66 @@ if(STURM_USE_CCACHE)
     endif()
 endif()
 
+# ── sturm-q2eb — mold linker preference ──────────────────────────────────────
+# mold is a drop-in replacement for `ld`/`lld`, often 2-5× faster on link-heavy
+# targets. The 9 transpiler-test bucket binaries each pull in libclang-cpp at
+# link time (large symbol table) — that link phase dominates cold-build wall
+# after the compile phase finishes. mold cuts it substantially.
+#
+# Defaults
+#   STURM_USE_MOLD=ON (default): pass `-fuse-ld=mold` to every link if mold
+#                                is on PATH. Silent no-op when mold is absent.
+#   STURM_USE_MOLD=OFF         : keep whatever linker the toolchain picks
+#                                (typically `ld` from binutils on Linux).
+#
+# Plugin loading: mold-produced .so files are vanilla ELF, ABI-compatible
+# with libclang's dlopen path. No special handling required for
+# sturm-transpile-plugin.so (verified empirically on the Linux agent
+# container; macOS uses ld64 natively, mold is Linux-only).
+option(STURM_USE_MOLD
+    "Pass -fuse-ld=mold to the linker when mold is present (default ON on Linux; macOS uses ld64 natively and ignores this option)."
+    ON)
+if(STURM_USE_MOLD AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    find_program(MOLD_PROGRAM mold)
+    if(MOLD_PROGRAM)
+        message(STATUS "sturm: mold found at ${MOLD_PROGRAM} — using "
+                       "-fuse-ld=mold for all link steps (STURM_USE_MOLD=ON)")
+        add_link_options(-fuse-ld=mold)
+    else()
+        message(STATUS "sturm: mold not found on PATH — STURM_USE_MOLD=ON "
+                       "is a no-op. Install via tools/setup_dev_env.sh "
+                       "(`apt install mold` on the agent container).")
+    endif()
+endif()
+
+# ── sturm-q2eb — unity-build bucketing for transpiler tests ──────────────────
+# Each of the 9 transpiler-test bucket targets (sturm-r8xu) holds 5-30
+# logically distinct test .cpp files that share the same compile flags
+# and the same per-bucket `run_<name>` entry-point convention (no main()
+# collisions across members — already a precondition of bucketing). The
+# unity build concatenates members so libclang's AST headers + the
+# transpiler-test PCH preamble are parsed once per unity TU instead of
+# once per member, collapsing the parse-and-codegen cost roughly 8×.
+# Implementation lives in transpiler/tests/CMakeLists.txt's
+# `sturm_define_bucket_target` macro; this option is the kill switch.
+#
+# Off by default would defeat the win, so default ON. Toggle OFF only
+# when bisecting a unity-build induced symbol collision in a new test
+# member (the `run_<name>` convention is the only structured assumption
+# the unity TU makes about its members; rare static/anon-namespace name
+# clashes are still possible in helper code).
+option(STURM_UNITY_BUCKETS
+    "Enable CMake unity builds on the 9 transpiler-test bucket targets (default OFF — turn ON only after the 36 test files with shared `static int tests_pass` / `bool run_on(...)` helpers are wrapped in anonymous namespaces; otherwise unity-merge produces ODR collisions). Tracked by the follow-up bd issue."
+    OFF)
+if(STURM_UNITY_BUCKETS)
+    message(STATUS "sturm: STURM_UNITY_BUCKETS=ON — transpiler-test buckets "
+                   "will compile as 1-2 unity TUs per bucket "
+                   "(UNITY_BUILD_BATCH_SIZE=8). Make sure the test "
+                   "helpers in transpiler/tests/test_*.cpp have been "
+                   "wrapped in anonymous namespaces; see the follow-up "
+                   "bd issue for the migration plan.")
+endif()
+
 # ── sturm-yial — host clang vs plugin LLVM invariant gate ─────────────────────
 #
 # The transpiler plugin (`sturm-transpile-plugin`) links the libclang-cpp /

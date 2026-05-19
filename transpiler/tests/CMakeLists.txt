@@ -293,6 +293,19 @@ macro(sturm_define_bucket_target target)
     # the LLVM symbol surface transitively — no per-bucket repeat of the
     # shared-vs-static linkage split.
     target_link_libraries(${target} PRIVATE sturm_transpile_test_core)
+    # sturm-q2eb: unity build on the bucket targets. Each bucket holds 5-30
+    # test .cpp files with the same compile flags and the same per-bucket
+    # `run_<name>` entry-point convention. UNITY_BUILD concatenates them
+    # into a small number of TUs so the heavy libclang AST preamble is
+    # parsed once per unity TU instead of once per member source. Batch
+    # size 8 keeps each unity TU under clang's per-TU memory budget (a
+    # bucket-wide single TU spiked RSS over 1 GB on the 8 GB agent host)
+    # while still collapsing the parse-and-lower cost 8-fold.
+    if(STURM_UNITY_BUCKETS)
+        set_target_properties(${target} PROPERTIES
+            UNITY_BUILD ON
+            UNITY_BUILD_BATCH_SIZE 8)
+    endif()
 endmacro()
 
 # ── Unit test: io helpers ─────────────────────────────────────────────────────
