@@ -776,7 +776,14 @@ if(STURM_USE_PCH)
         <clang/Lex/Lexer.h>
         <clang/Rewrite/Core/Rewriter.h>
         <llvm/Support/Casting.h>
-        <llvm/ADT/StringRef.h>)
+        <llvm/ADT/StringRef.h>
+        # sturm-cxvo experiment: pull matcher_common.hpp (1087 LOC of inline
+        # helpers, included by ~40 matcher TUs at ~2s each) into the PCH so
+        # the body is parsed once per build instead of ~40 times. Quoted form
+        # so the path is resolved relative to the source dir rather than via
+        # -I (the helpers themselves include "sturm/transpile/qir.hpp" which
+        # IS on the -I path, so its resolution still works).
+        "${CMAKE_CURRENT_SOURCE_DIR}/src/matcher_common.hpp")
     target_precompile_headers(sturm-transpile-plugin REUSE_FROM sturm-transpile)
 endif()
 
