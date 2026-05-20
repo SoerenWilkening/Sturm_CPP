@@ -144,3 +144,39 @@ target_link_libraries(test_qram_read_bb_padding PRIVATE sturm_backend_runtime)
 add_test(NAME test_qram_read_bb_padding COMMAND test_qram_read_bb_padding)
 set_tests_properties(test_qram_read_bb_padding
     PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-44bt.6 (Beat BB6) — depth-scaling pin ───────────────────────
+# Pins PRD §2 G4 / plan §4.5: depth(N) ≤ C0 · W · log2(N)^2 for
+# N ∈ {4, 8, 16, 32}. Uses lib_qram_read_bb_dsl directly (bypasses the
+# bb_addressable_v gate on the public QRAM_read) so the BB body emits
+# at every fixture. APPEND-mode RecordingSink only — no orkan budget.
+# C0 derived from the N=4 measurement plus 1.25× headroom, captured
+# in the test source at the call site.
+add_executable(test_qram_read_bb_depth_scaling
+    test_qram_read_bb_depth_scaling.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_depth_scaling PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_bb_depth_scaling PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_depth_scaling
+    COMMAND test_qram_read_bb_depth_scaling)
+set_tests_properties(test_qram_read_bb_depth_scaling
+    PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-44bt.6 (Beat BB6) — sequential-call telemetry pin ──────────
+# Pins PRD §2 G3 (RAII / pool round-trip) + G5 (counter parity) across
+# 5 sequential QRAM_read calls at (N=4, W=2). Per call: snapshot
+# QubitPool::in_use() before+after; assert per-call window matches the
+# §4.4 single-call pin (CCX=32, CNOT=58, X=2 recomputed from formula);
+# verify cumulative counters bump exactly to 5 on the umbrella +
+# selected arm (qrom or qreg via super_mask routing).
+add_executable(test_qram_read_bb_sequential
+    test_qram_read_bb_sequential.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_sequential PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_bb_sequential PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_sequential
+    COMMAND test_qram_read_bb_sequential)
+set_tests_properties(test_qram_read_bb_sequential
+    PROPERTIES LABELS "qram;qram-backend")
