@@ -126,3 +126,21 @@ target_link_libraries(test_qram_read_bb_pointer_dispatch PRIVATE sturm_backend_r
 add_test(NAME test_qram_read_bb_pointer_dispatch COMMAND test_qram_read_bb_pointer_dispatch)
 set_tests_properties(test_qram_read_bb_pointer_dispatch
     PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-44bt.5 (Beat BB5) — power-of-2 padding (phantom-leaf transit)
+# Pins PRD §6: for N not a power of 2, lib_qram_read_bb_dsl<W, N>
+# instantiates at N' = 2^⌈log2 N⌉ and realises phantom leaves
+# [N, N') as W-qubit |0⟩^W transit ancilla blocks at call entry.
+# Statevector forward reads at (N=3, W=2) over i ∈ {0, 2, 3}:
+# i=3 returns b=0 (phantom |0⟩^W). Gate count == (N'=4, W=2) §4.4
+# closed form — phantom emits the same gate stream as a real
+# quantum leaf.
+add_executable(test_qram_read_bb_padding
+    test_qram_read_bb_padding.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_padding PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_bb_padding PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_padding COMMAND test_qram_read_bb_padding)
+set_tests_properties(test_qram_read_bb_padding
+    PROPERTIES LABELS "qram;qram-backend")

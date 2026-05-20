@@ -169,9 +169,8 @@ inline void qram_read_dispatch_adj(const qint_t<W>* a, std::size_t n,
 
 // ── (1) std::array<qint_t<W>, N> arm — D0a §11.1.1 overload 1 ───────
 // Array overloads route the compile-time `N` straight to the BB body.
-// The BB DSL `static_assert`s `is_pow2(N)` (BB3 gate) — BB5 lifts the
-// constraint with phantom-leaf padding. For non-pow2 N at BB4, the
-// compile fails with the BB DSL's diagnostic.
+// BB5 (sturm-44bt.5) lifts the BB3 `is_pow2(N)` gate via phantom-leaf
+// padding — non-pow2 `N` now compiles + instantiates at N' = next_pow2(N).
 template <std::size_t W, std::size_t N>
 inline void QRAM_read(const std::array<qint_t<W>, N>& a,
                       const qint_t<W>& i,
