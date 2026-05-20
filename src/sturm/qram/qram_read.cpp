@@ -1,64 +1,45 @@
-// qram_read.cpp -- Counter-mode runtime body for the TU-private QROM /
-// qreg dispatch helpers declared in `include/sturm/qram/qram_read.hpp`
-// (sturm-u9ge.13 / Beat D1; refactored in sturm-2w6h.2 / Beat B1).
+// qram_read.cpp -- Runtime-side dispatch body for the QRAM-read
+// helpers declared in `include/sturm/qram/qram_read.hpp`.
 //
-// PRD §11.2.2 / §11.2.7: the public `QRAM_read` overload set (D0a /
-// §11.1.1) inspects the OR-reduction of `super_mask` across the
-// container's elements at entry and routes to one of two TU-private
-// helpers — `qram_read_qrom_impl` (all elements classical) or
-// `qram_read_qreg_impl` (any element superposed). In counter mode
-// (B1a default), each helper bumps the `qram_read` counter on the
-// active sink via the `Sink::qram_read()` hook (the CounterSink
-// override increments a `qram_read` slot in its counts map). Per
-// the issue D1 description, both helpers route to the same counter
-// in this beat — the gate-level QROM vs. qreg distinction is out
-// of scope and lands with the gate-emission epic.
+// History: sturm-u9ge.13 D1 (counter-mode stub) → sturm-2w6h.2 B1
+// (refactored to forward (a, n, i, b)) → sturm-2w6h.6 B4 (split
+// telemetry counters wired) → **sturm-44bt.4 BB4** (umbrella sink
+// hook moved to public entry-point; over-cap diagnostic landed).
 //
-// ── B1 (sturm-2w6h.2) refactor ──────────────────────────────────────
-// The two QROM/qreg helpers are now `inline template <std::size_t W>`
-// in the header, taking the same `(const qint_t<W>* a, std::size_t n,
-// const qint_t<W>& i, qint_t<W>& b)` quadruple as the public surface.
-// The shared (non-template) `dispatch_common` helper here:
+// PRD §11.2.2 / §11.2.7: the public `QRAM_read` overloads inspect
+// the OR-reduction of `super_mask` across the container at entry
+// and dispatch via `_qram_detail::qram_read_dispatch<W, N>`. That
+// helper calls into `dispatch_common` here, which:
 //   1. Bumps the path-specific split counter on the active sink
-//      (`qrom_read()` / `qreg_read()` — surface from B0 / sturm-2w6h.1,
-//      wired here in B4 / sturm-2w6h.6).
+//      (`qrom_read()` for path tag 1, `qreg_read()` for path tag 2).
 //   2. Bumps the umbrella thread-local `qram::g_qram_read_count` —
 //      preserves the D1 contract pinned by
 //      `tests/qram/test_qram_read_stub.cpp` and
 //      `transpiler/tests/test_qram_e2e.cpp`.
-//   3. Fires the test-only forwarding-trace hook if installed (used
-//      by `tests/qram/test_qram_read_dispatch.cpp` to pin "args are
-//      forwarded, not discarded").
+//   3. Fires the test-only forwarding-trace hook if installed.
 //
-// ── B4 (sturm-2w6h.6) wiring ───────────────────────────────────────
-// The umbrella `Sink::qram_read()` hook is no longer fired from this
-// shared helper — it is now bumped at the **public** `QRAM_read` /
-// `__QRAM_read_adj` entry-points in
-// `include/sturm/qram/qram_read.hpp`. Split + umbrella sink hooks
-// fire from non-overlapping sites and cannot be double-counted, even
-// though both bumps land exactly once per dispatched call.
+// The umbrella `Sink::qram_read()` sink hook is bumped at the public
+// entry-point (in `qram_read.hpp`) — split + umbrella sink hooks fire
+// from non-overlapping sites so they cannot be double-counted.
 //
-// LoC budget: <= 200 (plan §1, §5 / B1).
+// LoC budget: ≤ 200 (plan §1, §5 / BB4).
 
 #include "sturm/qram/qram_read.hpp"
-#include "sturm/core/counter_sink.hpp"   // current_sink()
+#include "sturm/core/counter_sink.hpp"
+
+#include <cassert>
+#include <cstddef>
+#include <cstdio>
+#include <cstdlib>
 
 namespace sturm {
 namespace _qram_detail {
 
-// ── Test-only forwarding trace hook ─────────────────────────────────
-// Thread-local function pointer the QROM/qreg helpers fire on each
-// dispatched call. Production code never installs this hook — it
-// only exists so the B1 dispatch test
-// (`tests/qram/test_qram_read_dispatch.cpp`) can pin that the
-// helpers actually receive their forwarded `(a, n, i, b)` quadruple
-// rather than dropping it on the floor. `set_forwarding_trace`
+// ── Test-only forwarding-trace hook ─────────────────────────────────
+// Thread-local function pointer the dispatch helper fires on each
+// call. Production code never installs. `set_forwarding_trace`
 // returns the previous hook so callers can stash + restore for
 // nested scopes.
-//
-// The variable is `inline thread_local` only inside this TU (it is
-// a TU-local static — not exposed to other compilation units). The
-// `set_forwarding_trace` accessor is the sole public entry-point.
 namespace {
     thread_local ForwardingTraceFn g_trace = nullptr;
 }  // namespace
@@ -70,49 +51,72 @@ ForwardingTraceFn set_forwarding_trace(ForwardingTraceFn hook) noexcept {
 }
 
 // ── Shared dispatch body — split counter bump + trace ───────────────
-// PRD §11.2.7: bumps the **path-specific split counter** on the active
-// sink (`qrom_read()` for path tag 1, `qreg_read()` for path tag 2;
-// surface lives on `Sink` from B0 / sturm-2w6h.1) AND the process-wide
-// thread-local umbrella counter `qram::g_qram_read_count` so tests that
-// do not install a custom sink can still observe the dispatched-call
-// increment. The Wave-2 G6 `test_sturm_gen_clean` gate pins the
-// pre-transpile alias-erasure invariants; this counter is the runtime
-// observability surface for backend tests. Then fires the forwarding-
-// trace hook (test-only) with the path tag (1 = QROM, 2 = QREG) and
-// the type-erased argument quadruple.
+// PRD §11.2.7: bumps the path-specific split counter on the active
+// sink (`qrom_read()` / `qreg_read()`) AND the process-wide
+// thread-local umbrella counter `qram::g_qram_read_count`. Then
+// fires the forwarding-trace hook (test-only) with the path tag
+// (1 = QROM, 2 = QREG) and the type-erased argument quadruple.
 //
-// ── B4 (sturm-2w6h.6) wiring ───────────────────────────────────────
-// Per the issue's call-order spec the umbrella `current_sink()->
-// qram_read()` hook is **no longer** fired from this shared helper —
-// it is now bumped exactly once per dispatched read at the public
-// `QRAM_read` (and `__QRAM_read_adj`) entry-points in
-// `include/sturm/qram/qram_read.hpp`. That keeps the split + umbrella
-// firing from non-overlapping sites, so they cannot be double-counted
-// even though both bumps land per dispatched call.
-//
-// The thread-local `qram::bump_qram_read_count()` continues to fire
-// here so the D1 contract pinned by `tests/qram/test_qram_read_stub.cpp`
-// (one thread-local bump per dispatched call, regardless of which
-// sink — if any — is installed) stays green.
-//
-// TODO(backend): emit the qreg SWAP-style fanout primitive stream
-// when the v2 PRD opens the qreg path; v1 ships it as a counter-only
-// stub (umbrella + qreg_read split bumps fire, no gates leak).
+// The umbrella `Sink::qram_read()` hook is NOT fired here — it
+// fires at the public `QRAM_read` / `__QRAM_read_adj` entry-points
+// so split + umbrella sink hooks land from non-overlapping sites
+// and cannot be double-counted.
 void dispatch_common(int path_tag,
                      const void* a0_addr,
                      std::size_t n,
                      const void* i_addr,
                      const void* b_addr) noexcept {
-    // Split counter on the active sink (B0 surface; B4 wires it here).
     if (Sink* s = current_sink()) {
         if (path_tag == /*QROM*/ 1)      s->qrom_read();
         else if (path_tag == /*QREG*/ 2) s->qreg_read();
     }
-    // Thread-local umbrella — preserves D1 contract.
     qram::bump_qram_read_count();
     if (auto h = g_trace) {
         h(a0_addr, n, i_addr, b_addr, path_tag);
     }
+}
+
+// ── BB4 over-cap diagnostic (sturm-44bt.4) ──────────────────────────
+// Fired by the pointer overload's switch-default when `n > 1024`
+// (outside the unrolled BB family `{2, 4, 8, ..., 1024}` per PRD §7).
+//
+// Debug: `assert(false)` — aborts loudly. The release behaviour is
+// documented as UB (Q5 of plan §5: no other QRAM helpers do runtime
+// range checks; the BB body assumes the dispatch table covered it).
+// To keep release-mode tests observable, the function ALSO fires the
+// thread-local diagnose-trace hook (test-only, set via
+// `set_n_over_cap_diagnose_trace`) BEFORE the assert so callers
+// compiled with `NDEBUG` can pin the bump without aborting.
+//
+// The hook lives here (TU-private thread-local) for the same reason
+// as `g_trace` — keeps the `Sink` ABI unchanged across the BB4
+// landing, and lets a test subclass capture the over-cap event via
+// a free function pointer rather than overriding a virtual method.
+namespace {
+    thread_local NOverCapDiagnoseFn g_n_over_cap_trace = nullptr;
+}  // namespace
+
+NOverCapDiagnoseFn set_n_over_cap_diagnose_trace(NOverCapDiagnoseFn hook) noexcept {
+    NOverCapDiagnoseFn prev = g_n_over_cap_trace;
+    g_n_over_cap_trace = hook;
+    return prev;
+}
+
+void qram_read_n_over_cap_diagnose(std::size_t n) noexcept {
+    if (auto h = g_n_over_cap_trace) {
+        h(n);
+    }
+    // Loud stderr so a release-mode abort leaves a forensic trace;
+    // the assert below fires in debug, the message stays available
+    // in release for the sink-side counter test.
+    std::fprintf(stderr,
+        "qram_read_n_over_cap_diagnose: n=%zu exceeds the unrolled BB "
+        "family cap of 1024 — recompile with a larger STURM_QRAM_NMAX "
+        "(see qram_read.hpp dispatch table) or use a smaller container.\n",
+        n);
+    std::fflush(stderr);
+    // Debug aborts; release is UB-with-counter per Q5 of plan §5.
+    assert(false && "qram_read_n_over_cap_diagnose: n > 1024 dispatch cap");
 }
 
 }  // namespace _qram_detail

@@ -57,20 +57,6 @@ target_link_libraries(test_qram_telemetry_split PRIVATE sturm_backend_runtime)
 add_test(NAME test_qram_telemetry_split COMMAND test_qram_telemetry_split)
 set_tests_properties(test_qram_telemetry_split PROPERTIES LABELS "qram;qram-backend")
 
-# ── sturm-2w6h.7 (Beat B5) — end-to-end gate-stream + statevector test ──
-# Closes v1 of the QRAM backend gate-emission epic. Pins the public
-# `QRAM_read(a, i, b)` entry-point end-to-end across every layer
-# (overload dispatch → mask-OR routing → QROM helper → DSL body →
-# adjoint sibling → split telemetry counter).
-add_executable(test_qram_read_qrom_gates
-    test_qram_read_qrom_gates.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
-)
-target_compile_features(test_qram_read_qrom_gates PRIVATE cxx_std_20)
-target_link_libraries(test_qram_read_qrom_gates PRIVATE sturm_backend_runtime)
-add_test(NAME test_qram_read_qrom_gates COMMAND test_qram_read_qrom_gates)
-set_tests_properties(test_qram_read_qrom_gates PROPERTIES LABELS "qram;qram-backend")
-
 # ── sturm-44bt.3 (Beat BB3) -- lib_qram_read_bb_dsl gate-stream test.
 # REWRITES v1's test_qram_read_qrom_gates.cpp for the BB DSL helper:
 # pins the §4.4 closed-form CCX/CNOT/X budget at (N=4, W=4) recomputed
@@ -106,3 +92,37 @@ target_link_libraries(test_qram_read_bb_round_trip PRIVATE sturm_backend_runtime
 add_test(NAME test_qram_read_bb_round_trip COMMAND test_qram_read_bb_round_trip)
 set_tests_properties(test_qram_read_bb_round_trip
     PROPERTIES LABELS "qram;qram-backend;lossy-reversibility")
+
+# ── sturm-44bt.4 (Beat BB4) — first qreg-path gate-emission test ────
+# Pins G1+G5 at the public `QRAM_read` site for the qreg arm: §4.4
+# closed-form CCX/CNOT/X counts at (N=4, W=4), qreg_read=1 /
+# qrom_read=0 / umbrella=1, statevector entanglement of b.bit(0)
+# with a[3].bit(0) at (N=4, W=2, 17q).
+add_executable(test_qram_read_bb_qreg_gates
+    test_qram_read_bb_qreg_gates.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_qreg_gates PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_bb_qreg_gates PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_qreg_gates COMMAND test_qram_read_bb_qreg_gates)
+set_tests_properties(test_qram_read_bb_qreg_gates
+    PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-44bt.4 (Beat BB4) — pointer overload dispatch table ───────
+# Pins the switch(ceil_log2_index(n)) table coverage from PRD §7:
+# for n in {0,1,2,3,4,5,7,8,16,32,1023,1024}, asserts umbrella +
+# split + forwarding trace. n=1025 fires the over-cap diagnose
+# (sink-side counter). Compiled with NDEBUG so the diagnose's
+# `assert(false)` is suppressed — we pin the RELEASE-mode behaviour.
+# Both the test TU and the qram_read.cpp TU need NDEBUG so the
+# assert defined in qram_read_n_over_cap_diagnose doesn't fire.
+add_executable(test_qram_read_bb_pointer_dispatch
+    test_qram_read_bb_pointer_dispatch.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_pointer_dispatch PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_read_bb_pointer_dispatch PRIVATE NDEBUG)
+target_link_libraries(test_qram_read_bb_pointer_dispatch PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_pointer_dispatch COMMAND test_qram_read_bb_pointer_dispatch)
+set_tests_properties(test_qram_read_bb_pointer_dispatch
+    PROPERTIES LABELS "qram;qram-backend")
