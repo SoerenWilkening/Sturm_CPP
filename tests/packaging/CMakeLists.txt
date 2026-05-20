@@ -140,16 +140,9 @@ set_tests_properties(test_detail_layout PROPERTIES
 #      `context.cpp` + `gate_kind.c` so the C ABI symbols (`sturm_*`)
 #      resolve at link time. The legacy `<sturm/sturm.hpp>` umbrella is
 #      still tested by `test_detail_layout.cpp`.
-add_executable(test_umbrella_only
-    test_umbrella_only.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
-target_link_libraries(test_umbrella_only PRIVATE sturm)
+add_executable(test_umbrella_only test_umbrella_only.cpp)
+target_link_libraries(test_umbrella_only PRIVATE sturm sturm_backend_runtime)
 target_compile_features(test_umbrella_only PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11")
 add_test(NAME test_umbrella_only COMMAND test_umbrella_only)
 set_tests_properties(test_umbrella_only PROPERTIES
     LABELS "packaging;frontend_simpl")
@@ -168,16 +161,9 @@ set_tests_properties(test_umbrella_only PROPERTIES
 add_executable(test_umbrella_qram
     test_umbrella_qram.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp)
-target_link_libraries(test_umbrella_qram PRIVATE sturm orkan_headers)
+    ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp)
+target_link_libraries(test_umbrella_qram PRIVATE sturm sturm_backend_runtime)
 target_compile_features(test_umbrella_qram PRIVATE cxx_std_20)
 add_test(NAME test_umbrella_qram COMMAND test_umbrella_qram)
 set_tests_properties(test_umbrella_qram PROPERTIES
@@ -194,15 +180,9 @@ set_tests_properties(test_umbrella_qram PROPERTIES
 # context.cpp + gate_kind.c + draw_json.cpp.
 add_executable(test_umbrella_draw_json
     test_umbrella_draw_json.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_json.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
-target_link_libraries(test_umbrella_draw_json PRIVATE sturm)
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_json.cpp)
+target_link_libraries(test_umbrella_draw_json PRIVATE sturm sturm_backend_runtime)
 target_compile_features(test_umbrella_draw_json PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11")
 add_test(NAME test_umbrella_draw_json COMMAND test_umbrella_draw_json)
 set_tests_properties(test_umbrella_draw_json PROPERTIES
     LABELS "packaging;frontend_simpl")
@@ -217,10 +197,8 @@ set_tests_properties(test_umbrella_draw_json PROPERTIES
 # library), keeping linkage minimal: context.cpp + gate_kind.c + draw_svg.cpp.
 add_executable(test_umbrella_draw_svg
     test_umbrella_draw_svg.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_svg.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
-target_link_libraries(test_umbrella_draw_svg PRIVATE sturm)
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_svg.cpp)
+target_link_libraries(test_umbrella_draw_svg PRIVATE sturm sturm_backend_runtime)
 target_compile_features(test_umbrella_draw_svg PRIVATE cxx_std_20)
 add_test(NAME test_umbrella_draw_svg COMMAND test_umbrella_draw_svg)
 set_tests_properties(test_umbrella_draw_svg PROPERTIES
@@ -238,10 +216,8 @@ set_tests_properties(test_umbrella_draw_svg PROPERTIES
 # draw_mermaid.cpp.
 add_executable(test_umbrella_draw_mermaid
     test_umbrella_draw_mermaid.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_mermaid.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c)
-target_link_libraries(test_umbrella_draw_mermaid PRIVATE sturm)
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_mermaid.cpp)
+target_link_libraries(test_umbrella_draw_mermaid PRIVATE sturm sturm_backend_runtime)
 target_compile_features(test_umbrella_draw_mermaid PRIVATE cxx_std_20)
 add_test(NAME test_umbrella_draw_mermaid COMMAND test_umbrella_draw_mermaid)
 set_tests_properties(test_umbrella_draw_mermaid PROPERTIES

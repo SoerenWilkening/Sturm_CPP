@@ -2260,37 +2260,14 @@ add_executable(test_gate_equivalence_or_single
     # hand-written reference.
     "${_m12_reversible_synth_generated}"
     ${CMAKE_CURRENT_SOURCE_DIR}/fixtures/reversible_synth_reference.cpp
-    # Real sturm implementation sources — the harness needs
-    # uncompute_or, execute_gate and the BackendContext C ABI to
-    # actually fire.  The header-only `sturm` interface target does
-    # not provide these symbols, so they are compiled in here.
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
 )
-target_include_directories(test_gate_equivalence_or_single PRIVATE
-    ${CMAKE_SOURCE_DIR}/include)
+# sturm-x4iq: link the shared sturm_backend_runtime OBJECT lib (defined in
+# tests/CMakeLists.txt) — it carries the uncompute_api / context /
+# execute_gate / gate_kind / exec_simulate / orkan_bridge symbols this
+# harness needs, plus STURM_BACKEND_ENABLED=1 via the lib's PUBLIC
+# compile definitions and the orkan_headers link.
 target_compile_features(test_gate_equivalence_or_single PRIVATE cxx_std_20)
-target_compile_definitions(test_gate_equivalence_or_single PRIVATE
-    # STURM_BACKEND_ENABLED activates the quantum operator path in
-    # qbool_ops.hpp (post-PK-2: operator| returns owning qbool directly,
-    # allocating an ancilla and emitting CX + CX + CCX) and pulls in
-    # the matching field/destructor machinery in qbool.hpp / qint_core.
-    # Without this macro, `a | b` takes the classical short-circuit
-    # path in qbool_logic.hpp and the gate stream would be empty on
-    # both sides — the test would pass trivially.
-    STURM_BACKEND_ENABLED=1
-)
-# sturm-5jta (P2.b / G5): the legacy compile-time pool cap is gone —
-# the qubit pool grows on demand.
-target_link_libraries(test_gate_equivalence_or_single PRIVATE sturm orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11")
+target_link_libraries(test_gate_equivalence_or_single PRIVATE sturm sturm_backend_runtime)
 # The transpile custom-command is the only producer of the generated
 # file; add an explicit target dependency so that touching the
 # transpiler binary re-triggers the fixture regeneration.

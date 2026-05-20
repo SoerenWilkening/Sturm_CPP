@@ -4,20 +4,15 @@ enable_language(C)
 # ── Backend test sources compiled with their required C implementation files ──
 
 # M1: gate_kind enum + taxonomy table
-add_executable(test_gate_kind
-    test_gate_kind.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_gate_kind PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+# sturm-x4iq: links the top-level `sturm_gate_kind` OBJECT lib instead of
+# compiling gate_kind.c locally — the dir-scope LANGUAGE=C / -std=c11
+# property previously declared here is no longer needed because the only
+# remaining in-directory consumer of gate_kind.c is test_core_abi_c, whose
+# add_executable block carries its own per-source properties.
+add_executable(test_gate_kind test_gate_kind.cpp)
+target_include_directories(test_gate_kind PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(test_gate_kind PRIVATE cxx_std_20)
-# The .c file needs C11 for bool/_Bool
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_gate_kind PRIVATE sturm_gate_kind)
 add_test(NAME test_gate_kind COMMAND test_gate_kind)
 set_tests_properties(test_gate_kind PROPERTIES LABELS "backend")
 
@@ -45,49 +40,27 @@ add_test(NAME test_core_abi_c COMMAND test_core_abi_c)
 set_tests_properties(test_core_abi_c PROPERTIES LABELS "backend")
 
 # M3: BackendContext + thread-local mode storage
-add_executable(test_context
-    test_context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_context PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_context test_context.cpp)
 target_compile_features(test_context PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_context PRIVATE sturm_backend_runtime)
 add_test(NAME test_context COMMAND test_context)
 set_tests_properties(test_context PROPERTIES LABELS "backend")
 
 # ── M6: IR buffer + GateRecord ───────────────────────────────────────────────
-add_executable(test_ir
-    test_ir.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_ir PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+# sturm-x4iq: gate_kind.c-only test uses the top-level `sturm_gate_kind`
+# OBJECT lib instead of an independent compile node.
+add_executable(test_ir test_ir.cpp)
+target_include_directories(test_ir PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(test_ir PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_ir PRIVATE sturm_gate_kind)
 add_test(NAME test_ir COMMAND test_ir)
 set_tests_properties(test_ir PROPERTIES LABELS "backend")
 
 # ── ASCII circuit drawer ─────────────────────────────────────────────────────
-add_executable(test_draw_ascii
-    test_draw_ascii.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_draw_ascii PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_draw_ascii test_draw_ascii.cpp)
+target_include_directories(test_draw_ascii PRIVATE ${CMAKE_SOURCE_DIR}/include)
 target_compile_features(test_draw_ascii PRIVATE cxx_std_20)
+target_link_libraries(test_draw_ascii PRIVATE sturm_gate_kind)
 add_test(NAME test_draw_ascii COMMAND test_draw_ascii)
 set_tests_properties(test_draw_ascii PROPERTIES LABELS "backend")
 
@@ -95,112 +68,60 @@ set_tests_properties(test_draw_ascii PROPERTIES LABELS "backend")
 add_executable(test_draw_ascii_noarg
     test_draw_ascii_noarg.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_ascii_noarg.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_draw_ascii_noarg PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_draw_ascii_noarg PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_draw_ascii_noarg PRIVATE sturm_backend_runtime)
 add_test(NAME test_draw_ascii_noarg COMMAND test_draw_ascii_noarg)
 set_tests_properties(test_draw_ascii_noarg PROPERTIES LABELS "backend")
 
 # ── sturm-a4we: debug-print JSON renderer ────────────────────────────────────
-# Mirrors the draw_ascii_noarg wiring above: header-only IR-taking overload
-# from include/sturm/backend/draw_json.hpp + no-arg entry points defined in
-# src/sturm/backend/draw_json.cpp.
 add_executable(test_draw_json
     test_draw_json.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_json.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_draw_json PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_draw_json PRIVATE cxx_std_20)
+target_link_libraries(test_draw_json PRIVATE sturm_backend_runtime)
 add_test(NAME test_draw_json COMMAND test_draw_json)
 set_tests_properties(test_draw_json PROPERTIES LABELS "backend")
 
 # ── sturm-l43b: debug-print SVG renderer ─────────────────────────────────────
-# Mirrors the draw_json wiring above: header-only IR-taking overload from
-# include/sturm/backend/draw_svg.hpp + no-arg entry points defined in
-# src/sturm/backend/draw_svg.cpp.
 add_executable(test_draw_svg
     test_draw_svg.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_svg.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_draw_svg PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_draw_svg PRIVATE cxx_std_20)
+target_link_libraries(test_draw_svg PRIVATE sturm_backend_runtime)
 add_test(NAME test_draw_svg COMMAND test_draw_svg)
 set_tests_properties(test_draw_svg PROPERTIES LABELS "backend")
 
 # ── sturm-5soh: debug-print Mermaid renderer ─────────────────────────────────
-# Mirrors the draw_svg wiring above: header-only IR-taking overload from
-# include/sturm/backend/draw_mermaid.hpp + no-arg entry points defined in
-# src/sturm/backend/draw_mermaid.cpp.
 add_executable(test_draw_mermaid
     test_draw_mermaid.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/backend/draw_mermaid.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_draw_mermaid PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_draw_mermaid PRIVATE cxx_std_20)
+target_link_libraries(test_draw_mermaid PRIVATE sturm_backend_runtime)
 add_test(NAME test_draw_mermaid COMMAND test_draw_mermaid)
 set_tests_properties(test_draw_mermaid PROPERTIES LABELS "backend")
 
 # ── M8: APPEND executor ──────────────────────────────────────────────────────
-add_executable(test_exec_append
-    test_exec_append.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_exec_append PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_exec_append test_exec_append.cpp)
 target_compile_features(test_exec_append PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_exec_append PRIVATE sturm_backend_runtime)
 add_test(NAME test_exec_append COMMAND test_exec_append)
 set_tests_properties(test_exec_append PROPERTIES LABELS "backend")
 
 # ── M7: COUNT_ONLY executor ───────────────────────────────────────────────────
-add_executable(test_exec_count
-    test_exec_count.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_exec_count PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_exec_count test_exec_count.cpp)
 target_compile_features(test_exec_count PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_exec_count PRIVATE sturm_backend_runtime)
 add_test(NAME test_exec_count COMMAND test_exec_count)
 set_tests_properties(test_exec_count PROPERTIES LABELS "backend")
 
 # ── M9: Orkan vendoring + bridge skeleton ─────────────────────────────────────
-# Include the OrkanFetch module which either fetches Orkan or falls back to the
-# local stub in vendor/orkan/.  The module defines the `orkan_headers` target.
-include(${CMAKE_SOURCE_DIR}/cmake/OrkanFetch.cmake)
+# sturm-x4iq: OrkanFetch.cmake (which defines `orkan_headers`) is now
+# included from the parent tests/CMakeLists.txt so sibling subdirs can
+# consume it without re-including the module.
 
 add_executable(test_orkan_bridge
     test_orkan_bridge.cpp
@@ -226,66 +147,30 @@ add_test(NAME test_simulate_oom COMMAND test_simulate_oom)
 set_tests_properties(test_simulate_oom PROPERTIES LABELS "backend")
 
 # ── M10: SIMULATE executor — 1-qubit gates ────────────────────────────────────
-add_executable(test_exec_simulate_1q
-    test_exec_simulate_1q.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_exec_simulate_1q PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_exec_simulate_1q test_exec_simulate_1q.cpp)
 target_compile_features(test_exec_simulate_1q PRIVATE cxx_std_20)
-target_link_libraries(test_exec_simulate_1q PRIVATE orkan_headers)
+target_link_libraries(test_exec_simulate_1q PRIVATE sturm_backend_runtime)
 add_test(NAME test_exec_simulate_1q COMMAND test_exec_simulate_1q)
 set_tests_properties(test_exec_simulate_1q PROPERTIES LABELS "backend")
 
 # ── M11: SIMULATE executor — 2/3-qubit permutation & phase gates ──────────────
-add_executable(test_exec_simulate_multiq
-    test_exec_simulate_multiq.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_exec_simulate_multiq PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_exec_simulate_multiq test_exec_simulate_multiq.cpp)
 target_compile_features(test_exec_simulate_multiq PRIVATE cxx_std_20)
-target_link_libraries(test_exec_simulate_multiq PRIVATE orkan_headers)
+target_link_libraries(test_exec_simulate_multiq PRIVATE sturm_backend_runtime)
 add_test(NAME test_exec_simulate_multiq COMMAND test_exec_simulate_multiq)
 set_tests_properties(test_exec_simulate_multiq PROPERTIES LABELS "backend")
 
 # ── M12: SIMULATE executor — CRx/CRy/CRz decomposition ───────────────────────
-add_executable(test_exec_simulate_crot
-    test_exec_simulate_crot.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_exec_simulate_crot PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_exec_simulate_crot test_exec_simulate_crot.cpp)
 target_compile_features(test_exec_simulate_crot PRIVATE cxx_std_20)
-target_link_libraries(test_exec_simulate_crot PRIVATE orkan_headers)
+target_link_libraries(test_exec_simulate_crot PRIVATE sturm_backend_runtime)
 add_test(NAME test_exec_simulate_crot COMMAND test_exec_simulate_crot)
 set_tests_properties(test_exec_simulate_crot PROPERTIES LABELS "backend")
 
 # ── M13: Layer B — execute_gate join point ────────────────────────────────────
-add_executable(test_execute_gate
-    test_execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_execute_gate PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_execute_gate test_execute_gate.cpp)
 target_compile_features(test_execute_gate PRIVATE cxx_std_20)
-target_link_libraries(test_execute_gate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_execute_gate PRIVATE sturm_backend_runtime)
 add_test(NAME test_execute_gate COMMAND test_execute_gate)
 set_tests_properties(test_execute_gate PROPERTIES LABELS "backend")
 
@@ -303,54 +188,16 @@ set_tests_properties(test_execute_gate PROPERTIES LABELS "backend")
 # is explicitly retired in Phase K PK-4.
 
 # ── Phase E PE-0 (sturm-oheo): explicit uncompute_and free-function API ──────
-add_executable(test_uncompute_and
-    test_uncompute_and.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_uncompute_and PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_uncompute_and test_uncompute_and.cpp)
 target_compile_features(test_uncompute_and PRIVATE cxx_std_20)
-target_compile_definitions(test_uncompute_and PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_uncompute_and PRIVATE sturm orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_uncompute_and PRIVATE sturm sturm_backend_runtime)
 add_test(NAME test_uncompute_and COMMAND test_uncompute_and)
 set_tests_properties(test_uncompute_and PROPERTIES LABELS "backend")
 
 # ── Phase J PJ-1b (sturm-8cxd): ccnot_inplace forward helper ─────────────────
-add_executable(test_ccnot_inplace
-    test_ccnot_inplace.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_ccnot_inplace PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_ccnot_inplace test_ccnot_inplace.cpp)
 target_compile_features(test_ccnot_inplace PRIVATE cxx_std_20)
-target_compile_definitions(test_ccnot_inplace PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_ccnot_inplace PRIVATE sturm orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_ccnot_inplace PRIVATE sturm sturm_backend_runtime)
 add_test(NAME test_ccnot_inplace COMMAND test_ccnot_inplace)
 set_tests_properties(test_ccnot_inplace PROPERTIES LABELS "backend")
 
@@ -369,17 +216,9 @@ set_tests_properties(test_ccnot_inplace PROPERTIES LABELS "backend")
 add_executable(test_reduction_table
     test_reduction_table.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_reduction_table PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_reduction_table PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_reduction_table PRIVATE sturm_backend_runtime)
 add_test(NAME test_reduction_table COMMAND test_reduction_table)
 set_tests_properties(test_reduction_table PROPERTIES LABELS "backend")
 
@@ -388,22 +227,9 @@ add_executable(test_dispatch_all_classical
     test_dispatch_all_classical.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_dispatch_all_classical PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_dispatch_all_classical PRIVATE cxx_std_20)
-target_link_libraries(test_dispatch_all_classical PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_dispatch_all_classical PRIVATE sturm_backend_runtime)
 add_test(NAME test_dispatch_all_classical COMMAND test_dispatch_all_classical)
 set_tests_properties(test_dispatch_all_classical PROPERTIES LABELS "backend")
 
@@ -412,22 +238,9 @@ add_executable(test_dispatch_mixed
     test_dispatch_mixed.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/dispatch_gate.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/dispatch/reduction_table.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_dispatch_mixed PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_dispatch_mixed PRIVATE cxx_std_20)
-target_link_libraries(test_dispatch_mixed PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_dispatch_mixed PRIVATE sturm_backend_runtime)
 add_test(NAME test_dispatch_mixed COMMAND test_dispatch_mixed)
 set_tests_properties(test_dispatch_mixed PROPERTIES LABELS "backend")
 
@@ -435,22 +248,9 @@ set_tests_properties(test_dispatch_mixed PROPERTIES LABELS "backend")
 add_executable(test_measure
     test_measure.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/measure.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_measure PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_measure PRIVATE cxx_std_20)
-target_link_libraries(test_measure PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_measure PRIVATE sturm_backend_runtime)
 add_test(NAME test_measure COMMAND test_measure)
 set_tests_properties(test_measure PROPERTIES LABELS "backend")
 
@@ -458,18 +258,9 @@ set_tests_properties(test_measure PROPERTIES LABELS "backend")
 add_executable(test_init
     test_init.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/core/init.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_init PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_init PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_init PRIVATE sturm_backend_runtime)
 add_test(NAME test_init COMMAND test_init)
 set_tests_properties(test_init PROPERTIES LABELS "backend")
 
@@ -483,58 +274,19 @@ set_tests_properties(test_init PROPERTIES LABELS "backend")
 add_executable(test_instantiations
     test_instantiations.cpp
     ${CMAKE_SOURCE_DIR}/src/sturm/qtypes/instantiations.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    # sturm-a3t4.4: instantiations.cpp explicitly instantiates div_kernel /
-    # mul_kernel template specialisations (via qint.hpp), which under the
-    # depth-1 lift refactor now reference sturm::uncompute_and.  The free
-    # function is defined in src/sturm/uncompute/uncompute_api.cpp; without
-    # it linked here, test_instantiations fails with an "undefined reference
-    # to sturm::uncompute_and" at div_dsl.hpp:180 / mul_dsl.hpp:107.
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-)
-target_include_directories(test_instantiations PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
 )
 target_compile_features(test_instantiations PRIVATE cxx_std_20)
 target_compile_definitions(test_instantiations PRIVATE
-    STURM_BACKEND_ENABLED=1
     STURM_USE_EXPLICIT_INSTANTIATIONS=1
 )
-target_link_libraries(test_instantiations PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_instantiations PRIVATE sturm_backend_runtime)
 add_test(NAME test_instantiations COMMAND test_instantiations)
 set_tests_properties(test_instantiations PROPERTIES LABELS "backend")
 
 # ── M26: End-to-end acceptance — c = (a + 5) >= 0 ────────────────────────────
-add_executable(test_end_to_end
-    test_end_to_end.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_end_to_end PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_end_to_end test_end_to_end.cpp)
 target_compile_features(test_end_to_end PRIVATE cxx_std_20)
-target_compile_definitions(test_end_to_end PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_end_to_end PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_end_to_end PRIVATE sturm_backend_runtime)
 add_test(NAME test_end_to_end COMMAND test_end_to_end)
 set_tests_properties(test_end_to_end PROPERTIES LABELS "backend")
 
@@ -560,136 +312,47 @@ set_tests_properties(test_ci_hook PROPERTIES LABELS "backend")
 # ── M12: Control stack in BackendContext ─────────────────────────────────────
 
 # test_control_stack_push_pop — push/pop/depth/top/controls() correctness
-add_executable(test_control_stack_push_pop
-    test_control_stack_push_pop.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_control_stack_push_pop PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_control_stack_push_pop test_control_stack_push_pop.cpp)
 target_compile_features(test_control_stack_push_pop PRIVATE cxx_std_20)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_control_stack_push_pop PRIVATE sturm_backend_runtime)
 add_test(NAME test_control_stack_push_pop COMMAND test_control_stack_push_pop)
 set_tests_properties(test_control_stack_push_pop PROPERTIES LABELS "backend")
 
 # test_control_stack_thread_local — two contexts on different threads are independent
 find_package(Threads REQUIRED)
-add_executable(test_control_stack_thread_local
-    test_control_stack_thread_local.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-)
-target_include_directories(test_control_stack_thread_local PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_control_stack_thread_local test_control_stack_thread_local.cpp)
 target_compile_features(test_control_stack_thread_local PRIVATE cxx_std_20)
-target_link_libraries(test_control_stack_thread_local PRIVATE Threads::Threads)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_control_stack_thread_local PRIVATE Threads::Threads sturm_backend_runtime)
 add_test(NAME test_control_stack_thread_local COMMAND test_control_stack_thread_local)
 set_tests_properties(test_control_stack_thread_local PROPERTIES LABELS "backend")
 
 # ── M11 (v3): Primitives through execute_gate ────────────────────────────────
 
 # test_primitives_v3_count — gate_count increments for each primitive (COUNT_ONLY)
-add_executable(test_primitives_v3_count
-    test_primitives_v3_count.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_primitives_v3_count PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_primitives_v3_count test_primitives_v3_count.cpp)
 target_compile_features(test_primitives_v3_count PRIVATE cxx_std_20)
-target_link_libraries(test_primitives_v3_count PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_primitives_v3_count PRIVATE sturm_backend_runtime)
 add_test(NAME test_primitives_v3_count COMMAND test_primitives_v3_count)
 set_tests_properties(test_primitives_v3_count PROPERTIES LABELS "backend")
 
 # test_primitives_v3_append — correct GateRecord pushed for each primitive (APPEND)
-add_executable(test_primitives_v3_append
-    test_primitives_v3_append.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_primitives_v3_append PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_primitives_v3_append test_primitives_v3_append.cpp)
 target_compile_features(test_primitives_v3_append PRIVATE cxx_std_20)
-target_link_libraries(test_primitives_v3_append PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_primitives_v3_append PRIVATE sturm_backend_runtime)
 add_test(NAME test_primitives_v3_append COMMAND test_primitives_v3_append)
 set_tests_properties(test_primitives_v3_append PROPERTIES LABELS "backend")
 
 # test_primitives_v3_simulate — statevector matches expected amplitudes (SIMULATE)
-add_executable(test_primitives_v3_simulate
-    test_primitives_v3_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_primitives_v3_simulate PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_primitives_v3_simulate test_primitives_v3_simulate.cpp)
 target_compile_features(test_primitives_v3_simulate PRIVATE cxx_std_20)
-target_link_libraries(test_primitives_v3_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_primitives_v3_simulate PRIVATE sturm_backend_runtime)
 add_test(NAME test_primitives_v3_simulate COMMAND test_primitives_v3_simulate)
 set_tests_properties(test_primitives_v3_simulate PROPERTIES LABELS "backend")
 
 # ── M13: qbool operators + lazy expressions ──────────────────────────────────
-add_executable(test_qbool_ops
-    test_qbool_ops.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_qbool_ops PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_qbool_ops test_qbool_ops.cpp)
 target_compile_features(test_qbool_ops PRIVATE cxx_std_20)
-target_compile_definitions(test_qbool_ops PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qbool_ops PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_qbool_ops PRIVATE sturm_backend_runtime)
 add_test(NAME test_qbool_ops COMMAND test_qbool_ops)
 set_tests_properties(test_qbool_ops PROPERTIES LABELS "backend")
 
@@ -702,80 +365,23 @@ set_tests_properties(test_qbool_ops PROPERTIES LABELS "backend")
 # only fuses the `qbool __t = a & b; x ^= __t;` shape). Files deleted.
 
 # ── M18: qint_t operator[](i) returns non-owning qbool ───────────────────────
-add_executable(test_subscript
-    test_subscript.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_subscript PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_subscript test_subscript.cpp)
 target_compile_features(test_subscript PRIVATE cxx_std_20)
-target_compile_definitions(test_subscript PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_subscript PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_subscript PRIVATE sturm_backend_runtime)
 add_test(NAME test_subscript COMMAND test_subscript)
 set_tests_properties(test_subscript PROPERTIES LABELS "backend")
 
 # ── sturm-qwt: qint operator[] COUNT_ONLY and SIMULATE tests ─────────────────
-add_executable(test_subscript_count_simulate
-    test_subscript_count_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_subscript_count_simulate PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_subscript_count_simulate test_subscript_count_simulate.cpp)
 target_compile_features(test_subscript_count_simulate PRIVATE cxx_std_20)
-target_compile_definitions(test_subscript_count_simulate PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_subscript_count_simulate PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_subscript_count_simulate PRIVATE sturm_backend_runtime)
 add_test(NAME test_subscript_count_simulate COMMAND test_subscript_count_simulate)
 set_tests_properties(test_subscript_count_simulate PROPERTIES LABELS "backend")
 
 # ── M16: DSL-style SWAP / Fredkin ─────────────────────────────────────────────
-add_executable(test_swap_dsl
-    test_swap_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_swap_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_swap_dsl test_swap_dsl.cpp)
 target_compile_features(test_swap_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_swap_dsl PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_swap_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_swap_dsl PRIVATE sturm_backend_runtime)
 add_test(NAME test_swap_dsl COMMAND test_swap_dsl)
 set_tests_properties(test_swap_dsl PROPERTIES LABELS "backend")
 
@@ -787,74 +393,18 @@ set_tests_properties(test_swap_dsl PROPERTIES LABELS "backend")
 # No transpile analogue exists for the full DSL truth tables. Files deleted.
 
 # ── M17: DSL-style POW (repeated squaring) ───────────────────────────────────
-add_executable(test_pow_dsl_small
-    test_pow_dsl_small.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    # sturm-a3t4.4: lib_mul_dsl now uses uncompute_and for the depth-1
-    # lift; pow_dsl reuses lib_mul_dsl, so this TU is required at link.
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-)
-target_include_directories(test_pow_dsl_small PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_pow_dsl_small test_pow_dsl_small.cpp)
 target_compile_features(test_pow_dsl_small PRIVATE cxx_std_20)
-target_compile_definitions(test_pow_dsl_small PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_pow_dsl_small PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_pow_dsl_small PRIVATE sturm_backend_runtime)
 add_test(NAME test_pow_dsl_small COMMAND test_pow_dsl_small)
 set_tests_properties(test_pow_dsl_small PROPERTIES LABELS "backend")
 
 # ── M19: Frontend wiring — qint_t compound-assign to DSL library ──────────────
-
-# Shared source list for M19 tests (all need backend + control stack + DSL).
-# Phase K PK-3 (sturm-pzye): src/sturm/uncompute/qint_base.cpp was retired
-# along with the uncompute_op tagged union.
-set(M19_SOURCES
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-    # sturm-a3t4.4: lib_div_dsl / lib_mul_dsl now use uncompute_and for the
-    # depth-1 lift (and lib_add_mod_dsl already did under sturm-a3t4.2),
-    # so any backend test that pulls these primitives needs the
-    # uncompute_api translation unit linked in.
-    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
-)
-
-# sturm-x4iq: shared OBJECT library so the 7-file M19 source set is compiled
-# once per build rather than once per test executable. Without this, 33 test
-# binaries each rebuilt the same 7 TUs (231 redundant compile nodes); ccache
-# absorbed the duplicate work on warm builds but ninja still scheduled them
-# all and a cold build paid the full cost. The PUBLIC usage requirements
-# below (include dirs, STURM_BACKEND_ENABLED, orkan_headers link) propagate
-# transitively to any executable that links sturm_backend_runtime, which is
-# why the per-test duplicates are dropped at each callsite.
-add_library(sturm_backend_runtime OBJECT ${M19_SOURCES})
-target_include_directories(sturm_backend_runtime PUBLIC
-    ${CMAKE_SOURCE_DIR}/include
-)
-target_compile_features(sturm_backend_runtime PUBLIC cxx_std_20)
-target_compile_definitions(sturm_backend_runtime PUBLIC
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(sturm_backend_runtime PUBLIC orkan_headers)
-# gate_kind.c's LANGUAGE=C / COMPILE_FLAGS=-std=c11 are already set by
-# existing directory-scoped set_source_files_properties calls earlier in
-# this CMakeLists.txt; those apply to every compilation of gate_kind.c in
-# this directory, including the one inside sturm_backend_runtime.
+#
+# sturm-x4iq: `sturm_backend_runtime` OBJECT lib (formerly defined here)
+# was promoted to tests/CMakeLists.txt so sibling subdirs (qtypes/,
+# control/, qram/, packaging/, transpiler/) can consume the same lib
+# without re-declaring the 7-file source set or its build flags.
 
 # test_qint_add_e2e — operator+= and operator-= emit gates + correct arithmetic
 add_executable(test_qint_add_e2e
@@ -1129,28 +679,9 @@ set_tests_properties(test_bitwise_and_or_simulate PROPERTIES LABELS "backend")
 # ── M14 (qbool unification): Final acceptance tests — backend ─────────────────
 # Covers AC1 (phi/RZ), AC2 (theta/RY), AC6 (WHEN classical+superposed),
 # AC8 (operator~ uncomputes — X gate on destruction).
-add_executable(test_qbool_acceptance_backend
-    test_qbool_acceptance_backend.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_qbool_acceptance_backend PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_qbool_acceptance_backend test_qbool_acceptance_backend.cpp)
 target_compile_features(test_qbool_acceptance_backend PRIVATE cxx_std_20)
-target_compile_definitions(test_qbool_acceptance_backend PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_qbool_acceptance_backend PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_qbool_acceptance_backend PRIVATE sturm_backend_runtime)
 add_test(NAME test_qbool_acceptance_backend COMMAND test_qbool_acceptance_backend)
 set_tests_properties(test_qbool_acceptance_backend PROPERTIES LABELS "backend")
 
@@ -1158,28 +689,9 @@ set_tests_properties(test_qbool_acceptance_backend PROPERTIES LABELS "backend")
 # Verifies that WhenGuard pushes/pops ctx->control_stack alongside TLS.
 # Non-fold: push expr qubit. AND-fold: pop outer, push ancilla.
 # Invariant: depth in {0,1} at all times.
-add_executable(test_when_control_stack_bridge
-    test_when_control_stack_bridge.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_when_control_stack_bridge PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_when_control_stack_bridge test_when_control_stack_bridge.cpp)
 target_compile_features(test_when_control_stack_bridge PRIVATE cxx_std_20)
-target_compile_definitions(test_when_control_stack_bridge PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_when_control_stack_bridge PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_when_control_stack_bridge PRIVATE sturm_backend_runtime)
 add_test(NAME test_when_control_stack_bridge COMMAND test_when_control_stack_bridge)
 set_tests_properties(test_when_control_stack_bridge PROPERTIES LABELS "backend")
 
@@ -1248,28 +760,9 @@ add_test(NAME test_bit_proxy_phi_theta COMMAND test_bit_proxy_phi_theta)
 set_tests_properties(test_bit_proxy_phi_theta PROPERTIES LABELS "backend")
 
 # ── M8: Template logic/swap/compare/c_and DSL (BitProxy instantiation) ───────
-add_executable(test_m8_template_dsl
-    test_m8_template_dsl.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
-    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
-)
-target_include_directories(test_m8_template_dsl PRIVATE
-    ${CMAKE_SOURCE_DIR}/include
-)
+add_executable(test_m8_template_dsl test_m8_template_dsl.cpp)
 target_compile_features(test_m8_template_dsl PRIVATE cxx_std_20)
-target_compile_definitions(test_m8_template_dsl PRIVATE
-    STURM_BACKEND_ENABLED=1
-)
-target_link_libraries(test_m8_template_dsl PRIVATE orkan_headers)
-set_source_files_properties(
-    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
-    PROPERTIES LANGUAGE C
-               COMPILE_FLAGS "-std=c11"
-)
+target_link_libraries(test_m8_template_dsl PRIVATE sturm_backend_runtime)
 add_test(NAME test_m8_template_dsl COMMAND test_m8_template_dsl)
 set_tests_properties(test_m8_template_dsl PROPERTIES LABELS "backend")
 

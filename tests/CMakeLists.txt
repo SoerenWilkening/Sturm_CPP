@@ -1,6 +1,57 @@
 cmake_minimum_required(VERSION 3.16)
+enable_language(C)
 
 find_package(Threads REQUIRED)
+
+# ── sturm-x4iq: shared OBJECT lib for the backend-runtime source set ─────────
+# Every test subdirectory (backend/, qtypes/, control/, packaging/, qram/,
+# transpiler/) used to re-list the same seven backend / control / uncompute
+# TUs on every `add_executable`. A 2026-05-20 cold-build audit counted 297
+# duplicate compile nodes across the seven sources (gate_kind.c at 60, the
+# other six between 25 and 54). ccache absorbed the wall-time cost on warm
+# builds, but ninja still had to schedule every node and an edit to e.g.
+# `gate_kind.c` re-compiled it 60×.
+#
+# Promoting the lib to `tests/` scope (rather than tests/backend/) is what
+# lets every sibling subdirectory pull it in without re-declaring sources,
+# build flags, or `orkan_headers` linkage. Mirrors the precedent set by
+# `sturm_examples_runtime` in examples/CMakeLists.txt (sturm-grhw) and
+# `sturm_transpile_test_core` (sturm-ximr).
+#
+# `OrkanFetch.cmake` is included here (was previously in tests/backend/) so
+# `orkan_headers` is defined before this OBJECT lib's PUBLIC link line, and
+# every subdir that consumes it inherits the include path transitively.
+include(${CMAKE_SOURCE_DIR}/cmake/OrkanFetch.cmake)
+
+set(STURM_BACKEND_RUNTIME_SOURCES
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/execute_gate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/context.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/control_stack.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/exec_simulate.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/backend/orkan_bridge.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/uncompute/uncompute_api.cpp
+)
+
+# gate_kind.c needs C11 for bool/_Bool. Directory-scoped property — applies
+# to every compilation of gate_kind.c in this directory (i.e. inside
+# sturm_backend_runtime). Sibling subdirs that compile gate_kind.c
+# independently still need their own set_source_files_properties() call.
+set_source_files_properties(
+    ${CMAKE_SOURCE_DIR}/src/sturm/core/gate_kind.c
+    PROPERTIES LANGUAGE C
+               COMPILE_FLAGS "-std=c11"
+)
+
+add_library(sturm_backend_runtime OBJECT ${STURM_BACKEND_RUNTIME_SOURCES})
+target_include_directories(sturm_backend_runtime PUBLIC
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(sturm_backend_runtime PUBLIC cxx_std_20)
+target_compile_definitions(sturm_backend_runtime PUBLIC
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(sturm_backend_runtime PUBLIC orkan_headers)
 
 # Register each test executable in the tests/ directory.
 # Add new test source files to this list as steps are implemented.
