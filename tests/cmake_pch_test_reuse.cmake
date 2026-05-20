@@ -89,6 +89,11 @@ set(_args
     "-S" "${STURM_SOURCE_DIR}"
     "-B" "${_build_dir}"
     "-G" "Unix Makefiles"
+    # sturm-e9gj: the top-level CMakeLists.txt refuses non-Ninja
+    # generators by default. This test deliberately needs Unix
+    # Makefiles to inspect per-target flags.make, so it opts in via
+    # the documented escape hatch.
+    "-DSTURM_ALLOW_NON_NINJA=ON"
 )
 if(PARENT_LLVM_DIR)
     list(APPEND _args "-DLLVM_DIR=${PARENT_LLVM_DIR}")

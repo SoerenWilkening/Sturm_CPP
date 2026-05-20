@@ -511,6 +511,41 @@ if(STURM_FULL_TEST_SUITE)
         PROCESSORS 2)
 endif()
 
+# ── sturm-e9gj — fast-build gate ctest driver ──────────────────────────────
+#
+# Pins the diagnostic text emitted by the four fast-build gates added in
+# the top-level CMakeLists.txt (ccache missing, mold missing, non-Ninja
+# generator, valid happy path). The load-bearing tokens (`sturm-e9gj`,
+# `tools/setup_dev_env.sh`, `Ninja`, `STURM_ALLOW_NON_NINJA`,
+# `JOB_POOLS clamp active`) MUST survive future reflows of the gate
+# messages — they are the breadcrumbs that lead a debugging agent to
+# the fix. If a refactor drops one, this test fails before the change
+# ships.
+#
+# Cost: 4 out-of-tree child configures. The three failure cases short
+# out at the gate (no find_package(LLVM CONFIG) ever runs) and cost
+# ~1-2 s each. The VALID case runs the full top-level configure
+# (~10-15 s; the JOB_POOLS announcement happens before
+# add_subdirectory(transpiler) so the LLVM lookup is part of the test
+# cost). Total ~20 s wall — comparable to cmake_pch_pie_match, so not
+# gated behind STURM_FULL_TEST_SUITE.
+add_test(NAME cmake_fast_build_gate
+    COMMAND "${CMAKE_COMMAND}"
+        "-DSTURM_SOURCE_DIR=${CMAKE_SOURCE_DIR}"
+        "-DSCRATCH_ROOT=${CMAKE_BINARY_DIR}/cmake_fast_build_gate"
+        "-DPARENT_LLVM_DIR=${LLVM_DIR}"
+        "-DPARENT_CLANG_DIR=${Clang_DIR}"
+        "-DPARENT_CXX_COMPILER=${CMAKE_CXX_COMPILER}"
+        "-DPARENT_C_COMPILER=${CMAKE_C_COMPILER}"
+        -P "${CMAKE_CURRENT_SOURCE_DIR}/cmake_fast_build_gate.cmake"
+)
+set_tests_properties(cmake_fast_build_gate PROPERTIES
+    LABELS "cmake;fast-build-gate"
+    # The VALID child configure runs find_package(LLVM CONFIG) and the
+    # full transpiler subdirectory scan; reserve 2 slots to stay under
+    # the project's `--parallel 6` cap.
+    PROCESSORS 2)
+
 # ── sturm-mixe — STURM_MODE build flag (Frontend simpl. P1 / PRD §5.3) ─────
 #
 # Drives the contract for the new `STURM_MODE` cache STRING introduced

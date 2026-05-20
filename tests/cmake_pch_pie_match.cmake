@@ -97,6 +97,11 @@ set(_args
     # `build.ninja`, but the test only needs to inspect ONE generator
     # target so we pin the simpler one.
     "-G" "Unix Makefiles"
+    # sturm-e9gj: the top-level CMakeLists.txt refuses non-Ninja
+    # generators by default (no silent slow-build fallback). This
+    # test deliberately needs Unix Makefiles to read flags.make, so
+    # it opts in via the documented escape hatch.
+    "-DSTURM_ALLOW_NON_NINJA=ON"
 )
 if(PARENT_LLVM_DIR)
     list(APPEND _args "-DLLVM_DIR=${PARENT_LLVM_DIR}")

@@ -34,11 +34,37 @@ if(STURM_USE_CCACHE)
         set(CMAKE_CXX_COMPILER_LAUNCHER "${CCACHE_PROGRAM}"
             CACHE STRING "C++ compiler launcher (set by STURM_USE_CCACHE)" FORCE)
     else()
-        message(STATUS "sturm: ccache not found on PATH — STURM_USE_CCACHE=ON "
-                       "is a no-op. Install via tools/setup_dev_env.sh "
-                       "(`apt install ccache` on the agent container, "
-                       "`brew install ccache` on macOS).")
+        # sturm-e9gj: hard guard against silent slow-build fallback.
+        # Previously: STATUS warning, build continued without launcher,
+        # cold rebuild went from ~2.5 min back to ~30 min unnoticed.
+        message(FATAL_ERROR
+            "sturm-e9gj: STURM_USE_CCACHE=ON but `ccache` is not on PATH.\n"
+            "\n"
+            "ccache caches (compile-flags, preprocessed-source, compiler-version)\n"
+            "tuples and serves the cached .o on a hit. Without it this tree's\n"
+            "iterative build loop balloons from ~2 min to ~30 min per cycle.\n"
+            "\n"
+            "Fix (one of):\n"
+            "  1. Install ccache + the PCH-safe sloppiness config in one shot:\n"
+            "         bash tools/setup_dev_env.sh\n"
+            "     (idempotent — safe to rerun anytime).\n"
+            "  2. Install manually:\n"
+            "         apt install ccache    # Debian / Ubuntu / agent container\n"
+            "         brew install ccache   # macOS\n"
+            "  3. ONLY for explicit uncached baseline measurement, pass\n"
+            "         -DSTURM_USE_CCACHE=OFF\n"
+            "     This will print a WARNING and emit a ~10x slower build.\n"
+            "\n"
+            "This guard exists so Claude / CI / a fresh dev never silently\n"
+            "lands in the slow path. See sturm-e9gj.")
     endif()
+else()
+    # sturm-e9gj: explicit opt-out branch — loud WARNING so it cannot
+    # slip past a code review or hide in a config that drifted OFF.
+    message(WARNING
+        "sturm-e9gj: STURM_USE_CCACHE=OFF — compiler launcher is unwrapped.\n"
+        "Cold builds will be ~10x slower than the cached default. Only use\n"
+        "this when explicitly measuring an uncached baseline. Default is ON.")
 endif()
 
 # ── sturm-q2eb — mold linker preference ──────────────────────────────────────
@@ -67,10 +93,39 @@ if(STURM_USE_MOLD AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
                        "-fuse-ld=mold for all link steps (STURM_USE_MOLD=ON)")
         add_link_options(-fuse-ld=mold)
     else()
-        message(STATUS "sturm: mold not found on PATH — STURM_USE_MOLD=ON "
-                       "is a no-op. Install via tools/setup_dev_env.sh "
-                       "(`apt install mold` on the agent container).")
+        # sturm-e9gj: hard guard. The 9 transpiler-test bucket binaries
+        # each pull libclang-cpp at link time; with binutils ld the link
+        # phase alone dominates ~half the cold-build wall.
+        message(FATAL_ERROR
+            "sturm-e9gj: STURM_USE_MOLD=ON on Linux but `mold` is not on PATH.\n"
+            "\n"
+            "mold is 2-5x faster than binutils ld on the link-heavy targets\n"
+            "in this tree (each transpiler-test bucket pulls libclang-cpp\n"
+            "with its full symbol table). Without it the link phase alone\n"
+            "dominates the cold-build wall.\n"
+            "\n"
+            "Fix (one of):\n"
+            "  1. Install mold + the rest of the toolchain in one shot:\n"
+            "         bash tools/setup_dev_env.sh\n"
+            "     (idempotent — safe to rerun anytime).\n"
+            "  2. Install manually:\n"
+            "         apt install mold      # Debian / Ubuntu / agent container\n"
+            "  3. ONLY for explicit baseline measurement, pass\n"
+            "         -DSTURM_USE_MOLD=OFF\n"
+            "     This will print a WARNING and fall back to binutils ld.\n"
+            "\n"
+            "This guard exists so Claude / CI / a fresh dev never silently\n"
+            "lands in the slow-linker path. See sturm-e9gj.")
     endif()
+elseif(NOT STURM_USE_MOLD AND CMAKE_SYSTEM_NAME STREQUAL "Linux")
+    # sturm-e9gj: explicit opt-out branch — Linux only; macOS uses ld64
+    # natively and STURM_USE_MOLD is a no-op there, so suppress the
+    # WARNING on non-Linux to avoid spurious noise.
+    message(WARNING
+        "sturm-e9gj: STURM_USE_MOLD=OFF on Linux — link phase falls back to\n"
+        "binutils ld. Expect substantially slower link times on the\n"
+        "transpiler-test bucket binaries. Only use this for explicit\n"
+        "baseline measurement. Default is ON.")
 endif()
 
 # ── sturm-q2eb — unity-build bucketing for transpiler tests ──────────────────
@@ -99,6 +154,15 @@ if(STURM_UNITY_BUCKETS)
                    "is wrapped in a unique `namespace sturm_<stem>_ns { }` "
                    "so file-local helpers (tests_pass / run_on / etc.) do "
                    "not ODR-collide across members in the unity TU.")
+else()
+    # sturm-e9gj: explicit opt-out branch — loud WARNING because OFF
+    # multiplies transpiler-test compile work ~8x (members no longer
+    # share PCH preamble or matcher_common.hpp parse across siblings).
+    message(WARNING
+        "sturm-e9gj: STURM_UNITY_BUCKETS=OFF — each of the 9 transpiler-test\n"
+        "bucket members compiles as its own TU. Cold builds will be\n"
+        "substantially slower than the unity default. Only toggle OFF when\n"
+        "bisecting a unity-induced symbol collision in a new test member.")
 endif()
 
 # ── sturm-8vdv — unity-build the transpiler matcher_*.cpp set ────────────────
@@ -138,6 +202,16 @@ if(STURM_UNITY_MATCHERS)
                    "inner anon ns is wrapped in `sturm_matcher_<base>_anon_ns` "
                    "so file-local helpers do not ODR-collide across siblings "
                    "in the unity TU.")
+else()
+    # sturm-e9gj: explicit opt-out branch — OFF means the 35 matcher TUs
+    # each re-parse libclang's AST headers + matcher_common.hpp.
+    # Measured impact on test_bucket_qram alone: ~6m14s -> ~11m24s.
+    message(WARNING
+        "sturm-e9gj: STURM_UNITY_MATCHERS=OFF — the 35 transpiler matcher_*.cpp\n"
+        "TUs each re-parse libclang AST headers individually. Cold builds\n"
+        "will be substantially slower (measured ~5-7x on the matcher subset).\n"
+        "Only toggle OFF when bisecting a unity-induced collision in a new\n"
+        "matcher TU.")
 endif()
 
 # Helper: enable UNITY_BUILD on <target> for its matcher_*.cpp sources
@@ -163,6 +237,124 @@ function(sturm_unity_matchers target)
         endif()
     endforeach()
 endfunction()
+
+# ── sturm-e9gj — Ninja generator gate ─────────────────────────────────────────
+#
+# Why this is a FATAL_ERROR, not a STATUS warning: this tree has ~1500 .o
+# files. The GNU Make generator stats every dependency on every build
+# invocation; Ninja's `.ninja_deps` binary log makes the same scan ~10x
+# faster. A silent fallback to Makefiles would erase the no-op rebuild
+# cap (currently ~2s) and convert it to ~30s. Worse, a developer or
+# Claude agent could spend hours wondering why incremental builds got
+# slow — there is no in-the-loop signal that the wrong generator was
+# selected, because the build still works.
+#
+# Defaults
+#   (no flag)                       — FATAL_ERROR if `-G Ninja` was not
+#                                     passed, with an actionable hint.
+#   -DSTURM_ALLOW_NON_NINJA=ON      — escape hatch; emits a WARNING but
+#                                     allows the configure to proceed.
+#                                     Reserved for environments where
+#                                     Ninja genuinely is unavailable
+#                                     (some restricted CI runners,
+#                                     archaic distros). Never use on
+#                                     dev machines or the agent
+#                                     container — install ninja
+#                                     instead via tools/setup_dev_env.sh.
+option(STURM_ALLOW_NON_NINJA
+    "Permit configure with a non-Ninja generator (default OFF — FATAL_ERROR with Ninja hint). Only set ON for restricted CI environments where Ninja is genuinely unavailable; the project is tuned for Ninja and other generators are substantially slower."
+    OFF)
+if(NOT CMAKE_GENERATOR STREQUAL "Ninja")
+    if(STURM_ALLOW_NON_NINJA)
+        message(WARNING
+            "sturm-e9gj: STURM_ALLOW_NON_NINJA=ON — proceeding with the\n"
+            "${CMAKE_GENERATOR} generator. Expect slower no-op rebuilds and\n"
+            "dependency scans (Ninja's .ninja_deps binary log is ~10x faster\n"
+            "on this tree's ~1500 .o files). JOB_POOLS clamp is unavailable\n"
+            "outside Ninja, so the -j cap is advisory only.")
+    else()
+        message(FATAL_ERROR
+            "sturm-e9gj: configure was launched with generator '${CMAKE_GENERATOR}'.\n"
+            "This project requires the Ninja generator.\n"
+            "\n"
+            "Why: this tree has ~1500 .o files. Ninja's .ninja_deps binary\n"
+            "log makes incremental dependency scans ~10x faster than GNU Make.\n"
+            "A no-op rebuild drops from ~30s (Make) to ~2s (Ninja). The\n"
+            "agent's <2 min incremental-rebuild cap is unreachable without\n"
+            "Ninja.\n"
+            "\n"
+            "Fix:\n"
+            "  1. Delete the current build/ directory (it is generator-locked\n"
+            "     to '${CMAKE_GENERATOR}' and CMake cannot retarget in place):\n"
+            "         rm -rf build\n"
+            "  2. Re-configure with `-G Ninja`:\n"
+            "         cmake -S . -B build -G Ninja ...\n"
+            "     The canonical configure command lives in CLAUDE.md\n"
+            "     under 'Build & Test'.\n"
+            "  3. If `ninja` is not on PATH, install it:\n"
+            "         bash tools/setup_dev_env.sh   # installs ninja + ccache + mold\n"
+            "         # or: apt install ninja-build\n"
+            "         # or: brew install ninja\n"
+            "  4. Escape hatch ONLY for restricted CI where Ninja genuinely\n"
+            "     is unavailable: pass -DSTURM_ALLOW_NON_NINJA=ON. Emits a\n"
+            "     WARNING and proceeds with the slow generator.\n"
+            "\n"
+            "This guard exists so Claude / CI / a fresh dev never silently\n"
+            "lands in the slow-generator path. See sturm-e9gj.")
+    endif()
+endif()
+
+# ── sturm-e9gj — Ninja JOB_POOLS clamp on compile + link parallelism ──────────
+#
+# CLAUDE.md mandates a HARD LIMIT of 6 parallel compile/link jobs on the
+# 8 GB agent container — anything higher OOM-kills the build (transpiler
+# matcher TUs each peak at ~600 MB during instantiation). The CMake-level
+# `-j` flag is invisible to the configure step, so we can't validate it
+# directly. But Ninja's JOB_POOLS feature caps concurrent jobs in a pool
+# at the build-graph level: `ninja -j20` against a pool sized 6 still
+# only runs 6 jobs at a time. This guard makes the OOM-safe cap
+# enforceable from inside the build, not by convention.
+#
+# Defaults
+#   STURM_BUILD_JOBS=6 (default)    — match the CLAUDE.md HARD LIMIT.
+#                                     Safe on the agent container; tuned
+#                                     for 6-core / 8 GB allocations.
+#   STURM_BUILD_JOBS=N (N > 6)      — escape hatch for beefier dev
+#                                     machines (e.g. -DSTURM_BUILD_JOBS=12
+#                                     on a 16-core/32 GB workstation).
+#                                     Emits a STATUS message; no
+#                                     WARNING because the user opted in.
+#
+# Only effective with the Ninja generator. Skipped silently when
+# STURM_ALLOW_NON_NINJA=ON since other generators have no equivalent.
+set(STURM_BUILD_JOBS "6" CACHE STRING
+    "Cap concurrent compile/link jobs (Ninja JOB_POOLS) at this value. Default 6 to match the CLAUDE.md HARD LIMIT on the 8 GB agent container; raise on beefier dev machines (e.g. -DSTURM_BUILD_JOBS=12 on a 16-core/32 GB workstation). Caps are enforced at the build-graph level so `ninja -j20` is still clamped to STURM_BUILD_JOBS — preventing OOM-induced retries that would themselves slow the build.")
+if(CMAKE_GENERATOR STREQUAL "Ninja")
+    if(NOT STURM_BUILD_JOBS MATCHES "^[1-9][0-9]*$")
+        message(FATAL_ERROR
+            "sturm-e9gj: STURM_BUILD_JOBS='${STURM_BUILD_JOBS}' is not a positive\n"
+            "integer. Pass a value like -DSTURM_BUILD_JOBS=6 (default) or\n"
+            "-DSTURM_BUILD_JOBS=12 for beefier dev machines.")
+    endif()
+    set_property(GLOBAL PROPERTY JOB_POOLS
+        sturm_compile_pool=${STURM_BUILD_JOBS}
+        sturm_link_pool=${STURM_BUILD_JOBS})
+    set(CMAKE_JOB_POOL_COMPILE sturm_compile_pool)
+    set(CMAKE_JOB_POOL_LINK    sturm_link_pool)
+    if(STURM_BUILD_JOBS GREATER 6)
+        message(STATUS "sturm-e9gj: STURM_BUILD_JOBS=${STURM_BUILD_JOBS} — Ninja "
+                       "JOB_POOLS clamp raised above the CLAUDE.md HARD LIMIT "
+                       "(6). Safe on dev machines with ≥${STURM_BUILD_JOBS} GB "
+                       "RAM; on the 8 GB agent container this WILL OOM. Revert "
+                       "to 6 if running there.")
+    else()
+        message(STATUS "sturm-e9gj: Ninja JOB_POOLS clamp active — at most "
+                       "${STURM_BUILD_JOBS} concurrent compile jobs and "
+                       "${STURM_BUILD_JOBS} concurrent link jobs, regardless "
+                       "of the -j flag passed to ninja. Matches the CLAUDE.md "
+                       "HARD LIMIT for the 8 GB agent container.")
+    endif()
+endif()
 
 # ── sturm-yial — host clang vs plugin LLVM invariant gate ─────────────────────
 #

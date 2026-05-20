@@ -101,6 +101,27 @@ loop ran ~30 min per cycle; the user mandated a <2 min incremental cap.
 If you must run an uncached baseline (e.g. measuring a regression), pass
 `-DSTURM_USE_CCACHE=OFF` to skip the launcher wiring.
 
+### Fast-build guards (sturm-e9gj)
+
+The top-level `CMakeLists.txt` carries configure-time `FATAL_ERROR` gates
+that refuse to proceed down any silent slow-build path. Each gate has an
+explicit, documented opt-out — but the default behaviour is to fail
+loudly with an actionable hint rather than degrade silently.
+
+| Silent degradation | Guard | Opt-out (only if you really know why) |
+|---|---|---|
+| `STURM_USE_CCACHE=ON` and `ccache` not on PATH | FATAL: install via `tools/setup_dev_env.sh` | `-DSTURM_USE_CCACHE=OFF` (loud WARNING — uncached baseline measurement only) |
+| `STURM_USE_MOLD=ON` on Linux and `mold` not on PATH | FATAL: install via `tools/setup_dev_env.sh` | `-DSTURM_USE_MOLD=OFF` (loud WARNING) |
+| Generator is not Ninja (e.g. default `Unix Makefiles`) | FATAL: pass `-G Ninja` and wipe `build/` | `-DSTURM_ALLOW_NON_NINJA=ON` (restricted CI only — emits a WARNING; JOB_POOLS clamp is then advisory) |
+| `STURM_UNITY_BUCKETS=OFF` or `STURM_UNITY_MATCHERS=OFF` | Loud WARNING (not FATAL, so unity-collision bisects still work) | Default ON; only flip OFF during bisection |
+| Parallelism cap bypassed (e.g. `ninja -j20`) | Ninja `JOB_POOLS` clamp at `STURM_BUILD_JOBS` (default `6`) caps both compile and link pools at the build-graph level — `-j20` runs at most 6 concurrent jobs | `-DSTURM_BUILD_JOBS=N` (only raise on dev machines with ≥N GB RAM; the 8 GB agent container WILL OOM at N > 6) |
+
+If you see a `sturm-e9gj:` error during `cmake -S . -B build ...`, follow
+the diagnostic — it points at the specific fix line. **Never** add
+`-DSTURM_USE_CCACHE=OFF` / `-DSTURM_USE_MOLD=OFF` / `-DSTURM_ALLOW_NON_NINJA=ON`
+to silence a guard without first attempting `bash tools/setup_dev_env.sh`
+to install the missing tool — that is what those guards exist to prevent.
+
 ### Host-clang invariant (sturm-yial)
 
 The transpiler plugin (`sturm-transpile-plugin`) links the
