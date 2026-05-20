@@ -849,3 +849,54 @@ target_link_libraries(test_qram_read_dsl_adjoint PRIVATE orkan_headers)
 add_test(NAME test_qram_read_dsl_adjoint COMMAND test_qram_read_dsl_adjoint)
 set_tests_properties(test_qram_read_dsl_adjoint
     PROPERTIES LABELS "lib;qram;lossy-reversibility")
+
+# ── sturm-44bt.1 (Beat BB1) -- BBRouter primitive + Phase 1/3 setup/teardown.
+# Pins the gate-stream contract for bb_setup_routers / bb_teardown_routers
+# from include/sturm/detail/lib/qram_read_bb_routers.hpp (plan
+# docs/plan_qram_backend_bb.md §5 Beat BB1, goal G2). Walks Nprime ∈
+# {2, 4, 8} (tree depths 1, 2, 3) with a sweep over classical addresses
+# and asserts: (a) every IR record is X / CX / CCX, no rotations / no
+# prepares; (b) the setup gate count matches the §4.1 closed form
+# 2·(Nprime − 2) CCX + Nprime CNOT + 1 X (recomputed from Nprime — no
+# hardcoded numbers); (c) the setup + teardown round trip is balanced —
+# every (kind, qubits, arity) appears an even number of times; (d) the
+# post-teardown router state is (0, 0). The recursive-unrolling sanity
+# is captured by (b) — any runtime-for fallback would mis-count.
+add_executable(test_qram_bb_routers_recording
+    test_qram_bb_routers_recording.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_bb_routers_recording PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_bb_routers_recording PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_bb_routers_recording PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qram_bb_routers_recording PRIVATE orkan_headers)
+add_test(NAME test_qram_bb_routers_recording COMMAND test_qram_bb_routers_recording)
+set_tests_properties(test_qram_bb_routers_recording
+    PROPERTIES LABELS "lib;qram")
+
+# ── sturm-44bt.1 (Beat BB1) -- BBRouter primitive statevector pin.
+# Pins the statevector behaviour at (Nprime, W) = (4, 2) — 6 router
+# qubits + 2 address qubits = 8 sim qubits (orkan kMaxQubits=17).
+# For each classical addr ∈ {0..3}: setup brings the on-path routers
+# into |L⟩ / |R⟩ per addr's bit decomposition, leaves off-path routers
+# in |wait⟩, and teardown restores every router to |wait⟩ while leaving
+# addr unchanged.
+add_executable(test_qram_bb_routers_simulate
+    test_qram_bb_routers_simulate.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_bb_routers_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_bb_routers_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_bb_routers_simulate PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qram_bb_routers_simulate PRIVATE orkan_headers)
+add_test(NAME test_qram_bb_routers_simulate COMMAND test_qram_bb_routers_simulate)
+set_tests_properties(test_qram_bb_routers_simulate
+    PROPERTIES LABELS "lib;qram")
