@@ -900,3 +900,49 @@ target_link_libraries(test_qram_bb_routers_simulate PRIVATE orkan_headers)
 add_test(NAME test_qram_bb_routers_simulate COMMAND test_qram_bb_routers_simulate)
 set_tests_properties(test_qram_bb_routers_simulate
     PROPERTIES LABELS "lib;qram")
+
+# ── sturm-44bt.2 (Beat BB2) -- bb_bus_traverse Phase 2 gate-stream pin.
+# Recording test pins the §4.2 closed form 4·W·(Nprime-1) CCX +
+# (8·W·(Nprime-1) + W) CNOT (plus 0 X) per call to bb_bus_traverse,
+# recomputed from (Nprime, W) — no magic numbers — across (Nprime, W) ∈
+# {(2,2), (4,2), (4,4), (8,4)}. Each `a[k]` slot is pre-promoted to
+# quantum so the leaf-side CSWAPs emit the standard `1 CCX + 2 CNOT`
+# shape per scalar (lazy alloc only, no X-prep emitted).
+add_executable(test_qram_bb_bus_recording
+    test_qram_bb_bus_recording.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_bb_bus_recording PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_bb_bus_recording PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_bb_bus_recording PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qram_bb_bus_recording PRIVATE orkan_headers)
+add_test(NAME test_qram_bb_bus_recording COMMAND test_qram_bb_bus_recording)
+set_tests_properties(test_qram_bb_bus_recording
+    PROPERTIES LABELS "lib;qram")
+
+# ── sturm-44bt.2 (Beat BB2) -- bb_bus_traverse statevector pin.
+# Fixtures (Nprime, W) ∈ {(2, 4), (4, 2)} — both ≤ 16 qubits when `a`
+# is fully classical (no allocated qubits). bb_bus_traverse takes the
+# controlled-XOR-classical leaf-side path; for each classical address i
+# the test asserts P(b == a[i]) ≈ 1.0 and that every router / transit /
+# bus qubit returns to |0⟩. A superposed-index sanity probe at
+# (Nprime=2, W=4) with H on addr.bit(0) splits 50/50 between a[0] / a[1].
+add_executable(test_qram_bb_bus_simulate
+    test_qram_bb_bus_simulate.cpp
+    ${STURM_LIB_BACKEND_SOURCES}
+)
+target_include_directories(test_qram_bb_bus_simulate PRIVATE
+    ${CMAKE_SOURCE_DIR}/include
+)
+target_compile_features(test_qram_bb_bus_simulate PRIVATE cxx_std_20)
+target_compile_definitions(test_qram_bb_bus_simulate PRIVATE
+    STURM_BACKEND_ENABLED=1
+)
+target_link_libraries(test_qram_bb_bus_simulate PRIVATE orkan_headers)
+add_test(NAME test_qram_bb_bus_simulate COMMAND test_qram_bb_bus_simulate)
+set_tests_properties(test_qram_bb_bus_simulate
+    PROPERTIES LABELS "lib;qram")
