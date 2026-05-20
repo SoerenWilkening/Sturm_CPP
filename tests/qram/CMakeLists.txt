@@ -70,3 +70,39 @@ target_compile_features(test_qram_read_qrom_gates PRIVATE cxx_std_20)
 target_link_libraries(test_qram_read_qrom_gates PRIVATE sturm_backend_runtime)
 add_test(NAME test_qram_read_qrom_gates COMMAND test_qram_read_qrom_gates)
 set_tests_properties(test_qram_read_qrom_gates PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-44bt.3 (Beat BB3) -- lib_qram_read_bb_dsl gate-stream test.
+# REWRITES v1's test_qram_read_qrom_gates.cpp for the BB DSL helper:
+# pins the §4.4 closed-form CCX/CNOT/X budget at (N=4, W=4) recomputed
+# from the formula (no magic numbers), the gate-set discipline
+# (records ⊆ {quantum_xor, quantum_and}), and the i.value / i.super_mask
+# invariants. Counter-mode bumps (qrom_read / qreg_read split + umbrella)
+# are wired by BB4 at the public QRAM_read site; the BB3 DSL helper
+# leaves a TODO(BB4) comment instead of asserting them here.
+add_executable(test_qram_read_bb_qrom_gates
+    test_qram_read_bb_qrom_gates.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_qrom_gates PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_bb_qrom_gates PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_qrom_gates COMMAND test_qram_read_bb_qrom_gates)
+set_tests_properties(test_qram_read_bb_qrom_gates PROPERTIES LABELS "qram;qram-backend")
+
+# ── sturm-44bt.3 (Beat BB3) -- lib_qram_read_bb_dsl round-trip test.
+# Pins G3+G6 at the DSL layer. Statevector legs at (N=2, W=4) and
+# (N=4, W=2) sweep classical i ∈ [0, N) and assert P(b == a[i]) ≈ 1
+# after forward, then P(b == 0) ≈ 1 after adjoint. RecordingSink leg
+# at (N=8, W=4) — too large for orkan (kMaxQubits=17) — asserts every
+# (op, qubits, controls) triple appears even-times across fwd + adj
+# (gate-stream balance pin). Superposed-i leg at (N=2, W=4) verifies
+# fwd + adj zeros b on a superposed address and leaves i.super_mask
+# unchanged.
+add_executable(test_qram_read_bb_round_trip
+    test_qram_read_bb_round_trip.cpp
+    ${CMAKE_SOURCE_DIR}/src/sturm/qram/qram_read.cpp
+)
+target_compile_features(test_qram_read_bb_round_trip PRIVATE cxx_std_20)
+target_link_libraries(test_qram_read_bb_round_trip PRIVATE sturm_backend_runtime)
+add_test(NAME test_qram_read_bb_round_trip COMMAND test_qram_read_bb_round_trip)
+set_tests_properties(test_qram_read_bb_round_trip
+    PROPERTIES LABELS "qram;qram-backend;lossy-reversibility")
