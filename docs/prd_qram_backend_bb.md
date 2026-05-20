@@ -1,6 +1,6 @@
 # PRD — QRAM backend gate emission (bucket-brigade unified, v2)
 
-**Status.** Proposed, 2026-05-19. Not yet implemented.
+**Status.** Implemented, 2026-05-20.
 **Supersedes.**
 [`archive/prd_qram_backend.md`](archive/prd_qram_backend.md) (v1
 QROM-only naive sweep, Implemented 2026-05-03) and

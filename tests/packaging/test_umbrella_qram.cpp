@@ -14,7 +14,7 @@
 //      does not run the transpiler), which is exactly the call the
 //      rewrite emits. The IR observably grows by ≥ 1 GateRecord — proof
 //      that the opt-in qram header does not drop the gate-emission body
-//      (`lib_qram_read_qrom_dsl`).
+//      (the bucket-brigade `lib_qram_read_bb_dsl`).
 //
 // Phase-4-only gate: Phase 5 (sturm-uoeb) lands the `sturm::draw_ascii()`
 // / `sturm::print_ascii()` / `sturm::gate_count()` definitions. P5 already

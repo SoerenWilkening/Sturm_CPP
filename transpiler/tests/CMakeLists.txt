@@ -1507,8 +1507,8 @@ unset(_t)
 #
 # sturm-2w6h.4 (Beat B2): the test source defines `STURM_BACKEND_ENABLED 1`,
 # so the public `QRAM_read` overloads now compile in the gate-emission
-# path through `lib_qram_read_qrom_dsl`. The new template instantiation
-# requires the M19 backend symbols (`sturm_get_thread_context`,
+# path through the bucket-brigade `lib_qram_read_bb_dsl`. The new template
+# instantiation requires the M19 backend symbols (`sturm_get_thread_context`,
 # `execute_gate`, control_stack, exec_simulate, orkan_bridge,
 # uncompute_api). Linking those sources keeps the existing test passing
 # under counter-mode and circuit-mode sinks; the umbrella `qram_read`

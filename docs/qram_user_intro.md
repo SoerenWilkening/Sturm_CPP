@@ -1,9 +1,9 @@
 # Working with QRAM
 
-**Status:** v2 (2026-05-07), tracks the closed frontend epic
-[`sturm-u9ge`](archive/prd_qram_subscript.md), the closed backend
-epic `sturm-2w6h` ([`prd_qram_backend.md`](prd_qram_backend.md),
-[`plan_qram_backend.md`](plan_qram_backend.md)), and the frontend
+**Status:** v2 (2026-05-20), tracks the closed frontend epic
+[`sturm-u9ge`](archive/prd_qram_subscript.md), the closed v2 backend
+epic `sturm-44bt` ([`prd_qram_backend_bb.md`](prd_qram_backend_bb.md),
+[`plan_qram_backend_bb.md`](plan_qram_backend_bb.md)), and the frontend
 simplification PRD [`archive/prd_frontend_simplification.md`](archive/prd_frontend_simplification.md).
 
 **Audience.** Advanced users writing reversible / quantum routines who
@@ -12,11 +12,12 @@ without measuring either value. If you are new to STURM, read
 [`getting_started.md`](getting_started.md) first.
 
 **Companion docs.**
-[`prd_qram_backend.md`](prd_qram_backend.md) (the v1 backend gate
-emission contract — Status: Implemented),
+[`prd_qram_backend_bb.md`](prd_qram_backend_bb.md) (the v2 unified
+bucket-brigade backend gate emission contract — Status: Implemented),
 [`archive/prd_qram_subscript.md`](archive/prd_qram_subscript.md) (the v1
 frontend rewrite contract — Status: Implemented), and
-[`plan_qram_backend.md`](plan_qram_backend.md) (the backend beat plan).
+[`plan_qram_backend_bb.md`](plan_qram_backend_bb.md) (the v2 backend beat
+plan).
 
 This document is the user-facing reference for QRAM. The PRDs above
 are the spec; this is the what-it-looks-like-from-source view.
@@ -82,23 +83,30 @@ At runtime, `QRAM_read(a, i, b)` emits the unitary that performs
 `b ^= a[i]` at the gate-stream level — without ever materialising `i`
 as a classical integer. Each set bit of `a[i]` flips the
 matching bit of `b`, and `i.super_mask` is preserved across the call
-([prd_qram_backend.md §2 G1](prd_qram_backend.md)).
+([prd_qram_backend_bb.md §2 G1](prd_qram_backend_bb.md)).
 
-The runtime body for the v1 implemented path is the **QROM path**: every
-element of `a` must be fully classical at call time. The body sweeps
-`k = 0 .. N-1`, computes a 1-qubit equality predicate
-`eq_k = (i == k)`, then applies `WHEN(eq_k) { b ^= a[k]; }`, then
-uncomputes the predicate. Total cost is `O(N · W)` Toffolis per call
-([prd_qram_backend.md §4](prd_qram_backend.md)). All emitted primitives
-are `^=` (CNOT/Toffoli class) or `&=` (CCX class); no rotations, no
-measurements, no raw gate calls.
+The v2 runtime body is the **unified bucket-brigade algorithm**
+(Giovannetti–Lloyd–Maccone 2008,
+[arXiv:0708.1879](https://arxiv.org/abs/0708.1879)): one circuit
+serves **both** classical (`super_mask == 0` on every element) and
+quantum-register containers — the algorithm is data-classicality-agnostic.
+Phase 1 sets up an `(N' − 1)`-router tree from the address bits; Phase 2
+walks a `W`-qubit "bus" register down to the addressed leaf via a CSWAP
+tree, XORs `b ^= bus`, then walks back up; Phase 3 tears the router
+tree down. Total cost per call is `O(W · log² N)` T-depth, vs. the
+`O(N · W)` Toffoli depth of the v1 naive sweep
+([prd_qram_backend_bb.md §4](prd_qram_backend_bb.md)). All emitted
+primitives are `^=` (CNOT/Toffoli class) or `&=` (CCX class); no
+rotations, no measurements, no raw gate calls.
 
 ### The forward / adjoint pair
 
 `QRAM_read(a, i, b)` has a registered adjoint
-`__QRAM_read_adj(a, i, b)`. The QROM body is its own inverse, so the
-adjoint re-runs the forward sweep verbatim
-([prd_qram_backend.md §4 paragraph 4, §6](prd_qram_backend.md)). If you
+`__QRAM_read_adj(a, i, b)`. The bucket-brigade body is its own inverse
+(Phase 1 ↔ Phase 3 are mutual inverses; Phase 2 is a CSWAP-tree
+sandwich around the self-inverse XOR payload), so the adjoint re-runs
+the forward body verbatim
+([prd_qram_backend_bb.md §4.4](prd_qram_backend_bb.md)). If you
 use `QRAM_read` inside a reversible routine, STURM's adjoint
 synthesis will resolve the adjoint via the registered name (P9c).
 
@@ -127,7 +135,7 @@ three shapes
 
 `std::vector<qint>` is not yet supported as a container shape (v2);
 the pointer overload covers the runtime side via `.data()`
-([prd_qram_backend.md §3](prd_qram_backend.md)).
+([prd_qram_backend_bb.md §3](prd_qram_backend_bb.md)).
 
 ### 2.2 Unsupported (diagnosed at compile time, not silently measured)
 
@@ -149,27 +157,33 @@ measurement. That's intentional: the alias model exists so that any
 shape the matcher misses surfaces as a *compile* error in the
 generated file, never a silent runtime collapse (see §3 below).
 
-### 2.3 The QROM precondition
+### 2.3 Container shape (any classicality)
 
-The v1 backend only implements the **QROM path** — every element of
-`a` must be fully classical at the time of the call (`super_mask == 0`
-on every element). The runtime checks this via an OR-reduction over
-the elements' masks at `QRAM_read` entry; mixed or fully-quantum
-containers are routed to a `qreg` helper which is currently a
-counter-bump stub
-([prd_qram_backend.md §3, §11.2.2](prd_qram_backend.md)). When the
-quantum-register path lands, it will be a sibling PRD with no
-source-side change — `QRAM_read(a, i, b)` continues to be the
-entry point.
+The v2 backend handles **any container** under a single algorithm —
+fully classical (`super_mask == 0` on every element, the "QROM" route),
+fully quantum (every slot superposed, the "qreg" route), or mixed. The
+runtime still performs the OR-reduction over the elements' masks at
+`QRAM_read` entry to drive the split telemetry counters (`qrom_read` vs.
+`qreg_read`), but both routes forward to the same bucket-brigade body —
+the qreg path is **no longer a counter-only stub** and emits the full
+gate stream as of v2
+([prd_qram_backend_bb.md §3, §4](prd_qram_backend_bb.md)). The
+per-call resource budget (router qubits, transit qubits, bus qubits,
+ancilla totals) is tabulated in
+[prd_qram_backend_bb.md §4.5](prd_qram_backend_bb.md).
 
 ### 2.4 Address-bit contract
 
 `i` has width `W ≥ ⌈log₂ N⌉`. The high `W − ⌈log₂ N⌉` bits of `i`
 must be zero at call entry; passing `i ≥ N` is **undefined behavior**,
 mirroring classical out-of-range subscript
-([prd_qram_backend.md §5](prd_qram_backend.md)). The body sweeps
-`k = 0 .. N-1` only and does not consult bits of `i` above
-`⌈log₂ N⌉`. No runtime range check is emitted.
+([prd_qram_backend_bb.md §5](prd_qram_backend_bb.md)). The body consults
+only `i[0 .. ⌈log₂ N⌉ − 1]`; the high bits are not read. No runtime
+range check is emitted. In the v2 bucket-brigade form, OOR addresses do
+**not** silently return `|0⟩` as in the v1 naive sweep — they instead
+route the bus to whatever phantom or unaddressable leaf the high bits
+select. The failure mode is louder; users are still on the hook for
+the UB contract.
 
 ---
 
@@ -370,11 +384,12 @@ anything; the post-transpile `qint_t<W>::operator int64_t()` is
 
 ## 5. Where to read more
 
-- [`prd_qram_backend.md`](prd_qram_backend.md) — the v1 backend gate
-  emission contract. §2 (goals), §3 (non-goals), §4 (algorithm), §5
-  (address-bit contract), §6 (file layout), §7 (telemetry).
-- [`plan_qram_backend.md`](plan_qram_backend.md) — the backend beat
-  plan (B0–B5) and the gate-budget cheat sheet (§4).
+- [`prd_qram_backend_bb.md`](prd_qram_backend_bb.md) — the v2 backend
+  gate emission contract. §2 (goals), §3 (non-goals), §4 (algorithm —
+  unified bucket-brigade), §4.5 (per-call resource budget), §5
+  (address-bit contract), §6 (power-of-2 padding), §7 (file layout).
+- [`plan_qram_backend_bb.md`](plan_qram_backend_bb.md) — the v2 backend
+  beat plan (BB1–BB7) and the gate-budget cheat sheet (§4).
 - [`archive/prd_qram_subscript.md`](archive/prd_qram_subscript.md) —
   the closed frontend PRD. §7 (matcher contract), §8 (rewrite), §9
   (out-of-scope shapes), §10.1 (this document's source for the

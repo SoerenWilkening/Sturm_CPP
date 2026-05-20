@@ -20,8 +20,7 @@
 // We still register the pair explicitly via `STURM_REGISTER_ADJOINT`
 // so `invert<&lib_qram_read_bb_dsl<W, N>>()(...)` resolves at the
 // uncompute call site rather than via call-site inlining (placement-
-// audit tooling, P9c spirit; matches `c_and_dsl.hpp` ↔ `_adj.hpp` and
-// the v1 `qram_read_dsl.hpp` ↔ `qram_read_dsl_adj.hpp` pattern).
+// audit tooling, P9c spirit; matches `c_and_dsl.hpp` ↔ `_adj.hpp`).
 //
 // Auto-included from the bottom of `qram_read_bb_dsl.hpp` so callers
 // pick up the registration without an extra `#include`.

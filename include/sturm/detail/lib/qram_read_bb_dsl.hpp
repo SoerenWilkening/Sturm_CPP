@@ -38,8 +38,8 @@
 // RAII: routers / transits / bus / phantoms are stack-allocated. Each
 // `qbool` is lazily promoted to a quantum qubit by the BB1/BB2 helpers
 // when a backend context is live; the helper releases each allocated
-// qubit back to `QubitPool` at scope exit (mirrors qram_read_dsl.hpp
-// for `eq_k`). Per-call ancilla cost from PRD §4.5: `2(Nprime - 1) +
+// qubit back to `QubitPool` at scope exit. Per-call ancilla cost from
+// PRD §4.5: `2(Nprime - 1) +
 // (Nprime - 2) * W` (routers + transit blocks + bus), plus the BB5
 // phantom (Nprime - N) * W. Frontend-only callers (no backend ctx)
 // skip the qubit alloc / release path entirely.
@@ -239,5 +239,5 @@ inline void lib_qram_read_bb_dsl(const qint_t<W>* a,
 // Sibling header carries `__lib_qram_read_bb_dsl_adj` +
 // `STURM_REGISTER_ADJOINT`. Auto-included so direct callers of
 // `lib_qram_read_bb_dsl` pick up the registration without an extra
-// `#include` (matches `qram_read_dsl.hpp` ↔ `qram_read_dsl_adj.hpp`).
+// `#include`.
 #include "sturm/detail/lib/qram_read_bb_dsl_adj.hpp"

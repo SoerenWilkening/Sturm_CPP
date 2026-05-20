@@ -242,12 +242,17 @@ qint i = some_address();         // qint index
 qint b = a[i];                   // QRAM read — exactly this shape, fresh LHS
 ```
 
-**Container must be fully classical at call time** (every element's
-`super_mask == 0`) — this is the v1 "QROM path". The body sweeps
-`k = 0 .. N-1`, computes `(i == k)` into a one-qubit predicate, runs
-`WHEN(eq_k) { b ^= a[k]; }`, then uncomputes the predicate. Total
-cost is `O(N · W)` Toffolis. **Index width invariant.** `i` must have
-width `W ≥ ⌈log₂ N⌉`; high bits must be zero; `i ≥ N` is UB. See §11.4
+**Any container classicality.** The v2 bucket-brigade body handles
+fully classical (`super_mask == 0` on every element, the "QROM" route),
+fully quantum (every slot superposed, the "qreg" route), or mixed
+containers under a **single, data-classicality-agnostic algorithm**.
+Phase 1 builds an `(N' − 1)`-router tree from the address bits; Phase 2
+walks a `W`-qubit "bus" register through a CSWAP tree to the addressed
+leaf, XORs `b ^= bus`, then walks back up; Phase 3 tears the router
+tree down. Per-call cost is `O(W · log² N)` T-depth (Giovannetti–Lloyd–
+Maccone 2008, arXiv:0708.1879) — replacing the v1 `O(N · W)` Toffoli
+sweep. **Index width invariant.** `i` must have width
+`W ≥ ⌈log₂ N⌉`; high bits must be zero; `i ≥ N` is UB. See §11.4
 for the shape rules.
 
 ### Lifecycle of intermediate quantum values
